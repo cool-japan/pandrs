@@ -103,8 +103,8 @@ fn test_get_level_values() {
     let level0 = multi_idx.get_level_values(0).unwrap();
     let level1 = multi_idx.get_level_values(1).unwrap();
     
-    assert_eq!(level0.values(), &["A", "A", "B", "B"]);
-    assert_eq!(level1.values(), &["1", "2", "1", "2"]);
+    assert_eq!(level0, vec!["A", "A", "B", "B"]);
+    assert_eq!(level1, vec!["1", "2", "1", "2"]);
 }
 
 #[test]
@@ -138,8 +138,8 @@ fn test_swaplevel() {
     let swap_level0 = swapped.get_level_values(0).unwrap();
     let swap_level1 = swapped.get_level_values(1).unwrap();
     
-    assert_eq!(orig_level0.values(), swap_level1.values());
-    assert_eq!(orig_level1.values(), swap_level0.values());
+    assert_eq!(orig_level0, swap_level1);
+    assert_eq!(orig_level1, swap_level0);
 }
 
 #[test]

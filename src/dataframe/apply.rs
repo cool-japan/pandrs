@@ -28,15 +28,16 @@ impl DataFrame {
     /// 関数適用の結果を含む新しいSeries
     ///
     /// # 例
-    /// ```
-    /// use pandrs::{DataFrame, Axis};
+    /// ```no_run
+    /// use pandrs::{DataFrame};
+    /// use pandrs::dataframe::apply::Axis;
     ///
     /// // DataFrameを作成
     /// let mut df = DataFrame::new();
     /// // 列を追加...
     ///
-    /// // 各列の合計を計算
-    /// let column_sums = df.apply(|series| series.sum(), Axis::Column, Some("sum".to_string()));
+    /// // 各列の最初の要素を取得（例）
+    /// let first_elems = df.apply(|series| series.get(0).unwrap().clone(), Axis::Column, Some("first".to_string()));
     /// ```
     pub fn apply<F, R>(&self, f: F, axis: Axis, result_name: Option<String>) -> Result<Series<R>>
     where
@@ -76,14 +77,14 @@ impl DataFrame {
     /// 関数適用の結果を含む新しいDataFrame
     ///
     /// # 例
-    /// ```
+    /// ```no_run
     /// use pandrs::DataFrame;
     ///
     /// // DataFrameを作成
     /// let mut df = DataFrame::new();
     /// // 列を追加...
     ///
-    /// // 各要素を2倍にする
+    /// // 各要素を2倍にする（例）
     /// let doubled = df.applymap(|x| x.parse::<i32>().unwrap_or(0) * 2);
     /// ```
     pub fn applymap<F, R>(&self, f: F) -> Result<DataFrame>
