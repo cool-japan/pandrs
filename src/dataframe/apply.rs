@@ -3,7 +3,6 @@ use std::fmt::Debug;
 
 use crate::dataframe::DataFrame;
 use crate::error::{PandRSError, Result};
-use crate::index::Index;
 use crate::series::Series;
 
 /// 関数適用のAxis（軸）
@@ -55,8 +54,7 @@ impl DataFrame {
                 }
                 
                 // 結果からSeriesを構築
-                let index = Index::new(self.column_names().to_vec())?;
-                Series::new(results, index, result_name)
+                Series::new(results, result_name)
             }
             Axis::Row => {
                 // 現時点では行単位の適用はサポートしない
@@ -292,8 +290,7 @@ impl DataFrame {
         }
         
         // 結果をSeriesとして返す
-        let index = Index::from_range(0..row_count)?;
-        Series::new(duplicated, index, Some("duplicated".to_string()))
+        Series::new(duplicated, Some("duplicated".to_string()))
     }
     
     /// 重複行を削除する
