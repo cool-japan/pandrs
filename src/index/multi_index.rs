@@ -1,6 +1,5 @@
 use crate::error::{PandRSError, Result};
 use crate::index::Index;
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
@@ -232,7 +231,7 @@ where
     }
     
     /// 特定のレベルに基づいてスライス
-    pub fn get_level_values(&self, level: usize) -> Result<Index<T>> {
+    pub fn get_level_values(&self, level: usize) -> Result<Vec<T>> {
         if level >= self.levels.len() {
             return Err(PandRSError::Index(format!(
                 "レベル{}は範囲外です。有効なレベルは0から{}です",
@@ -251,7 +250,7 @@ where
             values.push(self.levels[level][code as usize].clone());
         }
         
-        Index::new(values)
+        Ok(values)
     }
     
     /// レベルを交換して新しいMultiIndexを作成

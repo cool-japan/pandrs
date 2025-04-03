@@ -13,7 +13,7 @@ Rustで実装されたデータ分析用DataFrameライブラリです。Python�
 - フィルタリング、ソート、結合などの基本操作
 - 数値データに対する集計関数 (合計、平均、最小、最大など)
 - 文字列データに対する特殊操作
-- マルチレベルインデックス (開発中)
+- マルチレベルインデックス
 - カテゴリカルデータ型 (開発中)
 - 高度なデータフレーム操作 (開発中)
 
@@ -179,13 +179,53 @@ let pivot_result = df.pivot_table(
   - [x] DataFrameの並列処理
   - [x] 並列フィルタリング
   - [x] 並列集計
-- [ ] マルチレベルインデックス（開発中）
+- [x] マルチレベルインデックス
+  - [x] ヒエラルキカルなインデックス構造
+  - [x] 複数レベルによるデータのグループ化
+  - [x] レベル操作（入れ替え、選択）
 - [ ] カテゴリカルデータ型（開発中）
 - [ ] 高度なデータフレーム操作（開発中）
 - [ ] メモリ使用効率の最適化
 
+### マルチレベルインデックスの操作
+
+```rust
+use pandrs::{DataFrame, MultiIndex};
+
+// タプルからMultiIndexを作成
+let tuples = vec![
+    vec!["A".to_string(), "a".to_string()],
+    vec!["A".to_string(), "b".to_string()],
+    vec!["B".to_string(), "a".to_string()],
+    vec!["B".to_string(), "b".to_string()],
+];
+
+// レベル名を設定
+let names = Some(vec![Some("first".to_string()), Some("second".to_string())]);
+let multi_idx = MultiIndex::from_tuples(tuples, names)?;
+
+// MultiIndexを使用したDataFrameを作成
+let mut df = DataFrame::with_multi_index(multi_idx);
+
+// データを追加
+let data = vec!["data1".to_string(), "data2".to_string(), "data3".to_string(), "data4".to_string()];
+df.add_column("data".to_string(), pandrs::Series::new(data, Some("data".to_string()))?)?;
+
+// レベル操作
+let level0_values = multi_idx.get_level_values(0)?;
+let level1_values = multi_idx.get_level_values(1)?;
+
+// レベルの入れ替え
+let swapped_idx = multi_idx.swaplevel(0, 1)?;
+```
+
 ## 最近の改善
 
+- マルチレベルインデックスを実装
+  - 階層的なインデックス構造をサポート
+  - タプルからのインデックス生成
+  - レベル操作とレベル値の操作
+  - DataFrameとの統合
 - テキストベースのプロットを用いた可視化機能を実装
   - 折れ線グラフ、散布図、ポイントプロットに対応
   - ターミナル出力とファイル出力に対応

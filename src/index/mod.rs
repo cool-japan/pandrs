@@ -101,6 +101,85 @@ where
     }
 }
 
+/// インデックス型の共通トレイト
+pub trait IndexTrait {
+    /// インデックスの長さを取得
+    fn len(&self) -> usize;
+
+    /// インデックスが空かどうか
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+}
+
+impl<T> IndexTrait for Index<T> 
+where 
+    T: Debug + Clone + Eq + Hash + Display 
+{
+    fn len(&self) -> usize {
+        self.len()
+    }
+}
+
+impl<T> IndexTrait for MultiIndex<T> 
+where 
+    T: Debug + Clone + Eq + Hash + Display 
+{
+    fn len(&self) -> usize {
+        self.len()
+    }
+}
+
+/// DataFrameが使用するインデックス型
+#[derive(Debug, Clone)]
+pub enum DataFrameIndex<T> 
+where 
+    T: Debug + Clone + Eq + Hash + Display 
+{
+    /// 単一レベルのインデックス
+    Simple(Index<T>),
+    /// 複数レベルのインデックス
+    Multi(MultiIndex<T>),
+}
+
+impl<T> IndexTrait for DataFrameIndex<T> 
+where 
+    T: Debug + Clone + Eq + Hash + Display 
+{
+    fn len(&self) -> usize {
+        match self {
+            DataFrameIndex::Simple(idx) => idx.len(),
+            DataFrameIndex::Multi(idx) => idx.len(),
+        }
+    }
+}
+
+impl<T> DataFrameIndex<T> 
+where 
+    T: Debug + Clone + Eq + Hash + Display 
+{
+    /// シンプルインデックスから作成
+    pub fn from_simple(index: Index<T>) -> Self {
+        DataFrameIndex::Simple(index)
+    }
+
+    /// マルチインデックスから作成
+    pub fn from_multi(index: MultiIndex<T>) -> Self {
+        DataFrameIndex::Multi(index)
+    }
+
+    /// デフォルトインデックスを作成
+    pub fn default_with_len(len: usize) -> Result<DataFrameIndex<usize>> {
+        let idx = Index::<usize>::from_range(0..len)?;
+        Ok(DataFrameIndex::Simple(idx))
+    }
+
+    /// インデックスの種類を判定
+    pub fn is_multi(&self) -> bool {
+        matches!(self, DataFrameIndex::Multi(_))
+    }
+}
+
 /// 整数インデックス型のエイリアス
 pub type RangeIndex = Index<usize>;
 

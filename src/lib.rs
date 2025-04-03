@@ -22,10 +22,10 @@ pub mod temporal;
 pub mod vis;
 
 // Re-export commonly used types
-pub use dataframe::{Axis, DataFrame};
+pub use dataframe::{DataFrame};
 pub use error::PandRSError;
 pub use groupby::GroupBy;
-pub use index::{Index, MultiIndex, StringMultiIndex};
+pub use index::{DataFrameIndex, Index, IndexTrait, MultiIndex, RangeIndex, StringIndex, StringMultiIndex};
 pub use na::NA;
 pub use parallel::ParallelUtils;
 pub use series::{Categorical, CategoricalOrder, NASeries, Series, StringCategorical};
