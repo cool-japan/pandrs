@@ -29,6 +29,7 @@ pub use index::{DataFrameIndex, Index, IndexTrait, MultiIndex, RangeIndex, Strin
 pub use na::NA;
 pub use parallel::ParallelUtils;
 pub use series::{Categorical, CategoricalOrder, NASeries, Series, StringCategorical};
+pub use dataframe::{MeltOptions, StackOptions, UnstackOptions};
 pub use vis::{OutputFormat, PlotConfig, PlotType};
 
 // Export version info
