@@ -1,4 +1,5 @@
 mod join;
+mod apply;
 
 use std::any::Any;
 use std::collections::HashMap;
