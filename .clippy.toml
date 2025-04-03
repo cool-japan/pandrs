@@ -1,0 +1,5 @@
+# Clippy設定ファイル
+# 警告を無効化する
+dead-code = false
+unused-variables = false
+unused-imports = false

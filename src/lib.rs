@@ -1,3 +1,8 @@
+// 特定の警告を無効化
+#![allow(dead_code)]
+#![allow(unused_variables)]
+#![allow(unused_imports)]
+
 pub mod dataframe;
 pub mod series;
 pub mod io;
