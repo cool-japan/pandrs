@@ -189,6 +189,10 @@ let pivot_result = df.pivot_table(
   - [x] 条件付き集計
   - [x] データフレーム結合
 - [ ] メモリ使用効率の最適化
+- [x] Pythonバインディング
+  - [x] PyO3を使用したPythonモジュール化
+  - [x] numpyとpandasとの相互運用性
+  - [x] Jupyter Notebookサポート
 
 ### マルチレベルインデックスの操作
 
@@ -222,7 +226,44 @@ let level1_values = multi_idx.get_level_values(1)?;
 let swapped_idx = multi_idx.swaplevel(0, 1)?;
 ```
 
+### Pythonバインディングの使用例
+
+```python
+import pandrs as pr
+import numpy as np
+import pandas as pd
+
+# DataFrameの作成
+df = pr.DataFrame({
+    'A': [1, 2, 3, 4, 5],
+    'B': ['a', 'b', 'c', 'd', 'e'],
+    'C': [1.1, 2.2, 3.3, 4.4, 5.5]
+})
+
+# pandasとの相互運用性
+pd_df = df.to_pandas()  # PandRSからpandas DataFrameに変換
+pr_df = pr.DataFrame.from_pandas(pd_df)  # pandas DataFrameからPandRSに変換
+
+# CSV入出力
+df.to_csv('data.csv')
+df_loaded = pr.DataFrame.read_csv('data.csv')
+
+# NumPy連携
+series = df['A']
+np_array = series.to_numpy()
+
+# Jupyter Notebookサポート
+from pandrs.jupyter import display_dataframe
+display_dataframe(df, max_rows=10, max_cols=5)
+```
+
 ## 最近の改善
+
+- Pythonバインディングを実装
+  - PyO3を利用したPythonモジュール
+  - NumPyとpandasとの相互運用性
+  - Jupyter Notebook連携
+  - 高性能なRustバックエンドとPythonの利便性を両立
 
 - マルチレベルインデックスを実装
   - 階層的なインデックス構造をサポート
