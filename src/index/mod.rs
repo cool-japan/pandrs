@@ -3,6 +3,8 @@ mod multi_index;
 pub use multi_index::{MultiIndex, StringMultiIndex};
 
 use crate::error::{PandRSError, Result};
+use crate::temporal::Temporal;
+use chrono::{NaiveDate, NaiveDateTime};
 use std::collections::HashMap;
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
@@ -235,3 +237,43 @@ pub type RangeIndex = Index<usize>;
 
 /// 文字列インデックス型のエイリアス
 pub type StringIndex = Index<String>;
+
+/// 日付時刻変換のための拡張メソッド
+impl StringIndex {
+    /// インデックス値を日付時刻の配列に変換
+    /// 
+    /// インデックスが日付文字列を含む場合、それらをNaiveDateTimeに変換します。
+    /// 変換できない場合は現在の日付時刻を使用します。
+    pub fn to_datetime_vec(&self) -> Result<Vec<NaiveDate>> {
+        let mut result = Vec::with_capacity(self.len());
+        
+        for value in &self.values {
+            // 日付形式の文字列を解析
+            match NaiveDate::parse_from_str(value, "%Y-%m-%d") {
+                Ok(date) => result.push(date),
+                Err(_) => {
+                    // 日付解析に失敗した場合は現在の日付を使用
+                    result.push(NaiveDate::parse_from_str("2023-01-01", "%Y-%m-%d").unwrap_or_else(|_| NaiveDate::now()));
+                }
+            }
+        }
+        
+        Ok(result)
+    }
+}
+
+/// DataFrameIndexの拡張メソッド
+impl DataFrameIndex<String> {
+    /// インデックス値を日付時刻の配列に変換
+    pub fn to_datetime_vec(&self) -> Result<Vec<NaiveDate>> {
+        match self {
+            DataFrameIndex::Simple(idx) => idx.to_datetime_vec(),
+            DataFrameIndex::Multi(_) => {
+                // マルチインデックスの場合、最初のレベルを使用
+                Err(PandRSError::NotImplemented(
+                    "マルチインデックスの日付時刻変換は現在サポートされていません".to_string()
+                ))
+            }
+        }
+    }
+}

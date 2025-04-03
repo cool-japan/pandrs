@@ -3,7 +3,9 @@ use std::fmt::Debug;
 
 use super::DataFrame;
 use crate::error::{PandRSError, Result};
+use crate::na::NA;
 use crate::series::Series;
+use crate::temporal::{TimeSeries, WindowType};
 
 /// 関数適用のAxis（軸）
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -329,6 +331,256 @@ impl DataFrame {
             let series = Series::new(filtered, Some(col_name.clone()))?;
             result_df.add_column(col_name.clone(), series)?;
         }
+        
+        Ok(result_df)
+    }
+    
+    /// 固定長ウィンドウ（移動ウィンドウ）操作を適用
+    /// 
+    /// # 引数
+    /// * `window_size` - ウィンドウサイズ
+    /// * `column_name` - 対象の列名
+    /// * `operation` - ウィンドウ操作の種類 ("mean", "sum", "std", "min", "max")
+    /// * `result_column` - 結果を格納する列名（省略時は "{column_name}_{operation}_{window_size}" という名前になる）
+    /// 
+    /// # 戻り値
+    /// 操作が適用されたDataFrame
+    pub fn rolling(
+        &self,
+        window_size: usize,
+        column_name: &str,
+        operation: &str,
+        result_column: Option<&str>,
+    ) -> Result<DataFrame> {
+        // 対象の列が存在するか確認
+        let series = match self.get_column(column_name) {
+            Some(s) => s,
+            None => return Err(PandRSError::KeyNotFound(column_name.to_string())),
+        };
+        
+        // 結果を格納する列名
+        let result_col = result_column.unwrap_or(&format!(
+            "{}_{}_{}", column_name, operation, window_size
+        )).to_string();
+        
+        // シリーズから数値データを抽出
+        let values: Vec<NA<f64>> = series.values().iter()
+            .map(|s| {
+                match s.parse::<f64>() {
+                    Ok(num) => NA::Value(num),
+                    Err(_) => NA::NA,
+                }
+            })
+            .collect();
+        
+        // タイムスタンプはインデックスから取得
+        // （実際のタイムスタンプが無い場合はダミーの日付を使用）
+        let timestamps = self.get_index().to_datetime_vec()?;
+        
+        // TimeSeries を作成
+        let time_series = TimeSeries::new(
+            values,
+            timestamps,
+            Some(column_name.to_string()),
+        )?;
+        
+        // ウィンドウ操作を実行
+        let window_result = match operation.to_lowercase().as_str() {
+            "mean" => time_series.rolling(window_size)?.mean()?,
+            "sum" => time_series.rolling(window_size)?.sum()?,
+            "std" => time_series.rolling(window_size)?.std(1)?,
+            "min" => time_series.rolling(window_size)?.min()?,
+            "max" => time_series.rolling(window_size)?.max()?,
+            _ => return Err(PandRSError::Operation(format!(
+                "サポートされていないウィンドウ操作: {}", operation
+            ))),
+        };
+        
+        // 結果をString Seriesに変換
+        let result_strings: Vec<String> = window_result.values().iter()
+            .map(|v| match v {
+                NA::Value(val) => val.to_string(),
+                NA::NA => "NA".to_string(),
+            })
+            .collect();
+        
+        // 結果のSeriesを作成
+        let result_series = Series::new(
+            result_strings,
+            Some(result_col.clone()),
+        )?;
+        
+        // 元のDataFrameに結果列を追加
+        let mut result_df = self.clone();
+        result_df.add_column(result_col, result_series)?;
+        
+        Ok(result_df)
+    }
+    
+    /// 拡大ウィンドウ操作を適用
+    /// 
+    /// # 引数
+    /// * `min_periods` - 最小期間サイズ
+    /// * `column_name` - 対象の列名
+    /// * `operation` - ウィンドウ操作の種類 ("mean", "sum", "std", "min", "max")
+    /// * `result_column` - 結果を格納する列名（省略時は "{column_name}_expanding_{operation}" という名前になる）
+    /// 
+    /// # 戻り値
+    /// 操作が適用されたDataFrame
+    pub fn expanding(
+        &self,
+        min_periods: usize,
+        column_name: &str,
+        operation: &str,
+        result_column: Option<&str>,
+    ) -> Result<DataFrame> {
+        // 対象の列が存在するか確認
+        let series = match self.get_column(column_name) {
+            Some(s) => s,
+            None => return Err(PandRSError::KeyNotFound(column_name.to_string())),
+        };
+        
+        // 結果を格納する列名
+        let result_col = result_column.unwrap_or(&format!(
+            "{}_expanding_{}", column_name, operation
+        )).to_string();
+        
+        // シリーズから数値データを抽出
+        let values: Vec<NA<f64>> = series.values().iter()
+            .map(|s| {
+                match s.parse::<f64>() {
+                    Ok(num) => NA::Value(num),
+                    Err(_) => NA::NA,
+                }
+            })
+            .collect();
+        
+        // タイムスタンプはインデックスから取得
+        let timestamps = self.get_index().to_datetime_vec()?;
+        
+        // TimeSeries を作成
+        let time_series = TimeSeries::new(
+            values,
+            timestamps,
+            Some(column_name.to_string()),
+        )?;
+        
+        // ウィンドウ操作を実行
+        let window_result = match operation.to_lowercase().as_str() {
+            "mean" => time_series.expanding(min_periods)?.mean()?,
+            "sum" => time_series.expanding(min_periods)?.sum()?,
+            "std" => time_series.expanding(min_periods)?.std(1)?,
+            "min" => time_series.expanding(min_periods)?.min()?,
+            "max" => time_series.expanding(min_periods)?.max()?,
+            _ => return Err(PandRSError::Operation(format!(
+                "サポートされていないウィンドウ操作: {}", operation
+            ))),
+        };
+        
+        // 結果をString Seriesに変換
+        let result_strings: Vec<String> = window_result.values().iter()
+            .map(|v| match v {
+                NA::Value(val) => val.to_string(),
+                NA::NA => "NA".to_string(),
+            })
+            .collect();
+        
+        // 結果のSeriesを作成
+        let result_series = Series::new(
+            result_strings,
+            Some(result_col.clone()),
+        )?;
+        
+        // 元のDataFrameに結果列を追加
+        let mut result_df = self.clone();
+        result_df.add_column(result_col, result_series)?;
+        
+        Ok(result_df)
+    }
+    
+    /// 指数加重ウィンドウ操作を適用
+    /// 
+    /// # 引数
+    /// * `column_name` - 対象の列名
+    /// * `operation` - ウィンドウ操作の種類 ("mean", "std")
+    /// * `span` - 半減期（alphaとは同時に指定できない）
+    /// * `alpha` - 減衰係数 0.0 < alpha <= 1.0（spanとは同時に指定できない）
+    /// * `result_column` - 結果を格納する列名（省略時は "{column_name}_ewm_{operation}" という名前になる）
+    /// 
+    /// # 戻り値
+    /// 操作が適用されたDataFrame
+    pub fn ewm(
+        &self,
+        column_name: &str,
+        operation: &str,
+        span: Option<usize>,
+        alpha: Option<f64>,
+        result_column: Option<&str>,
+    ) -> Result<DataFrame> {
+        // spanとalphaの両方が指定された場合はエラー
+        if span.is_some() && alpha.is_some() {
+            return Err(PandRSError::Consistency(
+                "span と alpha は同時に指定できません。いずれか一方を指定してください。".to_string(),
+            ));
+        }
+        
+        // 対象の列が存在するか確認
+        let series = match self.get_column(column_name) {
+            Some(s) => s,
+            None => return Err(PandRSError::KeyNotFound(column_name.to_string())),
+        };
+        
+        // 結果を格納する列名
+        let result_col = result_column.unwrap_or(&format!(
+            "{}_ewm_{}", column_name, operation
+        )).to_string();
+        
+        // シリーズから数値データを抽出
+        let values: Vec<NA<f64>> = series.values().iter()
+            .map(|s| {
+                match s.parse::<f64>() {
+                    Ok(num) => NA::Value(num),
+                    Err(_) => NA::NA,
+                }
+            })
+            .collect();
+        
+        // タイムスタンプはインデックスから取得
+        let timestamps = self.get_index().to_datetime_vec()?;
+        
+        // TimeSeries を作成
+        let time_series = TimeSeries::new(
+            values,
+            timestamps,
+            Some(column_name.to_string()),
+        )?;
+        
+        // ウィンドウ操作を実行
+        let window_result = match operation.to_lowercase().as_str() {
+            "mean" => time_series.ewm(span, alpha, false)?.mean()?,
+            "std" => time_series.ewm(span, alpha, false)?.std(1)?,
+            _ => return Err(PandRSError::Operation(format!(
+                "サポートされていないEWM操作: {}", operation
+            ))),
+        };
+        
+        // 結果をString Seriesに変換
+        let result_strings: Vec<String> = window_result.values().iter()
+            .map(|v| match v {
+                NA::Value(val) => val.to_string(),
+                NA::NA => "NA".to_string(),
+            })
+            .collect();
+        
+        // 結果のSeriesを作成
+        let result_series = Series::new(
+            result_strings,
+            Some(result_col.clone()),
+        )?;
+        
+        // 元のDataFrameに結果列を追加
+        let mut result_df = self.clone();
+        result_df.add_column(result_col, result_series)?;
         
         Ok(result_df)
     }
