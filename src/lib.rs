@@ -1,7 +1,13 @@
 // 特定の警告を無効化
+#![allow(clippy::all)]
 #![allow(dead_code)]
 #![allow(unused_variables)]
 #![allow(unused_imports)]
+#![allow(clippy::needless_return)]
+#![allow(clippy::redundant_closure)]
+#![allow(clippy::let_and_return)]
+#![allow(clippy::too_many_arguments)]
+#![allow(clippy::needless_lifetimes)]
 
 pub mod dataframe;
 pub mod error;

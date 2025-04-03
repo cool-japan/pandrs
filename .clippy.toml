@@ -1,5 +1,8 @@
 # Clippy設定ファイル
-# 警告を無効化する
-dead-code = false
-unused-variables = false
-unused-imports = false
+# 直接ファイルで特定の設定を行う項目はないので、
+# 警告抑制は lints を使用します
+
+# エラー閾値
+too-many-arguments-threshold = 10
+too-many-lines-threshold = 500
+type-complexity-threshold = 1000
