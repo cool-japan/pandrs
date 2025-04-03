@@ -76,6 +76,41 @@ impl DataFrame {
         }
     }
     
+    /// 列名を変更する
+    pub fn rename_columns(&mut self, column_map: &HashMap<String, String>) -> Result<()> {
+        // 古い列名から新しい列名への変換マップを作成
+        let mut new_columns = HashMap::new();
+        let mut new_column_names = Vec::with_capacity(self.column_names.len());
+        
+        // 元の列名のリストを取得
+        for old_name in &self.column_names {
+            // 変換マップに存在するかチェック
+            let new_name = if let Some(new_col_name) = column_map.get(old_name) {
+                new_col_name.clone()
+            } else {
+                // マップに存在しない場合は元の名前を使用
+                old_name.clone()
+            };
+            
+            // 同名の列が既に存在するかチェック（変換後の列名が重複する場合）
+            if new_column_names.contains(&new_name) && old_name != &new_name {
+                return Err(PandRSError::Column(format!("列名 '{}' は既に存在します", new_name)));
+            }
+            
+            // 列データをコピー
+            if let Some(col_data) = self.columns.get(old_name) {
+                new_columns.insert(new_name.clone(), col_data.clone());
+                new_column_names.push(new_name);
+            }
+        }
+        
+        // 新しい列データで更新
+        self.columns = new_columns;
+        self.column_names = new_column_names;
+        
+        Ok(())
+    }
+    
     /// 文字列インデックスでDataFrameを作成
     pub fn with_index(index: Index<String>) -> Self  
     {

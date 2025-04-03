@@ -95,6 +95,11 @@ where
     pub fn name(&self) -> Option<&String> {
         self.name.as_ref()
     }
+    
+    /// 名前を設定（可変参照版）
+    pub fn set_name(&mut self, name: String) {
+        self.name = Some(name);
+    }
 
     /// インデックスを取得
     pub fn index(&self) -> &RangeIndex {

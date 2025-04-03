@@ -130,6 +130,11 @@ where
         self.name = Some(name);
         self
     }
+    
+    /// 名前を設定（可変参照）
+    pub fn set_name(&mut self, name: String) {
+        self.name = Some(name);
+    }
 
     /// NAの個数を取得
     pub fn na_count(&self) -> usize {
@@ -144,6 +149,11 @@ where
     /// NAを含むかどうか
     pub fn has_na(&self) -> bool {
         self.values.iter().any(|v| v.is_na())
+    }
+    
+    /// 各要素がNAかどうかのブール配列を取得
+    pub fn is_na(&self) -> Vec<bool> {
+        self.values.iter().map(|v| v.is_na()).collect()
     }
 
     /// NAを除去したSeriesを返す
