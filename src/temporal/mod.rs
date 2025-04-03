@@ -3,6 +3,7 @@
 mod date_range;
 mod frequency;
 mod resample;
+mod window;  // 新しいWindowモジュール
 
 use chrono::{DateTime, Duration, Local, NaiveDate, NaiveDateTime, NaiveTime, Utc};
 use std::ops::{Add, Sub};
@@ -13,6 +14,7 @@ use crate::na::NA;
 pub use self::date_range::{date_range, DateRange};
 pub use self::frequency::Frequency;
 pub use self::resample::Resample;
+pub use self::window::{WindowType, Window};
 
 /// 日時を表す型のトレイト
 pub trait Temporal:
@@ -263,6 +265,9 @@ impl<T: Temporal> TimeSeries<T> {
     }
 
     /// 移動平均を計算
+    /// 
+    /// 注: この関数は互換性のために維持されていますが、
+    /// より高機能な `rolling()` メソッドの使用が推奨されます。
     pub fn rolling_mean(&self, window: usize) -> Result<Self> {
         if window > self.len() || window == 0 {
             return Err(PandRSError::Consistency(format!(
@@ -271,34 +276,7 @@ impl<T: Temporal> TimeSeries<T> {
             )));
         }
 
-        let mut result_values = Vec::with_capacity(self.len());
-
-        // 移動平均の計算
-        for i in 0..self.len() {
-            if i < window - 1 {
-                // 最初のwindow-1個の要素はNA
-                result_values.push(NA::NA);
-            } else {
-                // ウィンドウ内の値を取得 (using checked arithmetic to avoid overflow)
-                let start_idx = i.checked_sub(window - 1).unwrap_or(0);
-                let window_values: Vec<f64> = self.values[start_idx..=i]
-                    .iter()
-                    .filter_map(|v| match v {
-                        NA::Value(val) => Some(*val),
-                        NA::NA => None,
-                    })
-                    .collect();
-
-                if window_values.is_empty() {
-                    result_values.push(NA::NA);
-                } else {
-                    let sum: f64 = window_values.iter().sum();
-                    let mean = sum / window_values.len() as f64;
-                    result_values.push(NA::Value(mean));
-                }
-            }
-        }
-
-        Self::new(result_values, self.timestamps.clone(), self.name.clone())
+        // 新しいWindow APIを使用して実装
+        self.rolling(window)?.mean()
     }
 }

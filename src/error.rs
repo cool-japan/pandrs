@@ -38,6 +38,12 @@ pub enum PandRSError {
 
     #[error("空データエラー: {0}")]
     Empty(String),
+    
+    #[error("キーが見つかりません: {0}")]
+    KeyNotFound(String),
+    
+    #[error("操作エラー: {0}")]
+    Operation(String),
 
     #[error("その他のエラー: {0}")]
     Other(String),

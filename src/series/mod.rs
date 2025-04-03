@@ -6,9 +6,11 @@ use std::cmp::PartialOrd;
 use std::fmt::Debug;
 use std::iter::Sum;
 use std::ops::{Add, Div, Mul, Sub};
+use std::str::FromStr;
 
 use crate::error::{PandRSError, Result};
 use crate::index::{Index, RangeIndex};
+use crate::na::NA;
 
 pub use self::na_series::NASeries;
 pub use self::categorical::{Categorical, CategoricalOrder, StringCategorical};
@@ -185,5 +187,40 @@ where
             .unwrap();
 
         Ok(max)
+    }
+}
+
+// 文字列型のSeriesに対する特化実装
+impl Series<String> {
+    /// 文字列Seriesを数値のNA<f64>ベクトルに変換
+    /// 
+    /// 各要素を数値に変換します。変換できない場合はNAを返します。
+    pub fn to_numeric_vec(&self) -> Result<Vec<NA<f64>>> {
+        let mut result = Vec::with_capacity(self.len());
+        
+        for value in &self.values {
+            match value.parse::<f64>() {
+                Ok(num) => result.push(NA::Value(num)),
+                Err(_) => result.push(NA::NA),
+            }
+        }
+        
+        Ok(result)
+    }
+    
+    /// 各要素に関数を適用
+    pub fn apply_map<F>(&self, f: F) -> Series<String>
+    where
+        F: Fn(&String) -> String,
+    {
+        let transformed: Vec<String> = self.values.iter()
+            .map(|v| f(v))
+            .collect();
+        
+        Series {
+            values: transformed,
+            index: self.index.clone(),
+            name: self.name.clone(),
+        }
     }
 }
