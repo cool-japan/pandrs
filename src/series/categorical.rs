@@ -321,7 +321,7 @@ where
     }
     
     /// 一意なカテゴリの出現回数をカウント
-    pub fn value_counts(&self) -> Result<Series<T, usize>> {
+    pub fn value_counts(&self) -> Result<Series<usize>> {
         let mut counts = vec![0; self.categories.len()];
         
         for &code in &self.codes {
@@ -341,14 +341,12 @@ where
             }
         }
         
-        // インデックスを構築
-        let index = Index::new(values)?;
-        
-        Series::new(count_values, index, Some("count".to_string()))
+        // 結果をSeriesとして返す
+        Series::new(count_values, Some("count".to_string()))
     }
     
     /// Seriesに変換
-    pub fn to_series(&self, name: Option<String>) -> Result<Series<T, T>> {
+    pub fn to_series(&self, name: Option<String>) -> Result<Series<T>> {
         // コードを値に変換
         let values: Vec<T> = self
             .codes
@@ -362,10 +360,7 @@ where
             })
             .collect();
         
-        // インデックスを構築
-        let index = Index::from_range(0..values.len())?;
-        
-        Series::new(values, index, name)
+        Series::new(values, name)
     }
 }
 
