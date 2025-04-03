@@ -26,7 +26,11 @@ PandRSはRustで実装されたデータ分析用DataFrameライブラリです�
 - **時系列データ処理**
   - 日付範囲生成
   - 時間フィルタリング
-  - 移動平均計算
+  - 高度なウィンドウ操作
+    - 固定長ウィンドウ（Rolling Window）
+    - 拡大ウィンドウ（Expanding Window）
+    - 指数加重ウィンドウ（Exponentially Weighted Moving）
+  - カスタム集計関数のサポート
   - 周波数変換（リサンプリング）
 
 - **可視化機能**
@@ -43,10 +47,15 @@ PandRSはRustで実装されたデータ分析用DataFrameライブラリです�
 
 ## 改善・修正履歴
 
-### 時系列機能の改善
+### 時系列機能の大幅強化
 
 - RFC3339形式の日付パーシングに対応し、互換性を向上
-- 移動平均計算における整数オーバーフロー問題を修正
+- 高度なウィンドウ操作を完全実装
+  - 固定長ウィンドウ（Rolling Window）: 平均、合計、標準偏差、最小値、最大値
+  - 拡大ウィンドウ（Expanding Window）: 累積集計処理
+  - 指数加重ウィンドウ（EWM）: span/alpha指定による減衰率設定
+- カスタム集計関数によるユーザー定義の変換処理
+- DataFrame上での時系列ウィンドウ操作のサポート
 - `DAILY`、`WEEKLY`などの完全形式の周波数指定に対応
 - テストの安定性を向上
 
@@ -92,7 +101,8 @@ pandrs/
 ├── src/
 │   ├── dataframe/    - DataFrame関連の実装
 │   │   ├── mod.rs    - DataFrame本体
-│   │   └── join.rs   - 結合操作
+│   │   ├── join.rs   - 結合操作
+│   │   └── apply.rs  - 関数適用とウィンドウ操作
 │   │
 │   ├── series/       - Series関連の実装
 │   │   ├── mod.rs    - Series本体
@@ -102,6 +112,7 @@ pandrs/
 │   │   ├── mod.rs       - 時系列本体
 │   │   ├── date_range.rs - 日付範囲生成
 │   │   ├── frequency.rs  - 頻度定義
+│   │   ├── window.rs     - ウィンドウ操作
 │   │   └── resample.rs   - リサンプリング
 │   │
 │   ├── groupby/      - グループ化処理
@@ -133,6 +144,8 @@ pandrs/
 │   ├── na_example.rs        - 欠損値処理の例
 │   ├── pivot_example.rs     - ピボットテーブルの例
 │   ├── time_series_example.rs - 時系列データの例
+│   ├── window_operations_example.rs - ウィンドウ操作の例
+│   ├── dataframe_window_example.rs - DataFrame上のウィンドウ操作
 │   ├── visualization_example.rs - 可視化の例
 │   └── parallel_example.rs    - 並列処理の例
 │
@@ -143,7 +156,8 @@ pandrs/
     ├── io_test.rs
     ├── na_test.rs
     ├── series_test.rs
-    └── temporal_test.rs
+    ├── temporal_test.rs
+    └── window_test.rs
 ```
 
 ## 実行コマンド
