@@ -6,7 +6,7 @@ fn main() -> Result<(), PandRSError> {
     println!("=== DataFrameのウィンドウ操作の例 ===\n");
 
     // サンプルデータを作成
-    let mut df = create_sample_dataframe()?;
+    let df = create_sample_dataframe()?;
 
     // データフレームの内容を表示
     println!("元のDataFrame:");
