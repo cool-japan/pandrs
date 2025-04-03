@@ -2,18 +2,19 @@ use numpy::{PyArray1, ToPyArray};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList, PyString, PyTuple};
-use pandrs::{DataFrame, Series, NA, NASeries};
+// 親クレートをインポート（明示的パスを使用）
+use ::pandrs::{DataFrame, Series, NA, NASeries};
 use std::collections::HashMap;
 
 /// A Rust-powered DataFrame implementation with pandas-like API
 #[pymodule]
-fn pandrs_python(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
+fn pandrs(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<PyDataFrame>()?;
     m.add_class::<PySeries>()?;
     m.add_class::<PyNASeries>()?;
     
     // Add module version
-    m.add("__version__", pandrs::VERSION)?;
+    m.add("__version__", ::pandrs::VERSION)?;
     
     Ok(())
 }
