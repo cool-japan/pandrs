@@ -30,12 +30,24 @@ impl<T> MultiIndex<T>
 where
     T: Debug + Clone + Eq + Hash + Display,
 {
-    /// 新しいMultiIndexを作成
+    /// 新しいMultiIndexを作成します
     ///
     /// # 引数
     /// * `levels` - 各レベルの一意な値のリスト
     /// * `codes` - 各レベルでのインデックス位置を示すコード（-1は欠損値）
     /// * `names` - 各レベルの名前（オプション）
+    ///
+    /// # 戻り値
+    /// 成功した場合は新しいMultiIndexインスタンス、失敗した場合はエラー
+    ///
+    /// # エラー
+    /// - レベルが空の場合
+    /// - levelsとcodesの長さが一致しない場合
+    /// - コードが範囲外の場合
+    /// - レベルの行数が一致しない場合
+    /// - names指定時にlevelsと長さが一致しない場合
+    /// - 欠損値が含まれる場合（現在サポートされていません）
+    /// - 重複値が含まれる場合
     pub fn new(
         levels: Vec<Vec<T>>,
         codes: Vec<Vec<i32>>,
@@ -120,7 +132,20 @@ where
         })
     }
     
-    /// Pythonのpandas.MultiIndex.from_tuplesのようにタプルリストからMultiIndexを作成
+    /// タプルリストからMultiIndexを作成します
+    ///
+    /// Pythonのpandas.MultiIndex.from_tuplesのような機能を提供します。
+    ///
+    /// # 引数
+    /// * `tuples` - タプルのベクタ（各タプルは同じ長さが必要）
+    /// * `names` - 各レベルの名前（オプション）
+    ///
+    /// # 戻り値
+    /// 成功した場合は新しいMultiIndexインスタンス、失敗した場合はエラー
+    ///
+    /// # エラー
+    /// - 空のタプルリストが渡された場合
+    /// - タプルの長さが一致しない場合
     pub fn from_tuples(tuples: Vec<Vec<T>>, names: Option<Vec<Option<String>>>) -> Result<Self> {
         if tuples.is_empty() {
             return Err(PandRSError::Index("空のタプルリストが渡されました".into()));
@@ -166,7 +191,13 @@ where
         MultiIndex::new(unique_values, codes, names)
     }
     
-    /// 特定の位置のタプルを取得
+    /// 特定の位置のタプルを取得します
+    ///
+    /// # 引数
+    /// * `pos` - 取得する位置
+    ///
+    /// # 戻り値
+    /// 位置が有効な場合はタプル、範囲外の場合はNone
     pub fn get_tuple(&self, pos: usize) -> Option<Vec<T>> {
         if pos >= self.len() {
             return None;
@@ -185,7 +216,13 @@ where
         Some(result)
     }
     
-    /// タプルからその位置を取得
+    /// タプルからその位置を取得します
+    ///
+    /// # 引数
+    /// * `key` - 検索するタプル
+    ///
+    /// # 戻り値
+    /// タプルが見つかった場合はその位置、見つからなかった場合はNone
     pub fn get_loc(&self, key: &[T]) -> Option<usize> {
         if key.len() != self.levels.len() {
             return None;
@@ -196,7 +233,7 @@ where
         self.map.get(&key_vec).copied()
     }
     
-    /// インデックスの長さ（行数）を取得
+    /// インデックスの長さ（行数）を取得します
     pub fn len(&self) -> usize {
         if self.codes.is_empty() {
             0
@@ -205,32 +242,42 @@ where
         }
     }
     
-    /// インデックスが空かどうか
+    /// インデックスが空かどうかを判定します
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
     
-    /// レベル数を取得
+    /// レベル数を取得します
     pub fn n_levels(&self) -> usize {
         self.levels.len()
     }
     
-    /// 各レベルの値を取得
+    /// 各レベルの値を取得します
     pub fn levels(&self) -> &[Vec<T>] {
         &self.levels
     }
     
-    /// 各レベルのコードを取得
+    /// 各レベルのコードを取得します
     pub fn codes(&self) -> &[Vec<i32>] {
         &self.codes
     }
     
-    /// 各レベルの名前を取得
+    /// 各レベルの名前を取得します
     pub fn names(&self) -> &[Option<String>] {
         &self.names
     }
     
-    /// 特定のレベルに基づいてスライス
+    /// 特定のレベルの値を取得します
+    ///
+    /// # 引数
+    /// * `level` - 取得するレベルのインデックス
+    ///
+    /// # 戻り値
+    /// 成功した場合はレベル値のベクタ、失敗した場合はエラー
+    ///
+    /// # エラー
+    /// - レベルが範囲外の場合
+    /// - 欠損値が含まれる場合（現在サポートされていません）
     pub fn get_level_values(&self, level: usize) -> Result<Vec<T>> {
         if level >= self.levels.len() {
             return Err(PandRSError::Index(format!(
@@ -253,7 +300,17 @@ where
         Ok(values)
     }
     
-    /// レベルを交換して新しいMultiIndexを作成
+    /// レベルを交換して新しいMultiIndexを作成します
+    ///
+    /// # 引数
+    /// * `i` - 交換する最初のレベルのインデックス
+    /// * `j` - 交換する二番目のレベルのインデックス
+    ///
+    /// # 戻り値
+    /// 成功した場合はレベルを交換した新しいMultiIndex、失敗した場合はエラー
+    ///
+    /// # エラー
+    /// - レベルが範囲外の場合
     pub fn swaplevel(&self, i: usize, j: usize) -> Result<Self> {
         if i >= self.levels.len() || j >= self.levels.len() {
             return Err(PandRSError::Index(format!(
@@ -274,7 +331,16 @@ where
         MultiIndex::new(new_levels, new_codes, Some(new_names))
     }
     
-    /// 指定されたレベルの名前を設定
+    /// 指定されたレベルの名前を設定します
+    ///
+    /// # 引数
+    /// * `names` - 新しいレベル名のベクタ
+    ///
+    /// # 戻り値
+    /// 成功した場合は()、失敗した場合はエラー
+    ///
+    /// # エラー
+    /// - namesの長さがレベル数と一致しない場合
     pub fn set_names(&mut self, names: Vec<Option<String>>) -> Result<()> {
         if names.len() != self.levels.len() {
             return Err(PandRSError::Index(format!(
@@ -289,5 +355,5 @@ where
     }
 }
 
-// 文字列MultiIndexのエイリアス
+/// 文字列MultiIndexのエイリアス
 pub type StringMultiIndex = MultiIndex<String>;

@@ -10,7 +10,8 @@ use std::ops::Range;
 
 /// インデックス構造体
 ///
-/// DataFrameやSeriesの行ラベルを表現する
+/// DataFrameやSeriesの行ラベルを表現する基本的なインデックス構造です。
+/// 一意な値のコレクションとそれらの位置を保持します。
 #[derive(Debug, Clone)]
 pub struct Index<T>
 where
@@ -30,12 +31,31 @@ impl<T> Index<T>
 where
     T: Debug + Clone + Eq + Hash + Display,
 {
-    /// 新しいインデックスを作成
+    /// 新しいインデックスを作成します
+    ///
+    /// # 引数
+    /// * `values` - インデックス値のベクタ
+    ///
+    /// # 戻り値
+    /// 成功した場合は新しいIndexインスタンス、失敗した場合はエラー
+    ///
+    /// # エラー
+    /// 値に重複がある場合にエラーを返します
     pub fn new(values: Vec<T>) -> Result<Self> {
         Self::with_name(values, None)
     }
     
-    /// 名前付きの新しいインデックスを作成
+    /// 名前付きの新しいインデックスを作成します
+    ///
+    /// # 引数
+    /// * `values` - インデックス値のベクタ
+    /// * `name` - インデックスの名前（オプション）
+    ///
+    /// # 戻り値
+    /// 成功した場合は新しいIndexインスタンス、失敗した場合はエラー
+    ///
+    /// # エラー
+    /// 値に重複がある場合にエラーを返します
     pub fn with_name(values: Vec<T>, name: Option<String>) -> Result<Self> {
         let mut map = HashMap::with_capacity(values.len());
 
@@ -52,48 +72,66 @@ where
         Ok(Index { values, map, name })
     }
 
-    /// 整数範囲からインデックスを作成
+    /// 整数範囲からインデックスを作成します
+    ///
+    /// # 引数
+    /// * `range` - 整数範囲
+    ///
+    /// # 戻り値
+    /// 成功した場合は新しいRangeIndex、失敗した場合はエラー
     pub fn from_range(range: Range<usize>) -> Result<Index<usize>> {
         let values: Vec<usize> = range.collect();
         Index::<usize>::new(values)
     }
 
-    /// インデックス長を取得
+    /// インデックス長を取得します
     pub fn len(&self) -> usize {
         self.values.len()
     }
 
-    /// インデックスが空かどうか
+    /// インデックスが空かどうかを判定します
     pub fn is_empty(&self) -> bool {
         self.values.is_empty()
     }
 
-    /// 値から位置を取得
+    /// 値から位置を取得します
+    ///
+    /// # 引数
+    /// * `key` - 検索する値
+    ///
+    /// # 戻り値
+    /// 値が見つかった場合はその位置（インデックス）、見つからなかった場合はNone
     pub fn get_loc(&self, key: &T) -> Option<usize> {
         self.map.get(key).copied()
     }
 
-    /// 位置から値を取得
+    /// 位置から値を取得します
+    ///
+    /// # 引数
+    /// * `pos` - 検索する位置
+    ///
+    /// # 戻り値
+    /// 位置が有効な場合はその値への参照、範囲外の場合はNone
     pub fn get_value(&self, pos: usize) -> Option<&T> {
         self.values.get(pos)
     }
 
-    /// 全ての値を取得
+    /// 全ての値を取得します
     pub fn values(&self) -> &[T] {
         &self.values
     }
     
-    /// インデックス名を取得
+    /// インデックス名を取得します
     pub fn name(&self) -> Option<&String> {
         self.name.as_ref()
     }
     
-    /// インデックス名を設定
+    /// インデックス名を設定します
     pub fn set_name(&mut self, name: Option<String>) {
         self.name = name;
     }
     
-    /// 新しい名前でインデックスをコピー
+    /// 新しい名前でインデックスをコピーします
     pub fn rename(&self, name: Option<String>) -> Self {
         let mut new_index = self.clone();
         new_index.name = name;
@@ -102,6 +140,8 @@ where
 }
 
 /// インデックス型の共通トレイト
+///
+/// 異なる種類のインデックスに共通の機能を提供します。
 pub trait IndexTrait {
     /// インデックスの長さを取得
     fn len(&self) -> usize;
@@ -131,6 +171,8 @@ where
 }
 
 /// DataFrameが使用するインデックス型
+///
+/// 単一レベルのインデックスとマルチレベルのインデックスを統一的に扱うための列挙型です。
 #[derive(Debug, Clone)]
 pub enum DataFrameIndex<T> 
 where 
@@ -158,23 +200,31 @@ impl<T> DataFrameIndex<T>
 where 
     T: Debug + Clone + Eq + Hash + Display 
 {
-    /// シンプルインデックスから作成
+    /// シンプルインデックスから作成します
     pub fn from_simple(index: Index<T>) -> Self {
         DataFrameIndex::Simple(index)
     }
 
-    /// マルチインデックスから作成
+    /// マルチインデックスから作成します
     pub fn from_multi(index: MultiIndex<T>) -> Self {
         DataFrameIndex::Multi(index)
     }
 
-    /// デフォルトインデックスを作成
-    pub fn default_with_len(len: usize) -> Result<DataFrameIndex<usize>> {
-        let idx = Index::<usize>::from_range(0..len)?;
-        Ok(DataFrameIndex::Simple(idx))
+    /// デフォルトインデックスを作成します
+    ///
+    /// # 引数
+    /// * `len` - インデックスの長さ
+    ///
+    /// # 戻り値
+    /// 0からlen-1までの連番を持つデフォルトインデックス
+    pub fn default_with_len(len: usize) -> Result<DataFrameIndex<String>> {
+        let range_idx = Index::<usize>::from_range(0..len)?;
+        let string_values: Vec<String> = range_idx.values().iter().map(|i| i.to_string()).collect();
+        let string_idx = Index::<String>::new(string_values)?;
+        Ok(DataFrameIndex::Simple(string_idx))
     }
 
-    /// インデックスの種類を判定
+    /// インデックスがマルチインデックスかどうかを判定します
     pub fn is_multi(&self) -> bool {
         matches!(self, DataFrameIndex::Multi(_))
     }
