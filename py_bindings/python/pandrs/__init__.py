@@ -43,3 +43,6 @@ __all__ = [
     'NASeries',
     '__version__',
 ]
+
+# benchmark module - can be run as `python -m pandrs.benchmark`
+from . import benchmark
