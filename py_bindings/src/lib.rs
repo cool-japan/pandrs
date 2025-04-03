@@ -1,13 +1,13 @@
-use numpy::{PyArray1, PyArray2, ToPyArray};
+use numpy::{PyArray1, ToPyArray};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
-use pyo3::types::{PyDict, PyList, PyString};
+use pyo3::types::{PyDict, PyList, PyString, PyTuple};
 use pandrs::{DataFrame, Series, NA, NASeries};
 use std::collections::HashMap;
 
 /// A Rust-powered DataFrame implementation with pandas-like API
 #[pymodule]
-fn pandrs_python(py: Python<'_>, m: &PyModule) -> PyResult<()> {
+fn pandrs_python(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<PyDataFrame>()?;
     m.add_class::<PySeries>()?;
     m.add_class::<PyNASeries>()?;
@@ -41,7 +41,7 @@ impl PyDataFrame {
                     let mut result = Vec::with_capacity(list.len());
                     for item in list.iter() {
                         if item.is_none() {
-                            result.push(NA::new().to_string());
+                            result.push(NA::<String>::NA.to_string());
                         } else {
                             result.push(item.to_string());
                         }
@@ -64,7 +64,7 @@ impl PyDataFrame {
             }
         } else {
             // Create an empty DataFrame
-            Ok(PyDataFrame { inner: DataFrame::empty() })
+            Ok(PyDataFrame { inner: DataFrame::new() })
         }
     }
     
@@ -72,10 +72,12 @@ impl PyDataFrame {
     fn to_dict(&self, py: Python<'_>) -> PyResult<PyObject> {
         let dict = PyDict::new(py);
         
-        for col in self.inner.columns() {
-            let values = self.inner.get_column(&col).unwrap_or_default();
-            let python_list = PyList::new(py, &values);
-            dict.set_item(col, python_list)?;
+        for col in self.inner.column_names() {
+            if let Some(values) = self.inner.get_column(col) {
+                let values_vec = values.values().to_vec();
+                let python_list = PyList::new(py, &values_vec);
+                dict.set_item(col, python_list)?;
+            }
         }
         
         Ok(dict.into())
@@ -84,15 +86,15 @@ impl PyDataFrame {
     /// Get column names
     #[getter]
     fn columns(&self, py: Python<'_>) -> PyResult<PyObject> {
-        let cols = self.inner.columns();
-        let python_list = PyList::new(py, &cols);
+        let cols = self.inner.column_names();
+        let python_list = PyList::new(py, cols);
         Ok(python_list.into())
     }
     
     /// Set column names
     #[setter]
     fn set_columns(&mut self, columns: Vec<String>) -> PyResult<()> {
-        if columns.len() != self.inner.columns().len() {
+        if columns.len() != self.inner.column_names().len() {
             return Err(PyValueError::new_err(
                 "Length of new columns doesn't match the number of columns in DataFrame"
             ));
@@ -100,7 +102,7 @@ impl PyDataFrame {
         
         let mut column_map = HashMap::new();
         for (i, col) in columns.iter().enumerate() {
-            column_map.insert(self.inner.columns()[i].clone(), col.clone());
+            column_map.insert(self.inner.column_names()[i].clone(), col.clone());
         }
         
         match self.inner.rename_columns(&column_map) {
@@ -124,17 +126,17 @@ impl PyDataFrame {
     /// Get the shape of the DataFrame (rows, columns)
     #[getter]
     fn shape(&self) -> PyResult<(usize, usize)> {
-        Ok((self.inner.len(), self.inner.columns().len()))
+        Ok((self.inner.row_count(), self.inner.column_names().len()))
     }
     
     /// Get a string representation of the DataFrame
     fn __str__(&self) -> PyResult<String> {
-        Ok(format!("{}", self.inner))
+        Ok(format!("{:?}", self.inner))
     }
     
     /// Get a string representation of the DataFrame
     fn __repr__(&self) -> PyResult<String> {
-        Ok(format!("{}", self.inner))
+        Ok(format!("{:?}", self.inner))
     }
     
     /// Convert to a pandas DataFrame (requires pandas)
@@ -147,7 +149,7 @@ impl PyDataFrame {
         let kwargs = PyDict::new(py);
         kwargs.set_item("data", dict)?;
         
-        if let Some(index) = &self.inner.index().string_values() {
+        if let Some(index) = &self.inner.get_index().string_values() {
             kwargs.set_item("index", index)?;
         }
         
@@ -157,10 +159,10 @@ impl PyDataFrame {
     /// Create a DataFrame from a pandas DataFrame
     #[staticmethod]
     fn from_pandas(pandas_df: &PyAny) -> PyResult<Self> {
-        let py = pandas_df.py();
+        let _py = pandas_df.py();
         
-        // Get the columns
-        let columns = pandas_df.getattr("columns")?.extract::<Vec<String>>()?;
+        // Get the columns (for validation if needed)
+        let _columns = pandas_df.getattr("columns")?.extract::<Vec<String>>()?;
         
         // Get the data as a dictionary
         let to_dict = pandas_df.getattr("to_dict")?;
@@ -171,32 +173,38 @@ impl PyDataFrame {
     }
     
     /// Return a new DataFrame by selecting rows with the given indices
+    /// This is a temporary implementation since row access isn't well-supported
     fn iloc(&self, indices: Vec<usize>) -> PyResult<Self> {
-        let mut rows = Vec::new();
-        for idx in indices {
-            if idx < self.inner.len() {
-                if let Some(row) = self.inner.get_row(idx) {
-                    rows.push(row);
-                }
-            } else {
-                return Err(PyValueError::new_err(format!("Index {} out of bounds", idx)));
+        // Create an empty dataframe with the same structure
+        let mut data: HashMap<String, Vec<String>> = HashMap::new();
+        
+        // Maximum allowed index
+        let max_idx = self.inner.row_count();
+        
+        // Validate indices
+        for idx in &indices {
+            if *idx >= max_idx {
+                return Err(PyValueError::new_err(format!("Index {} out of bounds (max: {})", idx, max_idx-1)));
             }
         }
         
-        // Create a new DataFrame from the rows
-        let cols = self.inner.columns();
-        let mut data: HashMap<String, Vec<String>> = HashMap::new();
-        
-        for col in cols {
-            let mut values = Vec::new();
-            for row in &rows {
-                if let Some(val) = row.get(&col) {
-                    values.push(val.clone());
-                } else {
-                    values.push(NA::new().to_string());
+        // Since we can't directly access rows, we'll reconstruct by columns
+        for col_name in self.inner.column_names() {
+            if let Some(series) = self.inner.get_column(col_name) {
+                let all_values = series.values();
+                let mut selected_values = Vec::new();
+                
+                // Select only requested indices
+                for idx in &indices {
+                    if *idx < all_values.len() {
+                        selected_values.push(all_values[*idx].clone());
+                    } else {
+                        selected_values.push(NA::<String>::NA.to_string());
+                    }
                 }
+                
+                data.insert(col_name.clone(), selected_values);
             }
-            data.insert(col.clone(), values);
         }
         
         match DataFrame::from_map(data, None) {
@@ -216,7 +224,7 @@ impl PyDataFrame {
     /// Load a DataFrame from a CSV file
     #[staticmethod]
     fn read_csv(path: &str) -> PyResult<Self> {
-        match DataFrame::from_csv(path) {
+        match DataFrame::from_csv(path, true) {
             Ok(df) => Ok(PyDataFrame { inner: df }),
             Err(e) => Err(PyValueError::new_err(format!("Failed to read CSV: {}", e))),
         }
@@ -243,7 +251,7 @@ impl PyDataFrame {
 /// Python wrapper for pandrs Series
 #[pyclass(name = "Series")]
 struct PySeries {
-    inner: Series,
+    inner: Series<String>,
 }
 
 #[pymethods]
@@ -251,7 +259,7 @@ impl PySeries {
     #[new]
     fn new(name: String, data: Vec<String>) -> Self {
         PySeries {
-            inner: Series::new(name, data),
+            inner: Series::new(data, Some(name)).unwrap(),
         }
     }
     
@@ -302,7 +310,7 @@ impl PySeries {
 /// Python wrapper for pandrs NASeries
 #[pyclass(name = "NASeries")]
 struct PyNASeries {
-    inner: NASeries,
+    inner: NASeries<String>,
 }
 
 #[pymethods]
@@ -312,12 +320,12 @@ impl PyNASeries {
         let processed_data: Vec<String> = data.iter()
             .map(|opt| match opt {
                 Some(s) => s.clone(),
-                None => NA::new().to_string(),
+                None => NA::<String>::NA.to_string(),
             })
             .collect();
         
         PyNASeries {
-            inner: NASeries::new(name, processed_data),
+            inner: NASeries::from_strings(processed_data, Some(name)).unwrap(),
         }
     }
     

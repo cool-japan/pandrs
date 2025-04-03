@@ -276,4 +276,19 @@ impl DataFrameIndex<String> {
             }
         }
     }
+    
+    /// インデックスの文字列値を取得
+    pub fn string_values(&self) -> Option<Vec<String>> {
+        match self {
+            DataFrameIndex::Simple(idx) => {
+                Some(idx.values().iter().map(|v| v.clone()).collect())
+            },
+            DataFrameIndex::Multi(multi_idx) => {
+                // マルチインデックスは簡易文字列表現を返す
+                Some(multi_idx.tuples().iter()
+                    .map(|tuple| tuple.join(", "))
+                    .collect())
+            }
+        }
+    }
 }

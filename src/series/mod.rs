@@ -191,6 +191,21 @@ where
 }
 
 // 文字列型のSeriesに対する特化実装
+// Seriesに対するDefaultトレイト実装
+impl<T> Default for Series<T>
+where
+    T: Debug + Clone,
+    Vec<T>: Default,
+{
+    fn default() -> Self {
+        Series {
+            values: Vec::default(),
+            index: RangeIndex::from_range(0..0).unwrap(),
+            name: None,
+        }
+    }
+}
+
 impl Series<String> {
     /// 文字列Seriesを数値のNA<f64>ベクトルに変換
     /// 

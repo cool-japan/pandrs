@@ -39,6 +39,20 @@ where
             name,
         })
     }
+    
+    /// 文字列ベクトルからNASeriesを作成するヘルパー関数
+    pub fn from_strings(string_values: Vec<String>, name: Option<String>) -> Result<NASeries<String>> {
+        let na_values = string_values.into_iter()
+            .map(|s| {
+                if s.contains("NA") {
+                    NA::<String>::NA
+                } else {
+                    NA::Value(s)
+                }
+            })
+            .collect();
+        NASeries::<String>::new(na_values, name)
+    }
 
     /// 通常のベクトルから作成（NAを含まない）
     pub fn from_vec(values: Vec<T>, name: Option<String>) -> Result<Self> {
