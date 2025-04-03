@@ -341,8 +341,11 @@ where
             }
         }
         
-        // 結果をSeriesとして返す
-        Series::new(count_values, Some("count".to_string()))
+        // インデックスとカウント値からSeriesを構築
+        let index = Index::new(values)?;
+        let result = Series::with_index(count_values, index, Some("count".to_string()))?;
+        
+        Ok(result)
     }
     
     /// Seriesに変換
