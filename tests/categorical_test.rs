@@ -1,4 +1,4 @@
-use pandrs::series::{Categorical, CategoricalOrder, StringCategorical};
+use pandrs::series::{CategoricalOrder, StringCategorical};
 
 #[test]
 fn test_categorical_creation() {
