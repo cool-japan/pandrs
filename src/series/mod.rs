@@ -1,4 +1,5 @@
 mod na_series;
+mod categorical;
 
 use num_traits::NumCast;
 use std::cmp::PartialOrd;
@@ -10,6 +11,7 @@ use crate::error::{PandRSError, Result};
 use crate::index::{Index, RangeIndex};
 
 pub use self::na_series::NASeries;
+pub use self::categorical::{Categorical, CategoricalOrder, StringCategorical};
 
 /// Series構造体: 一次元の値の配列
 #[derive(Debug, Clone)]
