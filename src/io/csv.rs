@@ -1,25 +1,25 @@
-use std::path::Path;
-use std::fs::File;
+use csv::{ReaderBuilder, Writer};
 use std::collections::HashMap;
-use csv::{Writer, ReaderBuilder};
+use std::fs::File;
+use std::path::Path;
 
 use crate::error::{PandRSError, Result};
-use crate::DataFrame;
 use crate::series::Series;
+use crate::DataFrame;
 
 /// CSVファイルからDataFrameを読み込む
 pub fn read_csv<P: AsRef<Path>>(path: P, has_header: bool) -> Result<DataFrame> {
     let file = File::open(path.as_ref()).map_err(PandRSError::Io)?;
-    
+
     // CSVリーダーを設定
     let mut rdr = ReaderBuilder::new()
         .has_headers(has_header)
         .flexible(true)
         .trim(csv::Trim::All)
         .from_reader(file);
-    
+
     let mut df = DataFrame::new();
-    
+
     // ヘッダー行を取得
     let headers: Vec<String> = if has_header {
         rdr.headers()
@@ -39,13 +39,13 @@ pub fn read_csv<P: AsRef<Path>>(path: P, has_header: bool) -> Result<DataFrame> 
             return Ok(DataFrame::new());
         }
     };
-    
+
     // データを列ごとに収集
     let mut columns: HashMap<String, Vec<String>> = HashMap::new();
     for header in &headers {
         columns.insert(header.clone(), Vec::new());
     }
-    
+
     // 各行を処理
     for result in rdr.records() {
         let record = result.map_err(PandRSError::Csv)?;
@@ -58,7 +58,7 @@ pub fn read_csv<P: AsRef<Path>>(path: P, has_header: bool) -> Result<DataFrame> 
             }
         }
     }
-    
+
     // 列をDataFrameに追加
     for header in headers {
         if let Some(values) = columns.remove(&header) {
@@ -66,7 +66,7 @@ pub fn read_csv<P: AsRef<Path>>(path: P, has_header: bool) -> Result<DataFrame> 
             df.add_column(header, series)?;
         }
     }
-    
+
     Ok(df)
 }
 
@@ -74,14 +74,15 @@ pub fn read_csv<P: AsRef<Path>>(path: P, has_header: bool) -> Result<DataFrame> 
 pub fn write_csv<P: AsRef<Path>>(df: &DataFrame, path: P) -> Result<()> {
     let file = File::create(path.as_ref()).map_err(PandRSError::Io)?;
     let mut wtr = Writer::from_writer(file);
-    
+
     // ヘッダー行を書き込む
-    wtr.write_record(df.column_names()).map_err(PandRSError::Csv)?;
-    
+    wtr.write_record(df.column_names())
+        .map_err(PandRSError::Csv)?;
+
     // TODO: 行データの書き込み実装
     // 現在のデータフレーム構造では列指向なので行の取得が難しい
     // 将来的には、行の取り出し方法を実装する必要がある
-    
+
     wtr.flush().map_err(PandRSError::Io)?;
     Ok(())
 }

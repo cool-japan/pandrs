@@ -32,10 +32,10 @@ pub enum PandRSError {
 
     #[error("可視化エラー: {0}")]
     Visualization(String),
-    
+
     #[error("並列処理エラー: {0}")]
     Parallel(String),
-    
+
     #[error("空データエラー: {0}")]
     Empty(String),
 
