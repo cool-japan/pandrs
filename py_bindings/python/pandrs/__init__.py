@@ -29,7 +29,7 @@ Examples
 """
 
 # Import Rust extensions
-from .pandrs_python import (
+from .pandrs import (
     DataFrame,
     Series,
     NASeries,
