@@ -4,7 +4,7 @@ use std::fs::File;
 use std::path::Path;
 
 use crate::error::{PandRSError, Result};
-use crate::series::Series;
+use crate::series::{Series, CategoricalOrder, StringCategorical};
 use crate::DataFrame;
 
 /// CSVファイルからDataFrameを読み込む
@@ -79,9 +79,30 @@ pub fn write_csv<P: AsRef<Path>>(df: &DataFrame, path: P) -> Result<()> {
     wtr.write_record(df.column_names())
         .map_err(PandRSError::Csv)?;
 
-    // TODO: 行データの書き込み実装
-    // 現在のデータフレーム構造では列指向なので行の取得が難しい
-    // 将来的には、行の取り出し方法を実装する必要がある
+    // 各行のデータを書き込む
+    let row_count = df.row_count();
+    
+    // 行がない場合は何もせず終了
+    if row_count == 0 {
+        wtr.flush().map_err(PandRSError::Io)?;
+        return Ok(());
+    }
+    
+    for i in 0..row_count {
+        let mut row = Vec::new();
+        
+        for col_name in df.column_names() {
+            if let Some(series) = df.get_column(col_name) {
+                if i < series.len() {
+                    row.push(series.values()[i].to_string());
+                } else {
+                    row.push(String::new());
+                }
+            }
+        }
+        
+        wtr.write_record(&row).map_err(PandRSError::Csv)?;
+    }
 
     wtr.flush().map_err(PandRSError::Io)?;
     Ok(())
