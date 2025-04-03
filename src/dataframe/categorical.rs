@@ -200,6 +200,14 @@ impl DataFrame {
     }
     
     /// カテゴリカルデータとして列を追加
+    /// カテゴリカルデータとして列を追加（メタデータも作成）
+    ///
+    /// # 引数
+    /// * `name` - 列名
+    /// * `cat` - カテゴリカルデータ
+    ///
+    /// # 戻り値
+    /// 成功した場合は自身の参照
     pub fn add_categorical_column(
         &mut self,
         name: String,
@@ -587,6 +595,26 @@ impl DataFrame {
                     } else {
                         CategoricalOrder::Unordered
                     };
+                    
+                    // 全ての行に対して同じ長さのデータを作成
+                    let orig_values = df.get_column_string_values(&orig_column)?;
+                    let row_count = df.row_count();
+                    
+                    // カテゴリカルに変換（1行だけの場合は全ての行に対して拡張）
+                    if orig_values.len() == 1 && row_count > 1 {
+                        let mut expanded_values = Vec::with_capacity(row_count);
+                        let first_value = orig_values[0].clone();
+                        for _ in 0..row_count {
+                            expanded_values.push(first_value.clone());
+                        }
+                        
+                        // 一旦元の列を削除
+                        df.drop_column(&orig_column)?;
+                        
+                        // 拡張した列を追加
+                        let series = Series::new(expanded_values, Some(orig_column.clone()))?;
+                        df.add_column(orig_column.clone(), series)?;
+                    }
                     
                     // カテゴリカルに変換
                     df = df.astype_categorical(&orig_column, None, Some(order))?;
