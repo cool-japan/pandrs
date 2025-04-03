@@ -129,10 +129,10 @@
 
 ### エコシステム連携
 
-1. **Pythonバインディング**
-   - PyO3を使用したPythonモジュール化
-   - numpyとpandasとの相互運用性
-   - Jupyter Notebookサポート
+1. ✅ **Pythonバインディング**
+   - ✅ PyO3を使用したPythonモジュール化
+   - ✅ numpyとpandasとの相互運用性
+   - ✅ Jupyter Notebookサポート
 
 2. **R言語との連携**
    - RとRustの間の相互運用

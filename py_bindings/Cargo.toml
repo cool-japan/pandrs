@@ -1,0 +1,18 @@
+[package]
+name = "pandrs-python"
+version = "0.1.0"
+edition = "2021"
+description = "Python bindings for PandRS (Rust implementation of pandas-like DataFrame)"
+authors = ["Cool Japan"]
+license = "Apache-2.0"
+repository = "https://github.com/cool-japan/pandrs"
+
+[lib]
+name = "pandrs_python"
+crate-type = ["cdylib"]
+
+[dependencies]
+pandrs = { path = ".." }
+pyo3 = { version = "0.19", features = ["extension-module", "abi3-py38"] }
+numpy = "0.19"
+ndarray = "0.15"

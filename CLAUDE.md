@@ -16,6 +16,11 @@ PandRSはRustで実装されたデータ分析用DataFrameライブラリです�
 - **入出力操作**
   - CSV入出力
   - JSON入出力（レコード指向・列指向）
+  
+- **外部言語連携**
+  - Pythonバインディング (PyO3)
+  - pandas/NumPy相互運用性
+  - Jupyter Notebook統合
 
 - **データ操作**
   - 欠損値（NA）のサポート
@@ -101,6 +106,32 @@ PandRSはRustで実装されたデータ分析用DataFrameライブラリです�
 - DataFrameの並列適用と並列フィルタリング
 - 並列集計と並列ソートのユーティリティ関数
 
+### Pythonバインディングの実装
+
+- **PyO3によるPythonモジュール化**
+  - DataFrame、Series、NASeriesクラスのPython公開
+  - Pythonの型ヒントとドキュメント対応
+  - maturinによるビルドシステム
+  - カスタムディスプレイフォーマッタ
+
+- **NumPyとpandasとの相互運用性**
+  - PandRSとpandas DataFrameの相互変換
+  - SeriesからNumPy配列への変換
+  - NumPy配列からのデータ構築
+  - DataValueとPythonオブジェクトの変換
+
+- **Jupyter Notebook統合**
+  - リッチ表示フォーマッタの実装
+  - IPython拡張機能の追加
+  - Jupyter環境での可視化サポート
+  - インタラクティブな操作のサポート
+
+- **Python用API設計**
+  - pandasユーザーに馴染みやすいインターフェース
+  - Pythonイディオムに合わせたメソッド名と引数
+  - Python特有の操作（スライスなど）への対応
+  - ドキュメントとサンプルの充実
+
 ### 高度なデータフレーム操作を実装
 
 - 形状変換機能：melt, stack, unstack操作
@@ -168,6 +199,23 @@ pandrs/
 │   ├── lib.rs        - ライブラリのエントリポイント
 │   └── main.rs       - 実行バイナリのエントリポイント
 │
+├── py_bindings/      - Python連携機能
+│   ├── src/
+│   │   └── lib.rs    - Python向けバインディング定義
+│   │
+│   ├── python/       - Pythonパッケージ
+│   │   └── pandrs/
+│   │       ├── __init__.py - パッケージ初期化
+│   │       ├── compat.py   - pandas/NumPy互換機能
+│   │       └── jupyter.py  - Jupyter連携
+│   │
+│   ├── examples/
+│   │   └── pandrs_tutorial.ipynb - Jupyter Notebook例
+│   │
+│   ├── Cargo.toml    - Rust依存関係
+│   ├── pyproject.toml - Python構築設定
+│   └── setup.py      - Pythonインストール設定
+│
 ├── examples/         - 使用例
 │   ├── basic_usage.rs       - 基本使用例
 │   ├── groupby_example.rs   - グループ化の例
@@ -177,7 +225,8 @@ pandrs/
 │   ├── window_operations_example.rs - ウィンドウ操作の例
 │   ├── dataframe_window_example.rs - DataFrame上のウィンドウ操作
 │   ├── visualization_example.rs - 可視化の例
-│   └── parallel_example.rs    - 並列処理の例
+│   ├── parallel_example.rs    - 並列処理の例
+│   └── transform_example.rs    - 形状変換の例
 │
 └── tests/            - テスト
     ├── dataframe_test.rs
@@ -187,6 +236,7 @@ pandrs/
     ├── na_test.rs
     ├── series_test.rs
     ├── temporal_test.rs
+    ├── transform_test.rs
     └── window_test.rs
 ```
 
@@ -196,6 +246,13 @@ pandrs/
 - テスト実行: `cargo test`
 - サンプル実行: `cargo run --example <example_name>`
 - 警告チェック: `cargo fix --lib -p pandrs --allow-dirty`
+
+### Pythonバインディング関連コマンド
+
+- Python用ビルド: `cd py_bindings && maturin develop`
+- インストール可能パッケージ作成: `cd py_bindings && maturin build --release`
+- Jupyter Notebook実行: `cd py_bindings && jupyter notebook examples/pandrs_tutorial.ipynb`
+- Python単体テスト: `cd py_bindings && python -m unittest discover -s tests`
 
 ## 今後の開発計画
 
@@ -231,7 +288,7 @@ pandrs/
 
 2. **インターフェース拡張**
    - WebAssemblyサポート
-   - Pythonバインディング
+   - Pythonバインディングの機能拡充
    - グラフィカル可視化オプション（plotters統合）
 
 3. **エコシステムの拡充**
