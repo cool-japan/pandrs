@@ -5,7 +5,8 @@ use std::hash::Hash;
 
 use crate::error::{PandRSError, Result};
 use crate::index::{Index, StringIndex};
-use crate::series::Series;
+use crate::na::NA;
+use crate::series::{Series, NASeries};
 
 /// カテゴリカルデータの順序タイプ
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -369,6 +370,203 @@ where
 
 /// 文字列カテゴリカルのエイリアス
 pub type StringCategorical = Categorical<String>;
+
+impl<T> Categorical<T>
+where
+    T: Debug + Clone + Eq + Hash + Display + Ord,
+{
+    /// NA値（欠損値）を含むベクトルからカテゴリカルデータを作成
+    ///
+    /// # 引数
+    /// * `values` - NA値を含む可能性のあるデータ値
+    /// * `categories` - 使用するカテゴリのリスト（指定がない場合は一意な値から自動生成）
+    /// * `ordered` - カテゴリの順序付けを行うかどうか
+    pub fn from_na_vec(
+        values: Vec<NA<T>>,
+        categories: Option<Vec<T>>,
+        ordered: Option<CategoricalOrder>,
+    ) -> Result<Self> {
+        // カテゴリのセットアップ
+        let (categories, category_map) = match categories {
+            Some(cats) => {
+                // 指定されたカテゴリのマップを作成
+                let mut map = HashMap::with_capacity(cats.len());
+                for (i, cat) in cats.iter().enumerate() {
+                    if map.insert(cat.clone(), i as i32).is_some() {
+                        return Err(PandRSError::Consistency(format!(
+                            "カテゴリ '{:?}' が重複しています",
+                            cat
+                        )));
+                    }
+                }
+                (cats, map)
+            }
+            None => {
+                // データから一意なカテゴリを収集
+                let mut unique_cats = Vec::new();
+                let mut map = HashMap::new();
+                
+                for value in &values {
+                    if let NA::Value(val) = value {
+                        if !map.contains_key(val) {
+                            map.insert(val.clone(), unique_cats.len() as i32);
+                            unique_cats.push(val.clone());
+                        }
+                    }
+                }
+                
+                (unique_cats, map)
+            }
+        };
+        
+        // 値からコードへの変換
+        let mut codes = Vec::with_capacity(values.len());
+        for value in values {
+            match value {
+                NA::Value(val) => {
+                    match category_map.get(&val) {
+                        Some(&code) => codes.push(code),
+                        None => {
+                            return Err(PandRSError::Consistency(format!(
+                                "値 '{:?}' はカテゴリに含まれていません",
+                                val
+                            )));
+                        }
+                    }
+                }
+                NA::NA => codes.push(-1), // NA値は-1コードとして表現
+            }
+        }
+        
+        Ok(Categorical {
+            codes,
+            categories,
+            category_map,
+            ordered: ordered.unwrap_or(CategoricalOrder::Unordered),
+        })
+    }
+    
+    /// カテゴリカルデータをNA<T>ベクトルに変換
+    pub fn to_na_vec(&self) -> Vec<NA<T>> {
+        self.codes
+            .iter()
+            .map(|&code| {
+                if code == -1 {
+                    NA::NA
+                } else {
+                    NA::Value(self.categories[code as usize].clone())
+                }
+            })
+            .collect()
+    }
+    
+    /// カテゴリカルデータをNASeriesに変換
+    pub fn to_na_series(&self, name: Option<String>) -> Result<NASeries<T>> {
+        let na_values = self.to_na_vec();
+        NASeries::new(na_values, name)
+    }
+    
+    /// 2つのカテゴリカルデータの和集合（すべての一意なカテゴリ）を作成
+    pub fn union(&self, other: &Self) -> Result<Self> {
+        // 自分のカテゴリをコピー
+        let mut categories = self.categories.clone();
+        let mut category_map = self.category_map.clone();
+        
+        // 相手のカテゴリで自分にないものを追加
+        for cat in &other.categories {
+            if !category_map.contains_key(cat) {
+                let new_code = categories.len() as i32;
+                category_map.insert(cat.clone(), new_code);
+                categories.push(cat.clone());
+            }
+        }
+        
+        // 新しいコードリストを作成（元のデータを保持）
+        let codes = self.codes.clone();
+        
+        // 新しいカテゴリカルを返す
+        Ok(Categorical {
+            codes,
+            categories,
+            category_map,
+            ordered: self.ordered.clone(),
+        })
+    }
+    
+    /// 2つのカテゴリカルデータの積集合（共通するカテゴリのみ）を作成
+    pub fn intersection(&self, other: &Self) -> Result<Self> {
+        // 共通するカテゴリを収集
+        let mut common_categories = Vec::new();
+        let mut category_map = HashMap::new();
+        
+        for cat in &self.categories {
+            if other.category_map.contains_key(cat) {
+                let new_code = common_categories.len() as i32;
+                category_map.insert(cat.clone(), new_code);
+                common_categories.push(cat.clone());
+            }
+        }
+        
+        // 新しいコードリストを作成（元のデータを保持するが、共通カテゴリにないものはNA）
+        let mut codes = Vec::with_capacity(self.codes.len());
+        for &old_code in &self.codes {
+            if old_code == -1 {
+                codes.push(-1); // 元からNAならNA
+            } else {
+                let old_cat = &self.categories[old_code as usize];
+                match category_map.get(old_cat) {
+                    Some(&new_code) => codes.push(new_code),
+                    None => codes.push(-1), // 共通カテゴリにない場合はNA
+                }
+            }
+        }
+        
+        // 新しいカテゴリカルを返す
+        Ok(Categorical {
+            codes,
+            categories: common_categories,
+            category_map,
+            ordered: self.ordered.clone(),
+        })
+    }
+    
+    /// 2つのカテゴリカルデータの差集合（自分のカテゴリから相手のカテゴリを引いたもの）を作成
+    pub fn difference(&self, other: &Self) -> Result<Self> {
+        // 差分カテゴリを収集
+        let mut diff_categories = Vec::new();
+        let mut category_map = HashMap::new();
+        
+        for cat in &self.categories {
+            if !other.category_map.contains_key(cat) {
+                let new_code = diff_categories.len() as i32;
+                category_map.insert(cat.clone(), new_code);
+                diff_categories.push(cat.clone());
+            }
+        }
+        
+        // 新しいコードリストを作成（差分カテゴリにないものはNA）
+        let mut codes = Vec::with_capacity(self.codes.len());
+        for &old_code in &self.codes {
+            if old_code == -1 {
+                codes.push(-1); // 元からNAならNA
+            } else {
+                let old_cat = &self.categories[old_code as usize];
+                match category_map.get(old_cat) {
+                    Some(&new_code) => codes.push(new_code),
+                    None => codes.push(-1), // 差分カテゴリにない場合はNA
+                }
+            }
+        }
+        
+        // 新しいカテゴリカルを返す
+        Ok(Categorical {
+            codes,
+            categories: diff_categories,
+            category_map,
+            ordered: self.ordered.clone(),
+        })
+    }
+}
 
 impl<T> PartialEq for Categorical<T>
 where

@@ -1,13 +1,19 @@
 use crate::dataframe::{DataFrame, DataBox};
 use crate::error::{PandRSError, Result};
 use crate::index::{DataFrameIndex, Index, StringIndex};
-use crate::series::{Categorical, CategoricalOrder, Series, StringCategorical};
+use crate::series::{Categorical, CategoricalOrder, Series, StringCategorical, NASeries};
+use crate::na::NA;
 use std::collections::HashMap;
 use std::fmt::Debug;
+use std::path::Path;
 
 // メタデータの定数値（カテゴリカルデータ判定用）
 const CATEGORICAL_META_KEY: &str = "_categorical";
 const CATEGORICAL_ORDER_META_KEY: &str = "_categorical_order";
+
+// CSV入出力に関連する定数
+const CSV_CATEGORICAL_MARKER: &str = "__categorical__";
+const CSV_CATEGORICAL_ORDER_MARKER: &str = "__categorical_order__";
 
 impl DataFrame {
     /// 複数のカテゴリカルデータからDataFrameを作成
@@ -485,6 +491,118 @@ impl DataFrame {
         Ok(())
     }
     
+    /// NASeriesからカテゴリカルデータを作成して追加
+    ///
+    /// # 引数
+    /// * `name` - 列名
+    /// * `series` - NASeries<String>
+    /// * `categories` - カテゴリのリスト（省略可）
+    /// * `ordered` - カテゴリの順序（省略可）
+    ///
+    /// # 戻り値
+    /// 成功した場合は自身の参照
+    pub fn add_na_series_as_categorical(
+        &mut self,
+        name: String,
+        series: NASeries<String>,
+        categories: Option<Vec<String>>,
+        ordered: Option<CategoricalOrder>,
+    ) -> Result<&mut Self> {
+        // NASeries<String>からStringCategoricalを作成
+        let cat = StringCategorical::from_na_vec(
+            series.values().to_vec(),
+            categories,
+            ordered,
+        )?;
+
+        // カテゴリカル列として追加
+        self.add_categorical_column(name, cat)?;
+
+        Ok(self)
+    }
+
+    /// カテゴリカルメタデータを含めてCSVに保存
+    pub fn to_csv_with_categorical<P: AsRef<Path>>(&self, path: P) -> Result<()> {
+        // 現在のDataFrameのクローンを作成
+        let mut df = self.clone();
+        
+        // カテゴリカル列の情報を特別な形式で追加
+        for column_name in self.column_names().to_vec() {
+            if self.is_categorical(&column_name) {
+                // カテゴリカルデータを取得
+                let cat = self.get_categorical(&column_name)?;
+                
+                // カテゴリ情報をCSVに書き込む形式で列を追加
+                let cats_str = format!("{:?}", cat.categories());
+                df.add_column(
+                    format!("{}{}", column_name, CSV_CATEGORICAL_MARKER),
+                    Series::new(vec![cats_str.clone()], Some(format!("{}{}", column_name, CSV_CATEGORICAL_MARKER)))?,
+                )?;
+                
+                // 順序情報も追加
+                let order_str = format!("{:?}", cat.ordered());
+                df.add_column(
+                    format!("{}{}", column_name, CSV_CATEGORICAL_ORDER_MARKER),
+                    Series::new(vec![order_str], Some(format!("{}{}", column_name, CSV_CATEGORICAL_ORDER_MARKER)))?,
+                )?;
+            }
+        }
+        
+        // 通常のCSV保存を実行
+        df.to_csv(path)
+    }
+    
+    /// カテゴリカルメタデータを含むCSVからDataFrameを読み込み
+    pub fn from_csv_with_categorical<P: AsRef<Path>>(path: P, has_header: bool) -> Result<Self> {
+        // 通常のCSV読み込みを実行
+        let mut df = DataFrame::from_csv(path, has_header)?;
+        
+        // カテゴリカルマーカーを含む列を探して処理
+        let column_names = df.column_names().to_vec();
+        
+        for column_name in column_names {
+            if column_name.contains(CSV_CATEGORICAL_MARKER) {
+                // 元の列名を抽出
+                let orig_column = column_name.replace(CSV_CATEGORICAL_MARKER, "");
+                
+                // カテゴリカル情報が含まれているか確認
+                if df.contains_column(&orig_column) && df.contains_column(&column_name) {
+                    // カテゴリ情報を取得
+                    let cat_info = df.get_column_string_values(&column_name)?;
+                    if cat_info.is_empty() {
+                        continue;
+                    }
+                    
+                    // 順序情報も取得
+                    let order_column = format!("{}{}", orig_column, CSV_CATEGORICAL_ORDER_MARKER);
+                    let order_info = if df.contains_column(&order_column) {
+                        df.get_column_string_values(&order_column)?
+                    } else {
+                        vec!["Unordered".to_string()]
+                    };
+                    
+                    // 順序情報の解析
+                    let order = if !order_info.is_empty() && order_info[0].contains("Ordered") {
+                        CategoricalOrder::Ordered
+                    } else {
+                        CategoricalOrder::Unordered
+                    };
+                    
+                    // カテゴリカルに変換
+                    df = df.astype_categorical(&orig_column, None, Some(order))?;
+                    
+                    // 一時列を削除
+                    df.drop_column(&column_name)?;
+                    if df.contains_column(&order_column) {
+                        df.drop_column(&order_column)?;
+                    }
+                }
+            }
+        }
+        
+        Ok(df)
+    }
+
     /// カテゴリカル列の複数の列を取得し集計用の辞書を作成（ピボット集計で使用）
     pub fn get_categorical_aggregates<T>(
         &self,
