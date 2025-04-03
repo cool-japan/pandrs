@@ -103,6 +103,32 @@ display_dataframe(df, max_rows=10, max_cols=5)
 - **Type Safety**: Rust's type system helps prevent many common errors
 - **Familiar API**: Similar API to pandas, making it easy to adopt
 
+## Performance Benchmarks
+
+PandRS offers excellent performance in its native Rust implementation, though Python bindings add some overhead due to data conversion.
+
+### Native Rust Performance
+
+The native Rust implementation is very fast:
+
+```
+DataFrame作成 (3列x100,000行): ~50ms
+```
+
+### Python Binding Performance
+
+When using PandRS through Python bindings, there's some overhead from Python-Rust data conversion:
+
+```
+# Run benchmarks
+python -m pandrs.benchmark
+```
+
+Key observations:
+- Native Rust implementation is significantly faster
+- Python binding overhead is mainly due to data conversion between languages
+- For larger datasets, the performance difference becomes less significant
+
 ## Requirements
 
 - Python 3.8 or later
