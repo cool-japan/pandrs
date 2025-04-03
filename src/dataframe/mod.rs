@@ -1,5 +1,6 @@
 mod join;
 pub mod apply;
+mod categorical;
 
 pub use apply::Axis;
 
