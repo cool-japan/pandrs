@@ -274,6 +274,102 @@ impl DataFrame {
     pub fn from_csv<P: AsRef<Path>>(path: P, has_header: bool) -> Result<Self> {
         io::csv::read_csv(path, has_header)
     }
+    
+    /// DataFrameをJSON文字列に変換
+    pub fn to_json(&self) -> Result<String> {
+        let mut obj = serde_json::Map::new();
+        
+        // 各列をJSONに変換
+        for col in self.column_names() {
+            let values = self.get_column(col).unwrap_or_default();
+            obj.insert(col.clone(), serde_json::Value::Array(
+                values.values().iter().map(|v| serde_json::Value::String(v.clone())).collect()
+            ));
+        }
+        
+        // インデックスがあれば追加
+        if let Some(index_values) = self.index.string_values() {
+            obj.insert("index".to_string(), serde_json::Value::Array(
+                index_values.iter().map(|v| serde_json::Value::String(v.clone())).collect()
+            ));
+        }
+        
+        Ok(serde_json::to_string(&obj)?)
+    }
+    
+    /// JSON文字列からDataFrameを生成
+    pub fn from_json(json: &str) -> Result<Self> {
+        let parsed: serde_json::Map<String, serde_json::Value> = serde_json::from_str(json)?;
+        let mut data = HashMap::new();
+        let mut index_values = None;
+        
+        // 各フィールドを処理
+        for (key, value) in parsed.iter() {
+            if key == "index" {
+                if let serde_json::Value::Array(arr) = value {
+                    index_values = Some(
+                        arr.iter()
+                           .map(|v| match v {
+                               serde_json::Value::String(s) => s.clone(),
+                               _ => v.to_string(),
+                           })
+                           .collect()
+                    );
+                }
+                continue;
+            }
+            
+            if let serde_json::Value::Array(arr) = value {
+                let values: Vec<String> = arr.iter()
+                    .map(|v| match v {
+                        serde_json::Value::String(s) => s.clone(),
+                        _ => v.to_string(),
+                    })
+                    .collect();
+                data.insert(key.clone(), values);
+            }
+        }
+        
+        Self::from_map(data, index_values)
+    }
+    
+    /// マップ（HashMap）からDataFrameを作成
+    pub fn from_map(data: HashMap<String, Vec<String>>, index: Option<Vec<String>>) -> Result<Self> {
+        let mut df = Self::new();
+        
+        // 行数を確認（すべての列が同じ長さであることを確認）
+        let row_count = if !data.is_empty() {
+            data.values().next().unwrap().len()
+        } else {
+            0
+        };
+        
+        for (col_name, values) in data {
+            if values.len() != row_count {
+                return Err(PandRSError::Consistency(format!(
+                    "列 '{}' の長さ ({}) が他の列の長さ ({}) と一致しません",
+                    col_name, values.len(), row_count
+                )));
+            }
+            
+            df.add_column(col_name, Series::new(values, None)?)?;
+        }
+        
+        // インデックスがあれば設定
+        if let Some(idx_values) = index {
+            if idx_values.len() == row_count {
+                let idx = Index::new(idx_values)?;
+                df.set_index(idx)?;
+            } else {
+                return Err(PandRSError::Consistency(format!(
+                    "インデックスの長さ ({}) がデータの行数 ({}) と一致しません",
+                    idx_values.len(), row_count
+                )));
+            }
+        }
+        
+        Ok(df)
+    }
 
     /// 列の文字列値を取得する（ピボット用）
     pub fn get_column_string_values(&self, column: &str) -> Result<Vec<String>> {

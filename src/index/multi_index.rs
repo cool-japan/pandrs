@@ -30,6 +30,16 @@ impl<T> MultiIndex<T>
 where
     T: Debug + Clone + Eq + Hash + Display,
 {
+    /// すべてのタプルを取得
+    pub fn tuples(&self) -> Vec<Vec<T>> {
+        let mut result = Vec::with_capacity(self.len());
+        for i in 0..self.len() {
+            if let Some(tuple) = self.get_tuple(i) {
+                result.push(tuple);
+            }
+        }
+        result
+    }
     /// 新しいMultiIndexを作成します
     ///
     /// # 引数
