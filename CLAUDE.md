@@ -253,6 +253,8 @@ pandrs/
 - インストール可能パッケージ作成: `cd py_bindings && maturin build --release`
 - Jupyter Notebook実行: `cd py_bindings && jupyter notebook examples/pandrs_tutorial.ipynb`
 - Python単体テスト: `cd py_bindings && python -m unittest discover -s tests`
+- 統合テスト実行: `cd py_bindings && python examples/test_pandas_integration.py`
+- ホイール形式でインストール: `pip install py_bindings/target/wheels/pandrs-0.1.0-*.whl`
 
 ## 今後の開発計画
 

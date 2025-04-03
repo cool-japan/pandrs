@@ -116,8 +116,13 @@ impl PyDataFrame {
         let key_str = key.to_str()?;
         match self.inner.get_column(key_str) {
             Some(col) => {
-                let series = Series::new(key_str.to_string(), col);
-                Ok(PySeries { inner: series })
+                // 列データを取得
+                let values = col.values().to_vec();
+                // 新しいSeriesを作成
+                match Series::new(values, Some(key_str.to_string())) {
+                    Ok(series) => Ok(PySeries { inner: series }),
+                    Err(e) => Err(PyValueError::new_err(format!("Failed to create Series: {}", e))),
+                }
             },
             None => Err(PyValueError::new_err(format!("Column '{}' not found", key_str))),
         }
@@ -145,7 +150,7 @@ impl PyDataFrame {
         let pd_df = pandas.getattr("DataFrame")?;
         
         let dict = self.to_dict(py)?;
-        let args = PyTuple::new(py, &[]);
+        let args = PyTuple::new(py, &[] as &[PyObject]);
         let kwargs = PyDict::new(py);
         kwargs.set_item("data", dict)?;
         
@@ -264,41 +269,45 @@ impl PySeries {
     }
     
     fn __str__(&self) -> PyResult<String> {
-        Ok(format!("{}", self.inner))
+        Ok(format!("{:?}", self.inner))
     }
     
     fn __repr__(&self) -> PyResult<String> {
-        Ok(format!("{}", self.inner))
+        Ok(format!("{:?}", self.inner))
     }
     
     /// Convert to NumPy array
     fn to_numpy(&self, py: Python<'_>) -> PyResult<PyObject> {
-        let data = self.inner.data();
-        let numeric_data: Result<Vec<f64>, _> = data.iter()
-            .map(|s| s.parse::<f64>())
-            .collect();
+        let data = self.inner.values();
+        // Try to convert to numeric values if possible
+        let mut values: Vec<f64> = Vec::with_capacity(data.len());
         
-        match numeric_data {
-            Ok(values) => {
-                let np_array = values.to_pyarray(py);
-                Ok(np_array.to_object(py))
-            },
-            Err(_) => {
-                // Return as string array if can't convert to float
-                let np_array = PyArray1::from_vec(py, data.clone());
-                Ok(np_array.to_object(py))
+        for s in data {
+            if let Ok(num) = s.parse::<f64>() {
+                values.push(num);
+            } else {
+                // If can't parse as number, convert to string representation
+                let str_array = PyList::new(py, data);
+                return Ok(str_array.to_object(py));
             }
         }
+        
+        // All values successfully parsed as numbers
+        let np_array = values.to_pyarray(py);
+        Ok(np_array.to_object(py))
     }
     
     #[getter]
     fn values(&self) -> Vec<String> {
-        self.inner.data().clone()
+        self.inner.values().to_vec()
     }
     
     #[getter]
     fn name(&self) -> String {
-        self.inner.name().clone()
+        match self.inner.name() {
+            Some(name) => name.clone(),
+            None => "".to_string()
+        }
     }
     
     #[setter]
@@ -325,16 +334,16 @@ impl PyNASeries {
             .collect();
         
         PyNASeries {
-            inner: NASeries::from_strings(processed_data, Some(name)).unwrap(),
+            inner: NASeries::<String>::from_strings(processed_data, Some(name)).unwrap(),
         }
     }
     
     fn __str__(&self) -> PyResult<String> {
-        Ok(format!("{}", self.inner))
+        Ok(format!("{:?}", self.inner))
     }
     
     fn __repr__(&self) -> PyResult<String> {
-        Ok(format!("{}", self.inner))
+        Ok(format!("{:?}", self.inner))
     }
     
     /// Find NA values in the series
@@ -346,19 +355,26 @@ impl PyNASeries {
     
     /// Drop NA values from the series
     fn dropna(&self) -> PyResult<Self> {
-        let new_series = self.inner.dropna().clone();
-        Ok(PyNASeries { inner: new_series })
+        match self.inner.dropna() {
+            Ok(new_series) => Ok(PyNASeries { inner: new_series }),
+            Err(e) => Err(PyValueError::new_err(format!("Failed to drop NA values: {}", e))),
+        }
     }
     
     /// Fill NA values with a specific value
     fn fillna(&self, value: String) -> PyResult<Self> {
-        let new_series = self.inner.fillna(&value).clone();
-        Ok(PyNASeries { inner: new_series })
+        match self.inner.fillna(value) {
+            Ok(new_series) => Ok(PyNASeries { inner: new_series }),
+            Err(e) => Err(PyValueError::new_err(format!("Failed to fill NA values: {}", e))),
+        }
     }
     
     #[getter]
     fn name(&self) -> String {
-        self.inner.name().clone()
+        match self.inner.name() {
+            Some(name) => name.clone(),
+            None => "".to_string()
+        }
     }
     
     #[setter]
