@@ -1,8 +1,10 @@
 mod join;
 pub mod apply;
 mod categorical;
+mod transform;
 
 pub use apply::Axis;
+pub use transform::{MeltOptions, StackOptions, UnstackOptions};
 
 use std::any::Any;
 use std::collections::HashMap;
