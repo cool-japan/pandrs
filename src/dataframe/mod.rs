@@ -1,5 +1,7 @@
 mod join;
-mod apply;
+pub mod apply;
+
+pub use apply::Axis;
 
 use std::any::Any;
 use std::collections::HashMap;
@@ -7,7 +9,7 @@ use std::fmt::Debug;
 use std::path::Path;
 
 use crate::error::{PandRSError, Result};
-use crate::index::RangeIndex;
+use crate::index::{DataFrameIndex, Index, IndexTrait, RangeIndex};
 use crate::io;
 use crate::series::Series;
 
@@ -51,20 +53,58 @@ pub struct DataFrame {
     column_names: Vec<String>,
 
     /// 行インデックス
-    index: RangeIndex,
+    index: DataFrameIndex<String>,
 }
 
 impl DataFrame {
     /// 新しい空のDataFrameを作成
     pub fn new() -> Self {
         // 空のインデックスを作成
-        let index = RangeIndex::from_range(0..0).unwrap();
+        let range_idx = Index::<usize>::from_range(0..0).unwrap();
+        // 数値インデックスを文字列インデックスに変換
+        let string_values: Vec<String> = range_idx.values().iter().map(|i| i.to_string()).collect();
+        let string_idx = Index::<String>::new(string_values).unwrap();
+        let index = DataFrameIndex::<String>::from_simple(string_idx);
 
         DataFrame {
             columns: HashMap::new(),
             column_names: Vec::new(),
             index,
         }
+    }
+    
+    /// 文字列インデックスでDataFrameを作成
+    pub fn with_index(index: Index<String>) -> Self  
+    {
+        DataFrame {
+            columns: HashMap::new(),
+            column_names: Vec::new(),
+            index: DataFrameIndex::<String>::from_simple(index),
+        }
+    }
+    
+    /// マルチインデックスでDataFrameを作成
+    pub fn with_multi_index(index: crate::index::MultiIndex<String>) -> Self  
+    {
+        DataFrame {
+            columns: HashMap::new(),
+            column_names: Vec::new(),
+            index: DataFrameIndex::<String>::from_multi(index),
+        }
+    }
+    
+    /// 整数インデックスでDataFrameを作成
+    pub fn with_range_index(range: std::ops::Range<usize>) -> Result<Self> {
+        let range_idx = Index::<usize>::from_range(range)?;
+        // 数値インデックスを文字列インデックスに変換
+        let string_values: Vec<String> = range_idx.values().iter().map(|i| i.to_string()).collect();
+        let string_idx = Index::<String>::new(string_values)?;
+
+        Ok(DataFrame {
+            columns: HashMap::new(),
+            column_names: Vec::new(),
+            index: DataFrameIndex::<String>::from_simple(string_idx),
+        })
     }
 
     /// 列を追加
@@ -94,7 +134,10 @@ impl DataFrame {
 
         // 最初の列の場合、インデックスを設定
         if self.column_names.is_empty() {
-            self.index = RangeIndex::from_range(0..boxed_series.len())?;
+            let range_idx = Index::<usize>::from_range(0..boxed_series.len())?;
+            let string_values: Vec<String> = range_idx.values().iter().map(|i| i.to_string()).collect();
+            let string_idx = Index::<String>::new(string_values)?;
+            self.index = DataFrameIndex::<String>::from_simple(string_idx);
         }
 
         // 列を追加
@@ -102,6 +145,47 @@ impl DataFrame {
         self.column_names.push(name);
 
         Ok(())
+    }
+    
+    /// 文字列インデックスを設定
+    pub fn set_index(&mut self, index: Index<String>) -> Result<()>
+    {
+        // インデックス長チェック
+        if !self.column_names.is_empty() && index.len() != self.index.len() {
+            return Err(PandRSError::Consistency(format!(
+                "新しいインデックスの長さ ({}) がDataFrameの行数 ({}) と一致しません",
+                index.len(),
+                self.index.len()
+            )));
+        }
+        
+        // インデックスを設定
+        self.index = DataFrameIndex::<String>::from_simple(index);
+        
+        Ok(())
+    }
+    
+    /// マルチインデックスを設定
+    pub fn set_multi_index(&mut self, index: crate::index::MultiIndex<String>) -> Result<()>
+    {
+        // インデックス長チェック
+        if !self.column_names.is_empty() && index.len() != self.index.len() {
+            return Err(PandRSError::Consistency(format!(
+                "新しいマルチインデックスの長さ ({}) がDataFrameの行数 ({}) と一致しません",
+                index.len(),
+                self.index.len()
+            )));
+        }
+        
+        // インデックスを設定
+        self.index = DataFrameIndex::<String>::from_multi(index);
+        
+        Ok(())
+    }
+    
+    /// インデックスを取得
+    pub fn get_index(&self) -> &DataFrameIndex<String> {
+        &self.index
     }
 
     // Seriesをボックス化する内部ヘルパー
@@ -128,6 +212,44 @@ impl DataFrame {
     /// 行数を取得
     pub fn row_count(&self) -> usize {
         self.index.len()
+    }
+    
+    /// 列をインデックスとして設定
+    pub fn set_column_as_index(&mut self, column_name: &str) -> Result<()> {
+        // 列が存在するかチェック
+        if !self.contains_column(column_name) {
+            return Err(PandRSError::Column(format!(
+                "列 '{}' が存在しません",
+                column_name
+            )));
+        }
+        
+        // 列の値を取得
+        let values = self.get_column_string_values(column_name)?;
+        
+        // 文字列インデックスを作成
+        let string_index = Index::new(values)?;
+        
+        // インデックスを設定
+        self.index = DataFrameIndex::<String>::from_simple(string_index);
+        
+        Ok(())
+    }
+    
+    /// 列から取得する関数を追加
+    pub fn get_column(&self, name: &str) -> Option<Series<String>> {
+        if let Some(series) = self.columns.get(name) {
+            // DataBox型のSeriesから文字列型のSeriesに変換
+            let string_values: Vec<String> = series
+                .values()
+                .iter()
+                .map(|v| format!("{:?}", v))
+                .collect();
+                
+            Series::new(string_values, Some(name.to_string())).ok()
+        } else {
+            None
+        }
     }
 
     /// 列名リストを取得

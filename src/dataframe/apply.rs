@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::fmt::Debug;
 
-use crate::dataframe::DataFrame;
+use super::DataFrame;
 use crate::error::{PandRSError, Result};
 use crate::series::Series;
 
@@ -50,7 +50,7 @@ impl DataFrame {
                 
                 for col_name in self.column_names() {
                     let col = self.get_column(col_name).unwrap();
-                    results.push(f(col));
+                    results.push(f(&col));
                 }
                 
                 // 結果からSeriesを構築
@@ -135,7 +135,7 @@ impl DataFrame {
                 if condition(val) {
                     transformed.push(other.to_string());
                 } else {
-                    transformed.push(val.clone());
+                    transformed.push(val.clone().to_string());
                 }
             }
             
@@ -172,7 +172,7 @@ impl DataFrame {
                 if !condition(val) {
                     transformed.push(other.to_string());
                 } else {
-                    transformed.push(val.clone());
+                    transformed.push(val.clone().to_string());
                 }
             }
             
@@ -204,7 +204,7 @@ impl DataFrame {
             for val in col.values() {
                 match replace_map.get(val) {
                     Some(replacement) => transformed.push(replacement.clone()),
-                    None => transformed.push(val.clone()),
+                    None => transformed.push(val.clone().to_string()),
                 }
             }
             
@@ -235,7 +235,7 @@ impl DataFrame {
             Some(cols) => {
                 // 指定された列が存在するか確認
                 for col in cols {
-                    if !self.has_column(col) {
+                    if !self.contains_column(col) {
                         return Err(PandRSError::Column(format!(
                             "列 '{}' が存在しません",
                             col
@@ -256,8 +256,8 @@ impl DataFrame {
             let mut row_key = String::new();
             
             for col in &columns_to_check {
-                let value = self.get_column(col).unwrap().get(i).unwrap();
-                row_key.push_str(value);
+                let value = self.get_column(col).unwrap().values()[i].clone();
+                row_key.push_str(&value);
                 row_key.push('\0'); // 区切り文字
             }
             
@@ -319,8 +319,8 @@ impl DataFrame {
             let mut filtered = Vec::new();
             
             for i in 0..col.len() {
-                if !is_duplicated.get(i).unwrap() {
-                    filtered.push(col.get(i).unwrap().clone());
+                if !is_duplicated.values()[i] {
+                    filtered.push(col.values()[i].clone());
                 }
             }
             
