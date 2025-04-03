@@ -1,10 +1,10 @@
-use std::fmt::{self, Debug, Display};
 use std::cmp::Ordering;
-use std::ops::{Add, Sub, Mul, Div};
+use std::fmt::{self, Debug, Display};
 use std::hash::{Hash, Hasher};
+use std::ops::{Add, Div, Mul, Sub};
 
 /// 欠損値（NA, Not Available）を表現する型
-/// 
+///
 /// Rustでは欠損値を型システムで表現するため、OptionではなくNA型を定義します。
 /// NAは値が存在しないことを表します。
 #[derive(Clone, Copy)]
@@ -23,12 +23,12 @@ impl<T> NA<T> {
             NA::NA => true,
         }
     }
-    
+
     /// 値があるかどうかをチェック
     pub fn is_value(&self) -> bool {
         !self.is_na()
     }
-    
+
     /// 値を取得（存在する場合）
     pub fn value(&self) -> Option<&T> {
         match self {
@@ -36,7 +36,7 @@ impl<T> NA<T> {
             NA::NA => None,
         }
     }
-    
+
     /// 値を取得（存在する場合）、存在しない場合はデフォルト値を返す
     pub fn value_or<'a>(&'a self, default: &'a T) -> &'a T {
         match self {
@@ -44,7 +44,7 @@ impl<T> NA<T> {
             NA::NA => default,
         }
     }
-    
+
     /// 値を変換する
     pub fn map<U, F>(&self, f: F) -> NA<U>
     where
@@ -160,7 +160,7 @@ impl<T: Hash> Hash for NA<T> {
 // 数値演算の実装（Add）
 impl<T: Add<Output = T>> Add for NA<T> {
     type Output = NA<T>;
-    
+
     fn add(self, other: Self) -> Self::Output {
         match (self, other) {
             (NA::Value(a), NA::Value(b)) => NA::Value(a + b),
@@ -172,7 +172,7 @@ impl<T: Add<Output = T>> Add for NA<T> {
 // 数値演算の実装（Sub）
 impl<T: Sub<Output = T>> Sub for NA<T> {
     type Output = NA<T>;
-    
+
     fn sub(self, other: Self) -> Self::Output {
         match (self, other) {
             (NA::Value(a), NA::Value(b)) => NA::Value(a - b),
@@ -184,7 +184,7 @@ impl<T: Sub<Output = T>> Sub for NA<T> {
 // 数値演算の実装（Mul）
 impl<T: Mul<Output = T>> Mul for NA<T> {
     type Output = NA<T>;
-    
+
     fn mul(self, other: Self) -> Self::Output {
         match (self, other) {
             (NA::Value(a), NA::Value(b)) => NA::Value(a * b),
@@ -196,7 +196,7 @@ impl<T: Mul<Output = T>> Mul for NA<T> {
 // 数値演算の実装（Div）
 impl<T: Div<Output = T> + std::cmp::PartialEq + NumericCast> Div for NA<T> {
     type Output = NA<T>;
-    
+
     fn div(self, other: Self) -> Self::Output {
         match (self, other) {
             (NA::Value(_), NA::Value(b)) if b == T::from(0) => NA::NA, // ゼロ除算はNA

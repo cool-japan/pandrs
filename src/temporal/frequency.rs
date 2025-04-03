@@ -35,14 +35,16 @@ impl Frequency {
             "W" | "WEEK" | "WEEKS" | "WEEKLY" => Some(Frequency::Weekly),
             "M" | "MONTH" | "MONTHS" | "MONTHLY" => Some(Frequency::Monthly),
             "Q" | "QUARTER" | "QUARTERS" | "QUARTERLY" => Some(Frequency::Quarterly),
-            "Y" | "YEAR" | "YEARS" | "A" | "ANNUAL" | "ANNUALLY" | "YEARLY" => Some(Frequency::Yearly),
+            "Y" | "YEAR" | "YEARS" | "A" | "ANNUAL" | "ANNUALLY" | "YEARLY" => {
+                Some(Frequency::Yearly)
+            }
             _ => {
                 // カスタム期間の解析を試みる
                 parse_custom_frequency(s)
             }
         }
     }
-    
+
     /// この頻度に対応するおおよその秒数を取得
     /// 月や年などは概算値
     pub fn to_seconds(&self) -> i64 {
@@ -52,9 +54,9 @@ impl Frequency {
             Frequency::Hourly => 3600,
             Frequency::Daily => 86400,
             Frequency::Weekly => 604800,
-            Frequency::Monthly => 2592000, // 30日として概算
+            Frequency::Monthly => 2592000,   // 30日として概算
             Frequency::Quarterly => 7776000, // 90日として概算
-            Frequency::Yearly => 31536000, // 365日として概算
+            Frequency::Yearly => 31536000,   // 365日として概算
             Frequency::Custom(duration) => duration.num_seconds(),
         }
     }
@@ -79,12 +81,12 @@ impl fmt::Display for Frequency {
 /// カスタム周期の文字列を解析する
 fn parse_custom_frequency(s: &str) -> Option<Frequency> {
     // "3D" (3日) や "2H" (2時間) のような形式を解析
-    
+
     // 数値部分と単位部分に分割
     let mut num_chars = String::new();
     let mut unit_chars = String::new();
     let mut found_digit = false;
-    
+
     for c in s.chars() {
         if c.is_digit(10) {
             found_digit = true;
@@ -96,17 +98,17 @@ fn parse_custom_frequency(s: &str) -> Option<Frequency> {
             return None;
         }
     }
-    
+
     if num_chars.is_empty() || unit_chars.is_empty() {
         return None;
     }
-    
+
     // 数値を解析
     let num: i64 = match num_chars.parse() {
         Ok(n) => n,
         Err(_) => return None,
     };
-    
+
     // 単位を解析して適切なDurationを作成
     match unit_chars.to_uppercase().as_str() {
         "S" | "SEC" | "SECOND" | "SECONDS" => Some(Frequency::Custom(Duration::seconds(num))),
