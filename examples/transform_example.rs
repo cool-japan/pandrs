@@ -1,4 +1,4 @@
-use pandrs::{DataFrame, Series, MeltOptions, StackOptions, UnstackOptions, NA};
+use pandrs::{DataFrame, Series, MeltOptions, StackOptions, UnstackOptions};
 use std::error::Error;
 
 fn main() -> Result<(), Box<dyn Error>> {
