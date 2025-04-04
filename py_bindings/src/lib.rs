@@ -6,12 +6,19 @@ use pyo3::types::{PyDict, PyList, PyString, PyTuple};
 use ::pandrs::{DataFrame, Series, NA, NASeries};
 use std::collections::HashMap;
 
+// 最適化されたPython連携モジュール
+mod py_optimized;
+
 /// A Rust-powered DataFrame implementation with pandas-like API
 #[pymodule]
 fn pandrs(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
+    // 従来のクラスを登録
     m.add_class::<PyDataFrame>()?;
     m.add_class::<PySeries>()?;
     m.add_class::<PyNASeries>()?;
+    
+    // 最適化されたクラスを登録
+    py_optimized::register_optimized_types(_py, m)?;
     
     // Add module version
     m.add("__version__", ::pandrs::VERSION)?;
