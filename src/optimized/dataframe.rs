@@ -359,6 +359,330 @@ impl OptimizedDataFrame {
         &self.column_names
     }
     
+    /// 指定された列が存在するかチェックします
+    pub fn contains_column(&self, name: &str) -> bool {
+        self.column_indices.contains_key(name)
+    }
+    
+    /// DataFrameを縦方向に結合します。
+    /// 互換性のある列を持つ2つのDataFrameを結合し、新しいDataFrameを作成します。
+    pub fn append(&self, other: &OptimizedDataFrame) -> Result<Self> {
+        if self.columns.is_empty() {
+            return Ok(other.clone());
+        }
+        
+        if other.columns.is_empty() {
+            return Ok(self.clone());
+        }
+        
+        // 新しいDataFrameの初期化
+        let mut result = Self::new();
+        let mut all_column_names = self.column_names.clone();
+        
+        // 他方にのみ存在する列名を追加
+        for col_name in other.column_names() {
+            if !all_column_names.contains(&col_name.to_string()) {
+                all_column_names.push(col_name.to_string());
+            }
+        }
+        
+        // 各列を結合
+        for col_name in &all_column_names {
+            // 結合された列を作成
+            let combined_column = match (self.contains_column(col_name), other.contains_column(col_name)) {
+                (true, true) => {
+                    // 両方のDataFrameに列が存在する場合
+                    let self_col = self.column(col_name)?;
+                    let other_col = other.column(col_name)?;
+                    
+                    // 列のデータ型が一致しているか確認
+                    if self_col.column_type() != other_col.column_type() {
+                        return Err(Error::InvalidInput(format!(
+                            "列 {} のデータ型が一致しません", col_name
+                        )));
+                    }
+                    
+                    // 列型に応じて結合
+                    match (self_col.column(), other_col.column()) {
+                        (Column::Int64(self_int), Column::Int64(other_int)) => {
+                            let mut new_data = Vec::with_capacity(self_int.len() + other_int.len());
+                            
+                            // 自身のデータをコピー
+                            for i in 0..self_int.len() {
+                                if let Ok(Some(val)) = self_int.get(i) {
+                                    new_data.push(val);
+                                } else {
+                                    new_data.push(0); // NAの場合はデフォルト値
+                                }
+                            }
+                            
+                            // 他方のデータを追加
+                            for i in 0..other_int.len() {
+                                if let Ok(Some(val)) = other_int.get(i) {
+                                    new_data.push(val);
+                                } else {
+                                    new_data.push(0); // NAの場合はデフォルト値
+                                }
+                            }
+                            
+                            Column::Int64(Int64Column::new(new_data))
+                        },
+                        (Column::Float64(self_float), Column::Float64(other_float)) => {
+                            let mut new_data = Vec::with_capacity(self_float.len() + other_float.len());
+                            
+                            // 自身のデータをコピー
+                            for i in 0..self_float.len() {
+                                if let Ok(Some(val)) = self_float.get(i) {
+                                    new_data.push(val);
+                                } else {
+                                    new_data.push(0.0); // NAの場合はデフォルト値
+                                }
+                            }
+                            
+                            // 他方のデータを追加
+                            for i in 0..other_float.len() {
+                                if let Ok(Some(val)) = other_float.get(i) {
+                                    new_data.push(val);
+                                } else {
+                                    new_data.push(0.0); // NAの場合はデフォルト値
+                                }
+                            }
+                            
+                            Column::Float64(Float64Column::new(new_data))
+                        },
+                        (Column::String(self_str), Column::String(other_str)) => {
+                            let mut new_data = Vec::with_capacity(self_str.len() + other_str.len());
+                            
+                            // 自身のデータをコピー
+                            for i in 0..self_str.len() {
+                                if let Ok(Some(val)) = self_str.get(i) {
+                                    new_data.push(val.to_string());
+                                } else {
+                                    new_data.push("".to_string()); // NAの場合はデフォルト値
+                                }
+                            }
+                            
+                            // 他方のデータを追加
+                            for i in 0..other_str.len() {
+                                if let Ok(Some(val)) = other_str.get(i) {
+                                    new_data.push(val.to_string());
+                                } else {
+                                    new_data.push("".to_string()); // NAの場合はデフォルト値
+                                }
+                            }
+                            
+                            Column::String(StringColumn::new(new_data))
+                        },
+                        (Column::Boolean(self_bool), Column::Boolean(other_bool)) => {
+                            let mut new_data = Vec::with_capacity(self_bool.len() + other_bool.len());
+                            
+                            // 自身のデータをコピー
+                            for i in 0..self_bool.len() {
+                                if let Ok(Some(val)) = self_bool.get(i) {
+                                    new_data.push(val);
+                                } else {
+                                    new_data.push(false); // NAの場合はデフォルト値
+                                }
+                            }
+                            
+                            // 他方のデータを追加
+                            for i in 0..other_bool.len() {
+                                if let Ok(Some(val)) = other_bool.get(i) {
+                                    new_data.push(val);
+                                } else {
+                                    new_data.push(false); // NAの場合はデフォルト値
+                                }
+                            }
+                            
+                            Column::Boolean(BooleanColumn::new(new_data))
+                        },
+                        _ => {
+                            // 型の組み合わせが一致しない場合（前の条件でチェック済みなのでここには来ないはず）
+                            return Err(Error::InvalidInput(format!(
+                                "互換性のない列型の組み合わせ: {}", col_name
+                            )));
+                        }
+                    }
+                },
+                (true, false) => {
+                    // 自身にのみ列が存在する場合、他方のDataFrame分のNULL値を追加
+                    let self_col = self.column(col_name)?;
+                    
+                    match self_col.column() {
+                        Column::Int64(self_int) => {
+                            let mut new_data = Vec::with_capacity(self_int.len() + other.row_count());
+                            
+                            // 自身のデータをコピー
+                            for i in 0..self_int.len() {
+                                if let Ok(Some(val)) = self_int.get(i) {
+                                    new_data.push(val);
+                                } else {
+                                    new_data.push(0); // NAの場合はデフォルト値
+                                }
+                            }
+                            
+                            // 他方のDataFrame分のNULL値を追加
+                            for _ in 0..other.row_count() {
+                                new_data.push(0); // NAとして0を追加
+                            }
+                            
+                            Column::Int64(Int64Column::new(new_data))
+                        },
+                        Column::Float64(self_float) => {
+                            let mut new_data = Vec::with_capacity(self_float.len() + other.row_count());
+                            
+                            // 自身のデータをコピー
+                            for i in 0..self_float.len() {
+                                if let Ok(Some(val)) = self_float.get(i) {
+                                    new_data.push(val);
+                                } else {
+                                    new_data.push(0.0); // NAの場合はデフォルト値
+                                }
+                            }
+                            
+                            // 他方のDataFrame分のNULL値を追加
+                            for _ in 0..other.row_count() {
+                                new_data.push(0.0); // NAとして0.0を追加
+                            }
+                            
+                            Column::Float64(Float64Column::new(new_data))
+                        },
+                        Column::String(self_str) => {
+                            let mut new_data = Vec::with_capacity(self_str.len() + other.row_count());
+                            
+                            // 自身のデータをコピー
+                            for i in 0..self_str.len() {
+                                if let Ok(Some(val)) = self_str.get(i) {
+                                    new_data.push(val.to_string());
+                                } else {
+                                    new_data.push("".to_string()); // NAの場合はデフォルト値
+                                }
+                            }
+                            
+                            // 他方のDataFrame分のNULL値を追加
+                            for _ in 0..other.row_count() {
+                                new_data.push("".to_string()); // NAとして空文字列を追加
+                            }
+                            
+                            Column::String(StringColumn::new(new_data))
+                        },
+                        Column::Boolean(self_bool) => {
+                            let mut new_data = Vec::with_capacity(self_bool.len() + other.row_count());
+                            
+                            // 自身のデータをコピー
+                            for i in 0..self_bool.len() {
+                                if let Ok(Some(val)) = self_bool.get(i) {
+                                    new_data.push(val);
+                                } else {
+                                    new_data.push(false); // NAの場合はデフォルト値
+                                }
+                            }
+                            
+                            // 他方のDataFrame分のNULL値を追加
+                            for _ in 0..other.row_count() {
+                                new_data.push(false); // NAとしてfalseを追加
+                            }
+                            
+                            Column::Boolean(BooleanColumn::new(new_data))
+                        }
+                    }
+                },
+                (false, true) => {
+                    // 他方にのみ列が存在する場合、自身のDataFrame分のNULL値を追加
+                    let other_col = other.column(col_name)?;
+                    
+                    match other_col.column() {
+                        Column::Int64(other_int) => {
+                            let mut new_data = Vec::with_capacity(self.row_count() + other_int.len());
+                            
+                            // 自身のDataFrame分のNULL値を追加
+                            for _ in 0..self.row_count() {
+                                new_data.push(0); // NAとして0を追加
+                            }
+                            
+                            // 他方のデータをコピー
+                            for i in 0..other_int.len() {
+                                if let Ok(Some(val)) = other_int.get(i) {
+                                    new_data.push(val);
+                                } else {
+                                    new_data.push(0); // NAの場合はデフォルト値
+                                }
+                            }
+                            
+                            Column::Int64(Int64Column::new(new_data))
+                        },
+                        Column::Float64(other_float) => {
+                            let mut new_data = Vec::with_capacity(self.row_count() + other_float.len());
+                            
+                            // 自身のDataFrame分のNULL値を追加
+                            for _ in 0..self.row_count() {
+                                new_data.push(0.0); // NAとして0.0を追加
+                            }
+                            
+                            // 他方のデータをコピー
+                            for i in 0..other_float.len() {
+                                if let Ok(Some(val)) = other_float.get(i) {
+                                    new_data.push(val);
+                                } else {
+                                    new_data.push(0.0); // NAの場合はデフォルト値
+                                }
+                            }
+                            
+                            Column::Float64(Float64Column::new(new_data))
+                        },
+                        Column::String(other_str) => {
+                            let mut new_data = Vec::with_capacity(self.row_count() + other_str.len());
+                            
+                            // 自身のDataFrame分のNULL値を追加
+                            for _ in 0..self.row_count() {
+                                new_data.push("".to_string()); // NAとして空文字列を追加
+                            }
+                            
+                            // 他方のデータをコピー
+                            for i in 0..other_str.len() {
+                                if let Ok(Some(val)) = other_str.get(i) {
+                                    new_data.push(val.to_string());
+                                } else {
+                                    new_data.push("".to_string()); // NAの場合はデフォルト値
+                                }
+                            }
+                            
+                            Column::String(StringColumn::new(new_data))
+                        },
+                        Column::Boolean(other_bool) => {
+                            let mut new_data = Vec::with_capacity(self.row_count() + other_bool.len());
+                            
+                            // 自身のDataFrame分のNULL値を追加
+                            for _ in 0..self.row_count() {
+                                new_data.push(false); // NAとしてfalseを追加
+                            }
+                            
+                            // 他方のデータをコピー
+                            for i in 0..other_bool.len() {
+                                if let Ok(Some(val)) = other_bool.get(i) {
+                                    new_data.push(val);
+                                } else {
+                                    new_data.push(false); // NAの場合はデフォルト値
+                                }
+                            }
+                            
+                            Column::Boolean(BooleanColumn::new(new_data))
+                        }
+                    }
+                },
+                (false, false) => {
+                    // どちらのDataFrameにも列が存在しない場合（通常はここには来ないはず）
+                    continue;
+                }
+            };
+            
+            // 結合された列を新しいDataFrameに追加
+            result.add_column(col_name, combined_column)?;
+        }
+        
+        Ok(result)
+    }
+    
     /// 行数を取得
     pub fn row_count(&self) -> usize {
         self.row_count

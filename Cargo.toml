@@ -27,3 +27,6 @@ lazy_static = "1.4.0"  # グローバル変数/シングルトン用
 # 現在はParquetサポートは削除（依存関係の互換性問題のため）
 # parquet = "38.0"  # Parquetファイルのサポート
 # arrow = "38.0"  # Arrowフォーマットのサポート
+
+[dev-dependencies]
+tempfile = "3.8"  # テスト用一時ファイル作成
