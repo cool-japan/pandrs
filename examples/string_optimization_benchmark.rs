@@ -1,7 +1,8 @@
 use std::time::Instant;
 use pandrs::OptimizedDataFrame;
-use pandrs::column::{Column, Int64Column, Float64Column, StringColumn, BooleanColumn};
-use pandrs::column::string_column::StringColumnOptimizationMode;
+use pandrs::column::{Column, Int64Column, Float64Column, StringColumn, BooleanColumn, StringColumnOptimizationMode};
+// すべての最適化モードにアクセスするためのインポート
+use pandrs::column::string_column_impl::{StringColumnOptimizationMode as OptMode, DEFAULT_OPTIMIZATION_MODE};
 
 fn main() {
     println!("文字列列最適化ベンチマーク");
@@ -59,7 +60,7 @@ fn main() {
     // 最適化実装
     {
         let start = Instant::now();
-        let _column = StringColumn::from_strings_optimized(str_data.clone());
+        let _column = StringColumn::new_categorical(str_data.clone());
         let time = start.elapsed();
         println!("最適化実装作成時間: {:?}", time);
     }
@@ -71,7 +72,7 @@ fn main() {
     {
         // レガシーモードに設定
         unsafe {
-            pandrs::column::string_column::DEFAULT_OPTIMIZATION_MODE = StringColumnOptimizationMode::Legacy;
+            DEFAULT_OPTIMIZATION_MODE = OptMode::Legacy;
         }
         
         let start = Instant::now();
@@ -89,7 +90,7 @@ fn main() {
     {
         // グローバルプールモードに設定
         unsafe {
-            pandrs::column::string_column::DEFAULT_OPTIMIZATION_MODE = StringColumnOptimizationMode::GlobalPool;
+            DEFAULT_OPTIMIZATION_MODE = OptMode::GlobalPool;
         }
         
         let start = Instant::now();
@@ -107,7 +108,7 @@ fn main() {
     {
         // カテゴリカルモードに設定
         unsafe {
-            pandrs::column::string_column::DEFAULT_OPTIMIZATION_MODE = StringColumnOptimizationMode::Categorical;
+            DEFAULT_OPTIMIZATION_MODE = OptMode::Categorical;
         }
         
         let start = Instant::now();
@@ -127,7 +128,7 @@ fn main() {
         let mut df = OptimizedDataFrame::new();
         df.add_column("id".to_string(), Column::Int64(Int64Column::new(int_data.clone()))).unwrap();
         df.add_column("value".to_string(), Column::Float64(Float64Column::new(float_data.clone()))).unwrap();
-        df.add_column("category".to_string(), Column::String(StringColumn::from_strings_optimized(str_data.clone()))).unwrap();
+        df.add_column("category".to_string(), Column::String(StringColumn::new_categorical(str_data.clone()))).unwrap();
         df.add_column("flag".to_string(), Column::Boolean(BooleanColumn::new(bool_data.clone()))).unwrap();
         
         let time = start.elapsed();
