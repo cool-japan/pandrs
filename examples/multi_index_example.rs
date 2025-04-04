@@ -1,4 +1,8 @@
-use pandrs::{DataFrame, Index, MultiIndex};
+use pandrs::{
+    optimized::dataframe::OptimizedDataFrame as DataFrame, 
+    Index, MultiIndex,
+    column::{Column, StringColumn}
+};
 use pandrs::error::Result;
 
 fn main() -> Result<()> {
@@ -46,12 +50,13 @@ fn main() -> Result<()> {
 
     println!("--- MultiIndexを持つDataFrame ---");
     
-    // データフレームを作成
-    let mut df = DataFrame::with_multi_index(multi_idx.clone());
+    // データフレームを作成（注：MultiIndexサポートは現在OptimizedDataFrameには完全実装されていません）
+    let mut df = DataFrame::new();
+    println!("注：このサンプルではMultiIndexがサポートされていないため、インデックス設定をスキップします");
     
     // データを追加
     let data = vec!["data1".to_string(), "data2".to_string(), "data3".to_string(), "data4".to_string()];
-    df.add_column("data".to_string(), pandrs::Series::new(data, Some("data".to_string()))?)?;
+    df.add_column("data".to_string(), Column::String(StringColumn::new(data)))?;
     
     println!("DataFrame: {:?}\n", df);
     println!("行数: {}", df.row_count());
@@ -65,12 +70,13 @@ fn main() -> Result<()> {
     
     // シンプルインデックスからDataFrameを作成
     let simple_idx = Index::new(vec!["X".to_string(), "Y".to_string(), "Z".to_string()])?;
-    let mut simple_df = DataFrame::with_index(simple_idx);
+    let mut simple_df = DataFrame::new();
+    println!("注：このサンプルではCustom Indexがサポートされていないため、インデックス設定をスキップします");
     
     // データを追加
     let values = vec![100, 200, 300];
     let str_values: Vec<String> = values.iter().map(|v| v.to_string()).collect();
-    simple_df.add_column("values".to_string(), pandrs::Series::new(str_values, Some("values".to_string()))?)?;
+    simple_df.add_column("values".to_string(), Column::String(StringColumn::new(str_values)))?;
     
     println!("シンプルインデックスDF: {:?}", simple_df);
     
@@ -81,9 +87,9 @@ fn main() -> Result<()> {
         vec!["Category".to_string(), "Z".to_string()],
     ];
     
-    // MultiIndexを作成して設定
+    // MultiIndexを作成して設定（サポートされていないためスキップ）
     let new_multi_idx = MultiIndex::from_tuples(tuples, None)?;
-    simple_df.set_multi_index(new_multi_idx)?;
+    println!("注：このサンプルではMultiIndexへの変換がサポートされていないため、変換をスキップします");
     
     println!("MultiIndexに変換後: {:?}", simple_df);
     

@@ -58,16 +58,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         
         // 従来実装: DataFrame作成
         let (legacy_df_time, legacy_df) = bench("従来実装 - DataFrame作成", || {
-            let int_series = Series::<i32>::new(int_data.iter().map(|&i| i as i32).collect(), Some("int_col".to_string())).unwrap();
-            let float_series = Series::new(float_data.clone(), Some("float_col".to_string())).unwrap();
-            let string_series = Series::new(string_data.clone(), Some("string_col".to_string())).unwrap();
-            let bool_series = Series::new(bool_data.clone(), Some("bool_col".to_string())).unwrap();
-            
+            // Series APIを直接使用せず、Column型を使用
             let mut df = DataFrame::new();
-            df.add_column("int_col".to_string(), int_series).unwrap();
-            df.add_column("float_col".to_string(), float_series).unwrap();
-            df.add_column("string_col".to_string(), string_series).unwrap();
-            df.add_column("bool_col".to_string(), bool_series).unwrap();
+            df.add_column("int_col".to_string(), Column::Int64(Int64Column::new(int_data.iter().map(|&i| i as i64).collect()))).unwrap();
+            df.add_column("float_col".to_string(), Column::Float64(Float64Column::new(float_data.clone()))).unwrap();
+            df.add_column("string_col".to_string(), Column::String(StringColumn::new(string_data.clone()))).unwrap();
+            df.add_column("bool_col".to_string(), Column::Boolean(BooleanColumn::new(bool_data.clone()))).unwrap();
             df
         });
         
