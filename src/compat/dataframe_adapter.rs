@@ -117,7 +117,7 @@ impl DataFrameCompat for crate::dataframe::DataFrame {
 
     fn from_csv_with_categorical<P: AsRef<Path>>(path: P, has_header: bool) -> Result<DataFrame> {
         // 簡易版実装 - CSVを読み込んで返す
-        let mut df = DataFrame::new();
+        let df = DataFrame::new();
         
         // CSVファイルを読み込み
         let mut reader = csv::ReaderBuilder::new()

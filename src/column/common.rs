@@ -220,6 +220,147 @@ impl Column {
             Column::Boolean(col) => col.name.as_deref(),
         }
     }
+    
+    /// 特定の位置の値を取得 (apply_testの互換性用)
+    pub fn get(&self, idx: usize) -> Result<Option<bool>> {
+        match self {
+            Column::Boolean(col) => col.get(idx),
+            _ => Err(Error::ColumnTypeMismatch {
+                name: "column".to_string(),
+                expected: ColumnType::Boolean,
+                found: self.column_type(),
+            }),
+        }
+    }
+    
+    /// 空の同じタイプの列を作成する
+    pub fn empty_clone(&self) -> Self {
+        match self {
+            Column::Int64(col) => {
+                let mut new_col = crate::column::Int64Column::new(Vec::new());
+                if let Some(name) = &col.name {
+                    new_col.name = Some(name.clone());
+                }
+                Column::Int64(new_col)
+            },
+            Column::Float64(col) => {
+                let mut new_col = crate::column::Float64Column::new(Vec::new());
+                if let Some(name) = &col.name {
+                    new_col.name = Some(name.clone());
+                }
+                Column::Float64(new_col)
+            },
+            Column::String(col) => {
+                let mut new_col = crate::column::StringColumn::new(Vec::new());
+                if let Some(name) = &col.name {
+                    new_col.name = Some(name.clone());
+                }
+                Column::String(new_col)
+            },
+            Column::Boolean(col) => {
+                let mut new_col = crate::column::BooleanColumn::new(Vec::new());
+                if let Some(name) = &col.name {
+                    new_col.name = Some(name.clone());
+                }
+                Column::Boolean(new_col)
+            },
+        }
+    }
+    
+    /// インデックスリストによるフィルタリング
+    pub fn filter_by_indices(&self, indices: &[usize]) -> Result<Self> {
+        match self {
+            Column::Int64(col) => {
+                let mut filtered_data = Vec::with_capacity(indices.len());
+                for &idx in indices {
+                    if idx >= col.data.len() {
+                        return Err(Error::IndexOutOfBounds {
+                            index: idx,
+                            size: col.data.len(),
+                        });
+                    }
+                    filtered_data.push(col.data[idx]);
+                }
+                let mut new_col = crate::column::Int64Column::new(filtered_data);
+                if let Some(name) = &col.name {
+                    new_col.name = Some(name.clone());
+                }
+                Ok(Column::Int64(new_col))
+            },
+            Column::Float64(col) => {
+                let mut filtered_data = Vec::with_capacity(indices.len());
+                for &idx in indices {
+                    if idx >= col.data.len() {
+                        return Err(Error::IndexOutOfBounds {
+                            index: idx,
+                            size: col.data.len(),
+                        });
+                    }
+                    filtered_data.push(col.data[idx]);
+                }
+                let mut new_col = crate::column::Float64Column::new(filtered_data);
+                if let Some(name) = &col.name {
+                    new_col.name = Some(name.clone());
+                }
+                Ok(Column::Float64(new_col))
+            },
+            Column::String(col) => {
+                // StringColumnは直接文字列を取得する方法を別途考える必要がある
+                // ここでは単純にインデックスの部分集合を取得する実装に変更
+                let mut filtered_indices = Vec::with_capacity(indices.len());
+                for &idx in indices {
+                    if idx >= col.len() {
+                        return Err(Error::IndexOutOfBounds {
+                            index: idx,
+                            size: col.len(),
+                        });
+                    }
+                    filtered_indices.push(col.indices[idx]);
+                }
+                
+                // 新しいStringColumnを作成
+                let mut new_col = crate::column::StringColumn {
+                    string_pool: col.string_pool.clone(),
+                    indices: filtered_indices.into(),
+                    null_mask: None, // 必要に応じて調整
+                    name: None,
+                    optimization_mode: col.optimization_mode,
+                };
+                
+                if let Some(name) = &col.name {
+                    new_col.name = Some(name.clone());
+                }
+                
+                Ok(Column::String(new_col))
+            },
+            Column::Boolean(col) => {
+                // BooleanColumnはBitMaskを使うため、直接データを取得する実装に変更
+                let mut filtered_data = Vec::with_capacity(indices.len());
+                for &idx in indices {
+                    if idx >= col.length {
+                        return Err(Error::IndexOutOfBounds {
+                            index: idx,
+                            size: col.length,
+                        });
+                    }
+                    // BitMaskからデータを取得
+                    if let Ok(value) = col.data.get(idx) {
+                        filtered_data.push(value);
+                    } else {
+                        return Err(Error::IndexOutOfBounds {
+                            index: idx,
+                            size: col.length,
+                        });
+                    }
+                }
+                let mut new_col = crate::column::BooleanColumn::new(filtered_data);
+                if let Some(name) = &col.name {
+                    new_col.name = Some(name.clone());
+                }
+                Ok(Column::Boolean(new_col))
+            },
+        }
+    }
 }
 
 // 型変換のFrom実装
@@ -244,5 +385,56 @@ impl From<crate::column::StringColumn> for Column {
 impl From<crate::column::BooleanColumn> for Column {
     fn from(col: crate::column::BooleanColumn) -> Self {
         Column::Boolean(col)
+    }
+}
+
+// Series型からColumn型への変換を実装
+impl From<crate::series::Series<String>> for Column {
+    fn from(series: crate::series::Series<String>) -> Self {
+        let string_column = crate::column::StringColumn::from(series);
+        Column::String(string_column)
+    }
+}
+
+impl From<crate::series::Series<i64>> for Column {
+    fn from(series: crate::series::Series<i64>) -> Self {
+        let data = series.values().to_vec();
+        let mut column = crate::column::Int64Column::new(data);
+        if let Some(name) = series.name() {
+            column.name = Some(name.clone());
+        }
+        Column::Int64(column)
+    }
+}
+
+impl From<crate::series::Series<f64>> for Column {
+    fn from(series: crate::series::Series<f64>) -> Self {
+        let data = series.values().to_vec();
+        let mut column = crate::column::Float64Column::new(data);
+        if let Some(name) = series.name() {
+            column.name = Some(name.clone());
+        }
+        Column::Float64(column)
+    }
+}
+
+impl From<crate::series::Series<bool>> for Column {
+    fn from(series: crate::series::Series<bool>) -> Self {
+        let data = series.values().to_vec();
+        let mut column = crate::column::BooleanColumn::new(data);
+        if let Some(name) = series.name() {
+            column.name = Some(name.clone());
+        }
+        Column::Boolean(column)
+    }
+}
+
+// &str型のSeriesからColumn型への変換
+impl<'a> From<crate::series::Series<&'a str>> for Column {
+    fn from(series: crate::series::Series<&'a str>) -> Self {
+        // 所有権を持つ型に変換してから処理
+        let owned_series = series.to_owned();
+        let string_column = crate::column::StringColumn::from(owned_series);
+        Column::String(string_column)
     }
 }

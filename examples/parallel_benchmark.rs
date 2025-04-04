@@ -224,7 +224,7 @@ fn main() {
             
             Column::Float64(Float64Column::new(doubled_values))
         } else {
-            col_view.into_column()
+            col_view.get_column().clone()
         };
         
         computed_df.add_column(name.to_string(), new_col).unwrap();
@@ -253,10 +253,10 @@ fn main() {
                 
                 Ok(Column::Float64(Float64Column::new(values)))
             } else {
-                Ok(view.clone().into_column())
+                Ok(view.get_column().clone())
             }
         } else {
-            Ok(view.clone().into_column())
+            Ok(view.get_column().clone())
         }
     }).unwrap();
     
