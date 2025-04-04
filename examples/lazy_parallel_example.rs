@@ -157,8 +157,8 @@ fn generate_large_dataframe(rows: usize) -> Result<OptimizedDataFrame, Box<dyn E
     
     for i in 0..rows {
         ids.push(i as i64 + 1000); // ID
-        ages.push(rng.gen_range(20..60)); // 年齢
-        depts.push(departments[rng.gen_range(0..departments.len())].clone()); // 部門
+        ages.push(rng.random_range(20..60)); // 年齢
+        depts.push(departments[rng.random_range(0..departments.len())].clone()); // 部門
         
         // 給与（部門と年齢に基づいて乱数を生成）
         let base_salary = match depts.last().unwrap().as_str() {
@@ -171,7 +171,7 @@ fn generate_large_dataframe(rows: usize) -> Result<OptimizedDataFrame, Box<dyn E
         };
         
         let age_factor = *ages.last().unwrap() as f64 / 30.0;
-        let variation = rng.gen_range(0.8..1.2);
+        let variation = rng.random_range(0.8..1.2);
         
         salaries.push(base_salary * age_factor * variation);
     }

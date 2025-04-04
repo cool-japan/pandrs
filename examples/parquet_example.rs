@@ -1,4 +1,5 @@
 use pandrs::{DataFrame, Series};
+use pandrs::io::{read_parquet, write_parquet, ParquetCompression};
 use std::error::Error;
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -28,6 +29,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!("将来のリリースで利用可能になる予定です。");
     
     /*
+    // 現在はParquet機能は未実装ですが、依存関係を導入しました
+    // 以下のコードは将来のバージョンで使えるようになる予定です
+
     // Parquetファイルに書き込み
     let path = "example.parquet";
     match write_parquet(&df, path, Some(ParquetCompression::Snappy)) {
