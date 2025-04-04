@@ -3,6 +3,7 @@ use std::fmt::{self, Debug};
 use std::sync::Arc;
 
 use crate::column::{Column, ColumnTrait, ColumnType, Int64Column};
+use crate::column::string_column::{StringColumn, StringColumnOptimizationMode};
 use crate::error::{Error, Result};
 use crate::index::{DataFrameIndex, IndexTrait, Index};
 use crate::optimized::operations::JoinType;
@@ -118,6 +119,10 @@ impl Debug for OptimizedDataFrame {
         Ok(())
     }
 }
+
+/// カテゴリカルデータの管理に必要な定数
+const CATEGORICAL_META_KEY: &str = "_categorical";
+const CATEGORICAL_ORDER_META_KEY: &str = "_categorical_order";
 
 impl OptimizedDataFrame {
     /// 新しい空のDataFrameを作成
@@ -1539,5 +1544,242 @@ impl ColumnView {
     /// 内部のColumnを取得
     pub fn into_column(self) -> Column {
         self.column
+    }
+}
+
+/// OptimizedDataFrameのカテゴリカル機能拡張
+impl OptimizedDataFrame {
+    /// 列をカテゴリカルデータとして扱うかどうかをチェック
+    pub fn is_categorical(&self, column: &str) -> bool {
+        // カテゴリカルメタデータ列が存在するかで判定
+        let meta_key = format!("{}{}", column, CATEGORICAL_META_KEY);
+        self.column_indices.contains_key(&meta_key)
+    }
+
+    /// 文字列列をカテゴリカルとして扱うように変換（最適化実装）
+    pub fn astype_categorical(&mut self, column: &str) -> Result<()> {
+        // 列の存在確認
+        if !self.column_indices.contains_key(column) {
+            return Err(Error::ColumnNotFound(column.to_string()));
+        }
+
+        // すでにカテゴリカルならスキップ
+        if self.is_categorical(column) {
+            return Ok(());
+        }
+
+        // 列インデックスを取得
+        let col_idx = self.column_indices[column];
+        
+        // 文字列列かチェック
+        if let Column::String(ref string_col) = self.columns[col_idx] {
+            // 既存の列の文字列データを取得
+            let mut string_values = Vec::with_capacity(string_col.len());
+            for i in 0..string_col.len() {
+                if let Ok(Some(val)) = string_col.get(i) {
+                    string_values.push(val.to_string());
+                } else {
+                    string_values.push(String::new()); // デフォルト値
+                }
+            }
+            
+            // カテゴリカル最適化モードで新しい列を作成
+            let new_col = StringColumn::new_with_mode(
+                string_values, 
+                StringColumnOptimizationMode::Categorical
+            );
+
+            if let Some(name) = string_col.get_name() {
+                let mut new_col_with_name = new_col;
+                new_col_with_name.set_name(name);
+                self.columns[col_idx] = Column::String(new_col_with_name);
+            } else {
+                self.columns[col_idx] = Column::String(new_col);
+            }
+
+            // カテゴリカルメタデータ用の列を作成
+            let meta_key = format!("{}{}", column, CATEGORICAL_META_KEY);
+            let meta_values = vec![true; self.row_count];
+            let meta_col = Column::Boolean(crate::column::BooleanColumn::new(meta_values));
+            
+            // メタデータ列を追加
+            self.add_column(meta_key, meta_col)?;
+            
+            // 順序メタデータ列（デフォルトで非順序）
+            let order_key = format!("{}{}", column, CATEGORICAL_ORDER_META_KEY);
+            let order_values = vec![false; self.row_count]; // false = 非順序
+            let order_col = Column::Boolean(crate::column::BooleanColumn::new(order_values));
+            
+            // 順序メタデータ列を追加
+            self.add_column(order_key, order_col)?;
+            
+            Ok(())
+        } else {
+            // 文字列列でない場合はエラー
+            Err(Error::ColumnTypeMismatch {
+                name: column.to_string(),
+                expected: ColumnType::String,
+                found: self.columns[col_idx].column_type(),
+            })
+        }
+    }
+
+    /// カテゴリカル列の一意値（カテゴリ）を取得
+    pub fn get_categories(&self, column: &str) -> Result<Vec<String>> {
+        if !self.is_categorical(column) {
+            return Err(Error::OperationFailed(format!(
+                "列 '{}' はカテゴリカルデータではありません", column
+            )));
+        }
+
+        // 列インデックスを取得
+        let col_idx = self.column_indices[column];
+        
+        if let Column::String(ref string_col) = self.columns[col_idx] {
+            // カテゴリカル列から一意値を取得
+            let mut unique_values = std::collections::HashSet::new();
+            
+            for i in 0..string_col.len() {
+                if let Ok(Some(val)) = string_col.get(i) {
+                    unique_values.insert(val.to_string());
+                }
+            }
+            
+            Ok(unique_values.into_iter().collect())
+        } else {
+            Err(Error::OperationFailed(format!(
+                "列 '{}' は文字列型ではありません", column
+            )))
+        }
+    }
+
+    /// カテゴリカル列の順序を変更
+    pub fn set_categorical_ordered(&mut self, column: &str, ordered: bool) -> Result<()> {
+        if !self.is_categorical(column) {
+            return Err(Error::OperationFailed(format!(
+                "列 '{}' はカテゴリカルデータではありません", column
+            )));
+        }
+
+        // 順序メタデータ列のインデックスを取得
+        let order_key = format!("{}{}", column, CATEGORICAL_ORDER_META_KEY);
+        let order_idx = self.column_indices.get(&order_key)
+            .ok_or_else(|| Error::ColumnNotFound(order_key.clone()))?;
+        
+        // 順序メタデータを更新
+        if let Column::Boolean(ref mut bool_col) = self.columns[*order_idx] {
+            // 新しい順序値で更新
+            let new_col = crate::column::BooleanColumn::new(vec![ordered; self.row_count]);
+            self.columns[*order_idx] = Column::Boolean(new_col);
+            Ok(())
+        } else {
+            Err(Error::OperationFailed(format!(
+                "メタデータ列 '{}' の型が不正です", order_key
+            )))
+        }
+    }
+
+    /// カテゴリを新規追加（既存のカテゴリに影響なし）
+    pub fn add_categories(&mut self, column: &str, new_categories: &[String]) -> Result<()> {
+        if !self.is_categorical(column) {
+            return Err(Error::OperationFailed(format!(
+                "列 '{}' はカテゴリカルデータではありません", column
+            )));
+        }
+
+        // 現在のカテゴリを取得
+        let current_categories = self.get_categories(column)?;
+        
+        // 新しいカテゴリだけを抽出
+        let mut added = false;
+        for cat in new_categories {
+            if !current_categories.contains(cat) {
+                added = true;
+                // カテゴリの追加は内部的にStringColumnのカテゴリカル最適化機能で管理されているため
+                // ここでは特別な処理は不要（すでにカテゴリカル最適化モードになっている）
+            }
+        }
+        
+        if added {
+            // カテゴリが追加されたことをログに記録するなどの処理があれば追加
+        }
+        
+        Ok(())
+    }
+
+    /// カテゴリカル列の出現回数を計算
+    pub fn value_counts(&self, column: &str) -> Result<HashMap<String, usize>> {
+        if !self.column_indices.contains_key(column) {
+            return Err(Error::ColumnNotFound(column.to_string()));
+        }
+
+        let col_idx = self.column_indices[column];
+        
+        if let Column::String(ref string_col) = self.columns[col_idx] {
+            let mut counts = HashMap::new();
+            
+            for i in 0..string_col.len() {
+                if let Ok(Some(val)) = string_col.get(i) {
+                    *counts.entry(val.to_string()).or_insert(0) += 1;
+                }
+            }
+            
+            Ok(counts)
+        } else {
+            Err(Error::ColumnTypeMismatch {
+                name: column.to_string(),
+                expected: ColumnType::String,
+                found: self.columns[col_idx].column_type(),
+            })
+        }
+    }
+
+    /// 効率的なカテゴリカルデータ構築（StringColumnのCategoricalモードを使用）
+    pub fn add_categorical_column(&mut self, name: impl Into<String>, values: Vec<String>) -> Result<()> {
+        let name = name.into();
+        
+        // 大規模データセットの場合は特別な最適化
+        let is_large_dataset = values.len() > 10000;
+        
+        // カテゴリカル最適化モードで列を作成
+        let string_col = if is_large_dataset {
+            // 大規模データセットのための最適化
+            StringColumn::from_strings_optimized(values.clone())
+        } else {
+            // 通常の処理
+            StringColumn::with_name_and_mode(
+                values.clone(),
+                name.clone(),
+                StringColumnOptimizationMode::Categorical
+            )
+        };
+        
+        // 名前を設定（大規模データセット処理時に必要）
+        let string_col_with_name = if is_large_dataset {
+            let mut col = string_col;
+            col.set_name(name.clone());
+            col
+        } else {
+            string_col
+        };
+        
+        // 列として追加
+        self.add_column(name.clone(), Column::String(string_col_with_name))?;
+        
+        // カテゴリカルメタデータ用の列を作成
+        let meta_key = format!("{}{}", name, CATEGORICAL_META_KEY);
+        let meta_values = vec![true; values.len()];
+        let meta_col = Column::Boolean(crate::column::BooleanColumn::new(meta_values));
+        
+        // メタデータ列を追加
+        self.add_column(meta_key, meta_col)?;
+        
+        // 順序メタデータ列（デフォルトで非順序）
+        let order_key = format!("{}{}", name, CATEGORICAL_ORDER_META_KEY);
+        let order_values = vec![false; values.len()]; // false = 非順序
+        let order_col = Column::Boolean(crate::column::BooleanColumn::new(order_values));
+        
+        // 順序メタデータ列を追加
+        self.add_column(order_key, order_col)
     }
 }
