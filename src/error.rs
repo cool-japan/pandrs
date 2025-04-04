@@ -114,3 +114,23 @@ impl From<regex::Error> for Error {
         Error::InvalidRegex(err.to_string())
     }
 }
+
+impl From<std::io::Error> for Error {
+    fn from(err: std::io::Error) -> Self {
+        Error::Io(err)
+    }
+}
+
+// 追加のIOError変換のサポート
+#[derive(Error, Debug)]
+#[error("IOエラー: {0}")]
+pub enum IOError {
+    #[error("{0}")]
+    Message(String),
+}
+
+impl From<IOError> for Error {
+    fn from(err: IOError) -> Self {
+        Error::IoError(format!("{}", err))
+    }
+}

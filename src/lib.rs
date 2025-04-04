@@ -10,6 +10,7 @@
 #![allow(clippy::needless_lifetimes)]
 
 pub mod column;
+pub mod compat;
 pub mod dataframe;
 pub mod error;
 pub mod groupby;
@@ -23,10 +24,10 @@ pub mod series;
 pub mod temporal;
 pub mod vis;
 
-// 互換性レイヤーは削除
-
 // Re-export commonly used types
 pub use column::{Column, ColumnType, Int64Column, Float64Column, StringColumn, BooleanColumn};
+// Re-export compatibility layer
+pub use compat::DataFrameCompat;
 // Re-export dataframe transformation options
 pub use dataframe::{MeltOptions, StackOptions, UnstackOptions};
 pub use error::PandRSError;
@@ -35,6 +36,8 @@ pub use index::{DataFrameIndex, Index, IndexTrait, MultiIndex, RangeIndex, Strin
 pub use na::NA;
 // 最適化された実装をデフォルトとして使用
 pub use optimized::{OptimizedDataFrame as DataFrame, LazyFrame, AggregateOp, JoinType};
+// いくつかのexampleやtestsでは、直接OptimizedDataFrameを使うように書いているので、エイリアスを用意
+pub use optimized::dataframe::OptimizedDataFrame;
 pub use parallel::ParallelUtils;
 pub use series::{Categorical, CategoricalOrder, NASeries, Series, StringCategorical};
 pub use vis::{OutputFormat, PlotConfig, PlotType};

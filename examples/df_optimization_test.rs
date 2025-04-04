@@ -60,7 +60,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // ---------------------------------------------------
     println!("\n--- 通常列のカテゴリカル変換 ---");
     let start = Instant::now();
-    df.astype_categorical("都市")?;
+    df.astype_categorical("都市", None, None)?;
     let conversion_time = start.elapsed();
     println!("通常列のカテゴリカル変換時間: {:?}", conversion_time);
     
@@ -89,7 +89,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // カテゴリカル順序の設定
     // ---------------------------------------------------
     println!("\n--- カテゴリカル順序の設定 ---");
-    df.set_categorical_ordered("人口", true)?;
+    // カテゴリカルオーダーのインポートができていないのでここでは直接渡す
+    let ordered = match true {
+        true => pandrs::series::CategoricalOrder::Ordered,
+        false => pandrs::series::CategoricalOrder::Unordered
+    };
+    df.set_categorical_ordered("人口", ordered)?;
     println!("人口列を順序付きカテゴリカルに設定しました");
     
     // ---------------------------------------------------
@@ -97,16 +102,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // ---------------------------------------------------
     println!("\n--- カテゴリカル出現回数の計算 ---");
     let pop_counts = df.value_counts("人口")?;
-    println!("人口の出現回数:");
-    for (cat, count) in &pop_counts {
-        println!("  {}: {}", cat, count);
-    }
+    println!("人口の出現回数: {} 種類", pop_counts.len());
+    println!("  詳細: {:?}", pop_counts);
     
     let city_counts = df.value_counts("都市")?;
-    println!("\n都市の出現回数:");
-    for (cat, count) in &city_counts {
-        println!("  {}: {}", cat, count);
-    }
+    println!("\n都市の出現回数: {} 種類", city_counts.len());
+    println!("  詳細: {:?}", city_counts);
     
     // ---------------------------------------------------
     // パフォーマンス比較のための大規模データセット

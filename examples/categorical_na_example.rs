@@ -1,6 +1,7 @@
 use pandrs::series::{CategoricalOrder, StringCategorical, NASeries};
 use pandrs::{DataFrame, NA};
 use pandrs::error::Result;
+use pandrs::compat::DataFrameCompat;
 use std::path::Path;
 
 fn main() -> Result<()> {
@@ -93,18 +94,18 @@ fn main() -> Result<()> {
     println!("\n--- カテゴリカル操作とNA値の処理 ---");
     
     // 地域カテゴリを取得
-    let region_cat = df.get_categorical("地域")?;
-    println!("地域カテゴリ: {:?}", region_cat.categories());
+    let region_cats = df.get_categories("地域")?;
+    println!("地域カテゴリ: {:?}", region_cats);
     
     // 人口カテゴリを取得
-    let pop_cat = df.get_categorical("人口")?;
-    println!("人口カテゴリ（順序付き）: {:?}", pop_cat.categories());
+    let pop_cats = df.get_categories("人口")?;
+    println!("人口カテゴリ（順序付き）: {:?}", pop_cats);
     
     // カテゴリの追加
-    df.add_categories("地域", vec!["沖縄".to_string()])?;
+    df.add_categories("地域", &vec!["沖縄".to_string()])?;
     
-    let updated_region_cat = df.get_categorical("地域")?;
-    println!("地域カテゴリ（追加後）: {:?}", updated_region_cat.categories());
+    let updated_region_cats = df.get_categories("地域")?;
+    println!("地域カテゴリ（追加後）: {:?}", updated_region_cats);
     
     // ===========================================================
     // CSV保存と読み込み

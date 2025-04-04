@@ -1,5 +1,5 @@
-// 互換性機能を提供するモジュール
+//! 互換性機能のためのモジュール
+
 mod dataframe_adapter;
 
-// エクスポート
-pub use dataframe_adapter::{DataFrameCompat, ParallelCompat};
+pub use dataframe_adapter::DataFrameCompat;
