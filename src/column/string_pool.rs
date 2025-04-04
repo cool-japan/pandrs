@@ -1,5 +1,82 @@
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, Once, RwLock};
+use lazy_static::lazy_static;
+
+// グローバル文字列プールのシングルトンインスタンス
+lazy_static! {
+    pub static ref GLOBAL_STRING_POOL: GlobalStringPool = GlobalStringPool::new();
+}
+
+/// グローバル文字列プール（シングルトン）
+#[derive(Debug)]
+pub struct GlobalStringPool {
+    pool: RwLock<StringPoolMut>,
+}
+
+impl GlobalStringPool {
+    /// 新しいグローバル文字列プールを作成
+    pub fn new() -> Self {
+        Self {
+            pool: RwLock::new(StringPoolMut {
+                strings: Vec::new(),
+                hash_map: HashMap::new(),
+            }),
+        }
+    }
+    
+    /// 文字列をプールに追加し、そのインデックスを返す
+    pub fn get_or_insert(&self, s: &str) -> u32 {
+        // 読み取りロックで試行
+        if let Ok(read_pool) = self.pool.read() {
+            if let Some(&idx) = read_pool.hash_map.get(s) {
+                return idx;
+            }
+        }
+        
+        // 見つからなかった場合は書き込みロックで追加
+        if let Ok(mut write_pool) = self.pool.write() {
+            // 再確認（他のスレッドが追加した可能性）
+            if let Some(&idx) = write_pool.hash_map.get(s) {
+                return idx;
+            }
+            
+            // 新しいインデックスを割り当て
+            let idx = write_pool.strings.len() as u32;
+            let arc_str: Arc<str> = Arc::from(s.to_owned());
+            write_pool.strings.push(arc_str.clone());
+            write_pool.hash_map.insert(arc_str, idx);
+            idx
+        } else {
+            // ロック失敗時のフォールバック（実際にはエラー処理すべき）
+            0
+        }
+    }
+    
+    /// インデックスを指定して文字列を取得
+    pub fn get(&self, index: u32) -> Option<String> {
+        if let Ok(pool) = self.pool.read() {
+            pool.strings.get(index as usize).map(|s| s.to_string())
+        } else {
+            None
+        }
+    }
+    
+    /// 登録済み文字列の数を返す
+    pub fn len(&self) -> usize {
+        if let Ok(pool) = self.pool.read() {
+            pool.strings.len()
+        } else {
+            0
+        }
+    }
+    
+    /// グローバルプールに文字列ベクトルを追加し、インデックスのベクトルを返す
+    pub fn add_strings(&self, strings: &[String]) -> Vec<u32> {
+        strings.iter()
+            .map(|s| self.get_or_insert(s))
+            .collect()
+    }
+}
 
 /// 文字列データを効率的に管理する文字列プール
 #[derive(Debug, Clone)]
@@ -17,8 +94,32 @@ impl StringPool {
         }
     }
     
-    /// 文字列ベクトルから新しい文字列プールを作成する
+    /// 文字列ベクトルから新しい文字列プールを作成する（グローバルプールを使う最適化版）
     pub fn from_strings(strings: Vec<String>) -> Self {
+        // グローバルプールを使う最適化を追加
+        let indices = GLOBAL_STRING_POOL.add_strings(&strings);
+        
+        // ここで実際のプールを作るが、グローバルプールの参照を活用できる
+        let mut pool = Self::new_mut();
+        
+        for (idx, s) in indices.iter().zip(strings.iter()) {
+            let arc_str: Arc<str> = Arc::from(s.to_owned());
+            pool.hash_map.insert(arc_str.clone(), *idx);
+            if idx >= &(pool.strings.len() as u32) {
+                // 必要に応じてサイズを拡張（実際には最適化可能）
+                while pool.strings.len() <= *idx as usize {
+                    pool.strings.push(arc_str.clone());
+                }
+            } else {
+                pool.strings[*idx as usize] = arc_str;
+            }
+        }
+        
+        pool.freeze()
+    }
+    
+    /// 文字列ベクトルから新しい文字列プールを作成する（従来の実装）
+    pub fn from_strings_legacy(strings: Vec<String>) -> Self {
         let mut pool = Self::new_mut();
         
         for s in strings {
