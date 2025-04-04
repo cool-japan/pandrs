@@ -3,8 +3,9 @@
 use crate::error::Result;
 use crate::na::NA;
 use crate::series::NASeries;
-use crate::legacy_dataframe::LegacyDataFrame;
 use crate::Series;
+use crate::DataFrame;
+use crate::compat::DataFrameCompat;
 use rayon::prelude::*;
 
 /// 並列処理の拡張: Seriesの並列処理
@@ -77,13 +78,13 @@ where
 }
 
 /// 並列処理の拡張: DataFrameの並列処理
-impl LegacyDataFrame {
-    /// すべての列に対して並列で関数を適用
-    pub fn par_apply<F>(&self, f: F) -> Result<LegacyDataFrame>
+impl DataFrame {
+    /// すべての列に対して並列で関数を適用（互換性メソッド）
+    pub fn par_apply_compat<F>(&self, f: F) -> Result<DataFrame>
     where
         F: Fn(&str, usize, &str) -> String + Send + Sync,
     {
-        let mut result = LegacyDataFrame::new();
+        let mut result = DataFrame::new();
 
         // 各列を並列処理
         let column_names = self.column_names().to_vec();
@@ -106,55 +107,54 @@ impl LegacyDataFrame {
                 .collect();
 
             // 新しい列を追加
-            let new_series = Series::new(new_values, Some(col_name.clone()))?;
-            result.add_column(col_name.clone(), new_series)?;
+            let new_column = crate::column::StringColumn::new(new_values);
+            result.add_column(col_name.clone(), crate::column::Column::String(new_column))?;
         }
 
         Ok(result)
     }
 
     /// 行のフィルタリングを並列で実行
-    pub fn par_filter_rows<F>(&self, f: F) -> Result<LegacyDataFrame>
+    pub fn par_filter_rows<F>(&self, f: F) -> Result<DataFrame>
     where
         F: Fn(usize) -> bool + Send + Sync,
     {
-        let mut result = LegacyDataFrame::new();
-
-        // 列名を取得
-        let column_names = self.column_names().to_vec();
-
         // パラレルで行インデックスをフィルタリング
         let row_indices: Vec<usize> = (0..self.row_count())
             .into_par_iter()
             .filter(|&i| f(i))
             .collect();
 
-        // 各列をフィルタリング
-        for col_name in &column_names {
-            let values = self.get_column_string_values(col_name)?;
-
-            // フィルタリングされた値を取得
-            let filtered_values: Vec<String> = row_indices
-                .par_iter()
-                .filter_map(|&i| {
-                    if i < values.len() {
-                        Some(values[i].clone())
-                    } else {
-                        None
-                    }
-                })
-                .collect();
-
-            // 新しい列を追加
-            let new_series = Series::new(filtered_values, Some(col_name.clone()))?;
-            result.add_column(col_name.clone(), new_series)?;
+        // 行インデックスを使ってブール列を作成
+        let mut filter_values = vec![false; self.row_count()];
+        for idx in &row_indices {
+            if *idx < filter_values.len() {
+                filter_values[*idx] = true;
+            }
         }
 
-        Ok(result)
+        // ブール列を作成
+        let bool_column = crate::column::BooleanColumn::new(filter_values);
+        let mut temp_df = self.clone();
+        
+        // 一時的にフィルター列をDataFrameに追加
+        let filter_col_name = "__temp_filter__";
+        temp_df.add_column(filter_col_name, crate::column::Column::Boolean(bool_column))?;
+        
+        // フィルタリングを実行
+        let result = temp_df.par_filter(filter_col_name)?;
+        
+        // フィルター列を持たないDataFrameを作成して返す
+        let column_names: Vec<&str> = result.column_names().iter()
+            .filter(|&name| name != filter_col_name)
+            .map(|s| s.as_str())
+            .collect();
+            
+        result.select(&column_names)
     }
 
-    /// グループ化操作を並列で実行
-    pub fn par_groupby<K>(&self, key_func: K) -> Result<HashMap<String, LegacyDataFrame>>
+    /// グループ化操作を並列で実行（互換性メソッド）
+    pub fn par_groupby_compat<K>(&self, key_func: K) -> Result<HashMap<String, DataFrame>>
     where
         K: Fn(usize) -> String + Send + Sync,
     {
@@ -172,12 +172,18 @@ impl LegacyDataFrame {
             });
 
         // 各グループに対してDataFrameを作成
-        let mut result = HashMap::new();
-
-        for (key, indices) in groups {
-            let group_df = self.par_filter_rows(|i| indices.contains(&i))?;
-            result.insert(key, group_df);
-        }
+        let result = groups.par_iter()
+            .map(|(key, indices)| {
+                // インデックスのクローンを作成
+                let indices_clone = indices.clone();
+                
+                // フィルターでDataFrameを作成
+                match self.par_filter_rows(|i| indices_clone.contains(&i)) {
+                    Ok(df) => (key.clone(), df),
+                    Err(_) => (key.clone(), DataFrame::new()), // エラー時は空のDataFrameを返す
+                }
+            })
+            .collect();
 
         Ok(result)
     }

@@ -369,7 +369,7 @@ impl OptimizedDataFrame {
                                 filtered_data.push(String::new()); // デフォルト値
                             }
                         }
-                        Column::String(crate::column::StringColumn::new(filtered_data))
+                        Column::String(crate::column::StringColumn::from_strings_optimized(filtered_data))
                     },
                     Column::Boolean(col) => {
                         let mut filtered_data = Vec::with_capacity(indices.len());
@@ -582,7 +582,7 @@ impl OptimizedDataFrame {
                                     }
                                 })
                                 .collect();
-                            Column::String(crate::column::StringColumn::new(filtered_data))
+                            Column::String(crate::column::StringColumn::from_strings_optimized(filtered_data))
                         },
                         Column::Boolean(col) => {
                             let filtered_data: Vec<bool> = indices.iter()
@@ -671,7 +671,7 @@ impl OptimizedDataFrame {
                                     filtered_data.extend(chunk_data);
                                 }
                                 
-                                Column::String(crate::column::StringColumn::new(filtered_data))
+                                Column::String(crate::column::StringColumn::from_strings_optimized(filtered_data))
                             },
                             Column::Boolean(col) => {
                                 let filtered_data: Vec<bool> = indices.iter()
@@ -966,7 +966,7 @@ impl OptimizedDataFrame {
                                 }
                             })
                             .collect();
-                        Column::String(crate::column::StringColumn::new(filtered_data))
+                        Column::String(crate::column::StringColumn::from_strings_optimized(filtered_data))
                     },
                     Column::Boolean(col) => {
                         let filtered_data: Vec<bool> = indices.iter()

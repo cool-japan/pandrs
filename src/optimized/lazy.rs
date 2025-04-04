@@ -3,9 +3,114 @@ use std::fmt::{self, Debug};
 use std::sync::Arc;
 
 use crate::column::{Column, ColumnType};
+use crate::column::string_column::StringColumnOptimizationMode;
 use crate::error::{Error, Result};
 use crate::optimized::dataframe::OptimizedDataFrame;
 use crate::optimized::operations::AggregateOp;
+
+/// 列の遅延評価を実装
+#[derive(Clone)]
+pub struct LazyColumn {
+    // ソース列
+    source: Arc<Column>,
+    // 適用する操作キュー
+    operations: Vec<ColumnOperation>,
+}
+
+/// 列に対する操作
+#[derive(Clone)]
+enum ColumnOperation {
+    // 型変換
+    Cast(ColumnType),
+    // フィルタリング
+    Filter(Vec<usize>),
+    // マッピング関数
+    Map(Arc<dyn Fn(&Column) -> Result<Column> + Send + Sync>),
+    // 文字列列の最適化モード変更
+    OptimizeString(StringColumnOptimizationMode),
+}
+
+impl LazyColumn {
+    /// 新しい遅延評価列を作成
+    pub fn new(source: Column) -> Self {
+        Self {
+            source: Arc::new(source),
+            operations: Vec::new(),
+        }
+    }
+    
+    /// 型変換操作を追加
+    pub fn cast(mut self, to_type: ColumnType) -> Self {
+        self.operations.push(ColumnOperation::Cast(to_type));
+        self
+    }
+    
+    /// フィルタリング操作を追加
+    pub fn filter(mut self, indices: Vec<usize>) -> Self {
+        self.operations.push(ColumnOperation::Filter(indices));
+        self
+    }
+    
+    /// マッピング関数を追加
+    pub fn map<F>(mut self, f: F) -> Self
+    where
+        F: Fn(&Column) -> Result<Column> + Send + Sync + 'static,
+    {
+        self.operations.push(ColumnOperation::Map(Arc::new(f)));
+        self
+    }
+    
+    /// 文字列列の最適化モードを変更
+    pub fn optimize_string(mut self, mode: StringColumnOptimizationMode) -> Self {
+        self.operations.push(ColumnOperation::OptimizeString(mode));
+        self
+    }
+    
+    /// 遅延評価を実行して結果を取得
+    pub fn execute(self) -> Result<Column> {
+        let mut result = (*self.source).clone();
+        
+        for op in self.operations {
+            match op {
+                ColumnOperation::Cast(to_type) => {
+                    // ここに型変換のコードを実装
+                    // （略）
+                },
+                ColumnOperation::Filter(indices) => {
+                    // TODO: フィルタリング実装
+                    // （略）
+                },
+                ColumnOperation::Map(f) => {
+                    result = f(&result)?;
+                },
+                ColumnOperation::OptimizeString(mode) => {
+                    if let Column::String(string_col) = &result {
+                        // 文字列列の場合、最適化モードを変更した新しいカラムを作成
+                        // （実際にはより効率的な実装が可能）
+                        let indices_vec = string_col.indices.to_vec();
+                        let string_values = indices_vec.iter()
+                            .map(|&idx| string_col.string_pool.get(idx).unwrap_or("").to_string())
+                            .collect::<Vec<_>>();
+                        
+                        match mode {
+                            StringColumnOptimizationMode::Legacy => {
+                                result = Column::String(crate::column::string_column::StringColumn::new_legacy(string_values));
+                            },
+                            StringColumnOptimizationMode::GlobalPool => {
+                                result = Column::String(crate::column::string_column::StringColumn::new_with_global_pool(string_values));
+                            },
+                            StringColumnOptimizationMode::Categorical => {
+                                result = Column::String(crate::column::string_column::StringColumn::new_categorical(string_values));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        Ok(result)
+    }
+}
 
 /// 遅延評価のためのデータフレームラッパー
 #[derive(Clone)]
@@ -166,6 +271,7 @@ impl LazyFrame {
                     df = df.par_filter(&condition)?;
                 },
                 Operation::Map(f) => {
+                    // 正しいpar_applyメソッドを使用
                     df = df.par_apply(|view| {
                         f(&view.clone().into_column())
                     })?;

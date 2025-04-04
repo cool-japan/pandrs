@@ -302,12 +302,77 @@ impl DataFrame {
 
     /// DataFrameがCSVファイルに保存
     pub fn to_csv<P: AsRef<Path>>(&self, path: P) -> Result<()> {
-        io::csv::write_csv(self, path)
+        // 旧実装で直接I/Oを実行
+        let mut writer = csv::Writer::from_path(path).map_err(PandRSError::Csv)?;
+        
+        // ヘッダーの書き込み
+        let column_names = self.column_names();
+        writer.write_record(column_names).map_err(PandRSError::Csv)?;
+        
+        // 各行の書き込み
+        for i in 0..self.row_count() {
+            let mut row = Vec::new();
+            for col_name in column_names {
+                if let Some(series) = self.columns.get(col_name) {
+                    if let Some(value) = series.get(i) {
+                        row.push(format!("{:?}", value));
+                    } else {
+                        row.push(String::new());
+                    }
+                }
+            }
+            writer.write_record(&row).map_err(PandRSError::Csv)?;
+        }
+        
+        writer.flush().map_err(|e| PandRSError::Io(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
+        Ok(())
     }
 
     /// CSVファイルからDataFrameを作成
     pub fn from_csv<P: AsRef<Path>>(path: P, has_header: bool) -> Result<Self> {
-        io::csv::read_csv(path, has_header)
+        let mut df = Self::new();
+        let mut reader = csv::ReaderBuilder::new()
+            .has_headers(has_header)
+            .from_path(path.as_ref())
+            .map_err(PandRSError::Csv)?;
+        
+        // ヘッダーの処理
+        let headers: Vec<String> = if has_header {
+            reader.headers().map_err(PandRSError::Csv)?
+                .iter().map(|h| h.to_string()).collect()
+        } else {
+            (0..reader.headers().map_err(PandRSError::Csv)?.len())
+                .map(|i| format!("column_{}", i))
+                .collect()
+        };
+        
+        // 列データを収集
+        let mut columns: HashMap<String, Vec<String>> = headers.iter()
+            .map(|h| (h.clone(), Vec::new()))
+            .collect();
+        
+        // 各行の処理
+        for result in reader.records() {
+            let record = result.map_err(PandRSError::Csv)?;
+            
+            for (i, field) in record.iter().enumerate() {
+                if i < headers.len() {
+                    if let Some(values) = columns.get_mut(&headers[i]) {
+                        values.push(field.to_string());
+                    }
+                }
+            }
+        }
+        
+        // DataFrameに列を追加
+        for header in headers {
+            if let Some(values) = columns.get(&header) {
+                let series = Series::new(values.clone(), Some(header.clone()))?;
+                df.add_column(header.clone(), series)?;
+            }
+        }
+        
+        Ok(df)
     }
     
     /// DataFrameをJSON文字列に変換

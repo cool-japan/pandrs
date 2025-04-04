@@ -36,13 +36,49 @@ fn main() {
     let df_construct_start = Instant::now();
     let mut df = OptimizedDataFrame::new();
     
+    // 各列の追加時間を個別に計測
+    let start_int = Instant::now();
     df.add_column("id".to_string(), Column::Int64(Int64Column::new(int_data))).unwrap();
+    let int_time = start_int.elapsed();
+    println!("Int列追加時間: {:?}", int_time);
+    
+    let start_float = Instant::now();
     df.add_column("value".to_string(), Column::Float64(Float64Column::new(float_data))).unwrap();
+    let float_time = start_float.elapsed();
+    println!("Float列追加時間: {:?}", float_time);
+    
+    // 文字列をi64にエンコードした疑似カテゴリカル列を使った高速化テスト
+    let start_int_cat = Instant::now();
+    // 文字列をインデックスに変換（疑似カテゴリカル化）
+    let mut str_to_idx = std::collections::HashMap::new();
+    let mut next_idx = 0i64;
+    let cat_data: Vec<i64> = str_data.iter().map(|s| {
+        if let Some(&idx) = str_to_idx.get(s) {
+            idx
+        } else {
+            let idx = next_idx;
+            str_to_idx.insert(s.clone(), idx);
+            next_idx += 1;
+            idx
+        }
+    }).collect();
+    df.add_column("encoded_category".to_string(), Column::Int64(Int64Column::new(cat_data))).unwrap();
+    let int_cat_time = start_int_cat.elapsed();
+    println!("エンコードカテゴリカル列追加時間: {:?}", int_cat_time);
+    
+    let start_string = Instant::now();
     df.add_column("category".to_string(), Column::String(StringColumn::new(str_data))).unwrap();
+    let string_time = start_string.elapsed();
+    println!("String列追加時間: {:?}", string_time);
+    
+    let start_bool = Instant::now();
     df.add_column("flag".to_string(), Column::Boolean(BooleanColumn::new(bool_data))).unwrap();
+    let bool_time = start_bool.elapsed();
+    println!("Boolean列追加時間: {:?}", bool_time);
     
     let df_construct_time = df_construct_start.elapsed();
     println!("DataFrame構築時間: {:?}", df_construct_time);
+    println!("列追加時間合計: {:?}", int_time + float_time + int_cat_time + string_time + bool_time);
     println!("合計DataFrame作成時間: {:?}", data_gen_time + df_construct_time);
     
     // ====================

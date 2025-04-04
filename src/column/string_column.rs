@@ -2,8 +2,22 @@ use std::sync::Arc;
 use std::any::Any;
 
 use crate::column::common::{Column, ColumnTrait, ColumnType};
-use crate::column::string_pool::StringPool;
+use crate::column::string_pool::{StringPool, GLOBAL_STRING_POOL};
 use crate::error::{Error, Result};
+
+/// 最適化モードの選択
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum StringColumnOptimizationMode {
+    /// 従来の実装（個別のプール）
+    Legacy,
+    /// グローバルプールを使用
+    GlobalPool,
+    /// カテゴリカル最適化（内部的にInt列として処理）
+    Categorical,
+}
+
+/// デフォルトの最適化モード
+pub static mut DEFAULT_OPTIMIZATION_MODE: StringColumnOptimizationMode = StringColumnOptimizationMode::GlobalPool;
 
 /// 文字列型の列を表す構造体（文字列プールを使用）
 #[derive(Debug, Clone)]
@@ -12,12 +26,60 @@ pub struct StringColumn {
     pub(crate) indices: Arc<[u32]>,
     pub(crate) null_mask: Option<Arc<[u8]>>,
     pub(crate) name: Option<String>,
+    /// 最適化モード
+    pub(crate) optimization_mode: StringColumnOptimizationMode,
 }
 
 impl StringColumn {
-    /// 文字列ベクトルから新しいStringColumnを作成する
+    /// 文字列ベクトルから直接StringColumnを作成する（文字列→カテゴリカル変換を最適化）
+    pub fn from_strings_optimized(data: Vec<String>) -> Self {
+        // カテゴリカル最適化：文字列→インデックス変換を1パスで行う
+        let mut unique_strings = Vec::with_capacity(1000); // 一般的なユースケースで十分な初期容量
+        let mut str_to_idx = std::collections::HashMap::with_capacity(1000);
+        let mut indices = Vec::with_capacity(data.len());
+        
+        // 1パスで文字列をインデックス化
+        for s in &data {
+            if let Some(&idx) = str_to_idx.get(s) {
+                indices.push(idx);
+            } else {
+                let idx = unique_strings.len() as u32;
+                str_to_idx.insert(s.clone(), idx);
+                unique_strings.push(s.clone());
+                indices.push(idx);
+            }
+        }
+        
+        // 文字列プールを作成
+        let pool = StringPool::from_strings(unique_strings);
+        
+        Self {
+            string_pool: Arc::new(pool),
+            indices: indices.into(),
+            null_mask: None,
+            name: None,
+            optimization_mode: StringColumnOptimizationMode::Categorical,
+        }
+    }
+
+    /// 文字列ベクトルから新しいStringColumnを作成する（デフォルト最適化）
     pub fn new(data: Vec<String>) -> Self {
-        let pool = StringPool::from_strings(data.clone());
+        // 高速な最適化実装を常に使用
+        Self::from_strings_optimized(data)
+    }
+    
+    /// 指定された最適化モードでStringColumnを作成する
+    pub fn new_with_mode(data: Vec<String>, mode: StringColumnOptimizationMode) -> Self {
+        match mode {
+            StringColumnOptimizationMode::Legacy => Self::new_legacy(data),
+            StringColumnOptimizationMode::GlobalPool => Self::new_with_global_pool(data),
+            StringColumnOptimizationMode::Categorical => Self::new_categorical(data),
+        }
+    }
+    
+    /// 従来の実装（個別のプール）でStringColumnを作成する
+    pub fn new_legacy(data: Vec<String>) -> Self {
+        let pool = StringPool::from_strings_legacy(data.clone());
         let indices: Vec<u32> = data.iter()
             .map(|s| pool.find(s).unwrap_or(0))
             .collect();
@@ -27,22 +89,53 @@ impl StringColumn {
             indices: indices.into(),
             null_mask: None,
             name: None,
+            optimization_mode: StringColumnOptimizationMode::Legacy,
         }
     }
     
-    /// 名前付きのStringColumnを作成する
-    pub fn with_name(data: Vec<String>, name: impl Into<String>) -> Self {
-        let pool = StringPool::from_strings(data.clone());
-        let indices: Vec<u32> = data.iter()
-            .map(|s| pool.find(s).unwrap_or(0))
-            .collect();
+    /// グローバルプールを使用してStringColumnを作成する
+    pub fn new_with_global_pool(data: Vec<String>) -> Self {
+        // グローバルプールを活用した高速実装
+        let indices = GLOBAL_STRING_POOL.add_strings(&data);
+        let pool = StringPool::from_strings(data);
         
         Self {
             string_pool: Arc::new(pool),
             indices: indices.into(),
             null_mask: None,
-            name: Some(name.into()),
+            name: None,
+            optimization_mode: StringColumnOptimizationMode::GlobalPool,
         }
+    }
+    
+    /// カテゴリカル最適化モードでStringColumnを作成（内部的にInt列として処理）
+    pub fn new_categorical(data: Vec<String>) -> Self {
+        // この実装はグローバルプールを活用しつつ、さらにカテゴリカル処理に最適化
+        let indices = GLOBAL_STRING_POOL.add_strings(&data);
+        let pool = StringPool::from_strings(data);
+        
+        Self {
+            string_pool: Arc::new(pool),
+            indices: indices.into(),
+            null_mask: None,
+            name: None,
+            optimization_mode: StringColumnOptimizationMode::Categorical,
+        }
+    }
+    
+    /// 名前付きのStringColumnを作成する
+    pub fn with_name(data: Vec<String>, name: impl Into<String>) -> Self {
+        // デフォルトの最適化モードでカラムを作成
+        let mut column = Self::new(data);
+        column.name = Some(name.into());
+        column
+    }
+    
+    /// 名前付きのStringColumnを特定の最適化モードで作成する
+    pub fn with_name_and_mode(data: Vec<String>, name: impl Into<String>, mode: StringColumnOptimizationMode) -> Self {
+        let mut column = Self::new_with_mode(data, mode);
+        column.name = Some(name.into());
+        column
     }
     
     /// NULL値を含むStringColumnを作成する
@@ -53,17 +146,23 @@ impl StringColumn {
             None
         };
         
-        let pool = StringPool::from_strings(data.clone());
-        let indices: Vec<u32> = data.iter()
-            .map(|s| pool.find(s).unwrap_or(0))
-            .collect();
+        // 現在のデフォルト最適化モードで作成
+        let mode = unsafe { DEFAULT_OPTIMIZATION_MODE };
+        Self::with_nulls_and_mode(data, nulls, mode)
+    }
+    
+    /// 特定の最適化モードでNULL値を含むStringColumnを作成する
+    pub fn with_nulls_and_mode(data: Vec<String>, nulls: Vec<bool>, mode: StringColumnOptimizationMode) -> Self {
+        let null_mask = if nulls.iter().any(|&is_null| is_null) {
+            Some(crate::column::common::utils::create_bitmask(&nulls))
+        } else {
+            None
+        };
         
-        Self {
-            string_pool: Arc::new(pool),
-            indices: indices.into(),
-            null_mask,
-            name: None,
-        }
+        // 選択された最適化モードでカラムを作成
+        let mut column = Self::new_with_mode(data, mode);
+        column.null_mask = null_mask;
+        column
     }
     
     /// 名前を設定する

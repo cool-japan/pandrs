@@ -1,24 +1,18 @@
+// 注: このモジュールはレガシーコードを含みますが、
+// 最適化実装に移行するために、接続部分のみ残しています。
+// 実際のJoin操作はpandrs::DataFrameの実装を使用してください。
+
+// 最適化実装のJoinTypeを再エクスポート
+pub use crate::optimized::operations::JoinType;
+
+// 以下のコードは参照用です
+/*
 use crate::dataframe::DataBox;
 use crate::error::{PandRSError, Result};
 use crate::series::Series;
-use crate::legacy_dataframe::LegacyDataFrame;
 use std::collections::{HashMap, HashSet};
 
-/// 結合タイプの列挙型
-/// 注意: optimized::operations::JoinTypeと互換
-#[derive(Debug)]
-pub enum LegacyJoinType {
-    /// 内部結合 (両方の表に一致する行のみ)
-    Inner,
-    /// 左結合 (左側の表の全ての行と、右側の表の一致する行)
-    Left,
-    /// 右結合 (右側の表の全ての行と、左側の表の一致する行)
-    Right,
-    /// 外部結合 (両方の表の全ての行)
-    Outer,
-}
-
-impl LegacyDataFrame {
+impl DataFrame {
     /// 2つのDataFrameを結合する
     pub fn join(&self, other: &LegacyDataFrame, on: &str, join_type: LegacyJoinType) -> Result<LegacyDataFrame> {
         // 結合列が存在するか確認
@@ -317,3 +311,4 @@ impl LegacyDataFrame {
         Ok(())
     }
 }
+*/
