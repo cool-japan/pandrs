@@ -10,6 +10,7 @@ use std::time::Instant;
 
 // 列の型を表す列挙型
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
 pub enum ColumnType {
     Int64,
     Float64,
@@ -21,10 +22,15 @@ pub enum ColumnType {
 // 列の共通トレイト
 pub trait ColumnTrait: Debug + Send + Sync {
     fn len(&self) -> usize;
+    #[allow(dead_code)]
     fn is_empty(&self) -> bool;
+    #[allow(dead_code)]
     fn column_type(&self) -> ColumnType;
+    #[allow(dead_code)]
     fn name(&self) -> Option<&str>;
+    #[allow(dead_code)]
     fn clone_box(&self) -> Box<dyn ColumnTrait>;
+    #[allow(dead_code)]
     fn as_any(&self) -> &dyn Any;
 }
 
@@ -32,6 +38,7 @@ pub trait ColumnTrait: Debug + Send + Sync {
 #[derive(Debug, Clone)]
 pub struct Int64Column {
     data: Arc<[i64]>,
+    #[allow(dead_code)]
     null_mask: Option<Arc<[u8]>>,
     name: Option<String>,
 }
@@ -50,6 +57,7 @@ impl Int64Column {
         self
     }
 
+    #[allow(dead_code)]
     pub fn values(&self) -> &[i64] {
         &self.data
     }
@@ -105,6 +113,7 @@ impl ColumnTrait for Int64Column {
 #[derive(Debug, Clone)]
 pub struct Float64Column {
     data: Arc<[f64]>,
+    #[allow(dead_code)]
     null_mask: Option<Arc<[u8]>>,
     name: Option<String>,
 }
@@ -123,6 +132,7 @@ impl Float64Column {
         self
     }
 
+    #[allow(dead_code)]
     pub fn values(&self) -> &[f64] {
         &self.data
     }
@@ -213,6 +223,7 @@ pub struct StringColumn {
     string_pool: Arc<StringPool>,
     // 文字列プールへのインデックス
     indices: Arc<[u32]>,
+    #[allow(dead_code)]
     null_mask: Option<Arc<[u8]>>,
     name: Option<String>,
 }
@@ -287,10 +298,12 @@ impl Column {
         }
     }
 
+    #[allow(dead_code)]
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
 
+    #[allow(dead_code)]
     pub fn column_type(&self) -> ColumnType {
         match self {
             Column::Int64(_) => ColumnType::Int64,
@@ -299,6 +312,7 @@ impl Column {
         }
     }
 
+    #[allow(dead_code)]
     pub fn name(&self) -> Option<&str> {
         match self {
             Column::Int64(col) => col.name(),
@@ -326,6 +340,7 @@ impl Column {
     }
 
     // String列として取得（型が一致する場合のみ）
+    #[allow(dead_code)]
     pub fn as_string(&self) -> Option<&StringColumn> {
         if let Column::String(col) = self {
             Some(col)
@@ -413,11 +428,13 @@ impl OptimizedDataFrame {
     }
 
     // 列数の取得
+    #[allow(dead_code)]
     pub fn column_count(&self) -> usize {
         self.columns.len()
     }
 
     // 列名の取得
+    #[allow(dead_code)]
     pub fn column_names(&self) -> &[String] {
         &self.column_names
     }
@@ -438,11 +455,13 @@ impl OptimizedDataFrame {
     }
 
     // 列の型安全な取得（String）
+    #[allow(dead_code)]
     pub fn get_string_column(&self, name: &str) -> Option<&StringColumn> {
         self.get_column(name).and_then(|col| col.as_string())
     }
 }
 
+#[allow(dead_code)]
 fn demonstrate_vector_operations() {
     println!("=== ベクトル操作の最適化パフォーマンス比較 ===");
     
@@ -498,6 +517,7 @@ fn demonstrate_vector_operations() {
     println!("  高速化: {:.2}倍", simple_duration.as_secs_f64() / optimized_duration.as_secs_f64());
 }
 
+#[allow(dead_code)]
 fn demonstrate_string_pooling() {
     println!("\n=== 文字列プールのメモリ効率比較 ===");
     
@@ -551,6 +571,7 @@ fn demonstrate_string_pooling() {
     println!("  検索高速化: {:.2}倍", simple_duration.as_secs_f64() / pooled_duration.as_secs_f64());
 }
 
+#[allow(dead_code)]
 fn demonstrate_dataframe_operations() {
     println!("\n=== 最適化DataFrameのデモ ===");
     
@@ -598,6 +619,7 @@ fn demonstrate_dataframe_operations() {
     println!("  アクセス・計算時間: {:?}", access_time);
 }
 
+#[allow(dead_code)]
 fn main() {
     demonstrate_vector_operations();
     demonstrate_string_pooling();

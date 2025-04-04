@@ -8,17 +8,20 @@ use std::sync::Arc;
 trait ColumnData: Debug + Send + Sync {
     fn as_any(&self) -> &dyn Any;
     fn len(&self) -> usize;
+    #[allow(dead_code)]
     fn clone_box(&self) -> Box<dyn ColumnData>;
 }
 
 // 具体的な型を持つデータ列
 #[derive(Debug)]
+#[allow(dead_code)]
 struct TypedColumn<T: Clone + Debug + Send + Sync + 'static> {
     data: Vec<T>,
     _phantom: PhantomData<T>,
 }
 
 impl<T: Clone + Debug + Send + Sync + 'static> TypedColumn<T> {
+    #[allow(dead_code)]
     fn new(data: Vec<T>) -> Self {
         Self {
             data,
