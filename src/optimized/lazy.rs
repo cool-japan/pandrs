@@ -273,7 +273,7 @@ impl LazyFrame {
                 Operation::Map(f) => {
                     // 正しいpar_applyメソッドを使用
                     df = df.par_apply(|view| {
-                        f(&view.clone().into_column())
+                        f(view.get_column())
                     })?;
                 },
                 Operation::Aggregate { group_by, aggregations } => {

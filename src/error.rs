@@ -134,3 +134,10 @@ impl From<IOError> for Error {
         Error::IoError(format!("{}", err))
     }
 }
+
+// 無効な引数エラーの追加
+impl Error {
+    pub fn invalid_argument(message: String) -> Self {
+        Error::Other(message)
+    }
+}

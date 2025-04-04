@@ -304,6 +304,31 @@ impl StringColumn {
     }
 }
 
+// Series<&str>からStringColumnへの変換
+impl<'a> From<crate::series::Series<&'a str>> for StringColumn {
+    fn from(series: crate::series::Series<&'a str>) -> Self {
+        // &strをStringに変換
+        let owned_series = series.to_owned();
+        StringColumn::from(owned_series)
+    }
+}
+
+// Series<String>からStringColumnへの変換も改めて実装
+impl From<crate::series::Series<String>> for StringColumn {
+    fn from(series: crate::series::Series<String>) -> Self {
+        // 文字列データを取得
+        let string_data: Vec<String> = series.values().to_vec();
+        let mut column = StringColumn::new(string_data);
+        
+        // 名前があれば設定
+        if let Some(name) = series.name() {
+            column.name = Some(name.clone());
+        }
+        
+        column
+    }
+}
+
 impl ColumnTrait for StringColumn {
     fn len(&self) -> usize {
         self.indices.len()

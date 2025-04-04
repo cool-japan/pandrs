@@ -42,10 +42,10 @@ fn main() -> Result<(), PandRSError> {
         Some("sales".to_string()),
     )?;
 
-    // DataFrameに列を追加
-    df.add_series_column("category", category)?;
-    df.add_series_column("region", region)?;
-    df.add_series_column("sales", sales)?;
+    // DataFrameに列を追加（DataFrameCompatトレイトを使用）
+    df.add_column("category", category)?;
+    df.add_column("region", region)?;
+    df.add_column("sales", sales)?;
 
     println!("DataFrame 情報:");
     println!("  列数: {}", df.column_count());

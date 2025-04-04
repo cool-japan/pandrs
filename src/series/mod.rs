@@ -195,6 +195,19 @@ where
     }
 }
 
+// 文字列参照型のSeriesに特化した実装
+impl<'a> Series<&'a str> {
+    /// 文字列参照からString型のSeriesに変換する
+    pub fn to_owned(&self) -> Series<String> {
+        let owned_values: Vec<String> = self.values.iter().map(|&s| s.to_string()).collect();
+        Series {
+            values: owned_values,
+            index: self.index.clone(),
+            name: self.name.clone(),
+        }
+    }
+}
+
 // 文字列型のSeriesに対する特化実装
 // Seriesに対するDefaultトレイト実装
 impl<T> Default for Series<T>
