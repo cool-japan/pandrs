@@ -14,6 +14,9 @@ fn main() {
     // ====================
     println!("\n[1] 大規模DataFrame作成 ({} 行)", ROWS);
     
+    // --- データ生成部分 ---
+    let data_gen_start = Instant::now();
+    
     let mut int_data = Vec::with_capacity(ROWS);
     let mut float_data = Vec::with_capacity(ROWS);
     let mut str_data = Vec::with_capacity(ROWS);
@@ -26,7 +29,11 @@ fn main() {
         bool_data.push(i % 2 == 0);
     }
     
-    let start = Instant::now();
+    let data_gen_time = data_gen_start.elapsed();
+    println!("データ生成時間: {:?}", data_gen_time);
+    
+    // --- DataFrame構築部分 ---
+    let df_construct_start = Instant::now();
     let mut df = OptimizedDataFrame::new();
     
     df.add_column("id".to_string(), Column::Int64(Int64Column::new(int_data))).unwrap();
@@ -34,8 +41,9 @@ fn main() {
     df.add_column("category".to_string(), Column::String(StringColumn::new(str_data))).unwrap();
     df.add_column("flag".to_string(), Column::Boolean(BooleanColumn::new(bool_data))).unwrap();
     
-    let create_time = start.elapsed();
-    println!("通常のDataFrame作成時間: {:?}", create_time);
+    let df_construct_time = df_construct_start.elapsed();
+    println!("DataFrame構築時間: {:?}", df_construct_time);
+    println!("合計DataFrame作成時間: {:?}", data_gen_time + df_construct_time);
     
     // ====================
     // 直列 vs 並列フィルタリング
@@ -50,18 +58,31 @@ fn main() {
     ).unwrap();
     
     // 直列フィルタリング
-    let start = Instant::now();
-    let filtered_df = df.filter("filter_condition").unwrap();
-    let serial_time = start.elapsed();
-    println!("直列フィルタリング時間: {:?}", serial_time);
-    println!("フィルタ結果行数: {}", filtered_df.row_count());
+    // 直列フィルタリングは3回実行して平均をとる
+    let mut serial_total = std::time::Duration::new(0, 0);
+    for _ in 0..3 {
+        let start = Instant::now();
+        let filtered_df = df.filter("filter_condition").unwrap();
+        let duration = start.elapsed();
+        serial_total += duration;
+        println!("直列フィルタリング時間 (1回): {:?}", duration);
+        println!("フィルタ結果行数: {}", filtered_df.row_count());
+    }
+    let serial_time = serial_total / 3;
+    println!("直列フィルタリング平均時間: {:?}", serial_time);
     
-    // 並列フィルタリング
-    let start = Instant::now();
-    let par_filtered_df = df.par_filter("filter_condition").unwrap();
-    let parallel_time = start.elapsed();
-    println!("並列フィルタリング時間: {:?}", parallel_time);
-    println!("フィルタ結果行数: {}", par_filtered_df.row_count());
+    // 並列フィルタリングも3回実行して平均をとる
+    let mut parallel_total = std::time::Duration::new(0, 0);
+    for _ in 0..3 {
+        let start = Instant::now();
+        let par_filtered_df = df.par_filter("filter_condition").unwrap();
+        let duration = start.elapsed();
+        parallel_total += duration;
+        println!("並列フィルタリング時間 (1回): {:?}", duration);
+        println!("フィルタ結果行数: {}", par_filtered_df.row_count());
+    }
+    let parallel_time = parallel_total / 3;
+    println!("並列フィルタリング平均時間: {:?}", parallel_time);
     
     println!("高速化率: {:.2}倍", serial_time.as_secs_f64() / parallel_time.as_secs_f64());
     
@@ -73,58 +94,71 @@ fn main() {
     // 直列グループ化（列選択でcategoryとvalueだけを使用）
     let small_df = df.select(&["category", "value"]).unwrap();
     
-    let start = Instant::now();
-    let lazy_df = LazyFrame::new(small_df.clone());
-    let grouped_df = lazy_df
-        .aggregate(
-            vec!["category".to_string()],
-            vec![
-                ("value".to_string(), AggregateOp::Mean, "value_mean".to_string())
-            ]
-        )
-        .execute()
-        .unwrap();
-    let serial_time = start.elapsed();
-    println!("直列グループ化・集計時間: {:?}", serial_time);
-    println!("グループ数: {}", grouped_df.row_count());
-    
-    // 並列グループ化
-    let start = Instant::now();
-    let grouped_map = small_df.par_groupby(&["category"]).unwrap();
-    // 集計結果をDataFrameに変換
-    let mut result_df = OptimizedDataFrame::new();
-    
-    // カテゴリ列
-    let mut categories = Vec::with_capacity(grouped_map.len());
-    let mut means = Vec::with_capacity(grouped_map.len());
-    
-    for (category, group_df) in &grouped_map {
-        categories.push(category.clone());
-        
-        // 平均値を計算
-        let value_col = group_df.column("value").unwrap();
-        if let Some(float_col) = value_col.as_float64() {
-            let mut sum = 0.0;
-            let mut count = 0;
-            
-            for i in 0..float_col.len() {
-                if let Ok(Some(val)) = float_col.get(i) {
-                    sum += val;
-                    count += 1;
-                }
-            }
-            
-            let mean = if count > 0 { sum / count as f64 } else { 0.0 };
-            means.push(mean);
-        }
+    // 直列グループ化を複数回実行して平均を計算
+    let mut serial_total = std::time::Duration::new(0, 0);
+    for _ in 0..3 {
+        let start = Instant::now();
+        let lazy_df = LazyFrame::new(small_df.clone());
+        let grouped_df = lazy_df
+            .aggregate(
+                vec!["category".to_string()],
+                vec![
+                    ("value".to_string(), AggregateOp::Mean, "value_mean".to_string())
+                ]
+            )
+            .execute()
+            .unwrap();
+        let duration = start.elapsed();
+        serial_total += duration;
+        println!("直列グループ化・集計時間 (1回): {:?}", duration);
+        println!("グループ数: {}", grouped_df.row_count());
     }
+    let serial_time = serial_total / 3;
+    println!("直列グループ化・集計平均時間: {:?}", serial_time);
     
-    result_df.add_column("category".to_string(), Column::String(StringColumn::new(categories))).unwrap();
-    result_df.add_column("value_mean".to_string(), Column::Float64(Float64Column::new(means))).unwrap();
-    
-    let parallel_time = start.elapsed();
-    println!("並列グループ化・集計時間: {:?}", parallel_time);
-    println!("グループ数: {}", result_df.row_count());
+    // 並列グループ化を複数回実行して平均を計算
+    let mut parallel_total = std::time::Duration::new(0, 0);
+    for _ in 0..3 {
+        let start = Instant::now();
+        let grouped_map = small_df.par_groupby(&["category"]).unwrap();
+        // 集計結果をDataFrameに変換
+        let mut result_df = OptimizedDataFrame::new();
+        
+        // カテゴリ列
+        let mut categories = Vec::with_capacity(grouped_map.len());
+        let mut means = Vec::with_capacity(grouped_map.len());
+        
+        for (category, group_df) in &grouped_map {
+            categories.push(category.clone());
+            
+            // 平均値を計算
+            let value_col = group_df.column("value").unwrap();
+            if let Some(float_col) = value_col.as_float64() {
+                let mut sum = 0.0;
+                let mut count = 0;
+                
+                for i in 0..float_col.len() {
+                    if let Ok(Some(val)) = float_col.get(i) {
+                        sum += val;
+                        count += 1;
+                    }
+                }
+                
+                let mean = if count > 0 { sum / count as f64 } else { 0.0 };
+                means.push(mean);
+            }
+        }
+        
+        result_df.add_column("category".to_string(), Column::String(StringColumn::new(categories))).unwrap();
+        result_df.add_column("value_mean".to_string(), Column::Float64(Float64Column::new(means))).unwrap();
+        
+        let duration = start.elapsed();
+        parallel_total += duration;
+        println!("並列グループ化・集計時間 (1回): {:?}", duration);
+        println!("グループ数: {}", result_df.row_count());
+    }
+    let parallel_time = parallel_total / 3;
+    println!("並列グループ化・集計平均時間: {:?}", parallel_time);
     
     println!("高速化率: {:.2}倍", serial_time.as_secs_f64() / parallel_time.as_secs_f64());
     
@@ -165,7 +199,7 @@ fn main() {
     
     // 並列計算
     let start = Instant::now();
-    let par_computed_df = df.par_apply(|view| {
+    let _par_computed_df = df.par_apply(|view| {
         // 列が'value'かどうか判断
         if view.as_float64().is_some() {
             if let Some(float_col) = view.as_float64() {
