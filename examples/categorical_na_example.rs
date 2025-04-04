@@ -101,11 +101,15 @@ fn main() -> Result<()> {
     let pop_cats = df.get_categories("人口")?;
     println!("人口カテゴリ（順序付き）: {:?}", pop_cats);
     
-    // カテゴリの追加
-    df.add_categories("地域", &vec!["沖縄".to_string()])?;
-    
-    let updated_region_cats = df.get_categories("地域")?;
-    println!("地域カテゴリ（追加後）: {:?}", updated_region_cats);
+    // カテゴリの追加（注：現在は未実装機能）
+    println!("\n注意: カテゴリの追加は現在未実装です");
+    match df.add_categories("地域", vec!["沖縄".to_string()]) {
+        Ok(_) => {
+            let updated_region_cats = df.get_categories("地域")?;
+            println!("地域カテゴリ（追加後）: {:?}", updated_region_cats);
+        },
+        Err(e) => println!("カテゴリ追加エラー（予期されたもの）: {}", e)
+    };
     
     // ===========================================================
     // CSV保存と読み込み
@@ -113,18 +117,17 @@ fn main() -> Result<()> {
     
     println!("\n--- カテゴリカルデータのCSV保存と読み込み ---");
     
-    // CSVに保存
+    // CSVに保存（注：現在はカテゴリカル情報は保存されません）
     let temp_path = Path::new("/tmp/categorical_na_example.csv");
-    df.to_csv_with_categorical(temp_path)?;
+    
+    println!("\n注意: 現在はカテゴリカル情報を保持したCSV保存・読み込みは未実装です");
+    println!("      通常のCSV保存を使用します");
+    
+    // 通常のCSV保存を使用
+    df.to_csv(temp_path)?;
     println!("CSVファイルに保存: {:?}", temp_path);
     
-    // CSVから読み込み
-    let df_loaded = DataFrame::from_csv_with_categorical(temp_path, true)?;
-    println!("\n読み込み後のデータフレーム:\n{:?}", df_loaded);
-    
-    // カテゴリカル情報が保持されているか確認
-    println!("地域列はカテゴリカルか: {}", df_loaded.is_categorical("地域"));
-    println!("人口列はカテゴリカルか: {}", df_loaded.is_categorical("人口"));
+    println!("\nCSVからの読み込みはカテゴリカル情報を保持しないため省略します");
     
     // ===========================================================
     // カテゴリカル演算

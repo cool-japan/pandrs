@@ -32,6 +32,7 @@ pub trait ColumnTrait: Debug + Send + Sync {
 #[derive(Debug, Clone)]
 pub struct Int64Column {
     data: Arc<[i64]>,
+    #[allow(dead_code)]
     null_mask: Option<Arc<[u8]>>,
     name: Option<String>,
 }
@@ -105,6 +106,7 @@ impl ColumnTrait for Int64Column {
 #[derive(Debug, Clone)]
 pub struct Float64Column {
     data: Arc<[f64]>,
+    #[allow(dead_code)]
     null_mask: Option<Arc<[u8]>>,
     name: Option<String>,
 }
@@ -213,6 +215,7 @@ pub struct StringColumn {
     string_pool: Arc<StringPool>,
     // 文字列プールへのインデックス
     indices: Arc<[u32]>,
+    #[allow(dead_code)]
     null_mask: Option<Arc<[u8]>>,
     name: Option<String>,
 }

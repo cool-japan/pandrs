@@ -1670,13 +1670,13 @@ impl OptimizedDataFrame {
     // --- カテゴリカル関連メソッド (DataFrameCompat から移動) ---
 
     /// 列がカテゴリカルデータかどうかを判定
-    fn is_categorical(&self, column: &str) -> bool {
+    pub fn is_categorical(&self, column: &str) -> bool {
         let meta_key = format!("{}{}", column, CATEGORICAL_META_KEY);
         self.column_indices.contains_key(&meta_key)
     }
 
     /// 指定された列をカテゴリカル型に変換 (カテゴリや順序は無視する単純版)
-    fn astype_categorical_simple(&mut self, column: &str) -> Result<()> {
+    pub fn astype_categorical_simple(&mut self, column: &str) -> Result<()> {
         if !self.column_indices.contains_key(column) {
             return Err(Error::ColumnNotFound(column.to_string()));
         }
@@ -1729,7 +1729,7 @@ impl OptimizedDataFrame {
     }
 
     /// 指定された列のカテゴリを取得
-    fn get_categories(&self, column: &str) -> Result<Vec<String>> {
+    pub fn get_categories(&self, column: &str) -> Result<Vec<String>> {
         if !self.is_categorical(column) {
             return Err(Error::OperationFailed(format!("列 '{}' はカテゴリカルデータではありません", column)));
         }
@@ -1762,7 +1762,7 @@ impl OptimizedDataFrame {
     }
 
     /// カテゴリカル列の順序を設定
-    fn set_categorical_ordered(&mut self, column: &str, ordered: crate::series::CategoricalOrder) -> Result<()> {
+    pub fn set_categorical_ordered(&mut self, column: &str, ordered: crate::series::CategoricalOrder) -> Result<()> {
         let is_ordered = match ordered {
             crate::series::CategoricalOrder::Ordered => true,
             crate::series::CategoricalOrder::Unordered => false,
@@ -1771,7 +1771,7 @@ impl OptimizedDataFrame {
     }
 
     /// カテゴリカル列の順序をブール値で設定
-    fn set_categorical_ordered_bool(&mut self, column: &str, ordered: bool) -> Result<()> {
+    pub fn set_categorical_ordered_bool(&mut self, column: &str, ordered: bool) -> Result<()> {
         if !self.is_categorical(column) {
             return Err(Error::OperationFailed(format!("列 '{}' はカテゴリカルデータではありません", column)));
         }
@@ -1786,13 +1786,13 @@ impl OptimizedDataFrame {
     }
 
     /// カテゴリカル列に新しいカテゴリを追加 (未実装)
-    fn add_categories<T: Into<Vec<String>>>(&mut self, column: &str, new_categories: T) -> Result<()> {
+    pub fn add_categories<T: Into<Vec<String>>>(&mut self, column: &str, new_categories: T) -> Result<()> {
         let new_categories_vec = new_categories.into();
         self.add_categories_slice(column, &new_categories_vec)
     }
 
     /// カテゴリカル列に新しいカテゴリを追加 (スライス版) (未実装)
-    fn add_categories_slice(&mut self, column: &str, _new_categories: &[String]) -> Result<()> {
+    pub fn add_categories_slice(&mut self, column: &str, _new_categories: &[String]) -> Result<()> {
         if !self.is_categorical(column) {
             return Err(Error::OperationFailed(format!("列 '{}' はカテゴリカルデータではありません", column)));
         }
@@ -1801,7 +1801,7 @@ impl OptimizedDataFrame {
     }
 
     /// カテゴリカル列のカテゴリを並び替える (未実装)
-    fn reorder_categories(&mut self, column: &str, _new_categories: Vec<String>) -> Result<()> {
+    pub fn reorder_categories(&mut self, column: &str, _new_categories: Vec<String>) -> Result<()> {
          if !self.is_categorical(column) {
             return Err(Error::OperationFailed(format!("列 '{}' はカテゴリカルデータではありません", column)));
         }
@@ -1810,7 +1810,7 @@ impl OptimizedDataFrame {
     }
 
     /// カテゴリカル列からカテゴリを削除する (未実装)
-    fn remove_categories(&mut self, column: &str, _categories_to_remove: &[String]) -> Result<()> {
+    pub fn remove_categories(&mut self, column: &str, _categories_to_remove: &[String]) -> Result<()> {
          if !self.is_categorical(column) {
             return Err(Error::OperationFailed(format!("列 '{}' はカテゴリカルデータではありません", column)));
         }
@@ -1819,7 +1819,7 @@ impl OptimizedDataFrame {
     }
 
     /// カテゴリカルデータのリストからDataFrameを作成
-    fn from_categoricals(categoricals: Vec<(String, crate::series::StringCategorical)>) -> Result<Self> {
+    pub fn from_categoricals(categoricals: Vec<(String, crate::series::StringCategorical)>) -> Result<Self> {
         let mut df = Self::new();
         for (name, cat) in categoricals {
             let values = cat.as_values();
@@ -1954,7 +1954,7 @@ impl OptimizedDataFrame {
     }
 
     /// カテゴリカル列を追加 (Vec<String>から)
-    fn add_categorical_column_vec(&mut self, name: String, values: Vec<String>) -> Result<()> {
+    pub fn add_categorical_column_vec(&mut self, name: String, values: Vec<String>) -> Result<()> {
         // 最適化モードを選択 (データサイズに基づくなど、ここではCategorical固定)
         let optimization_mode = StringColumnOptimizationMode::Categorical;
 
