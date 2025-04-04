@@ -46,6 +46,12 @@ pub enum Error {
     #[error("操作に失敗しました: {0}")]
     OperationFailed(String),
     
+    #[error("無効な入力です: {0}")]
+    InvalidInput(String),
+    
+    #[error("長さが一致しません: 期待値 {expected}, 実際 {actual}")]
+    LengthMismatch { expected: usize, actual: usize },
+    
     // 旧エラー型との互換性のために追加
     #[error("入出力エラー")]
     Io(#[source] std::io::Error),
@@ -112,5 +118,11 @@ impl From<serde_json::Error> for Error {
 impl From<regex::Error> for Error {
     fn from(err: regex::Error) -> Self {
         Error::InvalidRegex(err.to_string())
+    }
+}
+
+impl From<std::io::Error> for Error {
+    fn from(err: std::io::Error) -> Self {
+        Error::Io(err)
     }
 }

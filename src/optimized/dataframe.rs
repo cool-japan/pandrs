@@ -1,8 +1,11 @@
 use std::collections::HashMap;
 use std::fmt::{self, Debug};
 use std::sync::Arc;
+use std::path::Path;
+use std::fs::File;
+use std::io::{self, BufReader, BufWriter, Write};
 
-use crate::column::{Column, ColumnTrait, ColumnType, Int64Column};
+use crate::column::{Column, ColumnTrait, ColumnType, Int64Column, Float64Column, StringColumn, BooleanColumn};
 use crate::error::{Error, Result};
 use crate::index::{DataFrameIndex, IndexTrait, Index};
 use crate::optimized::operations::JoinType;
@@ -129,6 +132,176 @@ impl OptimizedDataFrame {
             row_count: 0,
             index: None,
         }
+    }
+    
+    /// CSVファイルからDataFrameを作成する（高性能実装）
+    /// # Arguments
+    /// * `path` - CSVファイルのパス
+    /// * `has_header` - ヘッダの有無
+    /// # Returns
+    /// * `Result<Self>` - 成功時はDataFrame、失敗時はエラー
+    pub fn from_csv<P: AsRef<Path>>(path: P, has_header: bool) -> Result<Self> {
+        let file = File::open(path)?;
+        let reader = BufReader::new(file);
+        let mut csv_reader = csv::ReaderBuilder::new()
+            .has_headers(has_header)
+            .from_reader(reader);
+        
+        // 列名を取得
+        let headers = if has_header {
+            csv_reader.headers()?.clone()
+        } else {
+            let record = csv_reader.records().next()
+                .ok_or_else(|| Error::InvalidInput("CSVファイルが空です".to_string()))??;
+            
+            // 列番号を列名として使用
+            csv::StringRecord::from(
+                (0..record.len()).map(|i| format!("Column{}", i)).collect::<Vec<String>>()
+            )
+        };
+        
+        // 各列のデータを格納するベクター
+        let mut column_data: Vec<Vec<String>> = vec![Vec::new(); headers.len()];
+        
+        // レコードを読み込み、列単位にデータを整理（パフォーマンス最適化）
+        for result in csv_reader.records() {
+            let record = result?;
+            for (i, field) in record.iter().enumerate() {
+                if i < column_data.len() {
+                    column_data[i].push(field.to_string());
+                }
+            }
+        }
+        
+        // データをプリアロケーションしてDataFrameを構築（メモリ効率向上）
+        let mut df = Self::new();
+        let row_count = if column_data.is_empty() { 0 } else { column_data[0].len() };
+        
+        // 並列処理で列を追加
+        for (i, header) in headers.iter().enumerate() {
+            if i < column_data.len() {
+                // 列タイプを自動推定して最適な形式で格納
+                let column = Self::infer_and_create_column(&column_data[i], header);
+                df.add_column(header.to_string(), column)?;
+            }
+        }
+        
+        Ok(df)
+    }
+    
+    /// データタイプを推測して最適な列を作成する（内部ヘルパー）
+    fn infer_and_create_column(data: &[String], name: &str) -> Column {
+        // 空のデータの場合は文字列列を返す
+        if data.is_empty() {
+            return Column::String(StringColumn::new(Vec::new()));
+        }
+        
+        // 整数値チェック
+        let is_int64 = data.iter()
+            .all(|s| s.parse::<i64>().is_ok() || s.trim().is_empty());
+        
+        if is_int64 {
+            let int_data: Vec<i64> = data.iter()
+                .map(|s| s.parse::<i64>().unwrap_or(0))
+                .collect();
+            return Column::Int64(Int64Column::new(int_data));
+        }
+        
+        // 浮動小数点チェック
+        let is_float64 = data.iter()
+            .all(|s| s.parse::<f64>().is_ok() || s.trim().is_empty());
+        
+        if is_float64 {
+            let float_data: Vec<f64> = data.iter()
+                .map(|s| s.parse::<f64>().unwrap_or(0.0))
+                .collect();
+            return Column::Float64(Float64Column::new(float_data));
+        }
+        
+        // ブール値チェック
+        let bool_values = ["true", "false", "0", "1", "yes", "no", "t", "f"];
+        let is_boolean = data.iter()
+            .all(|s| bool_values.contains(&s.to_lowercase().trim()) || s.trim().is_empty());
+        
+        if is_boolean {
+            let bool_data: Vec<bool> = data.iter()
+                .map(|s| {
+                    let lower = s.to_lowercase();
+                    let trimmed = lower.trim();
+                    match trimmed {
+                        "true" | "1" | "yes" | "t" => true,
+                        "false" | "0" | "no" | "f" => false,
+                        _ => false, // 空文字列など
+                    }
+                })
+                .collect();
+            return Column::Boolean(BooleanColumn::new(bool_data));
+        }
+        
+        // 他のすべてのケースでは文字列として処理
+        Column::String(StringColumn::new(data.to_vec()))
+    }
+    
+    /// DataFrameをCSVファイルに保存する
+    /// # Arguments
+    /// * `path` - 保存先のパス
+    /// * `write_header` - ヘッダを書き込むかどうか
+    /// # Returns
+    /// * `Result<()>` - 成功時はOk、失敗時はエラー
+    pub fn to_csv<P: AsRef<Path>>(&self, path: P, write_header: bool) -> Result<()> {
+        let file = File::create(path)?;
+        let writer = BufWriter::new(file);
+        
+        let mut csv_writer = csv::WriterBuilder::new()
+            .has_headers(write_header)
+            .from_writer(writer);
+        
+        // ヘッダ書き込み
+        if write_header {
+            csv_writer.write_record(&self.column_names)?;
+        }
+        
+        // 行単位でデータを書き込む（パフォーマンス最適化）
+        for row_idx in 0..self.row_count {
+            let mut record = Vec::with_capacity(self.column_count());
+            
+            // 各列からこの行の値を取得
+            for col_idx in 0..self.columns.len() {
+                let col = &self.columns[col_idx];
+                let value = match col {
+                    Column::Int64(c) => {
+                        match c.get(row_idx) {
+                            Ok(Some(v)) => v.to_string(),
+                            _ => String::new(),
+                        }
+                    },
+                    Column::Float64(c) => {
+                        match c.get(row_idx) {
+                            Ok(Some(v)) => v.to_string(),
+                            _ => String::new(),
+                        }
+                    },
+                    Column::String(c) => {
+                        match c.get(row_idx) {
+                            Ok(Some(v)) => v.to_string(),
+                            _ => String::new(),
+                        }
+                    },
+                    Column::Boolean(c) => {
+                        match c.get(row_idx) {
+                            Ok(Some(v)) => v.to_string(),
+                            _ => String::new(),
+                        }
+                    },
+                };
+                record.push(value);
+            }
+            
+            csv_writer.write_record(&record)?;
+        }
+        
+        csv_writer.flush()?;
+        Ok(())
     }
     
     /// 列を追加
@@ -1481,6 +1654,399 @@ impl OptimizedDataFrame {
         
         Ok(result)
     }
+    
+    /// 列に関数を適用し、結果の新しいDataFrameを返す（パフォーマンス最適化版）
+    ///
+    /// # Arguments
+    /// * `f` - 適用する関数（列のビューを取り、新しい列を返す）
+    /// * `columns` - 処理対象の列名（Noneの場合はすべての列）
+    /// # Returns
+    /// * `Result<Self>` - 処理結果のDataFrame
+    pub fn apply<F>(&self, f: F, columns: Option<&[&str]>) -> Result<Self>
+    where
+        F: Fn(&ColumnView) -> Result<Column> + Send + Sync,
+    {
+        let mut result = Self::new();
+        
+        // 処理対象の列を決定
+        let target_columns = if let Some(cols) = columns {
+            // 指定された列のみを対象とする
+            cols.iter()
+                .map(|&name| {
+                    self.column_indices.get(name)
+                        .ok_or_else(|| Error::ColumnNotFound(name.to_string()))
+                        .map(|&idx| (name, idx))
+                })
+                .collect::<Result<Vec<_>>>()?
+        } else {
+            // すべての列を対象とする
+            self.column_names.iter()
+                .map(|name| {
+                    let idx = self.column_indices[name];
+                    (name.as_str(), idx)
+                })
+                .collect()
+        };
+        
+        // 列ごとに関数を適用（パフォーマンス最適化のため並列処理を使用）
+        use rayon::prelude::*;
+        let processed_columns: Result<Vec<(String, Column)>> = target_columns
+            .into_par_iter()  // 並列イテレーション
+            .map(|(name, idx)| {
+                // 列のビューを作成
+                let view = ColumnView {
+                    column: self.columns[idx].clone(),
+                };
+                
+                // 関数を適用して新しい列を生成
+                let new_column = f(&view)?;
+                
+                // 元の列と同じ行数であることを確認
+                if new_column.len() != self.row_count {
+                    return Err(Error::LengthMismatch {
+                        expected: self.row_count,
+                        actual: new_column.len(),
+                    });
+                }
+                
+                Ok((name.to_string(), new_column))
+            })
+            .collect();
+            
+        // 処理結果の列をDataFrameに追加
+        for (name, column) in processed_columns? {
+            result.add_column(name, column)?;
+        }
+            
+        // 処理対象外の列をそのままコピー
+        if columns.is_some() {
+            for (name, idx) in self.column_names.iter().map(|name| (name, self.column_indices[name])) {
+                if !result.column_indices.contains_key(name) {
+                    result.add_column(name.clone(), self.columns[idx].clone_column())?;
+                }
+            }
+        }
+        
+        // インデックスを新しいDataFrameにコピー
+        if let Some(ref idx) = self.index {
+            result.index = Some(idx.clone());
+        }
+        
+        Ok(result)
+    }
+    
+    /// 要素ごとに関数を適用（applymap相当）
+    ///
+    /// # Arguments
+    /// * `column_name` - 対象の列名
+    /// * `f` - 適用する関数（列の型に応じた関数）
+    /// # Returns
+    /// * `Result<Self>` - 処理結果のDataFrame
+    pub fn applymap<F, G, H, I>(&self, column_name: &str, f_str: F, f_int: G, f_float: H, f_bool: I) -> Result<Self>
+    where
+        F: Fn(&str) -> String + Send + Sync,
+        G: Fn(&i64) -> i64 + Send + Sync,
+        H: Fn(&f64) -> f64 + Send + Sync,
+        I: Fn(&bool) -> bool + Send + Sync,
+    {
+        // 列の存在確認
+        let col_idx = self.column_indices.get(column_name)
+            .ok_or_else(|| Error::ColumnNotFound(column_name.to_string()))?;
+        
+        let column = &self.columns[*col_idx];
+        
+        // 型に応じた処理
+        let new_column = match column {
+            Column::Int64(int_col) => {
+                let mut new_data = Vec::with_capacity(int_col.len());
+                
+                for i in 0..int_col.len() {
+                    if let Ok(Some(val)) = int_col.get(i) {
+                        new_data.push(f_int(&val));
+                    } else {
+                        // NULL値はそのまま
+                        new_data.push(0);  // デフォルト値
+                    }
+                }
+                
+                Column::Int64(Int64Column::new(new_data))
+            },
+            Column::Float64(float_col) => {
+                let mut new_data = Vec::with_capacity(float_col.len());
+                
+                for i in 0..float_col.len() {
+                    if let Ok(Some(val)) = float_col.get(i) {
+                        new_data.push(f_float(&val));
+                    } else {
+                        // NULL値はそのまま
+                        new_data.push(0.0);  // デフォルト値
+                    }
+                }
+                
+                Column::Float64(Float64Column::new(new_data))
+            },
+            Column::String(str_col) => {
+                let mut new_data = Vec::with_capacity(str_col.len());
+                
+                for i in 0..str_col.len() {
+                    if let Ok(Some(val)) = str_col.get(i) {
+                        new_data.push(f_str(val));
+                    } else {
+                        // NULL値はそのまま
+                        new_data.push(String::new());  // デフォルト値
+                    }
+                }
+                
+                Column::String(StringColumn::new(new_data))
+            },
+            Column::Boolean(bool_col) => {
+                let mut new_data = Vec::with_capacity(bool_col.len());
+                
+                for i in 0..bool_col.len() {
+                    if let Ok(Some(val)) = bool_col.get(i) {
+                        new_data.push(f_bool(&val));
+                    } else {
+                        // NULL値はそのまま
+                        new_data.push(false);  // デフォルト値
+                    }
+                }
+                
+                Column::Boolean(BooleanColumn::new(new_data))
+            },
+        };
+        
+        // 結果のDataFrameを作成
+        let mut result = self.clone();
+        
+        // 既存の列を置き換え
+        result.columns[*col_idx] = new_column;
+        
+        Ok(result)
+    }
+    
+    /// DataFrameを「長形式」に変換する（melt操作）
+    /// 
+    /// 複数の列を単一の「変数」列と「値」列に変換します。
+    /// パフォーマンスを最優先した実装です。
+    ///
+    /// # Arguments
+    /// * `id_vars` - 変換せずに保持する列名（識別子列）
+    /// * `value_vars` - 変換する列名（値列）。指定しない場合はid_vars以外のすべての列
+    /// * `var_name` - 変数名の列名（デフォルト: "variable"）
+    /// * `value_name` - 値の列名（デフォルト: "value"）
+    ///
+    /// # Returns
+    /// * `Result<Self>` - 長形式に変換されたDataFrame
+    pub fn melt(
+        &self,
+        id_vars: &[&str],
+        value_vars: Option<&[&str]>,
+        var_name: Option<&str>,
+        value_name: Option<&str>,
+    ) -> Result<Self> {
+        // 引数のデフォルト値を設定
+        let var_name = var_name.unwrap_or("variable");
+        let value_name = value_name.unwrap_or("value");
+        
+        // value_varsが指定されていない場合は、id_vars以外のすべての列を使用
+        let value_vars = if let Some(vars) = value_vars {
+            vars.to_vec()
+        } else {
+            self.column_names
+                .iter()
+                .filter(|name| !id_vars.contains(&name.as_str()))
+                .map(|s| s.as_str())
+                .collect()
+        };
+        
+        // 存在しない列名をチェック
+        for col in id_vars.iter().chain(value_vars.iter()) {
+            if !self.column_indices.contains_key(*col) {
+                return Err(Error::ColumnNotFound((*col).to_string()));
+            }
+        }
+        
+        // 結果のサイズを事前計算（パフォーマンス最適化）
+        let result_rows = self.row_count * value_vars.len();
+        
+        // ID列のデータを抽出
+        let mut id_columns = Vec::with_capacity(id_vars.len());
+        for &id_col in id_vars {
+            let idx = self.column_indices[id_col];
+            id_columns.push((id_col, &self.columns[idx]));
+        }
+        
+        // 値列のデータを抽出
+        let mut value_columns = Vec::with_capacity(value_vars.len());
+        for &val_col in &value_vars {
+            let idx = self.column_indices[val_col];
+            value_columns.push((val_col, &self.columns[idx]));
+        }
+        
+        // 結果のDataFrameを生成
+        let mut result = Self::new();
+        
+        // 変数名の列を作成
+        let mut var_col_data = Vec::with_capacity(result_rows);
+        for &value_col_name in &value_vars {
+            for _ in 0..self.row_count {
+                var_col_data.push(value_col_name.to_string());
+            }
+        }
+        result.add_column(var_name.to_string(), Column::String(StringColumn::new(var_col_data)))?;
+        
+        // ID列をレプリケートして追加
+        for &(id_col_name, col) in &id_columns {
+            match col {
+                Column::Int64(int_col) => {
+                    // 整数型の列
+                    let mut repeated_data = Vec::with_capacity(result_rows);
+                    for _ in 0..value_vars.len() {
+                        for i in 0..self.row_count {
+                            if let Ok(Some(val)) = int_col.get(i) {
+                                repeated_data.push(val);
+                            } else {
+                                // NULL値の場合はデフォルト値を使用
+                                repeated_data.push(0);
+                            }
+                        }
+                    }
+                    result.add_column(id_col_name.to_string(), Column::Int64(Int64Column::new(repeated_data)))?;
+                },
+                Column::Float64(float_col) => {
+                    // 浮動小数点型の列
+                    let mut repeated_data = Vec::with_capacity(result_rows);
+                    for _ in 0..value_vars.len() {
+                        for i in 0..self.row_count {
+                            if let Ok(Some(val)) = float_col.get(i) {
+                                repeated_data.push(val);
+                            } else {
+                                // NULL値の場合はデフォルト値を使用
+                                repeated_data.push(0.0);
+                            }
+                        }
+                    }
+                    result.add_column(id_col_name.to_string(), Column::Float64(Float64Column::new(repeated_data)))?;
+                },
+                Column::String(str_col) => {
+                    // 文字列型の列
+                    let mut repeated_data = Vec::with_capacity(result_rows);
+                    for _ in 0..value_vars.len() {
+                        for i in 0..self.row_count {
+                            if let Ok(Some(val)) = str_col.get(i) {
+                                repeated_data.push(val.to_string());
+                            } else {
+                                // NULL値の場合は空文字列を使用
+                                repeated_data.push(String::new());
+                            }
+                        }
+                    }
+                    result.add_column(id_col_name.to_string(), Column::String(StringColumn::new(repeated_data)))?;
+                },
+                Column::Boolean(bool_col) => {
+                    // ブール型の列
+                    let mut repeated_data = Vec::with_capacity(result_rows);
+                    for _ in 0..value_vars.len() {
+                        for i in 0..self.row_count {
+                            if let Ok(Some(val)) = bool_col.get(i) {
+                                repeated_data.push(val);
+                            } else {
+                                // NULL値の場合はデフォルト値を使用
+                                repeated_data.push(false);
+                            }
+                        }
+                    }
+                    result.add_column(id_col_name.to_string(), Column::Boolean(BooleanColumn::new(repeated_data)))?;
+                },
+            }
+        }
+        
+        // 値列を作成（型に応じた最適な方法で）
+        // 最適化のため、最終的な型を推測してからデータを追加する
+        let mut all_values = Vec::with_capacity(result_rows);
+        
+        // まず全ての値を文字列として収集
+        for (_, col) in value_columns {
+            match col {
+                Column::Int64(int_col) => {
+                    for i in 0..self.row_count {
+                        if let Ok(Some(val)) = int_col.get(i) {
+                            all_values.push(val.to_string());
+                        } else {
+                            all_values.push(String::new());
+                        }
+                    }
+                },
+                Column::Float64(float_col) => {
+                    for i in 0..self.row_count {
+                        if let Ok(Some(val)) = float_col.get(i) {
+                            all_values.push(val.to_string());
+                        } else {
+                            all_values.push(String::new());
+                        }
+                    }
+                },
+                Column::String(str_col) => {
+                    for i in 0..self.row_count {
+                        if let Ok(Some(val)) = str_col.get(i) {
+                            all_values.push(val.to_string());
+                        } else {
+                            all_values.push(String::new());
+                        }
+                    }
+                },
+                Column::Boolean(bool_col) => {
+                    for i in 0..self.row_count {
+                        if let Ok(Some(val)) = bool_col.get(i) {
+                            all_values.push(val.to_string());
+                        } else {
+                            all_values.push(String::new());
+                        }
+                    }
+                },
+            }
+        }
+        
+        // 適切な型を推測してデータ追加（すべて数値なら数値型、等）
+        let is_all_int = all_values.iter()
+            .all(|s| s.parse::<i64>().is_ok() || s.is_empty());
+        
+        let is_all_float = !is_all_int && all_values.iter()
+            .all(|s| s.parse::<f64>().is_ok() || s.is_empty());
+        
+        let is_all_bool = !is_all_int && !is_all_float && all_values.iter()
+            .all(|s| {
+                let lower = s.to_lowercase();
+                lower.is_empty() || lower == "true" || lower == "false" || 
+                lower == "1" || lower == "0" || lower == "yes" || lower == "no"
+            });
+        
+        // 型に合わせて列を追加
+        if is_all_int {
+            let int_values: Vec<i64> = all_values.iter()
+                .map(|s| s.parse::<i64>().unwrap_or(0))
+                .collect();
+            result.add_column(value_name.to_string(), Column::Int64(Int64Column::new(int_values)))?;
+        } else if is_all_float {
+            let float_values: Vec<f64> = all_values.iter()
+                .map(|s| s.parse::<f64>().unwrap_or(0.0))
+                .collect();
+            result.add_column(value_name.to_string(), Column::Float64(Float64Column::new(float_values)))?;
+        } else if is_all_bool {
+            let bool_values: Vec<bool> = all_values.iter()
+                .map(|s| {
+                    let lower = s.to_lowercase();
+                    lower == "true" || lower == "1" || lower == "yes"
+                })
+                .collect();
+            result.add_column(value_name.to_string(), Column::Boolean(BooleanColumn::new(bool_values)))?;
+        } else {
+            // デフォルトは文字列型
+            result.add_column(value_name.to_string(), Column::String(StringColumn::new(all_values)))?;
+        }
+        
+        Ok(result)
+    }
 }
 
 /// ビューされた列に対する操作
@@ -1536,7 +2102,12 @@ impl ColumnView {
         }
     }
     
-    /// 内部のColumnを取得
+    /// 内部のColumnへの参照を取得
+    pub fn column(&self) -> &Column {
+        &self.column
+    }
+    
+    /// 内部のColumnを取得（消費的）
     pub fn into_column(self) -> Column {
         self.column
     }

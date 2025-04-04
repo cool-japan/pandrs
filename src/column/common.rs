@@ -220,6 +220,11 @@ impl Column {
             Column::Boolean(col) => col.name.as_deref(),
         }
     }
+    
+    /// 列を複製する
+    pub fn clone_column(&self) -> Self {
+        self.clone()
+    }
 }
 
 // 型変換のFrom実装
