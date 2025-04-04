@@ -276,6 +276,7 @@ dependencies = [
  "chrono",
  "chrono-tz",
  "csv",
+ "lazy_static",
  "num-traits",
  "rand",
  "rayon",
