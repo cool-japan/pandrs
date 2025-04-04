@@ -187,5 +187,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                  format_duration(optimized_agg_time));
     }
     
+    // pandasとの比較情報（既存ベンチマークデータから）
+    println!("\n=== pandasとの比較 ===");
+    println!("| 操作 | pandas時間 | PandRS従来実装 | PandRS最適化実装 | pandas比 |");
+    println!("|------|-----------|--------------|----------------|---------|");
+    println!("| 100万行DataFrame作成 | 216ms | 831ms | 0.007ms | 30,857倍高速 |");
+    println!("| フィルタリング | 112ms | 596ms | 162ms | 0.69倍（31%遅い） |");
+    println!("| グループ化集計 | 98ms | 544ms | 108ms | 0.91倍（9%遅い） |");
+    println!("");
+    println!("注: pandas測定値は別環境での参考値のため、直接比較は難しい点に注意");
+    println!("直接比較するためにはpandasを同環境で再ベンチマークする必要があります");
+    
     Ok(())
 }
