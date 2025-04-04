@@ -178,7 +178,7 @@ fn test_modify_categorical() {
     df.add_column("color".to_string(), series).unwrap();
     
     // カテゴリカルに変換
-    df = df.astype_categorical("color", None, None).unwrap();
+    let _cat_df = df.astype_categorical("color", None, None).unwrap();
     
     // テスト環境の制約を考慮し、基本的なインターフェースのみテスト
     let _new_cats = vec!["黄".to_string(), "紫".to_string()];

@@ -1,17 +1,17 @@
-use numpy::{PyArray1, ToPyArray};
+use numpy::ToPyArray;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
-use pyo3::types::{PyDict, PyList, PyString, PyTuple};
-use std::collections::HashMap;
-use std::sync::Arc;
-
+use pyo3::types::{PyDict, PyList, PyTuple};
 // 親クレートをインポート（明示的パスを使用）
 use ::pandrs::{
-    DataFrame, Series, NA, NASeries,
     OptimizedDataFrame, LazyFrame, AggregateOp, 
     Column, Int64Column, Float64Column, StringColumn, BooleanColumn
 };
 use ::pandrs::column::ColumnTrait;
+
+// 文字列プール実装のインポート
+pub mod py_string_pool;
+use self::py_string_pool::{get_or_init_global_pool, py_string_list_to_indices, indices_to_py_string_list};
 
 /// Python wrapper for optimized pandrs DataFrame
 #[pyclass(name = "OptimizedDataFrame")]
@@ -48,8 +48,45 @@ impl PyOptimizedDataFrame {
     }
 
     /// Add a column to the DataFrame - specialized for string data
+    /// Uses string pool optimization for memory efficiency
     fn add_string_column(&mut self, name: String, data: Vec<String>) -> PyResult<()> {
-        let column = StringColumn::new(data);
+        // 文字列プール最適化（重複文字列の共有）
+        let pool = get_or_init_global_pool();
+        let mut string_indices = Vec::with_capacity(data.len());
+        
+        // 各文字列をプールに追加し、インデックスを取得
+        for s in data {
+            let idx = match pool.lock() {
+                Ok(mut pool_guard) => pool_guard.add(s),
+                Err(_) => return Err(PyValueError::new_err("Failed to lock string pool")),
+            };
+            string_indices.push(idx);
+        }
+        
+        // インデックスからStringColumnを作成（実際の実装は文字列ではなくインデックスを保存）
+        let interned_strings: Vec<String> = string_indices.iter()
+            .map(|&idx| idx.to_string())
+            .collect();
+        
+        // 元のインデックス情報を保持した文字列カラムを作成
+        let column = StringColumn::new(interned_strings);
+        match self.inner.add_column(name, Column::String(column)) {
+            Ok(_) => Ok(()),
+            Err(e) => Err(PyValueError::new_err(format!("Failed to add column: {}", e))),
+        }
+    }
+    
+    /// Add a column to the DataFrame directly from a Python list
+    fn add_string_column_from_pylist(&mut self, py: Python<'_>, name: String, data: &PyList) -> PyResult<()> {
+        // 文字列プールを使って効率的に変換
+        let indices = py_string_list_to_indices(py, data)?;
+        
+        // インデックスからStringColumnを作成
+        let interned_strings: Vec<String> = indices.iter()
+            .map(|&idx| idx.to_string())
+            .collect();
+        
+        let column = StringColumn::new(interned_strings);
         match self.inner.add_column(name, Column::String(column)) {
             Ok(_) => Ok(()),
             Err(e) => Err(PyValueError::new_err(format!("Failed to add column: {}", e))),
@@ -134,15 +171,41 @@ impl PyOptimizedDataFrame {
                 }
                 dict.set_item(name, values.to_pyarray(py))?;
             } else if let Some(string_col) = col_view.as_string() {
-                let mut values = Vec::with_capacity(string_col.len());
+                // 文字列プールを使用して効率的に変換
+                let pool = get_or_init_global_pool();
+                let mut string_indices = Vec::with_capacity(string_col.len());
+                
+                // 文字列カラムの値はインデックスに変換されたものなので、復元する
                 for i in 0..string_col.len() {
                     if let Ok(Some(val)) = string_col.get(i) {
-                        values.push(val.to_string());
+                        // 文字列のインデックスを取得し変換
+                        if let Ok(idx) = val.parse::<usize>() {
+                            string_indices.push(idx);
+                        } else {
+                            // インデックスでない場合は通常の文字列として処理
+                            match pool.lock() {
+                                Ok(mut pool_guard) => {
+                                    let idx = pool_guard.add(val.to_string());
+                                    string_indices.push(idx);
+                                },
+                                Err(_) => return Err(PyValueError::new_err("Failed to lock string pool")),
+                            }
+                        }
                     } else {
-                        values.push(String::new());
+                        // 空文字列のインデックスを追加
+                        match pool.lock() {
+                            Ok(mut pool_guard) => {
+                                let idx = pool_guard.add(String::new());
+                                string_indices.push(idx);
+                            },
+                            Err(_) => return Err(PyValueError::new_err("Failed to lock string pool")),
+                        }
                     }
                 }
-                dict.set_item(name, PyList::new(py, &values))?;
+                
+                // インデックスからPython文字列リストへ変換
+                let py_string_list = indices_to_py_string_list(py, &string_indices)?;
+                dict.set_item(name, py_string_list)?;
             } else if let Some(bool_col) = col_view.as_boolean() {
                 let mut values = Vec::with_capacity(bool_col.len());
                 for i in 0..bool_col.len() {
@@ -187,23 +250,44 @@ impl PyOptimizedDataFrame {
                 let values = pd_col.call_method0("to_list")?;
                 let int_values: Vec<i64> = values.extract()?;
                 let column = Int64Column::new(int_values);
-                df.add_column(col_name.clone(), Column::Int64(column))?;
+                match df.add_column(col_name.clone(), Column::Int64(column)) {
+                    Ok(_) => {},
+                    Err(e) => return Err(PyValueError::new_err(format!("Failed to add int column: {}", e))),
+                }
             } else if dtype.contains("float") {
                 let values = pd_col.call_method0("to_list")?;
                 let float_values: Vec<f64> = values.extract()?;
                 let column = Float64Column::new(float_values);
-                df.add_column(col_name.clone(), Column::Float64(column))?;
+                match df.add_column(col_name.clone(), Column::Float64(column)) {
+                    Ok(_) => {},
+                    Err(e) => return Err(PyValueError::new_err(format!("Failed to add float column: {}", e))),
+                }
             } else if dtype.contains("bool") {
                 let values = pd_col.call_method0("to_list")?;
                 let bool_values: Vec<bool> = values.extract()?;
                 let column = BooleanColumn::new(bool_values);
-                df.add_column(col_name.clone(), Column::Boolean(column))?;
+                match df.add_column(col_name.clone(), Column::Boolean(column)) {
+                    Ok(_) => {},
+                    Err(e) => return Err(PyValueError::new_err(format!("Failed to add bool column: {}", e))),
+                }
             } else {
-                // Default to string for anything else
+                // Default to string for anything else - use string pool for efficiency
                 let values = pd_col.call_method0("to_list")?;
-                let string_values: Vec<String> = values.extract()?;
-                let column = StringColumn::new(string_values);
-                df.add_column(col_name.clone(), Column::String(column))?;
+                let py_list = values.downcast::<PyList>()?;
+                
+                // 文字列プールを使って効率的に変換
+                let indices = py_string_list_to_indices(py, py_list)?;
+                
+                // インデックスから文字列カラムを作成
+                let interned_strings: Vec<String> = indices.iter()
+                    .map(|&idx| idx.to_string())
+                    .collect();
+                
+                let column = StringColumn::new(interned_strings);
+                match df.add_column(col_name.clone(), Column::String(column)) {
+                    Ok(_) => {},
+                    Err(e) => return Err(PyValueError::new_err(format!("Failed to add string column: {}", e))),
+                }
             }
         }
         
@@ -229,18 +313,16 @@ impl PyLazyFrame {
     
     /// Filter rows by a boolean column
     fn filter(&self, column: String) -> PyResult<Self> {
-        match self.inner.filter(column) {
-            Ok(filtered) => Ok(PyLazyFrame { inner: filtered }),
-            Err(e) => Err(PyValueError::new_err(format!("Failed to filter: {}", e))),
-        }
+        let filtered = self.inner.clone().filter(&column);
+        Ok(PyLazyFrame { inner: filtered })
     }
     
     /// Select columns to keep
     fn select(&self, columns: Vec<String>) -> PyResult<Self> {
-        match self.inner.select(columns) {
-            Ok(selected) => Ok(PyLazyFrame { inner: selected }),
-            Err(e) => Err(PyValueError::new_err(format!("Failed to select columns: {}", e))),
-        }
+        // 文字列のリストからスライスに変換
+        let columns_str: Vec<&str> = columns.iter().map(|s| s.as_str()).collect();
+        let selected = self.inner.clone().select(&columns_str);
+        Ok(PyLazyFrame { inner: selected })
     }
     
     /// Perform aggregate operations
@@ -260,16 +342,13 @@ impl PyLazyFrame {
             .collect();
             
         let aggs = agg_ops?;
-            
-        match self.inner.aggregate(group_by, aggs) {
-            Ok(aggregated) => Ok(PyLazyFrame { inner: aggregated }),
-            Err(e) => Err(PyValueError::new_err(format!("Failed to aggregate: {}", e))),
-        }
+        let aggregated = self.inner.clone().aggregate(group_by, aggs);
+        Ok(PyLazyFrame { inner: aggregated })
     }
     
     /// Execute all the lazy operations and return a materialized DataFrame
     fn execute(&self) -> PyResult<PyOptimizedDataFrame> {
-        match self.inner.execute() {
+        match self.inner.clone().execute() {
             Ok(df) => Ok(PyOptimizedDataFrame { inner: df }),
             Err(e) => Err(PyValueError::new_err(format!("Failed to execute: {}", e))),
         }
@@ -277,8 +356,13 @@ impl PyLazyFrame {
 }
 
 /// Register the optimized types in the Python module
-pub fn register_optimized_types(py: Python<'_>, m: &PyModule) -> PyResult<()> {
+pub fn register_optimized_types(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
+    // 基本の最適化クラスを登録
     m.add_class::<PyOptimizedDataFrame>()?;
     m.add_class::<PyLazyFrame>()?;
+    
+    // 文字列プール最適化クラスを登録
+    py_string_pool::register_string_pool_types(_py, m)?;
+    
     Ok(())
 }
