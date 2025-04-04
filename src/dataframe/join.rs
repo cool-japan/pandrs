@@ -1,12 +1,13 @@
 use crate::dataframe::DataBox;
 use crate::error::{PandRSError, Result};
 use crate::series::Series;
-use crate::DataFrame;
+use crate::legacy_dataframe::LegacyDataFrame;
 use std::collections::{HashMap, HashSet};
 
 /// 結合タイプの列挙型
+/// 注意: optimized::operations::JoinTypeと互換
 #[derive(Debug)]
-pub enum JoinType {
+pub enum LegacyJoinType {
     /// 内部結合 (両方の表に一致する行のみ)
     Inner,
     /// 左結合 (左側の表の全ての行と、右側の表の一致する行)
@@ -17,9 +18,9 @@ pub enum JoinType {
     Outer,
 }
 
-impl DataFrame {
+impl LegacyDataFrame {
     /// 2つのDataFrameを結合する
-    pub fn join(&self, other: &DataFrame, on: &str, join_type: JoinType) -> Result<DataFrame> {
+    pub fn join(&self, other: &LegacyDataFrame, on: &str, join_type: LegacyJoinType) -> Result<LegacyDataFrame> {
         // 結合列が存在するか確認
         if !self.contains_column(on) {
             return Err(PandRSError::Column(format!(
@@ -36,16 +37,16 @@ impl DataFrame {
         }
 
         match join_type {
-            JoinType::Inner => self.inner_join(other, on),
-            JoinType::Left => self.left_join(other, on),
-            JoinType::Right => self.right_join(other, on),
-            JoinType::Outer => self.outer_join(other, on),
+            LegacyJoinType::Inner => self.inner_join(other, on),
+            LegacyJoinType::Left => self.left_join(other, on),
+            LegacyJoinType::Right => self.right_join(other, on),
+            LegacyJoinType::Outer => self.outer_join(other, on),
         }
     }
 
     // 内部結合を実行
-    fn inner_join(&self, other: &DataFrame, on: &str) -> Result<DataFrame> {
-        let mut result = DataFrame::new();
+    fn inner_join(&self, other: &LegacyDataFrame, on: &str) -> Result<LegacyDataFrame> {
+        let mut result = LegacyDataFrame::new();
         let left_keys = self.get_column_string_values(on)?;
         let right_keys = other.get_column_string_values(on)?;
 
@@ -63,8 +64,8 @@ impl DataFrame {
     }
 
     // 左結合を実行
-    fn left_join(&self, other: &DataFrame, on: &str) -> Result<DataFrame> {
-        let mut result = DataFrame::new();
+    fn left_join(&self, other: &LegacyDataFrame, on: &str) -> Result<LegacyDataFrame> {
+        let mut result = LegacyDataFrame::new();
         let left_keys = self.get_column_string_values(on)?;
         let right_keys = other.get_column_string_values(on)?;
 
@@ -96,14 +97,14 @@ impl DataFrame {
     }
 
     // 右結合を実行
-    fn right_join(&self, other: &DataFrame, on: &str) -> Result<DataFrame> {
+    fn right_join(&self, other: &LegacyDataFrame, on: &str) -> Result<LegacyDataFrame> {
         // 右結合は、引数を入れ替えた左結合として実装
         other.left_join(self, on)
     }
 
     // 外部結合を実行
-    fn outer_join(&self, other: &DataFrame, on: &str) -> Result<DataFrame> {
-        let mut result = DataFrame::new();
+    fn outer_join(&self, other: &LegacyDataFrame, on: &str) -> Result<LegacyDataFrame> {
+        let mut result = LegacyDataFrame::new();
         let left_keys = self.get_column_string_values(on)?;
         let right_keys = other.get_column_string_values(on)?;
 
@@ -147,9 +148,9 @@ impl DataFrame {
     // 結合された行を結果DataFrameに追加
     fn add_join_row(
         &self,
-        result: &mut DataFrame,
+        result: &mut LegacyDataFrame,
         left_idx: usize,
-        other: &DataFrame,
+        other: &LegacyDataFrame,
         right_idx: usize,
         on: &str,
     ) -> Result<()> {
@@ -204,9 +205,9 @@ impl DataFrame {
     // 左側のみの行を結果DataFrameに追加
     fn add_left_only_row(
         &self,
-        result: &mut DataFrame,
+        result: &mut LegacyDataFrame,
         left_idx: usize,
-        other: &DataFrame,
+        other: &LegacyDataFrame,
         on: &str,
     ) -> Result<()> {
         // 結果のDataFrameが空の場合、列を初期化
@@ -257,8 +258,8 @@ impl DataFrame {
     // 右側のみの行を結果DataFrameに追加
     fn add_right_only_row(
         &self,
-        result: &mut DataFrame,
-        other: &DataFrame,
+        result: &mut LegacyDataFrame,
+        other: &LegacyDataFrame,
         right_idx: usize,
         on: &str,
     ) -> Result<()> {

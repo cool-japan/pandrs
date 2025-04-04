@@ -7,7 +7,7 @@ use serde_json::{Map, Value};
 
 use crate::error::{PandRSError, Result};
 use crate::series::Series;
-use crate::DataFrame;
+use crate::optimized::OptimizedDataFrame as DataFrame;
 
 /// JSONファイルからDataFrameを読み込む
 pub fn read_json<P: AsRef<Path>>(path: P) -> Result<DataFrame> {
@@ -70,8 +70,9 @@ fn read_records_array(array: Vec<Value>) -> Result<DataFrame> {
 
     // 列をDataFrameに追加
     for (key, values) in columns {
-        let series = Series::new(values, Some(key.clone()))?;
-        df.add_column(key, series)?;
+        // 文字列シリーズを作成し、文字列列に変換して追加
+        let string_column = crate::column::StringColumn::new(values);
+        df.add_column(key, crate::column::Column::String(string_column))?;
     }
 
     Ok(df)
@@ -86,8 +87,9 @@ fn read_column_oriented(map: Map<String, Value>) -> Result<DataFrame> {
         if let Value::Array(array) = value {
             let values: Vec<String> = array.iter().map(|v| v.to_string()).collect();
 
-            let series = Series::new(values, Some(key.clone()))?;
-            df.add_column(key, series)?;
+            // 文字列シリーズを作成し、文字列列に変換して追加
+            let string_column = crate::column::StringColumn::new(values);
+            df.add_column(key, crate::column::Column::String(string_column))?;
         } else {
             return Err(PandRSError::Format(format!(
                 "列 '{}' は配列である必要があります",

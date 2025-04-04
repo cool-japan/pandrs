@@ -3,7 +3,7 @@
 use crate::error::Result;
 use crate::na::NA;
 use crate::series::NASeries;
-use crate::DataFrame;
+use crate::legacy_dataframe::LegacyDataFrame;
 use crate::Series;
 use rayon::prelude::*;
 
@@ -77,13 +77,13 @@ where
 }
 
 /// 並列処理の拡張: DataFrameの並列処理
-impl DataFrame {
+impl LegacyDataFrame {
     /// すべての列に対して並列で関数を適用
-    pub fn par_apply<F>(&self, f: F) -> Result<DataFrame>
+    pub fn par_apply<F>(&self, f: F) -> Result<LegacyDataFrame>
     where
         F: Fn(&str, usize, &str) -> String + Send + Sync,
     {
-        let mut result = DataFrame::new();
+        let mut result = LegacyDataFrame::new();
 
         // 各列を並列処理
         let column_names = self.column_names().to_vec();
@@ -114,11 +114,11 @@ impl DataFrame {
     }
 
     /// 行のフィルタリングを並列で実行
-    pub fn par_filter_rows<F>(&self, f: F) -> Result<DataFrame>
+    pub fn par_filter_rows<F>(&self, f: F) -> Result<LegacyDataFrame>
     where
         F: Fn(usize) -> bool + Send + Sync,
     {
-        let mut result = DataFrame::new();
+        let mut result = LegacyDataFrame::new();
 
         // 列名を取得
         let column_names = self.column_names().to_vec();
@@ -154,7 +154,7 @@ impl DataFrame {
     }
 
     /// グループ化操作を並列で実行
-    pub fn par_groupby<K>(&self, key_func: K) -> Result<HashMap<String, DataFrame>>
+    pub fn par_groupby<K>(&self, key_func: K) -> Result<HashMap<String, LegacyDataFrame>>
     where
         K: Fn(usize) -> String + Send + Sync,
     {

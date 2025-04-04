@@ -23,17 +23,25 @@ pub mod series;
 pub mod temporal;
 pub mod vis;
 
+// 互換性レイヤー
+pub mod compat;
+
 // Re-export commonly used types
 pub use column::{Column, ColumnType, Int64Column, Float64Column, StringColumn, BooleanColumn};
-pub use dataframe::{DataFrame};
+// Legacy DataFrame is no longer exported by default
+// Use legacy_dataframe module to access it if needed
+pub use dataframe::{MeltOptions, StackOptions, UnstackOptions};
+pub mod legacy_dataframe {
+    pub use crate::dataframe::DataFrame as LegacyDataFrame;
+}
 pub use error::PandRSError;
 pub use groupby::GroupBy;
 pub use index::{DataFrameIndex, Index, IndexTrait, MultiIndex, RangeIndex, StringIndex, StringMultiIndex};
 pub use na::NA;
-pub use optimized::{OptimizedDataFrame, LazyFrame, AggregateOp, JoinType};
+// Optimized implementation is now the default DataFrame
+pub use optimized::{OptimizedDataFrame as DataFrame, LazyFrame, AggregateOp, JoinType};
 pub use parallel::ParallelUtils;
 pub use series::{Categorical, CategoricalOrder, NASeries, Series, StringCategorical};
-pub use dataframe::{MeltOptions, StackOptions, UnstackOptions};
 pub use vis::{OutputFormat, PlotConfig, PlotType};
 
 // Export version info

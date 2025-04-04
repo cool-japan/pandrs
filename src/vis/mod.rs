@@ -7,7 +7,8 @@ use textplots::{Chart, Plot, Shape};
 
 use crate::error::{PandRSError, Result};
 use crate::temporal::TimeSeries;
-use crate::DataFrame;
+use crate::optimized::OptimizedDataFrame as DataFrame;
+use crate::compat::DataFrameCompat;
 use crate::Series;
 
 /// プロットの種類
