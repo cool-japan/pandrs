@@ -469,9 +469,12 @@ impl OptimizedDataFrame {
         Ok(result)
     }
     
-    /// 行のフィルタリングを並列で実行
+    /// 行のフィルタリング実行（データサイズに応じて直列/並列処理を自動選択）
     pub fn par_filter(&self, condition_column: &str) -> Result<Self> {
         use rayon::prelude::*;
+        
+        // 最適並列化のための閾値（これより小さいデータサイズでは直列処理が有利）
+        const PARALLEL_THRESHOLD: usize = 100_000;
         
         // 条件列の取得
         let column_idx = self.column_indices.get(condition_column)
@@ -481,16 +484,39 @@ impl OptimizedDataFrame {
         
         // 条件列がブール型であることを確認
         if let Column::Boolean(bool_col) = condition {
-            // 並列で trueの行のインデックスを収集
-            let indices: Vec<usize> = (0..bool_col.len()).into_par_iter()
-                .filter_map(|i| {
-                    if let Ok(Some(true)) = bool_col.get(i) {
-                        Some(i)
-                    } else {
-                        None
-                    }
-                })
-                .collect();
+            let row_count = bool_col.len();
+            
+            // データサイズに基づいて直列/並列処理を選択
+            let indices: Vec<usize> = if row_count < PARALLEL_THRESHOLD {
+                // 直列処理（小規模データ）
+                (0..row_count)
+                    .filter_map(|i| {
+                        if let Ok(Some(true)) = bool_col.get(i) {
+                            Some(i)
+                        } else {
+                            None
+                        }
+                    })
+                    .collect()
+            } else {
+                // 並列処理（大規模データ）
+                // チャンクサイズを最適化して並列化オーバーヘッドを削減
+                let chunk_size = (row_count / rayon::current_num_threads()).max(1000);
+                
+                // まずレンジを配列に変換してからチャンク処理
+                (0..row_count).collect::<Vec<_>>()
+                    .par_chunks(chunk_size)
+                    .flat_map(|chunk| {
+                        chunk.iter().filter_map(|&i| {
+                            if let Ok(Some(true)) = bool_col.get(i) {
+                                Some(i)
+                            } else {
+                                None
+                            }
+                        }).collect::<Vec<_>>()
+                    })
+                    .collect()
+            };
             
             if indices.is_empty() {
                 // 空のデータフレームを返す
@@ -511,15 +537,19 @@ impl OptimizedDataFrame {
             // 新しいDataFrameを作成
             let mut result = Self::new();
             
-            // 各列を並列でフィルタリング
-            let column_results: Result<Vec<(String, Column)>> = self.column_names.par_iter()
-                .map(|name| {
+            // 結果の列を格納するベクトルを事前に確保
+            let mut result_columns = Vec::with_capacity(self.column_names.len());
+            
+            // データサイズに基づいて列の処理方法を選択
+            if indices.len() < PARALLEL_THRESHOLD || self.column_names.len() < 4 {
+                // 直列処理（小規模データまたは列数が少ない場合）
+                for name in &self.column_names {
                     let i = self.column_indices[name];
                     let column = &self.columns[i];
                     
                     let filtered_column = match column {
                         Column::Int64(col) => {
-                            let filtered_data: Vec<i64> = indices.par_iter()
+                            let filtered_data: Vec<i64> = indices.iter()
                                 .map(|&idx| {
                                     if let Ok(Some(val)) = col.get(idx) {
                                         val
@@ -531,7 +561,7 @@ impl OptimizedDataFrame {
                             Column::Int64(Int64Column::new(filtered_data))
                         },
                         Column::Float64(col) => {
-                            let filtered_data: Vec<f64> = indices.par_iter()
+                            let filtered_data: Vec<f64> = indices.iter()
                                 .map(|&idx| {
                                     if let Ok(Some(val)) = col.get(idx) {
                                         val
@@ -543,7 +573,7 @@ impl OptimizedDataFrame {
                             Column::Float64(crate::column::Float64Column::new(filtered_data))
                         },
                         Column::String(col) => {
-                            let filtered_data: Vec<String> = indices.par_iter()
+                            let filtered_data: Vec<String> = indices.iter()
                                 .map(|&idx| {
                                     if let Ok(Some(val)) = col.get(idx) {
                                         val.to_string()
@@ -555,7 +585,7 @@ impl OptimizedDataFrame {
                             Column::String(crate::column::StringColumn::new(filtered_data))
                         },
                         Column::Boolean(col) => {
-                            let filtered_data: Vec<bool> = indices.par_iter()
+                            let filtered_data: Vec<bool> = indices.iter()
                                 .map(|&idx| {
                                     if let Ok(Some(val)) = col.get(idx) {
                                         val
@@ -568,12 +598,102 @@ impl OptimizedDataFrame {
                         },
                     };
                     
-                    Ok((name.clone(), filtered_column))
-                })
-                .collect();
+                    result_columns.push((name.clone(), filtered_column));
+                }
+            } else {
+                // 大規模データの並列処理
+                // 各列に対して並列処理を行う（列レベルの粗粒度並列化）
+                result_columns = self.column_names.par_iter()
+                    .map(|name| {
+                        let i = self.column_indices[name];
+                        let column = &self.columns[i];
+                        
+                        let indices_len = indices.len();
+                        let filtered_column = match column {
+                            Column::Int64(col) => {
+                                // 大きなインデックスリストは分割して処理
+                                let chunk_size = (indices_len / 8).max(1000);
+                                let mut filtered_data = Vec::with_capacity(indices_len);
+                                
+                                // chunks を使用してすべての要素を確実に処理
+                                for chunk in indices.chunks(chunk_size) {
+                                    let chunk_data: Vec<i64> = chunk.iter()
+                                        .map(|&idx| {
+                                            if let Ok(Some(val)) = col.get(idx) {
+                                                val
+                                            } else {
+                                                0 // デフォルト値
+                                            }
+                                        })
+                                        .collect();
+                                    filtered_data.extend(chunk_data);
+                                }
+                                
+                                Column::Int64(Int64Column::new(filtered_data))
+                            },
+                            Column::Float64(col) => {
+                                // 大きなインデックスリストは分割して処理
+                                let chunk_size = (indices_len / 8).max(1000);
+                                let mut filtered_data = Vec::with_capacity(indices_len);
+                                
+                                // chunksを使用してすべての要素を確実に処理
+                                for chunk in indices.chunks(chunk_size) {
+                                    let chunk_data: Vec<f64> = chunk.iter()
+                                        .map(|&idx| {
+                                            if let Ok(Some(val)) = col.get(idx) {
+                                                val
+                                            } else {
+                                                0.0 // デフォルト値
+                                            }
+                                        })
+                                        .collect();
+                                    filtered_data.extend(chunk_data);
+                                }
+                                
+                                Column::Float64(crate::column::Float64Column::new(filtered_data))
+                            },
+                            Column::String(col) => {
+                                // 文字列処理は特に重いので、より細かいチャンク処理
+                                let chunk_size = (indices_len / 16).max(500);
+                                let mut filtered_data = Vec::with_capacity(indices_len);
+                                
+                                // chunksを使用してすべての要素を確実に処理
+                                for chunk in indices.chunks(chunk_size) {
+                                    let chunk_data: Vec<String> = chunk.iter()
+                                        .map(|&idx| {
+                                            if let Ok(Some(val)) = col.get(idx) {
+                                                val.to_string()
+                                            } else {
+                                                String::new() // デフォルト値
+                                            }
+                                        })
+                                        .collect();
+                                    filtered_data.extend(chunk_data);
+                                }
+                                
+                                Column::String(crate::column::StringColumn::new(filtered_data))
+                            },
+                            Column::Boolean(col) => {
+                                let filtered_data: Vec<bool> = indices.iter()
+                                    .map(|&idx| {
+                                        if let Ok(Some(val)) = col.get(idx) {
+                                            val
+                                        } else {
+                                            false // デフォルト値
+                                        }
+                                    })
+                                    .collect();
+                                Column::Boolean(crate::column::BooleanColumn::new(filtered_data))
+                            },
+                        };
+                        
+                        (name.clone(), filtered_column)
+                    })
+                    .collect();
+            }
             
             // 結果をデータフレームに追加
-            for (name, column) in column_results? {
+            for (name, column) in result_columns {
                 result.add_column(name, column)?;
             }
             
@@ -590,10 +710,14 @@ impl OptimizedDataFrame {
         }
     }
     
-    /// グループ化操作を並列で実行
+    /// グループ化操作を並列で実行（データサイズに応じて最適化）
     pub fn par_groupby(&self, group_by_columns: &[&str]) -> Result<HashMap<String, Self>> {
         use rayon::prelude::*;
         use std::collections::hash_map::Entry;
+        use std::sync::{Arc, Mutex};
+        
+        // データサイズに基づく最適化閾値
+        const PARALLEL_THRESHOLD: usize = 50_000;
         
         // グループ化キーのカラムインデックスを取得
         let mut group_col_indices = Vec::with_capacity(group_by_columns.len());
@@ -604,11 +728,11 @@ impl OptimizedDataFrame {
         }
         
         // グループキーを生成し、各行のインデックスをグループ化
-        let mut groups: HashMap<String, Vec<usize>> = HashMap::new();
-        
-        // 並列化：各行のグループキーを計算し、一時的な（行インデックス、グループキー）のペアを作成
-        let row_key_pairs: Vec<(usize, String)> = (0..self.row_count).into_par_iter()
-            .map(|row_idx| {
+        let groups: HashMap<String, Vec<usize>> = if self.row_count < PARALLEL_THRESHOLD {
+            // 小規模データでは直列処理の方が効率的
+            let mut groups = HashMap::new();
+            
+            for row_idx in 0..self.row_count {
                 // この行のグループキーを生成
                 let mut key_parts = Vec::with_capacity(group_col_indices.len());
                 
@@ -648,34 +772,137 @@ impl OptimizedDataFrame {
                 }
                 
                 let group_key = key_parts.join("_");
-                (row_idx, group_key)
-            })
-            .collect();
-        
-        // 直列処理：結果をグループに集約
-        for (row_idx, group_key) in row_key_pairs {
-            match groups.entry(group_key) {
-                Entry::Vacant(e) => { e.insert(vec![row_idx]); },
-                Entry::Occupied(mut e) => { e.get_mut().push(row_idx); }
+                
+                match groups.entry(group_key) {
+                    Entry::Vacant(e) => { e.insert(vec![row_idx]); },
+                    Entry::Occupied(mut e) => { e.get_mut().push(row_idx); }
+                }
             }
-        }
+            
+            groups
+        } else {
+            // 大規模データでは並列処理+ロックフリーアプローチ
+            // 1. 並列でローカルなグループマップを作成
+            // 2. それらをマージ
+            let chunk_size = (self.row_count / rayon::current_num_threads()).max(1000);
+            
+            // ステップ1: 並列でローカルな中間グループマップを作成
+            let local_maps: Vec<HashMap<String, Vec<usize>>> = 
+                (0..self.row_count).collect::<Vec<_>>()
+                .par_chunks(chunk_size)
+                .map(|chunk| {
+                    let mut local_groups = HashMap::new();
+                    
+                    for &row_idx in chunk {
+                        // この行のグループキーを生成
+                        let mut key_parts = Vec::with_capacity(group_col_indices.len());
+                        
+                        for &col_idx in &group_col_indices {
+                            let column = &self.columns[col_idx];
+                            let part = match column {
+                                Column::Int64(col) => {
+                                    if let Ok(Some(val)) = col.get(row_idx) {
+                                        val.to_string()
+                                    } else {
+                                        "NA".to_string()
+                                    }
+                                },
+                                Column::Float64(col) => {
+                                    if let Ok(Some(val)) = col.get(row_idx) {
+                                        val.to_string()
+                                    } else {
+                                        "NA".to_string()
+                                    }
+                                },
+                                Column::String(col) => {
+                                    if let Ok(Some(val)) = col.get(row_idx) {
+                                        val.to_string()
+                                    } else {
+                                        "NA".to_string()
+                                    }
+                                },
+                                Column::Boolean(col) => {
+                                    if let Ok(Some(val)) = col.get(row_idx) {
+                                        val.to_string()
+                                    } else {
+                                        "NA".to_string()
+                                    }
+                                },
+                            };
+                            key_parts.push(part);
+                        }
+                        
+                        let group_key = key_parts.join("_");
+                        
+                        match local_groups.entry(group_key) {
+                            Entry::Vacant(e) => { e.insert(vec![row_idx]); },
+                            Entry::Occupied(mut e) => { e.get_mut().push(row_idx); }
+                        }
+                    }
+                    
+                    local_groups
+                })
+                .collect();
+            
+            // ステップ2: 中間マップをマージ
+            let mut merged_groups = HashMap::new();
+            for local_map in local_maps {
+                for (key, indices) in local_map {
+                    match merged_groups.entry(key) {
+                        Entry::Vacant(e) => { e.insert(indices); },
+                        Entry::Occupied(mut e) => { e.get_mut().extend(indices); }
+                    }
+                }
+            }
+            
+            merged_groups
+        };
         
-        // 各グループに対してDataFrameを作成
-        let mut result = HashMap::new();
-        
-        // グループを並列処理
-        let group_results: Vec<(String, Result<Self>)> = groups.into_par_iter()
-            .map(|(key, indices)| {
-                // 各列をフィルタリングして新しいDataFrameを作成
-                let group_df = self.filter_by_indices(&indices);
-                (key, group_df)
-            })
-            .collect();
-        
-        // 結果をマージ
-        for (key, group_result) in group_results {
-            result.insert(key, group_result?);
-        }
+        // 各グループに対してDataFrameを効率的に作成
+        let result = if groups.len() < 100 || self.row_count < PARALLEL_THRESHOLD {
+            // グループ数が少ない場合や小規模データでは直列処理
+            let mut result = HashMap::with_capacity(groups.len());
+            for (key, indices) in groups {
+                let group_df = self.filter_by_indices(&indices)?;
+                result.insert(key, group_df);
+            }
+            result
+        } else {
+            // 大規模データでのグループ処理は並列化
+            // 各グループを並列処理し、スレッドセーフに結果を集約
+            let result_mutex = Arc::new(Mutex::new(HashMap::with_capacity(groups.len())));
+            
+            // チャンクサイズを調整して、オーバーヘッドを最小化
+            let chunk_size = (groups.len() / rayon::current_num_threads()).max(10);
+            
+            // グループのリストを作成し、チャンクに分割して並列処理
+            let group_items: Vec<(String, Vec<usize>)> = groups.into_iter().collect();
+            
+            group_items.par_chunks(chunk_size)
+                .for_each(|chunk| {
+                    // 各チャンクの処理結果を一時保存
+                    let mut local_results = HashMap::new();
+                    
+                    for (key, indices) in chunk {
+                        if let Ok(group_df) = self.filter_by_indices(indices) {
+                            local_results.insert(key.clone(), group_df);
+                        }
+                    }
+                    
+                    // 結果をメインのHashMapにマージ
+                    if let Ok(mut result_map) = result_mutex.lock() {
+                        for (key, df) in local_results {
+                            result_map.insert(key, df);
+                        }
+                    }
+                });
+            
+            // 最終結果を取得
+            match Arc::try_unwrap(result_mutex) {
+                Ok(mutex) => mutex.into_inner().unwrap_or_default(),
+                Err(_) => HashMap::new(), // アークの解除に失敗した場合
+            }
+        };
         
         Ok(result)
     }
