@@ -1,0 +1,97 @@
+pandrs v0.1.0 (/tmp/pandrs)
+├── chrono v0.4.40
+│   ├── iana-time-zone v0.1.63
+│   └── num-traits v0.2.19
+│       [build-dependencies]
+│       └── autocfg v1.4.0
+├── chrono-tz v0.8.6
+│   ├── chrono v0.4.40 (*)
+│   └── phf v0.11.3
+│       └── phf_shared v0.11.3
+│           └── siphasher v1.0.1
+│   [build-dependencies]
+│   └── chrono-tz-build v0.2.1
+│       ├── parse-zoneinfo v0.3.1
+│       │   └── regex v1.11.1
+│       │       ├── regex-automata v0.4.9
+│       │       │   └── regex-syntax v0.8.5
+│       │       └── regex-syntax v0.8.5
+│       ├── phf v0.11.3 (*)
+│       └── phf_codegen v0.11.3
+│           ├── phf_generator v0.11.3
+│           │   ├── phf_shared v0.11.3 (*)
+│           │   └── rand v0.8.5
+│           │       └── rand_core v0.6.4
+│           └── phf_shared v0.11.3 (*)
+├── csv v1.3.1
+│   ├── csv-core v0.1.12
+│   │   └── memchr v2.7.4
+│   ├── itoa v1.0.15
+│   ├── ryu v1.0.20
+│   └── serde v1.0.219
+│       └── serde_derive v1.0.219 (proc-macro)
+│           ├── proc-macro2 v1.0.94
+│           │   └── unicode-ident v1.0.18
+│           ├── quote v1.0.40
+│           │   └── proc-macro2 v1.0.94 (*)
+│           └── syn v2.0.100
+│               ├── proc-macro2 v1.0.94 (*)
+│               ├── quote v1.0.40 (*)
+│               └── unicode-ident v1.0.18
+├── lazy_static v1.5.0
+├── num-traits v0.2.19 (*)
+├── rand v0.8.5
+│   ├── libc v0.2.171
+│   ├── rand_chacha v0.3.1
+│   │   ├── ppv-lite86 v0.2.21
+│   │   │   └── zerocopy v0.8.24
+│   │   └── rand_core v0.6.4
+│   │       └── getrandom v0.2.15
+│   │           ├── cfg-if v1.0.0
+│   │           └── libc v0.2.171
+│   └── rand_core v0.6.4 (*)
+├── rayon v1.10.0
+│   ├── either v1.15.0
+│   └── rayon-core v1.12.1
+│       ├── crossbeam-deque v0.8.6
+│       │   ├── crossbeam-epoch v0.9.18
+│       │   │   └── crossbeam-utils v0.8.21
+│       │   └── crossbeam-utils v0.8.21
+│       └── crossbeam-utils v0.8.21
+├── regex v1.11.1
+│   ├── aho-corasick v1.1.3
+│   │   └── memchr v2.7.4
+│   ├── memchr v2.7.4
+│   ├── regex-automata v0.4.9
+│   │   ├── aho-corasick v1.1.3 (*)
+│   │   ├── memchr v2.7.4
+│   │   └── regex-syntax v0.8.5
+│   └── regex-syntax v0.8.5
+├── serde v1.0.219 (*)
+├── serde_json v1.0.140
+│   ├── itoa v1.0.15
+│   ├── memchr v2.7.4
+│   ├── ryu v1.0.20
+│   └── serde v1.0.219 (*)
+├── textplots v0.8.7
+│   ├── drawille v0.3.0
+│   │   ├── colored v2.2.0
+│   │   │   └── lazy_static v1.5.0
+│   │   └── fnv v1.0.7
+│   └── rgb v0.8.50
+│       └── bytemuck v1.22.0
+└── thiserror v1.0.69
+    └── thiserror-impl v1.0.69 (proc-macro)
+        ├── proc-macro2 v1.0.94 (*)
+        ├── quote v1.0.40 (*)
+        └── syn v2.0.100 (*)
+[dev-dependencies]
+└── tempfile v3.19.1
+    ├── fastrand v2.3.0
+    ├── getrandom v0.3.2
+    │   ├── cfg-if v1.0.0
+    │   └── libc v0.2.171
+    ├── once_cell v1.21.3
+    └── rustix v1.0.5
+        ├── bitflags v2.9.0
+        └── linux-raw-sys v0.9.3
