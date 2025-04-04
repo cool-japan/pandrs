@@ -121,10 +121,11 @@ impl PyStringPool {
     }
 
     /// Pythonリストの文字列をプールに追加
-    fn add_list(&self, _py: Python<'_>, strings: &PyList) -> PyResult<Vec<usize>> {
-        let mut indices = Vec::with_capacity(strings.len());
+    fn add_list(&self, py: Python<'_>, strings: PyObject) -> PyResult<Vec<usize>> {
+        let list_obj = strings.downcast_bound::<PyList>(py)?;
+        let mut indices = Vec::new();
         
-        for item in strings.iter() {
+        for item in list_obj.iter() {
             if let Ok(s) = item.extract::<String>() {
                 let idx = match self.inner.lock() {
                     Ok(mut pool) => pool.add(s),
@@ -167,10 +168,12 @@ impl PyStringPool {
             })
             .collect();
         
-        match strings {
-            Ok(s) => Ok(PyList::new(py, &s).into()),
-            Err(e) => Err(e),
-        }
+        let string_vec = strings?;
+        
+        // Create a Python list directly - extract the Result value
+        let py_list_temp = PyList::new_bound(py, &string_vec);
+        let py_obj = py_list_temp.to_object(py);
+        Ok(py_obj)
     }
 
     /// プールの統計情報を取得
@@ -211,9 +214,9 @@ pub fn get_or_init_global_pool() -> Arc<Mutex<StringPoolInner>> {
 }
 
 /// 文字列変換ユーティリティ関数
-pub fn py_string_list_to_indices(_py: Python<'_>, list: &PyList) -> PyResult<Vec<usize>> {
+pub fn py_string_list_to_indices(_py: Python<'_>, list: &Bound<'_, PyList>) -> PyResult<Vec<usize>> {
     let pool = get_or_init_global_pool();
-    let mut indices = Vec::with_capacity(list.len());
+    let mut indices = Vec::new();
     
     for item in list.iter() {
         if let Ok(s) = item.extract::<String>() {
@@ -247,11 +250,13 @@ pub fn indices_to_py_string_list(py: Python<'_>, indices: &[usize]) -> PyResult<
         }
     }
     
-    Ok(PyList::new(py, &strings).into())
+    let py_list = PyList::new_bound(py, &strings);
+    let py_obj = py_list.to_object(py);
+    Ok(py_obj)
 }
 
 /// Python モジュールへの登録
-pub fn register_string_pool_types(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
+pub fn register_string_pool_types(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyStringPool>()?;
     Ok(())
 }

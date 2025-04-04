@@ -1,7 +1,7 @@
-use numpy::ToPyArray;
+use numpy::IntoPyArray;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
-use pyo3::types::{PyDict, PyList, PyTuple};
+use pyo3::types::{PyDict, PyList};
 // 親クレートをインポート（明示的パスを使用）
 use ::pandrs::{
     OptimizedDataFrame, LazyFrame, AggregateOp, 
@@ -77,9 +77,12 @@ impl PyOptimizedDataFrame {
     }
     
     /// Add a column to the DataFrame directly from a Python list
-    fn add_string_column_from_pylist(&mut self, py: Python<'_>, name: String, data: &PyList) -> PyResult<()> {
+    fn add_string_column_from_pylist(&mut self, py: Python<'_>, name: String, data: PyObject) -> PyResult<()> {
+        // リストにダウンキャスト
+        let list_obj = data.downcast_bound::<PyList>(py)?;
+        
         // 文字列プールを使って効率的に変換
-        let indices = py_string_list_to_indices(py, data)?;
+        let indices = py_string_list_to_indices(py, &list_obj)?;
         
         // インデックスからStringColumnを作成
         let interned_strings: Vec<String> = indices.iter()
@@ -106,8 +109,9 @@ impl PyOptimizedDataFrame {
     #[getter]
     fn column_names(&self, py: Python<'_>) -> PyResult<PyObject> {
         let cols = self.inner.column_names();
-        let python_list = PyList::new(py, cols);
-        Ok(python_list.into())
+        let python_list = PyList::new_bound(py, cols);
+        let py_obj = python_list.to_object(py);
+        Ok(py_obj)
     }
 
     /// Get the shape of the DataFrame (rows, columns)
@@ -159,7 +163,8 @@ impl PyOptimizedDataFrame {
                         values.push(f64::NAN);  // Use NaN for null values
                     }
                 }
-                dict.set_item(name, values.to_pyarray(py))?;
+                let np_array = values.into_pyarray(py);
+                dict.set_item(name, np_array)?;
             } else if let Some(float_col) = col_view.as_float64() {
                 let mut values = Vec::with_capacity(float_col.len());
                 for i in 0..float_col.len() {
@@ -169,7 +174,8 @@ impl PyOptimizedDataFrame {
                         values.push(f64::NAN);
                     }
                 }
-                dict.set_item(name, values.to_pyarray(py))?;
+                let np_array = values.into_pyarray(py);
+                dict.set_item(name, np_array)?;
             } else if let Some(string_col) = col_view.as_string() {
                 // 文字列プールを使用して効率的に変換
                 let pool = get_or_init_global_pool();
@@ -215,37 +221,38 @@ impl PyOptimizedDataFrame {
                         values.push(false);
                     }
                 }
-                dict.set_item(name, PyList::new(py, &values))?;
+                let py_list = PyList::new_bound(py, &values);
+                dict.set_item(name, py_list)?;
             }
         }
         
         // Create pandas DataFrame
-        let args = PyTuple::new(py, &[] as &[PyObject]);
-        let kwargs = PyDict::new(py);
-        kwargs.set_item("data", dict)?;
-        
-        Ok(pd_df.call(args, Some(kwargs))?.into())
+        let pd_df_obj = pd_df.call1((dict,))?;
+        let py_obj = pd_df_obj.to_object(py);
+        Ok(py_obj)
     }
     
     /// Create an optimized DataFrame from a pandas DataFrame
     #[staticmethod]
-    fn from_pandas(pandas_df: &PyAny) -> PyResult<Self> {
-        let py = pandas_df.py();
-        
+    fn from_pandas(py: Python<'_>, pandas_df: PyObject) -> PyResult<Self> {
         // Get columns and prepare data
-        let columns = pandas_df.getattr("columns")?.extract::<Vec<String>>()?;
+        let pd_obj = pandas_df.bind(py);
+        let columns = pd_obj.getattr("columns")?;
+        let columns_vec = columns.extract::<Vec<String>>()?;
         let mut df = OptimizedDataFrame::new();
         
         // Efficiently process each column
-        for col_name in &columns {
+        for col_name in &columns_vec {
             // Access column using pandas' __getitem__
-            let pd_col = pandas_df.getattr("__getitem__")?.call1((col_name,))?;
+            let get_item = pd_obj.getattr("__getitem__")?;
+            let pd_col = get_item.call1((col_name,))?;
             
             // Get dtype info to determine the best column type
-            let dtype = pd_col.getattr("dtype")?.str()?.to_str()?;
+            let dtype = pd_col.getattr("dtype")?;
+            let dtype_str = dtype.str()?.to_string();
             
             // Specialized processing based on data type
-            if dtype.contains("int") {
+            if dtype_str.contains("int") {
                 // Use numpy's to_list to get values as Python list
                 let values = pd_col.call_method0("to_list")?;
                 let int_values: Vec<i64> = values.extract()?;
@@ -254,7 +261,7 @@ impl PyOptimizedDataFrame {
                     Ok(_) => {},
                     Err(e) => return Err(PyValueError::new_err(format!("Failed to add int column: {}", e))),
                 }
-            } else if dtype.contains("float") {
+            } else if dtype_str.contains("float") {
                 let values = pd_col.call_method0("to_list")?;
                 let float_values: Vec<f64> = values.extract()?;
                 let column = Float64Column::new(float_values);
@@ -262,7 +269,7 @@ impl PyOptimizedDataFrame {
                     Ok(_) => {},
                     Err(e) => return Err(PyValueError::new_err(format!("Failed to add float column: {}", e))),
                 }
-            } else if dtype.contains("bool") {
+            } else if dtype_str.contains("bool") {
                 let values = pd_col.call_method0("to_list")?;
                 let bool_values: Vec<bool> = values.extract()?;
                 let column = BooleanColumn::new(bool_values);
@@ -276,7 +283,7 @@ impl PyOptimizedDataFrame {
                 let py_list = values.downcast::<PyList>()?;
                 
                 // 文字列プールを使って効率的に変換
-                let indices = py_string_list_to_indices(py, py_list)?;
+                let indices = py_string_list_to_indices(py, &py_list)?;
                 
                 // インデックスから文字列カラムを作成
                 let interned_strings: Vec<String> = indices.iter()
@@ -356,13 +363,13 @@ impl PyLazyFrame {
 }
 
 /// Register the optimized types in the Python module
-pub fn register_optimized_types(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
+pub fn register_optimized_types(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // 基本の最適化クラスを登録
     m.add_class::<PyOptimizedDataFrame>()?;
     m.add_class::<PyLazyFrame>()?;
     
     // 文字列プール最適化クラスを登録
-    py_string_pool::register_string_pool_types(_py, m)?;
+    py_string_pool::register_string_pool_types(m)?;
     
     Ok(())
 }

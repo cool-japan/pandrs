@@ -1,7 +1,7 @@
-use numpy::{PyArray1, ToPyArray};
+use numpy::{IntoPyArray, PyArray1, PyArrayMethods};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
-use pyo3::types::{PyDict, PyList, PyString, PyTuple};
+use pyo3::types::{PyDict, PyList};
 // 親クレートをインポート（明示的パスを使用）
 use ::pandrs::{DataFrame, Series, NA, NASeries};
 use std::collections::HashMap;
@@ -11,17 +11,17 @@ mod py_optimized;
 
 /// A Rust-powered DataFrame implementation with pandas-like API
 #[pymodule]
-fn pandrs(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
+fn pandrs(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // 従来のクラスを登録
     m.add_class::<PyDataFrame>()?;
     m.add_class::<PySeries>()?;
     m.add_class::<PyNASeries>()?;
     
     // 最適化されたクラスを登録
-    py_optimized::register_optimized_types(_py, m)?;
+    py_optimized::register_optimized_types(m)?;
     
     // Add module version
-    m.add("__version__", ::pandrs::VERSION)?;
+    m.setattr("__version__", ::pandrs::VERSION)?;
     
     Ok(())
 }
@@ -36,18 +36,21 @@ struct PyDataFrame {
 impl PyDataFrame {
     /// Create a new DataFrame from a dictionary of lists/arrays
     #[new]
-    fn new(data: Option<&PyDict>, index: Option<Vec<String>>) -> PyResult<Self> {
-        if let Some(data_dict) = data {
+    fn new(py: Python<'_>, data: Option<PyObject>) -> PyResult<Self> {
+        if let Some(data_obj) = data {
+            let data_dict = data_obj.downcast_bound::<PyDict>(py)?;
             let mut columns = Vec::new();
             let mut data_values: HashMap<String, Vec<String>> = HashMap::new();
             
-            for (key, value) in data_dict.iter() {
+            for item in data_dict.items() {
+                let (key, value) = (item.get_item(0)?, item.get_item(1)?);
                 let key_str = key.extract::<String>()?;
                 columns.push(key_str.clone());
                 
                 let values_vec = if let Ok(list) = value.downcast::<PyList>() {
                     let mut result = Vec::with_capacity(list.len());
-                    for item in list.iter() {
+                    for i in 0..list.len() {
+                        let item = list.get_item(i)?;
                         if item.is_none() {
                             result.push(NA::<String>::NA.to_string());
                         } else {
@@ -55,7 +58,7 @@ impl PyDataFrame {
                         }
                     }
                     result
-                } else if let Ok(array) = value.extract::<&PyArray1<f64>>() {
+                } else if let Ok(array) = value.downcast::<PyArray1<f64>>() {
                     let array_ref = unsafe { array.as_array() };
                     array_ref.iter().map(|v| v.to_string()).collect()
                 } else {
@@ -66,7 +69,7 @@ impl PyDataFrame {
             }
             
             // Create DataFrame from the data
-            match DataFrame::from_map(data_values, index) {
+            match DataFrame::from_map(data_values, None) {
                 Ok(df) => Ok(PyDataFrame { inner: df }),
                 Err(e) => Err(PyValueError::new_err(format!("Failed to create DataFrame: {}", e))),
             }
@@ -83,20 +86,21 @@ impl PyDataFrame {
         for col in self.inner.column_names() {
             if let Some(values) = self.inner.get_column(col) {
                 let values_vec = values.values().to_vec();
-                let python_list = PyList::new(py, &values_vec);
+                let python_list = PyList::new_bound(py, &values_vec);
                 dict.set_item(col, python_list)?;
             }
         }
         
-        Ok(dict.into())
+        Ok(dict.to_object(py))
     }
     
     /// Get column names
     #[getter]
     fn columns(&self, py: Python<'_>) -> PyResult<PyObject> {
         let cols = self.inner.column_names();
-        let python_list = PyList::new(py, cols);
-        Ok(python_list.into())
+        let python_list = PyList::new_bound(py, cols);
+        let py_obj = python_list.to_object(py);
+        Ok(py_obj)
     }
     
     /// Set column names
@@ -120,9 +124,9 @@ impl PyDataFrame {
     }
     
     /// Get a single column as Series
-    fn __getitem__(&self, key: &PyString) -> PyResult<PySeries> {
-        let key_str = key.to_str()?;
-        match self.inner.get_column(key_str) {
+    fn __getitem__(&self, py: Python<'_>, key: PyObject) -> PyResult<PySeries> {
+        let key_str = key.extract::<String>(py)?;
+        match self.inner.get_column(&key_str) {
             Some(col) => {
                 // 列データを取得
                 let values = col.values().to_vec();
@@ -158,7 +162,6 @@ impl PyDataFrame {
         let pd_df = pandas.getattr("DataFrame")?;
         
         let dict = self.to_dict(py)?;
-        let args = PyTuple::new(py, &[] as &[PyObject]);
         let kwargs = PyDict::new(py);
         kwargs.set_item("data", dict)?;
         
@@ -166,23 +169,26 @@ impl PyDataFrame {
             kwargs.set_item("index", index)?;
         }
         
-        Ok(pd_df.call(args, Some(kwargs))?.into())
+        let pd_df_obj = pd_df.call1(())?;
+        Ok(pd_df_obj.into())
     }
     
     /// Create a DataFrame from a pandas DataFrame
     #[staticmethod]
-    fn from_pandas(pandas_df: &PyAny) -> PyResult<Self> {
-        let _py = pandas_df.py();
-        
-        // Get the columns (for validation if needed)
-        let _columns = pandas_df.getattr("columns")?.extract::<Vec<String>>()?;
+    fn from_pandas(py: Python<'_>, pandas_df: PyObject) -> PyResult<Self> {
+        // Get columns and prepare data
+        let pd_obj = pandas_df.bind(py);
+        let columns = pd_obj.getattr("columns")?;
+        let _columns_vec = columns.extract::<Vec<String>>()?;
         
         // Get the data as a dictionary
-        let to_dict = pandas_df.getattr("to_dict")?;
-        let dict = to_dict.call1(("list",))?.extract::<&PyDict>()?;
+        let to_dict = pd_obj.getattr("to_dict")?;
+        let dict_result = to_dict.call1(("list",))?;
+        let dict = dict_result.downcast::<PyDict>()?;
         
         // Convert to our DataFrame format
-        PyDataFrame::new(Some(dict), None)
+        let py_obj = dict.to_object(py);
+        PyDataFrame::new(py, Some(py_obj))
     }
     
     /// Return a new DataFrame by selecting rows with the given indices
@@ -295,14 +301,16 @@ impl PySeries {
                 values.push(num);
             } else {
                 // If can't parse as number, convert to string representation
-                let str_array = PyList::new(py, data);
-                return Ok(str_array.to_object(py));
+                let str_array = PyList::new_bound(py, data);
+                let py_obj = str_array.to_object(py);
+                return Ok(py_obj);
             }
         }
         
         // All values successfully parsed as numbers
-        let np_array = values.to_pyarray(py);
-        Ok(np_array.to_object(py))
+        let np_array = values.into_pyarray(py);
+        let py_obj = np_array.to_object(py);
+        Ok(py_obj)
     }
     
     #[getter]
@@ -357,8 +365,9 @@ impl PyNASeries {
     /// Find NA values in the series
     fn isna(&self, py: Python<'_>) -> PyResult<PyObject> {
         let is_na = self.inner.is_na();
-        let np_array = is_na.to_pyarray(py);
-        Ok(np_array.to_object(py))
+        let np_array = is_na.into_pyarray(py);
+        let py_obj = np_array.to_object(py);
+        Ok(py_obj)
     }
     
     /// Drop NA values from the series
