@@ -135,6 +135,18 @@ Key observations:
 - NumPy 1.20 or later
 - pandas 1.3 or later (for interoperability features)
 
+## Development Notes
+
+### Git Configuration
+
+Unlike the main PandRS library, we intentionally track `Cargo.lock` in this Python bindings subproject. This is because:
+
+1. The py_bindings subproject produces a binary package (Python extension module) rather than a library
+2. Tracking `Cargo.lock` ensures reproducible builds for binary packages
+3. This follows Cargo's recommendation to track `Cargo.lock` for binary crates and not track it for library crates
+
+This explains why the root `.gitignore` excludes `/Cargo.lock` (for the main library) but not `py_bindings/Cargo.lock` (for this binary extension).
+
 ## License
 
 Apache License 2.0
