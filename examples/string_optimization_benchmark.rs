@@ -1,6 +1,6 @@
 use std::time::Instant;
 use pandrs::OptimizedDataFrame;
-use pandrs::column::{Column, Int64Column, Float64Column, StringColumn, BooleanColumn, StringColumnOptimizationMode};
+use pandrs::column::{Column, Int64Column, Float64Column, StringColumn, BooleanColumn};
 // すべての最適化モードにアクセスするためのインポート
 use pandrs::column::string_column_impl::{StringColumnOptimizationMode as OptMode, DEFAULT_OPTIMIZATION_MODE};
 
