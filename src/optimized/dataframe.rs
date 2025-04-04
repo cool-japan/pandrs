@@ -469,6 +469,313 @@ impl OptimizedDataFrame {
         Ok(result)
     }
     
+    /// 行のフィルタリングを並列で実行
+    pub fn par_filter(&self, condition_column: &str) -> Result<Self> {
+        use rayon::prelude::*;
+        
+        // 条件列の取得
+        let column_idx = self.column_indices.get(condition_column)
+            .ok_or_else(|| Error::ColumnNotFound(condition_column.to_string()))?;
+        
+        let condition = &self.columns[*column_idx];
+        
+        // 条件列がブール型であることを確認
+        if let Column::Boolean(bool_col) = condition {
+            // 並列で trueの行のインデックスを収集
+            let indices: Vec<usize> = (0..bool_col.len()).into_par_iter()
+                .filter_map(|i| {
+                    if let Ok(Some(true)) = bool_col.get(i) {
+                        Some(i)
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            
+            if indices.is_empty() {
+                // 空のデータフレームを返す
+                let mut result = Self::new();
+                for name in &self.column_names {
+                    let col_idx = self.column_indices[name];
+                    let empty_col = match &self.columns[col_idx] {
+                        Column::Int64(_) => Column::Int64(Int64Column::new(Vec::new())),
+                        Column::Float64(_) => Column::Float64(crate::column::Float64Column::new(Vec::new())),
+                        Column::String(_) => Column::String(crate::column::StringColumn::new(Vec::new())),
+                        Column::Boolean(_) => Column::Boolean(crate::column::BooleanColumn::new(Vec::new())),
+                    };
+                    result.add_column(name.clone(), empty_col)?;
+                }
+                return Ok(result);
+            }
+            
+            // 新しいDataFrameを作成
+            let mut result = Self::new();
+            
+            // 各列を並列でフィルタリング
+            let column_results: Result<Vec<(String, Column)>> = self.column_names.par_iter()
+                .map(|name| {
+                    let i = self.column_indices[name];
+                    let column = &self.columns[i];
+                    
+                    let filtered_column = match column {
+                        Column::Int64(col) => {
+                            let filtered_data: Vec<i64> = indices.par_iter()
+                                .map(|&idx| {
+                                    if let Ok(Some(val)) = col.get(idx) {
+                                        val
+                                    } else {
+                                        0 // デフォルト値
+                                    }
+                                })
+                                .collect();
+                            Column::Int64(Int64Column::new(filtered_data))
+                        },
+                        Column::Float64(col) => {
+                            let filtered_data: Vec<f64> = indices.par_iter()
+                                .map(|&idx| {
+                                    if let Ok(Some(val)) = col.get(idx) {
+                                        val
+                                    } else {
+                                        0.0 // デフォルト値
+                                    }
+                                })
+                                .collect();
+                            Column::Float64(crate::column::Float64Column::new(filtered_data))
+                        },
+                        Column::String(col) => {
+                            let filtered_data: Vec<String> = indices.par_iter()
+                                .map(|&idx| {
+                                    if let Ok(Some(val)) = col.get(idx) {
+                                        val.to_string()
+                                    } else {
+                                        String::new() // デフォルト値
+                                    }
+                                })
+                                .collect();
+                            Column::String(crate::column::StringColumn::new(filtered_data))
+                        },
+                        Column::Boolean(col) => {
+                            let filtered_data: Vec<bool> = indices.par_iter()
+                                .map(|&idx| {
+                                    if let Ok(Some(val)) = col.get(idx) {
+                                        val
+                                    } else {
+                                        false // デフォルト値
+                                    }
+                                })
+                                .collect();
+                            Column::Boolean(crate::column::BooleanColumn::new(filtered_data))
+                        },
+                    };
+                    
+                    Ok((name.clone(), filtered_column))
+                })
+                .collect();
+            
+            // 結果をデータフレームに追加
+            for (name, column) in column_results? {
+                result.add_column(name, column)?;
+            }
+            
+            // インデックスのコピー
+            if let Some(ref idx) = self.index {
+                result.index = Some(idx.clone());
+            }
+            
+            Ok(result)
+        } else {
+            Err(Error::OperationFailed(format!(
+                "列 '{}' はブール型ではありません", condition_column
+            )))
+        }
+    }
+    
+    /// グループ化操作を並列で実行
+    pub fn par_groupby(&self, group_by_columns: &[&str]) -> Result<HashMap<String, Self>> {
+        use rayon::prelude::*;
+        use std::collections::hash_map::Entry;
+        
+        // グループ化キーのカラムインデックスを取得
+        let mut group_col_indices = Vec::with_capacity(group_by_columns.len());
+        for &col_name in group_by_columns {
+            let col_idx = self.column_indices.get(col_name)
+                .ok_or_else(|| Error::ColumnNotFound(col_name.to_string()))?;
+            group_col_indices.push(*col_idx);
+        }
+        
+        // グループキーを生成し、各行のインデックスをグループ化
+        let mut groups: HashMap<String, Vec<usize>> = HashMap::new();
+        
+        // 並列化：各行のグループキーを計算し、一時的な（行インデックス、グループキー）のペアを作成
+        let row_key_pairs: Vec<(usize, String)> = (0..self.row_count).into_par_iter()
+            .map(|row_idx| {
+                // この行のグループキーを生成
+                let mut key_parts = Vec::with_capacity(group_col_indices.len());
+                
+                for &col_idx in &group_col_indices {
+                    let column = &self.columns[col_idx];
+                    let part = match column {
+                        Column::Int64(col) => {
+                            if let Ok(Some(val)) = col.get(row_idx) {
+                                val.to_string()
+                            } else {
+                                "NA".to_string()
+                            }
+                        },
+                        Column::Float64(col) => {
+                            if let Ok(Some(val)) = col.get(row_idx) {
+                                val.to_string()
+                            } else {
+                                "NA".to_string()
+                            }
+                        },
+                        Column::String(col) => {
+                            if let Ok(Some(val)) = col.get(row_idx) {
+                                val.to_string()
+                            } else {
+                                "NA".to_string()
+                            }
+                        },
+                        Column::Boolean(col) => {
+                            if let Ok(Some(val)) = col.get(row_idx) {
+                                val.to_string()
+                            } else {
+                                "NA".to_string()
+                            }
+                        },
+                    };
+                    key_parts.push(part);
+                }
+                
+                let group_key = key_parts.join("_");
+                (row_idx, group_key)
+            })
+            .collect();
+        
+        // 直列処理：結果をグループに集約
+        for (row_idx, group_key) in row_key_pairs {
+            match groups.entry(group_key) {
+                Entry::Vacant(e) => { e.insert(vec![row_idx]); },
+                Entry::Occupied(mut e) => { e.get_mut().push(row_idx); }
+            }
+        }
+        
+        // 各グループに対してDataFrameを作成
+        let mut result = HashMap::new();
+        
+        // グループを並列処理
+        let group_results: Vec<(String, Result<Self>)> = groups.into_par_iter()
+            .map(|(key, indices)| {
+                // 各列をフィルタリングして新しいDataFrameを作成
+                let group_df = self.filter_by_indices(&indices);
+                (key, group_df)
+            })
+            .collect();
+        
+        // 結果をマージ
+        for (key, group_result) in group_results {
+            result.insert(key, group_result?);
+        }
+        
+        Ok(result)
+    }
+    
+    /// 指定された行インデックスでフィルタリング（内部ヘルパー）
+    fn filter_by_indices(&self, indices: &[usize]) -> Result<Self> {
+        use rayon::prelude::*;
+        
+        let mut result = Self::new();
+        
+        // 各列を並列でフィルタリング
+        let column_results: Result<Vec<(String, Column)>> = self.column_names.par_iter()
+            .map(|name| {
+                let i = self.column_indices[name];
+                let column = &self.columns[i];
+                
+                let filtered_column = match column {
+                    Column::Int64(col) => {
+                        let filtered_data: Vec<i64> = indices.iter()
+                            .filter_map(|&idx| {
+                                if idx < col.len() {
+                                    if let Ok(Some(val)) = col.get(idx) {
+                                        Some(val)
+                                    } else {
+                                        Some(0) // デフォルト値
+                                    }
+                                } else {
+                                    None
+                                }
+                            })
+                            .collect();
+                        Column::Int64(Int64Column::new(filtered_data))
+                    },
+                    Column::Float64(col) => {
+                        let filtered_data: Vec<f64> = indices.iter()
+                            .filter_map(|&idx| {
+                                if idx < col.len() {
+                                    if let Ok(Some(val)) = col.get(idx) {
+                                        Some(val)
+                                    } else {
+                                        Some(0.0) // デフォルト値
+                                    }
+                                } else {
+                                    None
+                                }
+                            })
+                            .collect();
+                        Column::Float64(crate::column::Float64Column::new(filtered_data))
+                    },
+                    Column::String(col) => {
+                        let filtered_data: Vec<String> = indices.iter()
+                            .filter_map(|&idx| {
+                                if idx < col.len() {
+                                    if let Ok(Some(val)) = col.get(idx) {
+                                        Some(val.to_string())
+                                    } else {
+                                        Some(String::new()) // デフォルト値
+                                    }
+                                } else {
+                                    None
+                                }
+                            })
+                            .collect();
+                        Column::String(crate::column::StringColumn::new(filtered_data))
+                    },
+                    Column::Boolean(col) => {
+                        let filtered_data: Vec<bool> = indices.iter()
+                            .filter_map(|&idx| {
+                                if idx < col.len() {
+                                    if let Ok(Some(val)) = col.get(idx) {
+                                        Some(val)
+                                    } else {
+                                        Some(false) // デフォルト値
+                                    }
+                                } else {
+                                    None
+                                }
+                            })
+                            .collect();
+                        Column::Boolean(crate::column::BooleanColumn::new(filtered_data))
+                    },
+                };
+                
+                Ok((name.clone(), filtered_column))
+            })
+            .collect();
+        
+        // 結果をデータフレームに追加
+        for (name, column) in column_results? {
+            result.add_column(name, column)?;
+        }
+        
+        // インデックスのコピー
+        if let Some(ref idx) = self.index {
+            result.index = Some(idx.clone());
+        }
+        
+        Ok(result)
+    }
+    
     /// 内部結合
     pub fn inner_join(&self, other: &Self, left_on: &str, right_on: &str) -> Result<Self> {
         self.join_impl(other, left_on, right_on, JoinType::Inner)

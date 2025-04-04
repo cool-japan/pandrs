@@ -162,7 +162,8 @@ impl LazyFrame {
                     df = df.select(&columns_slice)?;
                 },
                 Operation::Filter(condition) => {
-                    df = df.filter(&condition)?;
+                    // 並列フィルタリング処理を使用
+                    df = df.par_filter(&condition)?;
                 },
                 Operation::Map(f) => {
                     df = df.par_apply(|view| {
