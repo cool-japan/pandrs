@@ -59,11 +59,11 @@ fn main() -> Result<(), Box<dyn Error>> {
     // 遅延評価を使用したデータ処理
     println!("4. 遅延評価を使用したデータ処理");
     
-    let lazy_df = LazyFrame::new(df);
+    let lazy_df = LazyFrame::new(df.clone());
     
     // 処理の定義（まだ実行されない）
     let result_lazy = lazy_df
-        .select(&["id", "value", "category"])
+        .select(&["id", "value", "category", "is_a"])
         .filter("is_a");
     
     // 実行計画の説明

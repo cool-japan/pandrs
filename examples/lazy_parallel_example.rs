@@ -2,7 +2,6 @@ use std::error::Error;
 use std::time::Instant;
 
 use pandrs::{OptimizedDataFrame, LazyFrame, AggregateOp, Column, Int64Column, Float64Column, StringColumn};
-use pandrs::column::ColumnTrait;
 
 fn main() -> Result<(), Box<dyn Error>> {
     println!("遅延評価と並列処理の組み合わせによるパフォーマンス評価\n");
@@ -86,28 +85,26 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!("LazyFrameと並列処理を使ったアプローチ...");
     let start = Instant::now();
     
-    // LazyFrameを使用した処理定義
-    let lazy_df = LazyFrame::new(df);
-    let result_lazy = lazy_df
-        // 年齢でフィルタリング（内部でブール列を作成）
-        .map(|col| {
-            if col.column_type() == pandrs::ColumnType::Int64 && 
-               matches!(col.name(), Some("年齢")) {
-                // Int64Columnから年齢>=30のブール列を作成
-                if let pandrs::Column::Int64(age_col) = col {
-                    let mut filter = vec![false; age_col.len()];
-                    for i in 0..age_col.len() {
-                        if let Ok(Some(age)) = age_col.get(i) {
-                            filter[i] = age >= 30;
-                        }
-                    }
-                    return Ok(Column::Boolean(pandrs::BooleanColumn::new(filter)));
-                }
+    // まずフィルター用のブール列を作成
+    let age_col = df.column("年齢")?;
+    let mut age_filter = vec![false; df.row_count()];
+    if let Some(int_col) = age_col.as_int64() {
+        for i in 0..df.row_count() {
+            if let Ok(Some(age)) = int_col.get(i) {
+                age_filter[i] = age >= 30;
             }
-            // その他の列はそのまま返す
-            Ok(col.clone())
-        })
-        .filter("年齢") // 直前でtrueに変換した列を使ってフィルタリング
+        }
+    }
+    
+    // フィルターをDataFrameに追加
+    let mut df_with_age_filter = df.clone();
+    let bool_data = pandrs::BooleanColumn::new(age_filter);
+    df_with_age_filter.add_column("年齢フィルター", Column::Boolean(bool_data))?;
+    
+    // LazyFrameを作り直す
+    let lazy_df = LazyFrame::new(df_with_age_filter);
+    let result_lazy = lazy_df
+        .filter("年齢フィルター") // 新しく追加したブール列を使ってフィルタリング
         .aggregate(
             vec!["部門".to_string()],
             vec![
