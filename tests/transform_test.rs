@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use pandrs::{DataFrame, MeltOptions, Series, StackOptions, UnstackOptions, NA};
+    use pandrs::{DataFrame, MeltOptions, Series, StackOptions, UnstackOptions};
 
     // DataBoxの文字列をクリーンな値に変換するヘルパー関数
     fn clean_databox_value(value: &str) -> String {
