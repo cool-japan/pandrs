@@ -2,7 +2,6 @@
 // このファイルは、PandRSの従来実装と最適化実装のパフォーマンスを比較するためのベンチマークを提供します。
 
 use pandrs::{DataFrame, Series};
-use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 // プロトタイプの型をインポート
@@ -172,7 +171,7 @@ fn benchmark_string_operations() {
     });
     
     // 新実装: 文字列検索
-    let (optimized_search_time, optimized_count) = bench("新実装 - 文字列検索", || {
+    let (optimized_search_time, _optimized_count) = bench("新実装 - 文字列検索", || {
         optimized_string_col.values().filter(|&s| s == target).count()
     });
     

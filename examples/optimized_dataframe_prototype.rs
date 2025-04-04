@@ -1,6 +1,6 @@
 use std::any::Any;
 use std::collections::HashMap;
-use std::fmt::{Debug, Display};
+use std::fmt::Debug;
 use std::marker::PhantomData;
 use std::sync::Arc;
 
