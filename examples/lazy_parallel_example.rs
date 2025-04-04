@@ -1,7 +1,8 @@
 use std::error::Error;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use pandrs::{OptimizedDataFrame, LazyFrame, AggregateOp, Column, Int64Column, Float64Column, StringColumn};
+use pandrs::column::ColumnTrait;
 
 fn main() -> Result<(), Box<dyn Error>> {
     println!("遅延評価と並列処理の組み合わせによるパフォーマンス評価\n");
