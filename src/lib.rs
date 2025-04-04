@@ -23,8 +23,7 @@ pub mod series;
 pub mod temporal;
 pub mod vis;
 
-// 互換性レイヤー
-pub mod compat;
+// 互換性レイヤーは削除
 
 // Re-export commonly used types
 pub use column::{Column, ColumnType, Int64Column, Float64Column, StringColumn, BooleanColumn};

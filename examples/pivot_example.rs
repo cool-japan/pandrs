@@ -1,5 +1,6 @@
 use pandrs::pivot::AggFunction;
-use pandrs::{DataFrame, PandRSError, Series};
+use pandrs::{DataFrame, PandRSError, Series, Column, Int64Column, StringColumn};
+use pandrs::compat::DataFrameCompat;
 
 fn main() -> Result<(), PandRSError> {
     println!("=== ピボットテーブルとグループ化の例 ===");
@@ -42,9 +43,9 @@ fn main() -> Result<(), PandRSError> {
     )?;
 
     // DataFrameに列を追加
-    df.add_column("category".to_string(), category)?;
-    df.add_column("region".to_string(), region)?;
-    df.add_column("sales".to_string(), sales)?;
+    df.add_series_column("category", category)?;
+    df.add_series_column("region", region)?;
+    df.add_series_column("sales", sales)?;
 
     println!("DataFrame 情報:");
     println!("  列数: {}", df.column_count());

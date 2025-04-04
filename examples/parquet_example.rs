@@ -1,4 +1,5 @@
-use pandrs::{DataFrame, Series};
+use pandrs::{DataFrame, Series, Column, Int64Column, Float64Column, StringColumn};
+use pandrs::compat::DataFrameCompat;
 use std::error::Error;
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -7,18 +8,18 @@ fn main() -> Result<(), Box<dyn Error>> {
     
     // 整数列を追加
     let int_data = Series::new(vec![1, 2, 3, 4, 5], Some("id".to_string()))?;
-    df.add_column("id".to_string(), int_data)?;
+    df.add_series_column("id", int_data)?;
     
     // 浮動小数点列を追加
     let float_data = Series::new(vec![1.1, 2.2, 3.3, 4.4, 5.5], Some("value".to_string()))?;
-    df.add_column("value".to_string(), float_data)?;
+    df.add_series_column("value", float_data)?;
     
     // 文字列列を追加
     let string_data = Series::new(
         vec!["A".to_string(), "B".to_string(), "C".to_string(), "D".to_string(), "E".to_string()],
         Some("category".to_string())
     )?;
-    df.add_column("category".to_string(), string_data)?;
+    df.add_series_column("category", string_data)?;
     
     println!("元のデータフレーム:");
     println!("{:?}", df);
