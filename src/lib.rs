@@ -9,6 +9,7 @@
 #![allow(clippy::too_many_arguments)]
 #![allow(clippy::needless_lifetimes)]
 
+pub mod column;
 pub mod dataframe;
 pub mod error;
 pub mod groupby;
@@ -22,6 +23,7 @@ pub mod temporal;
 pub mod vis;
 
 // Re-export commonly used types
+pub use column::{Column, ColumnType, Int64Column, Float64Column, StringColumn, BooleanColumn};
 pub use dataframe::{DataFrame};
 pub use error::PandRSError;
 pub use groupby::GroupBy;
