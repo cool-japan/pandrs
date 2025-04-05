@@ -184,9 +184,8 @@ impl<'a> PivotTable<'a> {
                 }
             }
 
-            // TODO: 行データをDataFrameに追加
-            // 現在の実装では行追加の具体的なメソッドがないため、
-            // 将来的には行追加のメソッドを実装する必要がある
+            // 行データをDataFrameに追加
+            result_df.add_row_data(row_data)?;
         }
 
         Ok(result_df)
@@ -366,9 +365,8 @@ impl<'a> GroupBy<'a> {
                 row_data.insert(col_name, agg_value.to_string());
             }
 
-            // TODO: 行データをDataFrameに追加
-            // 現在の実装では行の直接追加はサポートされていないため、
-            // 将来的には行追加のメソッドを実装する必要がある
+            // 行データをDataFrameに追加
+            result_df.add_row_data(row_data)?;
         }
 
         Ok(result_df)

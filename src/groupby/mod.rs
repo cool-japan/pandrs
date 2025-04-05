@@ -184,5 +184,91 @@ where
             .collect()
     }
 
-    // TODO: DataFrame操作のメソッドを追加
+    /// グループ別のサイズをDataFrameとして取得
+    pub fn size_as_df(&self) -> Result<DataFrame> {
+        // 結果用のDataFrameを作成
+        let mut result = DataFrame::new();
+        
+        // グループキー列と値の作成
+        let mut keys = Vec::new();
+        let mut sizes = Vec::new();
+        
+        for (key, indices) in &self.groups {
+            keys.push(format!("{:?}", key));  // キーを文字列に変換
+            sizes.push(indices.len().to_string());  // サイズを文字列に変換
+        }
+        
+        // グループキー列の追加
+        let key_column = Series::new(keys, Some("group_key".to_string()))?;
+        result.add_column("group_key".to_string(), key_column)?;
+        
+        // サイズ列の追加
+        let size_column = Series::new(sizes, Some("size".to_string()))?;
+        result.add_column("size".to_string(), size_column)?;
+        
+        Ok(result)
+    }
+    
+    /// 簡易的な集計関数
+    pub fn aggregate(&self, column_name: &str, func_name: &str) -> Result<DataFrame> {
+        // 列が存在するか確認
+        if !self.source.contains_column(column_name) {
+            return Err(PandRSError::Column(
+                format!("列 '{}' が見つかりません", column_name)
+            ));
+        }
+        
+        // 結果用のDataFrameを作成
+        let mut result = DataFrame::new();
+        
+        // グループキー列と値の作成
+        let mut keys = Vec::new();
+        let mut aggregated_values = Vec::new();
+        
+        // 列のデータを取得
+        let column_data = self.source.get_column_numeric_values(column_name)?;
+        
+        for (key, indices) in &self.groups {
+            // グループのキーを追加
+            keys.push(format!("{:?}", key));
+            
+            // このグループのデータを抽出
+            let group_data: Vec<f64> = indices.iter()
+                .filter_map(|&idx| {
+                    if idx < column_data.len() {
+                        Some(column_data[idx])
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            
+            // 集計関数を適用
+            let result_value = if group_data.is_empty() {
+                "0.0".to_string()
+            } else {
+                match func_name {
+                    "sum" => group_data.iter().sum::<f64>().to_string(),
+                    "mean" => (group_data.iter().sum::<f64>() / group_data.len() as f64).to_string(),
+                    "min" => group_data.iter().fold(f64::INFINITY, |a, &b| a.min(b)).to_string(),
+                    "max" => group_data.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b)).to_string(),
+                    "count" => group_data.len().to_string(),
+                    _ => "0.0".to_string()
+                }
+            };
+            
+            aggregated_values.push(result_value);
+        }
+        
+        // グループキー列の追加
+        let key_column = Series::new(keys, Some("group_key".to_string()))?;
+        result.add_column("group_key".to_string(), key_column)?;
+        
+        // 集計結果列の追加
+        let result_column_name = format!("{}_{}", column_name, func_name);
+        let value_column = Series::new(aggregated_values, Some(result_column_name.clone()))?;
+        result.add_column(result_column_name, value_column)?;
+        
+        Ok(result)
+    }
 }

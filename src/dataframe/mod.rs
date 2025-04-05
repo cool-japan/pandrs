@@ -76,6 +76,59 @@ impl DataFrame {
         }
     }
     
+    /// 行データをDataFrameに追加する
+    /// 
+    /// この関数は文字列表現のデータをDataFrameに1行追加します。
+    /// 指定したマップには、列名とその値の文字列表現が含まれます。
+    /// マップに含まれていない列には空文字列が入ります。
+    pub fn add_row_data(&mut self, row_data: HashMap<String, String>) -> Result<()> {
+        if self.columns.is_empty() {
+            return Err(PandRSError::InvalidOperation("列がないDataFrameに行を追加できません".to_string()));
+        }
+        
+        // 既存のすべての列と値を取得
+        let mut all_column_data = HashMap::new();
+        let current_row_count = self.row_count();
+        
+        // 現在のデータを収集
+        for col_name in self.column_names.to_vec() {
+            if let Some(series) = self.columns.get(&col_name) {
+                let mut values = Vec::with_capacity(current_row_count + 1);
+                
+                // 既存のデータを収集
+                for i in 0..current_row_count {
+                    values.push(series.get(i).cloned().unwrap_or_else(|| DataBox(Box::new("".to_string()))));
+                }
+                
+                // 新しい行のデータを追加
+                if let Some(value) = row_data.get(&col_name) {
+                    values.push(DataBox(Box::new(value.clone())));
+                } else {
+                    // デフォルト値を追加（空文字列など）
+                    values.push(DataBox(Box::new("".to_string())));
+                }
+                
+                all_column_data.insert(col_name, values);
+            }
+        }
+        
+        // 新しいDataFrameの構築
+        let mut new_df = DataFrame::new();
+        
+        // 元のカラム順序を維持して、新しいDataFrameに追加
+        for col_name in self.column_names.to_vec() {
+            if let Some(values) = all_column_data.get(&col_name) {
+                let new_series = Series::<DataBox>::new(values.clone(), Some(col_name.clone()))?;
+                new_df.add_column(col_name.clone(), new_series)?;
+            }
+        }
+        
+        // 結果を更新
+        *self = new_df;
+        
+        Ok(())
+    }
+
     /// 列名を変更する
     pub fn rename_columns(&mut self, column_map: &HashMap<String, String>) -> Result<()> {
         // 古い列名から新しい列名への変換マップを作成
