@@ -238,6 +238,7 @@ let pivot_result = df.pivot_table(
   - [x] plottersによる高品質グラフ出力（PNG, SVG形式）
   - [x] 各種グラフ種類（折れ線、散布図、棒グラフ、ヒストグラム、面グラフ）
   - [x] グラフカスタマイズオプション（サイズ、カラー、グリッド、凡例）
+  - [x] Series, DataFrame向けの直感的なプロットAPI
 - [x] マルチレベルインデックス
   - [x] ヒエラルキカルなインデックス構造
   - [x] 複数レベルによるデータのグループ化
@@ -430,6 +431,58 @@ display_dataframe(df, max_rows=10, max_cols=5)
   - ドキュメントの充実
   - 依存関係の最新化（Rust 2023コンパチブル）
 
+### 高品質可視化機能（Plotters連携）
+
+```rust
+use pandrs::{DataFrame, Series};
+use pandrs::vis::plotters_ext::{PlotSettings, PlotKind, OutputType};
+
+// Series単体のプロット作成
+let values = vec![15.0, 23.5, 18.2, 29.8, 32.1, 28.5, 19.2];
+let series = Series::new(values, Some("温度変化".to_string()))?;
+
+// 線グラフの作成
+let line_settings = PlotSettings {
+    title: "時間ごとの温度変化".to_string(),
+    x_label: "時間".to_string(),
+    y_label: "温度 (°C)".to_string(),
+    plot_kind: PlotKind::Line,
+    ..PlotSettings::default()
+};
+series.plotters_plot("temp_line.png", line_settings)?;
+
+// ヒストグラムの作成
+let hist_settings = PlotSettings {
+    title: "温度分布のヒストグラム".to_string(),
+    plot_kind: PlotKind::Histogram,
+    ..PlotSettings::default()
+};
+series.plotters_histogram("histogram.png", 5, hist_settings)?;
+
+// DataFrameを使った可視化
+let mut df = DataFrame::new();
+df.add_column("気温".to_string(), series)?;
+df.add_column("湿度".to_string(), 
+    Series::new(vec![67.0, 72.3, 69.5, 58.2, 62.1, 71.5, 55.8], Some("湿度".to_string()))?)?;
+
+// 散布図（気温と湿度の関係）
+let xy_settings = PlotSettings {
+    title: "気温と湿度の関係".to_string(),
+    plot_kind: PlotKind::Scatter,
+    output_type: OutputType::SVG,  // SVG形式で出力
+    ..PlotSettings::default()
+};
+df.plotters_xy("気温", "湿度", "temp_humidity.svg", xy_settings)?;
+
+// 複数系列の折れ線グラフ
+let multi_settings = PlotSettings {
+    title: "気象データの推移".to_string(),
+    plot_kind: PlotKind::Line,
+    ..PlotSettings::default()
+};
+df.plotters_multi(&["気温", "湿度"], "multi_series.png", multi_settings)?;
+```
+
 ## 依存関係バージョン
 
 最新の依存関係バージョン（2024年4月）:
@@ -448,6 +501,7 @@ lazy_static = "1.5.0"        # 遅延初期化
 rand = "0.9.0"               # 乱数生成
 tempfile = "3.8.1"           # 一時ファイル
 textplots = "0.8.7"          # テキストベースの可視化
+plotters = "0.3.7"          # 高品質な可視化
 chrono-tz = "0.10.3"         # タイムゾーン処理
 parquet = "54.3.1"           # Parquetファイルのサポート
 arrow = "54.3.1"             # Arrowフォーマットのサポート

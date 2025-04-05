@@ -13,8 +13,8 @@ use crate::temporal::TimeSeries;
 use crate::DataFrame;
 use crate::Series;
 
-// 高品質な可視化モジュールをエクスポート（一時的に無効化）
-// pub mod plotters_ext;
+// 高品質な可視化モジュールをエクスポート
+pub mod plotters_ext;
 
 /// プロットの種類
 #[derive(Debug, Clone, Copy)]
