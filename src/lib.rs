@@ -23,6 +23,7 @@ pub mod series;
 pub mod stats;
 pub mod temporal;
 pub mod vis;
+pub mod ml;
 
 // Re-export commonly used types
 pub use column::{Column, ColumnType, Int64Column, Float64Column, StringColumn, BooleanColumn};
@@ -37,6 +38,8 @@ pub use series::{Categorical, CategoricalOrder, NASeries, Series, StringCategori
 pub use dataframe::{MeltOptions, StackOptions, UnstackOptions};
 pub use stats::{DescriptiveStats, TTestResult, LinearRegressionResult};
 pub use vis::{OutputFormat, PlotConfig, PlotType};
+pub use ml::pipeline::Pipeline;
+pub use ml::preprocessing::{StandardScaler, MinMaxScaler, OneHotEncoder};
 
 // Export version info
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
