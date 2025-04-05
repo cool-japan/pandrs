@@ -141,3 +141,10 @@ impl From<std::io::Error> for Error {
         Error::Io(err)
     }
 }
+
+// Plottersエラーの変換
+impl<E: std::error::Error + Send + Sync + 'static> From<plotters::drawing::DrawingAreaErrorKind<E>> for Error {
+    fn from(err: plotters::drawing::DrawingAreaErrorKind<E>) -> Self {
+        Error::Visualization(format!("プロット描画エラー: {}", err))
+    }
+}
