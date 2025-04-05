@@ -1,5 +1,4 @@
 use pandrs::{DataFrame, Series};
-use pandrs::io::{read_parquet, write_parquet, ParquetCompression};
 use std::error::Error;
 
 fn main() -> Result<(), Box<dyn Error>> {
