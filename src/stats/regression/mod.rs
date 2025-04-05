@@ -4,6 +4,23 @@ use crate::error::{Result, Error};
 use crate::dataframe::DataFrame;
 use crate::stats::LinearRegressionResult;
 
+/// 線形回帰分析を実行する
+/// 
+/// # Arguments
+/// * `df` - データフレーム
+/// * `y_column` - 目的変数の列名
+/// * `x_columns` - 説明変数の列名のスライス
+/// 
+/// # Returns
+/// * `Result<LinearRegressionResult>` - 回帰分析の結果
+pub fn linear_regression(
+    df: &DataFrame,
+    y_column: &str,
+    x_columns: &[&str],
+) -> Result<LinearRegressionResult> {
+    linear_regression_impl(df, y_column, x_columns)
+}
+
 /// 線形回帰分析を実行する内部実装
 pub(crate) fn linear_regression_impl(
     df: &DataFrame,

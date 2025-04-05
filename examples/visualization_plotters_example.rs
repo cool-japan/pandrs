@@ -1,12 +1,12 @@
 use pandrs::{DataFrame, Series, vis::plotters_ext::{PlotSettings, PlotKind, OutputType}};
-use rand::{rng, Rng};
+use rand::{thread_rng, Rng};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // ランダムデータの生成
-    let mut rng = rng();
+    let mut rng = thread_rng();
     let x: Vec<i32> = (0..100).collect();
-    let y1: Vec<f64> = (0..100).map(|i| i as f64 + rng.random_range(-5.0..5.0)).collect();
-    let y2: Vec<f64> = (0..100).map(|i| i as f64 * 0.8 + 10.0 + rng.random_range(-3.0..3.0)).collect();
+    let y1: Vec<f64> = (0..100).map(|i| i as f64 + rng.gen_range(-5.0..5.0)).collect();
+    let y2: Vec<f64> = (0..100).map(|i| i as f64 * 0.8 + 10.0 + rng.gen_range(-3.0..3.0)).collect();
     let y3: Vec<f64> = (0..100).map(|i| 50.0 + 30.0 * (i as f64 * 0.1).sin()).collect();
 
     // 単一系列の折れ線グラフ

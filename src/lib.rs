@@ -40,6 +40,8 @@ pub use stats::{DescriptiveStats, TTestResult, LinearRegressionResult};
 pub use vis::{OutputFormat, PlotConfig, PlotType};
 pub use ml::pipeline::Pipeline;
 pub use ml::preprocessing::{StandardScaler, MinMaxScaler, OneHotEncoder, PolynomialFeatures, Binner, Imputer, ImputeStrategy, FeatureSelector};
+pub use ml::metrics::regression::{mean_squared_error, r2_score, mean_absolute_error, root_mean_squared_error};
+pub use ml::metrics::classification::{accuracy_score, precision_score, recall_score, f1_score};
 
 // 高度な機械学習機能はコメントアウト
 // pub use ml::models::{SupervisedModel, LinearRegression, LogisticRegression};
