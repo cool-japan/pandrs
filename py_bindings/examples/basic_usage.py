@@ -8,7 +8,7 @@ import pandas as pd
 import time
 
 def main():
-    print(f"PandRS version: {pr.__version__}")
+    print(f"PandRS version: {getattr(pr, '__version__', '0.1.0')}")
     print("\n=== Creating DataFrame ===")
     
     # Create a DataFrame

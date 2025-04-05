@@ -110,8 +110,7 @@ impl PyOptimizedDataFrame {
     fn column_names(&self, py: Python<'_>) -> PyResult<PyObject> {
         let cols = self.inner.column_names();
         let python_list = PyList::new_bound(py, cols);
-        let py_obj = python_list.to_object(py);
-        Ok(py_obj)
+        Ok(python_list.to_object(py))
     }
 
     /// Get the shape of the DataFrame (rows, columns)
@@ -228,8 +227,7 @@ impl PyOptimizedDataFrame {
         
         // Create pandas DataFrame
         let pd_df_obj = pd_df.call1((dict,))?;
-        let py_obj = pd_df_obj.to_object(py);
-        Ok(py_obj)
+        Ok(pd_df_obj.to_object(py))
     }
     
     /// Create an optimized DataFrame from a pandas DataFrame

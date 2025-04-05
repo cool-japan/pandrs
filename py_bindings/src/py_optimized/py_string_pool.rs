@@ -96,6 +96,7 @@ impl StringPoolInner {
     }
 
     /// 文字列をプールから検索
+    #[allow(dead_code)]
     pub fn lookup(&self, s: &str) -> Option<usize> {
         let temp = StringRef(Arc::new(s.to_string()));
         self.string_map.get(&temp).copied()
@@ -170,10 +171,9 @@ impl PyStringPool {
         
         let string_vec = strings?;
         
-        // Create a Python list directly - extract the Result value
+        // Create a Python list directly
         let py_list_temp = PyList::new_bound(py, &string_vec);
-        let py_obj = py_list_temp.to_object(py);
-        Ok(py_obj)
+        Ok(py_list_temp.to_object(py))
     }
 
     /// プールの統計情報を取得
@@ -201,6 +201,7 @@ impl PyStringPool {
 }
 
 /// Pythonバインディングで使用する文字列プールグローバルインスタンス
+#[allow(static_mut_refs)]
 static mut GLOBAL_STRING_POOL: Option<Arc<Mutex<StringPoolInner>>> = None;
 
 /// グローバル文字列プールへのアクセス
@@ -251,8 +252,7 @@ pub fn indices_to_py_string_list(py: Python<'_>, indices: &[usize]) -> PyResult<
     }
     
     let py_list = PyList::new_bound(py, &strings);
-    let py_obj = py_list.to_object(py);
-    Ok(py_obj)
+    Ok(py_list.to_object(py))
 }
 
 /// Python モジュールへの登録

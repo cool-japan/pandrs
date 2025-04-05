@@ -1,7 +1,8 @@
 // PandRS統計関数サンプル
 
-use pandrs::{DataFrame, Series, DescriptiveStats, TTestResult, LinearRegressionResult};
-use pandrs::error::{Error, Result};
+use pandrs::{DataFrame, Series, TTestResult};
+use pandrs::error::Result;
+use rand::Rng;
 
 fn main() -> Result<()> {
     println!("PandRS 統計モジュールサンプル\n");
@@ -106,10 +107,10 @@ fn regression_example() -> Result<()> {
     
     // 目的変数 (y = 2*x1 + 1.5*x2 + 3 + ノイズ)
     let mut y_values = Vec::with_capacity(10);
-    let mut rng = rand::rng();
+    let mut rng = rand::thread_rng();
     
     for i in 0..10 {
-        let noise = rng.random_range(-1.0..1.0);
+        let noise = rng.gen_range(-1.0..1.0);
         let y_val = 2.0 * (i as f64 + 1.0) + 1.5 * (5.0 + 3.0 * i as f64) + 3.0 + noise;
         y_values.push(y_val);
     }

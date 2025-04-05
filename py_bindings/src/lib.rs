@@ -21,7 +21,7 @@ fn pandrs(m: &Bound<'_, PyModule>) -> PyResult<()> {
     py_optimized::register_optimized_types(m)?;
     
     // Add module version
-    m.setattr("__version__", ::pandrs::VERSION)?;
+    m.setattr("__version__", "0.1.0")?;
     
     Ok(())
 }
@@ -99,8 +99,7 @@ impl PyDataFrame {
     fn columns(&self, py: Python<'_>) -> PyResult<PyObject> {
         let cols = self.inner.column_names();
         let python_list = PyList::new_bound(py, cols);
-        let py_obj = python_list.to_object(py);
-        Ok(py_obj)
+        Ok(python_list.to_object(py))
     }
     
     /// Set column names
@@ -162,15 +161,10 @@ impl PyDataFrame {
         let pd_df = pandas.getattr("DataFrame")?;
         
         let dict = self.to_dict(py)?;
-        let kwargs = PyDict::new(py);
-        kwargs.set_item("data", dict)?;
         
-        if let Some(index) = &self.inner.get_index().string_values() {
-            kwargs.set_item("index", index)?;
-        }
-        
-        let pd_df_obj = pd_df.call1(())?;
-        Ok(pd_df_obj.into())
+        // 直接dictを引数として使用
+        let pd_df_obj = pd_df.call1((dict,))?;
+        Ok(pd_df_obj.to_object(py))
     }
     
     /// Create a DataFrame from a pandas DataFrame
@@ -302,15 +296,13 @@ impl PySeries {
             } else {
                 // If can't parse as number, convert to string representation
                 let str_array = PyList::new_bound(py, data);
-                let py_obj = str_array.to_object(py);
-                return Ok(py_obj);
+                return Ok(str_array.to_object(py));
             }
         }
         
         // All values successfully parsed as numbers
         let np_array = values.into_pyarray(py);
-        let py_obj = np_array.to_object(py);
-        Ok(py_obj)
+        Ok(np_array.to_object(py))
     }
     
     #[getter]
@@ -366,8 +358,7 @@ impl PyNASeries {
     fn isna(&self, py: Python<'_>) -> PyResult<PyObject> {
         let is_na = self.inner.is_na();
         let np_array = is_na.into_pyarray(py);
-        let py_obj = np_array.to_object(py);
-        Ok(py_obj)
+        Ok(np_array.to_object(py))
     }
     
     /// Drop NA values from the series
