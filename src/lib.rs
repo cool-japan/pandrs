@@ -40,12 +40,14 @@ pub use stats::{DescriptiveStats, TTestResult, LinearRegressionResult};
 pub use vis::{OutputFormat, PlotConfig, PlotType};
 pub use ml::pipeline::Pipeline;
 pub use ml::preprocessing::{StandardScaler, MinMaxScaler, OneHotEncoder, PolynomialFeatures, Binner, Imputer, ImputeStrategy, FeatureSelector};
-pub use ml::models::{SupervisedModel, LinearRegression, LogisticRegression};
-pub use ml::models::model_selection::{train_test_split, cross_val_score, k_fold_split, GridSearchCV};
-pub use ml::models::model_persistence::ModelPersistence;
-pub use ml::dimension_reduction::{PCA, TSNE, TSNEInit};
-pub use ml::clustering::{KMeans, AgglomerativeClustering, DBSCAN, Linkage, DistanceMetric};
-pub use ml::anomaly_detection::{IsolationForest, LocalOutlierFactor, OneClassSVM};
+
+// 高度な機械学習機能はコメントアウト
+// pub use ml::models::{SupervisedModel, LinearRegression, LogisticRegression};
+// pub use ml::models::model_selection::{train_test_split, cross_val_score, k_fold_split, GridSearchCV};
+// pub use ml::models::model_persistence::ModelPersistence;
+// pub use ml::dimension_reduction::{PCA, TSNE, TSNEInit};
+// pub use ml::clustering::{KMeans, AgglomerativeClustering, DBSCAN, Linkage, DistanceMetric};
+// pub use ml::anomaly_detection::{IsolationForest, LocalOutlierFactor, OneClassSVM};
 
 // Export version info
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

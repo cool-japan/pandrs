@@ -2,19 +2,19 @@
 //!
 //! scikit-learn相当のデータ変換パイプラインを提供します。
 
-use crate::dataframe::DataFrame;
+use crate::optimized::OptimizedDataFrame;
 use crate::error::Result;
 
 /// データ変換器のトレイト
 pub trait Transformer {
     /// データを変換する
-    fn transform(&self, df: &DataFrame) -> Result<DataFrame>;
+    fn transform(&self, df: &OptimizedDataFrame) -> Result<OptimizedDataFrame>;
     
     /// データを学習し、その後変換する
-    fn fit_transform(&mut self, df: &DataFrame) -> Result<DataFrame>;
+    fn fit_transform(&mut self, df: &OptimizedDataFrame) -> Result<OptimizedDataFrame>;
     
     /// データから学習する
-    fn fit(&mut self, df: &DataFrame) -> Result<()>;
+    fn fit(&mut self, df: &OptimizedDataFrame) -> Result<()>;
 }
 
 /// データ変換ステップを連鎖させるパイプライン
@@ -37,7 +37,7 @@ impl Pipeline {
     }
     
     /// パイプラインの全ステップを実行して変換
-    pub fn transform(&self, df: &DataFrame) -> Result<DataFrame> {
+    pub fn transform(&self, df: &OptimizedDataFrame) -> Result<OptimizedDataFrame> {
         let mut result = df.clone();
         
         for transformer in &self.transformers {
@@ -48,7 +48,7 @@ impl Pipeline {
     }
     
     /// パイプラインを学習してから変換
-    pub fn fit_transform(&mut self, df: &DataFrame) -> Result<DataFrame> {
+    pub fn fit_transform(&mut self, df: &OptimizedDataFrame) -> Result<OptimizedDataFrame> {
         let mut result = df.clone();
         
         for transformer in &mut self.transformers {
@@ -59,7 +59,7 @@ impl Pipeline {
     }
     
     /// パイプラインを学習
-    pub fn fit(&mut self, df: &DataFrame) -> Result<()> {
+    pub fn fit(&mut self, df: &OptimizedDataFrame) -> Result<()> {
         let mut temp_df = df.clone();
         
         for transformer in &mut self.transformers {
