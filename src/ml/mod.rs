@@ -9,6 +9,7 @@ pub mod metrics;
 pub mod models;
 pub mod dimension_reduction;
 pub mod clustering;
+pub mod anomaly_detection;
 
 // 外部クレートをreexportする予定
 // pub use linfa;

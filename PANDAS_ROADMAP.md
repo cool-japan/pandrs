@@ -163,7 +163,10 @@
      - ✅ k-meansクラスタリング
      - ✅ 階層的クラスタリング
      - ✅ DBSCAN（密度ベースクラスタリング）
-   - 異常検出
+   - ✅ 異常検出
+     - ✅ Isolation Forest（孤立森）
+     - ✅ LOF（Local Outlier Factor）
+     - ✅ One-Class SVM
 
 3. 🔄 **大規模データ処理**
    - ✅ チャンク処理機能

@@ -45,6 +45,7 @@ pub use ml::models::model_selection::{train_test_split, cross_val_score, k_fold_
 pub use ml::models::model_persistence::ModelPersistence;
 pub use ml::dimension_reduction::{PCA, TSNE, TSNEInit};
 pub use ml::clustering::{KMeans, AgglomerativeClustering, DBSCAN, Linkage, DistanceMetric};
+pub use ml::anomaly_detection::{IsolationForest, LocalOutlierFactor, OneClassSVM};
 
 // Export version info
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
