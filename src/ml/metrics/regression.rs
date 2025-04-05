@@ -5,6 +5,54 @@ use crate::optimized::OptimizedDataFrame;
 use crate::series::Series;
 use std::cmp::Ordering;
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_mean_squared_error() {
+        let y_true = vec![3.0, 5.0, 2.5, 7.0, 10.0];
+        let y_pred = vec![2.8, 4.8, 2.7, 7.2, 9.8];
+        
+        let mse = mean_squared_error(&y_true, &y_pred).unwrap();
+        
+        // 実際の計算： (0.2)² + (0.2)² + (0.2)² + (0.2)² + (0.2)² = 0.2
+        assert!((mse - 0.2 / 5.0).abs() < 1e-6); // 0.04が正しい期待値、小数点以下6桁までの精度で比較
+    }
+
+    #[test]
+    fn test_r2_score() {
+        let y_true = vec![3.0, 5.0, 2.5, 7.0, 10.0];
+        let y_pred = vec![2.8, 4.8, 2.7, 7.2, 9.8];
+        
+        let r2 = r2_score(&y_true, &y_pred).unwrap();
+        assert!(r2 > 0.99); // R²スコアは0.99以上になるはず
+    }
+
+    #[test]
+    fn test_empty_input() {
+        let empty: Vec<f64> = vec![];
+        
+        let mse_result = mean_squared_error(&empty, &empty);
+        assert!(mse_result.is_err());
+        
+        let r2_result = r2_score(&empty, &empty);
+        assert!(r2_result.is_err());
+    }
+
+    #[test]
+    fn test_different_length() {
+        let y_true = vec![1.0, 2.0, 3.0];
+        let y_pred = vec![1.0, 2.0];
+        
+        let mse_result = mean_squared_error(&y_true, &y_pred);
+        assert!(mse_result.is_err());
+        
+        let r2_result = r2_score(&y_true, &y_pred);
+        assert!(r2_result.is_err());
+    }
+}
+
 /// 平均二乗誤差（Mean Squared Error）を計算
 ///
 /// # Arguments

@@ -1,6 +1,6 @@
 use pandrs::*;
 use pandrs::ml::pipeline::{Pipeline, Transformer};
-use pandrs::ml::preprocessing::{StandardScaler, MinMaxScaler, OneHotEncoder, PolynomialFeatures, Binner, Imputer, ImputeStrategy, FeatureSelector};
+use pandrs::ml::preprocessing::{StandardScaler, OneHotEncoder, PolynomialFeatures, Binner, Imputer, ImputeStrategy, FeatureSelector};
 use pandrs::ml::metrics::regression::{mean_squared_error, r2_score};
 use rand::prelude::*;
 
@@ -21,8 +21,7 @@ fn main() -> Result<(), PandRSError> {
     println!("{}", poly_df);
     
     // 2. ビニング（離散化）
-    let mut binner = Binner::new_uniform(vec!["value1".to_string()], 4)
-        .with_labels(vec!["低".to_string(), "中低".to_string(), "中高".to_string(), "高".to_string()]);
+    let mut binner = Binner::new_uniform(vec!["value1".to_string()], 4);
     let binned_df = binner.fit_transform(&df)?;
     
     println!("\nビニング適用後のデータフレーム:");
@@ -31,14 +30,14 @@ fn main() -> Result<(), PandRSError> {
     // 3. 欠損値の処理
     // サンプルデータに欠損値を追加
     let mut na_df = df.clone();
-    let mut rng = rand::thread_rng();
-    let n_rows = na_df.nrows();
+    let mut rng = rand::rng();
+    let n_rows = na_df.rows();
     
     // value1列に欠損値を追加
     let mut value1_series = na_df.column("value1").unwrap().clone();
     for i in 0..10 {
         let idx = rng.gen_range(0..n_rows);
-        value1_series.set_value(idx, DataValue::NA)?;
+        value1_series.set_value(idx, NA::NA)?;
     }
     na_df.replace_column("value1".to_string(), value1_series)?;
     
@@ -120,7 +119,7 @@ fn main() -> Result<(), PandRSError> {
 
 // サンプルデータの作成
 fn create_sample_data() -> Result<DataFrame, PandRSError> {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     
     // 50行のデータを生成
     let n = 50;
@@ -146,30 +145,30 @@ fn create_sample_data() -> Result<DataFrame, PandRSError> {
     
     // DataFrame作成
     let mut df = DataFrame::new();
-    df.add_column("category".to_string(), Series::from_vec(cat_data)?)?;
-    df.add_column("value1".to_string(), Series::from_vec(value1)?)?;
-    df.add_column("value2".to_string(), Series::from_vec(value2)?)?;
-    df.add_column("target".to_string(), Series::from_vec(target)?)?;
+    df.add_column("category".to_string(), Series::new(cat_data, Some("category".to_string()))?)?;
+    df.add_column("value1".to_string(), Series::new(value1, Some("value1".to_string()))?)?;
+    df.add_column("value2".to_string(), Series::new(value2, Some("value2".to_string()))?)?;
+    df.add_column("target".to_string(), Series::new(target, Some("target".to_string()))?)?;
     
     Ok(df)
 }
 
 // 教師データとテストデータに分割する補助関数
 fn split_train_test(df: &DataFrame, train_ratio: f64) -> Result<(DataFrame, DataFrame), PandRSError> {
-    let n = df.nrows();
+    let n = df.rows();
     let train_size = (n as f64 * train_ratio) as usize;
     
     // インデックスをシャッフル
     let mut indices: Vec<usize> = (0..n).collect();
-    indices.shuffle(&mut rand::thread_rng());
+    indices.shuffle(&mut rand::rng());
     
     // 訓練用インデックスとテスト用インデックス
     let train_indices = indices.iter().take(train_size).cloned().collect::<Vec<_>>();
     let test_indices = indices.iter().skip(train_size).cloned().collect::<Vec<_>>();
     
     // インデックスを使ってデータを取得
-    let train_df = df.take_rows(&train_indices)?;
-    let test_df = df.take_rows(&test_indices)?;
+    let train_df = df.filter_by_indices(&train_indices)?;
+    let test_df = df.filter_by_indices(&test_indices)?;
     
     Ok((train_df, test_df))
 }
