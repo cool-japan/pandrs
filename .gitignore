@@ -65,6 +65,7 @@ py_bindings/.venv/
 # Local development files
 /dev/
 /tmp/
+.cargo/
 
 # 可視化出力サンプル
 examples/*.png

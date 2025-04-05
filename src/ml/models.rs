@@ -2,20 +2,20 @@
 //!
 //! 機械学習モデルの実装とモデル評価のためのユーティリティを提供します。
 
-use crate::dataframe::DataFrame;
-use crate::error::Result;
-use crate::series::Series;
-use crate::na::DataValue;
+use crate::optimized::OptimizedDataFrame;
+use crate::error::{Result, Error};
+use crate::column::{Float64Column, Column, ColumnTrait};
+use crate::dataframe::DataValue;
 use crate::stats;
 use std::collections::HashMap;
 
 /// 教師あり学習モデルに共通するトレイト
 pub trait SupervisedModel {
     /// モデルを訓練データでフィットさせる
-    fn fit(&mut self, df: &DataFrame, target: &str, features: &[&str]) -> Result<()>;
+    fn fit(&mut self, df: &OptimizedDataFrame, target: &str, features: &[&str]) -> Result<()>;
     
     /// 新しいデータに対して予測を行う
-    fn predict(&self, df: &DataFrame) -> Result<Series>;
+    fn predict(&self, df: &OptimizedDataFrame) -> Result<Float64Column>;
     
     /// モデルのスコアを計算（デフォルトはR^2）
     fn score(&self, df: &DataFrame, target: &str) -> Result<f64> {

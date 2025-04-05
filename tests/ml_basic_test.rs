@@ -2,7 +2,7 @@
 
 #[cfg(test)]
 mod tests {
-    use pandrs::{DataFrame, Series, PandRSError};
+    use pandrs::PandRSError;
     use pandrs::ml::preprocessing::{StandardScaler, MinMaxScaler};
     use pandrs::ml::pipeline::Transformer;
     use pandrs::optimized::OptimizedDataFrame;
@@ -67,7 +67,7 @@ mod tests {
                 let var_original: f64 = data.iter()
                     .map(|&x| (x - mean_original).powi(2))
                     .sum::<f64>() / data.len() as f64;
-                let std_original = var_original.sqrt();
+                let _std_original = var_original.sqrt(); // 未使用だがデバッグ目的で残す
                 
                 // 変換値の符号（正負）が維持されていることを確認
                 // 具体的な値の検証は行わない（実装の詳細に依存するため）

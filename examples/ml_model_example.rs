@@ -6,7 +6,7 @@ use pandrs::ml::pipeline::Pipeline;
 use pandrs::ml::preprocessing::{StandardScaler, PolynomialFeatures};
 use pandrs::ml::metrics::regression::{mean_squared_error, r2_score};
 use pandrs::ml::metrics::classification::{accuracy_score, precision_score, recall_score, f1_score};
-use rand::prelude::*;
+use rand::Rng;
 use std::collections::HashMap;
 
 fn main() -> Result<(), PandRSError> {
@@ -220,15 +220,15 @@ fn model_persistence_example() -> Result<(), PandRSError> {
 
 // 回帰データの生成
 fn create_regression_data() -> Result<DataFrame, PandRSError> {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     
     // 100行のデータを生成
     let n = 100;
     
     // 3つの特徴量
-    let feature1: Vec<f64> = (0..n).map(|_| rng.gen_range(-10.0..10.0)).collect();
-    let feature2: Vec<f64> = (0..n).map(|_| rng.gen_range(0.0..100.0)).collect();
-    let feature3: Vec<f64> = (0..n).map(|_| rng.gen_range(-5.0..15.0)).collect();
+    let feature1: Vec<f64> = (0..n).map(|_| rng.random_range(-10.0..10.0)).collect();
+    let feature2: Vec<f64> = (0..n).map(|_| rng.random_range(0.0..100.0)).collect();
+    let feature3: Vec<f64> = (0..n).map(|_| rng.random_range(-5.0..15.0)).collect();
     
     // 線形関係のある目的変数: y = 2*x1 + 0.5*x2 - 1.5*x3 + noise
     let target: Vec<f64> = feature1
@@ -236,7 +236,7 @@ fn create_regression_data() -> Result<DataFrame, PandRSError> {
         .zip(feature2.iter())
         .zip(feature3.iter())
         .map(|((x1, x2), x3)| {
-            2.0 * x1 + 0.5 * x2 - 1.5 * x3 + rng.gen_range(-5.0..5.0)
+            2.0 * x1 + 0.5 * x2 - 1.5 * x3 + rng.random_range(-5.0..5.0)
         })
         .collect();
     
@@ -252,14 +252,14 @@ fn create_regression_data() -> Result<DataFrame, PandRSError> {
 
 // 分類データの生成
 fn create_classification_data() -> Result<DataFrame, PandRSError> {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     
     // 100行のデータを生成
     let n = 100;
     
     // 2つの特徴量
-    let feature1: Vec<f64> = (0..n).map(|_| rng.gen_range(-5.0..5.0)).collect();
-    let feature2: Vec<f64> = (0..n).map(|_| rng.gen_range(-5.0..5.0)).collect();
+    let feature1: Vec<f64> = (0..n).map(|_| rng.random_range(-5.0..5.0)).collect();
+    let feature2: Vec<f64> = (0..n).map(|_| rng.random_range(-5.0..5.0)).collect();
     
     // ロジスティックモデルを使った二値分類
     // P(y=1) = sigmoid(1.5*x1 - 2*x2)
@@ -270,7 +270,7 @@ fn create_classification_data() -> Result<DataFrame, PandRSError> {
             let z = 1.5 * x1 - 2.0 * x2;
             let p = 1.0 / (1.0 + (-z).exp());
             
-            if rng.gen::<f64>() < p {
+            if rng.random::<f64>() < p {
                 "1".to_string()
             } else {
                 "0".to_string()

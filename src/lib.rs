@@ -43,11 +43,11 @@ pub use ml::preprocessing::{StandardScaler, MinMaxScaler, OneHotEncoder, Polynom
 pub use ml::metrics::regression::{mean_squared_error, r2_score, mean_absolute_error, root_mean_squared_error};
 pub use ml::metrics::classification::{accuracy_score, precision_score, recall_score, f1_score};
 
-// 高度な機械学習機能はコメントアウト
+// 機械学習機能
 // pub use ml::models::{SupervisedModel, LinearRegression, LogisticRegression};
 // pub use ml::models::model_selection::{train_test_split, cross_val_score, k_fold_split, GridSearchCV};
 // pub use ml::models::model_persistence::ModelPersistence;
-// pub use ml::dimension_reduction::{PCA, TSNE, TSNEInit};
+pub use ml::dimension_reduction::{PCA, TSNE, TSNEInit};
 // pub use ml::clustering::{KMeans, AgglomerativeClustering, DBSCAN, Linkage, DistanceMetric};
 // pub use ml::anomaly_detection::{IsolationForest, LocalOutlierFactor, OneClassSVM};
 

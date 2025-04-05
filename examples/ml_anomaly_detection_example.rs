@@ -1,7 +1,7 @@
 use pandrs::*;
 use pandrs::ml::anomaly_detection::{IsolationForest, LocalOutlierFactor, OneClassSVM};
 use pandrs::ml::clustering::DistanceMetric;
-use rand::prelude::*;
+use rand::Rng;
 
 fn main() -> Result<(), PandRSError> {
     println!("PandRS 異常検出アルゴリズムの例");
@@ -415,7 +415,7 @@ fn calc_agreement(df1: &DataFrame, df2: &DataFrame, col1: &str, col2: &str) -> R
 
 // 異常値を含むサンプルデータの生成
 fn create_sample_data_with_outliers() -> Result<DataFrame, PandRSError> {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     
     // 300サンプルのデータを生成
     let n_samples = 300;
@@ -437,7 +437,7 @@ fn create_sample_data_with_outliers() -> Result<DataFrame, PandRSError> {
     // 正常データを生成
     for _ in 0..(n_samples - n_outliers) {
         for j in 0..n_features {
-            let value = rng.gen_range(-3.0..3.0) * std_dev[j] + mean[j];
+            let value = rng.random_range(-3.0..3.0) * std_dev[j] + mean[j];
             features[j].push(value);
         }
         is_outlier.push(DataValue::Int64(0)); // 正常 = 0
@@ -447,15 +447,15 @@ fn create_sample_data_with_outliers() -> Result<DataFrame, PandRSError> {
     for _ in 0..n_outliers {
         for j in 0..n_features {
             // 異常値は正常範囲から離れた値
-            let outlier_type = rng.gen_range(0..3);
+            let outlier_type = rng.random_range(0..3);
             let value = match outlier_type {
-                0 => rng.gen_range(5.0..10.0) * std_dev[j] + mean[j], // 正の大きな値
-                1 => rng.gen_range(-10.0..-5.0) * std_dev[j] + mean[j], // 負の大きな値
+                0 => rng.random_range(5.0..10.0) * std_dev[j] + mean[j], // 正の大きな値
+                1 => rng.random_range(-10.0..-5.0) * std_dev[j] + mean[j], // 負の大きな値
                 _ => {
-                    if rng.gen_bool(0.5) {
-                        rng.gen_range(5.0..10.0) * std_dev[j] + mean[j]
+                    if rng.random_bool(0.5) {
+                        rng.random_range(5.0..10.0) * std_dev[j] + mean[j]
                     } else {
-                        rng.gen_range(-10.0..-5.0) * std_dev[j] + mean[j]
+                        rng.random_range(-10.0..-5.0) * std_dev[j] + mean[j]
                     }
                 }
             };

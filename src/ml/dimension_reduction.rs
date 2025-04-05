@@ -2,14 +2,16 @@
 //!
 //! 高次元データの可視化と分析のための次元削減アルゴリズムを提供します。
 
-use crate::dataframe::DataFrame;
-use crate::error::Result;
+use crate::optimized::{OptimizedDataFrame, ColumnView};
+use crate::column::{Float64Column, Int64Column, Column};
+use crate::column::ColumnTrait;
+use crate::error::{Result, Error};
 use crate::ml::pipeline::Transformer;
-use crate::series::Series;
-use crate::na::DataValue;
 use std::collections::HashMap;
+use rand::Rng;
 
 /// 主成分分析（PCA）の実装
+#[derive(Debug)]
 pub struct PCA {
     /// 削減後の次元数
     n_components: usize,
@@ -167,24 +169,38 @@ impl PCA {
             }
         }
     }
+    
+    // 標準偏差を計算する関数（カラムから）
+    fn compute_std(values: &[f64], mean: f64) -> f64 {
+        if values.is_empty() {
+            return 1.0;  // デフォルト値
+        }
+        
+        let variance = values.iter()
+            .map(|&x| (x - mean).powi(2))
+            .sum::<f64>() / (values.len() as f64);
+        
+        variance.sqrt()
+    }
 }
 
 impl Transformer for PCA {
-    fn fit(&mut self, df: &DataFrame) -> Result<()> {
+    fn fit(&mut self, df: &OptimizedDataFrame) -> Result<()> {
         // 数値列のみ抽出
         let numeric_columns: Vec<String> = df.column_names()
             .into_iter()
             .filter(|col_name| {
-                if let Some(series) = df.column(col_name) {
-                    matches!(series.get(0), DataValue::Float64(_) | DataValue::Int64(_))
+                if let Ok(col_view) = df.column(col_name) {
+                    col_view.as_float64().is_some() || col_view.as_int64().is_some()
                 } else {
                     false
                 }
             })
+            .map(|s| s.to_string())  // ここを修正: &Stringをクローンして所有権を取得
             .collect();
         
         if numeric_columns.is_empty() {
-            return Err(crate::error::Error::InvalidOperation(
+            return Err(Error::InvalidOperation(
                 "DataFrame must contain at least one numeric column for PCA".to_string()
             ));
         }
@@ -197,33 +213,59 @@ impl Transformer for PCA {
         self.n_components = n_components;
         
         // データの準備
-        let n_samples = df.nrows();
+        let n_samples = df.row_count();
         let mut data = vec![vec![0.0; n_features]; n_samples];
         self.mean = vec![0.0; n_features];
         self.std = vec![1.0; n_features];
         
         // データの読み込みと標準化
         for (col_idx, col_name) in self.feature_names.iter().enumerate() {
-            let series = df.column(col_name).unwrap();
+            let col_view = df.column(col_name)?;
             
-            // 平均と標準偏差を計算
-            let mean = series.mean()?;
-            let std = series.std()?;
-            
-            self.mean[col_idx] = mean;
-            self.std[col_idx] = std;
-            
-            // データの標準化
-            for row_idx in 0..n_samples {
-                match series.get(row_idx) {
-                    DataValue::Float64(v) => {
-                        data[row_idx][col_idx] = if std > 0.0 { (v - mean) / std } else { 0.0 };
+            if let Some(float_col) = col_view.as_float64() {
+                // データの読み込み
+                let mut values = Vec::with_capacity(n_samples);
+                for row_idx in 0..n_samples {
+                    if let Ok(Some(value)) = float_col.get(row_idx) {
+                        values.push(value);
+                        data[row_idx][col_idx] = value;
                     }
-                    DataValue::Int64(v) => {
-                        data[row_idx][col_idx] = if std > 0.0 { (*v as f64 - mean) / std } else { 0.0 };
+                }
+                
+                // 平均と標準偏差を計算
+                let mean = values.iter().sum::<f64>() / values.len() as f64;
+                let std = Self::compute_std(&values, mean);
+                
+                self.mean[col_idx] = mean;
+                self.std[col_idx] = std;
+                
+                // データの標準化
+                for row_idx in 0..n_samples {
+                    if std > 0.0 {
+                        data[row_idx][col_idx] = (data[row_idx][col_idx] - mean) / std;
                     }
-                    _ => {
-                        data[row_idx][col_idx] = 0.0;
+                }
+            } else if let Some(int_col) = col_view.as_int64() {
+                // データの読み込み
+                let mut values = Vec::with_capacity(n_samples);
+                for row_idx in 0..n_samples {
+                    if let Ok(Some(value)) = int_col.get(row_idx) {
+                        values.push(value as f64);
+                        data[row_idx][col_idx] = value as f64;
+                    }
+                }
+                
+                // 平均と標準偏差を計算
+                let mean = values.iter().sum::<f64>() / values.len() as f64;
+                let std = Self::compute_std(&values, mean);
+                
+                self.mean[col_idx] = mean;
+                self.std[col_idx] = std;
+                
+                // データの標準化
+                for row_idx in 0..n_samples {
+                    if std > 0.0 {
+                        data[row_idx][col_idx] = (data[row_idx][col_idx] - mean) / std;
                     }
                 }
             }
@@ -268,14 +310,14 @@ impl Transformer for PCA {
         Ok(())
     }
     
-    fn transform(&self, df: &DataFrame) -> Result<DataFrame> {
+    fn transform(&self, df: &OptimizedDataFrame) -> Result<OptimizedDataFrame> {
         if !self.fitted {
-            return Err(crate::error::Error::InvalidOperation(
+            return Err(Error::InvalidOperation(
                 "PCA has not been fitted yet".to_string()
             ));
         }
         
-        let n_samples = df.nrows();
+        let n_samples = df.row_count();
         let n_features = self.feature_names.len();
         
         // 標準化されたデータを格納する行列
@@ -283,31 +325,28 @@ impl Transformer for PCA {
         
         // データの読み込みと標準化
         for (col_idx, col_name) in self.feature_names.iter().enumerate() {
-            let series = df.column(col_name).ok_or_else(|| {
-                crate::error::Error::InvalidOperation(
+            let col_view = df.column(col_name).map_err(|_| {
+                Error::InvalidOperation(
                     format!("Column '{}' not found in DataFrame", col_name)
                 )
             })?;
             
-            // データの標準化
-            for row_idx in 0..n_samples {
-                match series.get(row_idx) {
-                    DataValue::Float64(v) => {
-                        data[row_idx][col_idx] = if self.std[col_idx] > 0.0 {
-                            (v - self.mean[col_idx]) / self.std[col_idx]
-                        } else {
-                            0.0
-                        };
+            if let Some(float_col) = col_view.as_float64() {
+                // データの読み込みと標準化
+                for row_idx in 0..n_samples {
+                    if let Ok(Some(value)) = float_col.get(row_idx) {
+                        if self.std[col_idx] > 0.0 {
+                            data[row_idx][col_idx] = (value - self.mean[col_idx]) / self.std[col_idx];
+                        }
                     }
-                    DataValue::Int64(v) => {
-                        data[row_idx][col_idx] = if self.std[col_idx] > 0.0 {
-                            (*v as f64 - self.mean[col_idx]) / self.std[col_idx]
-                        } else {
-                            0.0
-                        };
-                    }
-                    _ => {
-                        data[row_idx][col_idx] = 0.0;
+                }
+            } else if let Some(int_col) = col_view.as_int64() {
+                // データの読み込みと標準化
+                for row_idx in 0..n_samples {
+                    if let Ok(Some(value)) = int_col.get(row_idx) {
+                        if self.std[col_idx] > 0.0 {
+                            data[row_idx][col_idx] = ((value as f64) - self.mean[col_idx]) / self.std[col_idx];
+                        }
                     }
                 }
             }
@@ -326,25 +365,50 @@ impl Transformer for PCA {
             }
         }
         
-        // DataFrameに変換
-        let mut result_df = DataFrame::new();
+        // OptimizedDataFrameに変換
+        let mut result_df = OptimizedDataFrame::new();
         
+        // 主成分列を追加
         for j in 0..self.n_components {
             let mut pc_values = Vec::with_capacity(n_samples);
             
             for i in 0..n_samples {
-                pc_values.push(DataValue::Float64(transformed_data[i][j]));
+                pc_values.push(transformed_data[i][j]);
             }
             
-            let pc_series = Series::from_vec(pc_values)?;
-            result_df.add_column(format!("PC{}", j + 1), pc_series)?;
+            let pc_col = Float64Column::new(pc_values);
+            result_df.add_column(format!("PC{}", j + 1), Column::Float64(pc_col))?;
         }
         
         // 非数値列があれば、そのまま追加
         for col_name in df.column_names() {
             if !self.feature_names.contains(&col_name) {
-                if let Some(series) = df.column(&col_name) {
-                    result_df.add_column(col_name, series.clone())?;
+                if let Ok(col_view) = df.column(&col_name) {
+                    if let Some(str_col) = col_view.as_string() {
+                        // 文字列列の場合
+                        let mut values = Vec::with_capacity(n_samples);
+                        for i in 0..n_samples {
+                            if let Ok(Some(value)) = str_col.get(i) {
+                                values.push(value.to_string());
+                            } else {
+                                values.push("".to_string());
+                            }
+                        }
+                        let string_col = Column::String(crate::column::StringColumn::new(values));
+                        result_df.add_column(col_name.clone(), string_col)?;
+                    } else if let Some(bool_col) = col_view.as_boolean() {
+                        // ブール列の場合
+                        let mut values = Vec::with_capacity(n_samples);
+                        for i in 0..n_samples {
+                            if let Ok(Some(value)) = bool_col.get(i) {
+                                values.push(value);
+                            } else {
+                                values.push(false);
+                            }
+                        }
+                        let bool_col = Column::Boolean(crate::column::BooleanColumn::new(values));
+                        result_df.add_column(col_name.clone(), bool_col)?;
+                    }
                 }
             }
         }
@@ -352,13 +416,14 @@ impl Transformer for PCA {
         Ok(result_df)
     }
     
-    fn fit_transform(&mut self, df: &DataFrame) -> Result<DataFrame> {
+    fn fit_transform(&mut self, df: &OptimizedDataFrame) -> Result<OptimizedDataFrame> {
         self.fit(df)?;
         self.transform(df)
     }
 }
 
 /// t-SNE (t-distributed Stochastic Neighbor Embedding) の実装
+#[derive(Debug)]
 pub struct TSNE {
     /// 削減後の次元数（通常は2または3）
     n_components: usize,
@@ -379,6 +444,7 @@ pub struct TSNE {
 }
 
 /// t-SNEの初期化方法
+#[derive(Debug)]
 pub enum TSNEInit {
     /// ランダム初期化
     Random,
@@ -547,21 +613,22 @@ impl TSNE {
 }
 
 impl Transformer for TSNE {
-    fn fit(&mut self, df: &DataFrame) -> Result<()> {
+    fn fit(&mut self, df: &OptimizedDataFrame) -> Result<()> {
         // 数値列のみ抽出
         let numeric_columns: Vec<String> = df.column_names()
             .into_iter()
             .filter(|col_name| {
-                if let Some(series) = df.column(col_name) {
-                    matches!(series.get(0), DataValue::Float64(_) | DataValue::Int64(_))
+                if let Ok(col_view) = df.column(col_name) {
+                    col_view.as_float64().is_some() || col_view.as_int64().is_some()
                 } else {
                     false
                 }
             })
+            .map(|s| s.to_string())  // ここを修正
             .collect();
         
         if numeric_columns.is_empty() {
-            return Err(crate::error::Error::InvalidOperation(
+            return Err(Error::InvalidOperation(
                 "DataFrame must contain at least one numeric column for t-SNE".to_string()
             ));
         }
@@ -569,24 +636,24 @@ impl Transformer for TSNE {
         self.feature_names = numeric_columns.clone();
         
         // データの準備
-        let n_samples = df.nrows();
+        let n_samples = df.row_count();
         let n_features = self.feature_names.len();
         let mut data = vec![vec![0.0; n_features]; n_samples];
         
         // データの読み込み
         for (col_idx, col_name) in self.feature_names.iter().enumerate() {
-            let series = df.column(col_name).unwrap();
+            let col_view = df.column(col_name)?;
             
-            for row_idx in 0..n_samples {
-                match series.get(row_idx) {
-                    DataValue::Float64(v) => {
-                        data[row_idx][col_idx] = *v;
+            if let Some(float_col) = col_view.as_float64() {
+                for row_idx in 0..n_samples {
+                    if let Ok(Some(value)) = float_col.get(row_idx) {
+                        data[row_idx][col_idx] = value;
                     }
-                    DataValue::Int64(v) => {
-                        data[row_idx][col_idx] = *v as f64;
-                    }
-                    _ => {
-                        data[row_idx][col_idx] = 0.0;
+                }
+            } else if let Some(int_col) = col_view.as_int64() {
+                for row_idx in 0..n_samples {
+                    if let Ok(Some(value)) = int_col.get(row_idx) {
+                        data[row_idx][col_idx] = value as f64;
                     }
                 }
             }
@@ -599,11 +666,11 @@ impl Transformer for TSNE {
         self.embedding = match self.init {
             TSNEInit::Random => {
                 // ランダム初期化
-                let mut rng = rand::thread_rng();
+                let mut rng = rand::rng();
                 (0..n_samples)
                     .map(|_| {
                         (0..self.n_components)
-                            .map(|_| 1e-4 * rand::Rng::gen_range(&mut rng, -1.0..1.0))
+                            .map(|_| 1e-4 * rng.random_range(-1.0..1.0))
                             .collect()
                     })
                     .collect()
@@ -617,12 +684,11 @@ impl Transformer for TSNE {
                 for i in 0..n_samples {
                     for j in 0..self.n_components {
                         let pc_col = format!("PC{}", j + 1);
-                        match pca_result.column(&pc_col).unwrap().get(i) {
-                            DataValue::Float64(v) => {
-                                embedding[i][j] = *v * 1e-4;
-                            }
-                            _ => {
-                                embedding[i][j] = 0.0;
+                        let col_view = pca_result.column(&pc_col)?;
+                        
+                        if let Some(float_col) = col_view.as_float64() {
+                            if let Ok(Some(value)) = float_col.get(i) {
+                                embedding[i][j] = value * 1e-4;
                             }
                         }
                     }
@@ -657,7 +723,7 @@ impl Transformer for TSNE {
                         gains[i][j] = gains[i][j] + 0.2;
                     }
                     
-                    gains[i][j] = gains[i][j].max(0.01);
+                    gains[i][j] = f64::max(gains[i][j], 0.01);
                     
                     // 速度の更新
                     velocities[i][j] = momentum * velocities[i][j] - 
@@ -692,43 +758,68 @@ impl Transformer for TSNE {
         Ok(())
     }
     
-    fn transform(&self, df: &DataFrame) -> Result<DataFrame> {
+    fn transform(&self, df: &OptimizedDataFrame) -> Result<OptimizedDataFrame> {
         if !self.fitted {
-            return Err(crate::error::Error::InvalidOperation(
+            return Err(Error::InvalidOperation(
                 "t-SNE has not been fitted yet".to_string()
             ));
         }
         
         // t-SNEは新しいデータポイントを既存の埋め込みに追加することができないため、
         // トレーニングデータと同じデータでなければエラーを返す
-        return Err(crate::error::Error::InvalidOperation(
+        return Err(Error::InvalidOperation(
             "t-SNE does not support the transform method on new data. Use fit_transform instead.".to_string()
         ));
     }
     
-    fn fit_transform(&mut self, df: &DataFrame) -> Result<DataFrame> {
+    fn fit_transform(&mut self, df: &OptimizedDataFrame) -> Result<OptimizedDataFrame> {
         self.fit(df)?;
         
-        // DataFrameに変換
-        let n_samples = df.nrows();
-        let mut result_df = DataFrame::new();
+        // OptimizedDataFrameに変換
+        let n_samples = df.row_count();
+        let mut result_df = OptimizedDataFrame::new();
         
+        // TSNE次元列を追加
         for j in 0..self.n_components {
             let mut values = Vec::with_capacity(n_samples);
             
             for i in 0..n_samples {
-                values.push(DataValue::Float64(self.embedding[i][j]));
+                values.push(self.embedding[i][j]);
             }
             
-            let series = Series::from_vec(values)?;
-            result_df.add_column(format!("TSNE{}", j + 1), series)?;
+            let col = Float64Column::new(values);
+            result_df.add_column(format!("TSNE{}", j + 1), Column::Float64(col))?;
         }
         
         // 非数値列があれば、そのまま追加
         for col_name in df.column_names() {
             if !self.feature_names.contains(&col_name) {
-                if let Some(series) = df.column(&col_name) {
-                    result_df.add_column(col_name, series.clone())?;
+                if let Ok(col_view) = df.column(&col_name) {
+                    if let Some(str_col) = col_view.as_string() {
+                        // 文字列列の場合
+                        let mut values = Vec::with_capacity(n_samples);
+                        for i in 0..n_samples {
+                            if let Ok(Some(value)) = str_col.get(i) {
+                                values.push(value.to_string());
+                            } else {
+                                values.push("".to_string());
+                            }
+                        }
+                        let string_col = Column::String(crate::column::StringColumn::new(values));
+                        result_df.add_column(col_name.clone(), string_col)?;
+                    } else if let Some(bool_col) = col_view.as_boolean() {
+                        // ブール列の場合
+                        let mut values = Vec::with_capacity(n_samples);
+                        for i in 0..n_samples {
+                            if let Ok(Some(value)) = bool_col.get(i) {
+                                values.push(value);
+                            } else {
+                                values.push(false);
+                            }
+                        }
+                        let bool_col = Column::Boolean(crate::column::BooleanColumn::new(values));
+                        result_df.add_column(col_name.clone(), bool_col)?;
+                    }
                 }
             }
         }

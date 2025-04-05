@@ -8,10 +8,10 @@
 pub mod pipeline;
 pub mod preprocessing;
 pub mod metrics;
+pub mod dimension_reduction;
 
 // 以下のモジュールはコメントアウトして、基本機能のみをサポート
 // pub mod models;
-// pub mod dimension_reduction;
 // pub mod clustering;
 // pub mod anomaly_detection;
 

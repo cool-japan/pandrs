@@ -1,7 +1,6 @@
 use pandrs::{DataFrame, Series, PandRSError};
 use pandrs::optimized::OptimizedDataFrame;
-use rand::prelude::*;
-use rand::thread_rng;
+use rand::Rng;
 use pandrs::column::{Float64Column, Int64Column, Column};
 
 // 注: ml::clustering と ml::dimension_reduction モジュールは現在実装されていません
@@ -47,7 +46,7 @@ fn main() -> Result<(), PandRSError> {
 
 // サンプルデータの生成
 fn create_sample_data() -> Result<DataFrame, PandRSError> {
-    let mut rng = thread_rng();
+    let mut rng = rand::rng();
     
     // 300サンプルのデータを生成
     let n_samples = 300;
@@ -100,7 +99,7 @@ fn create_sample_data() -> Result<DataFrame, PandRSError> {
 
 // 最適化されたDataFrame生成（OptimizedDataFrameを使用）
 fn convert_to_optimized_df() -> Result<OptimizedDataFrame, PandRSError> {
-    let mut rng = thread_rng();
+    let mut rng = rand::rng();
     let mut opt_df = OptimizedDataFrame::new();
     
     // 5次元のデータを生成（特徴量が5つ）

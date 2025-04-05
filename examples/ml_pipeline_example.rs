@@ -1,7 +1,7 @@
 use pandrs::*;
-use pandrs::ml::pipeline::{Pipeline};
-use pandrs::ml::preprocessing::{StandardScaler, OneHotEncoder};
-use rand::prelude::*;
+use pandrs::ml::pipeline::Pipeline;
+use pandrs::ml::preprocessing::MinMaxScaler;
+use rand::Rng;
 
 // サンプルコードのため、OptimizedDataFrameにしか対応していないパイプラインを
 // 通常のDataFrameで示すためのシンプルな例
@@ -78,7 +78,7 @@ fn main() -> Result<(), PandRSError> {
 
 // サンプルデータの作成
 fn create_sample_data() -> Result<DataFrame, PandRSError> {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     
     // 10行のデータを生成
     let n = 10;
@@ -86,18 +86,18 @@ fn create_sample_data() -> Result<DataFrame, PandRSError> {
     // カテゴリカルデータ
     let categories = vec!["A", "B", "C"];
     let cat_data: Vec<String> = (0..n)
-        .map(|_| categories[rng.gen_range(0..categories.len())].to_string())
+        .map(|_| categories[rng.random_range(0..categories.len())].to_string())
         .collect();
     
     // 数値データ
-    let value1: Vec<f64> = (0..n).map(|_| rng.gen_range(-10.0..10.0)).collect();
-    let value2: Vec<f64> = (0..n).map(|_| rng.gen_range(0.0..100.0)).collect();
+    let value1: Vec<f64> = (0..n).map(|_| rng.random_range(-10.0..10.0)).collect();
+    let value2: Vec<f64> = (0..n).map(|_| rng.random_range(0.0..100.0)).collect();
     
     // 目的変数（線形関係 + ノイズ）
     let target: Vec<f64> = value1
         .iter()
         .zip(value2.iter())
-        .map(|(x, y)| 2.0 * x + 0.5 * y + rng.gen_range(-5.0..5.0))
+        .map(|(x, y)| 2.0 * x + 0.5 * y + rng.random_range(-5.0..5.0))
         .collect();
     
     // DataFrame作成

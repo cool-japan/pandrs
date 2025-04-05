@@ -2,11 +2,11 @@
 //!
 //! データ点をグループ（クラスタ）に分類するためのアルゴリズムを提供します。
 
-use crate::dataframe::DataFrame;
-use crate::error::Result;
+use crate::optimized::OptimizedDataFrame;
+use crate::error::{Result, Error};
 use crate::ml::pipeline::Transformer;
-use crate::series::Series;
-use crate::na::DataValue;
+use crate::column::{Float64Column, Column, ColumnTrait};
+use crate::dataframe::DataValue;
 use rand::seq::SliceRandom;
 use rand::{Rng, SeedableRng};
 use rand::rngs::StdRng;
