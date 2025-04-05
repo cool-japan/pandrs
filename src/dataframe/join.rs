@@ -144,6 +144,54 @@ impl DataFrame {
 
     // 削除: get_column_string_valuesはmod.rsに移動しました
 
+    // 行データをDataFrameに追加するヘルパーメソッド
+    fn add_row_to_dataframe(
+        &self,
+        result: &mut DataFrame,
+        row_data: HashMap<String, DataBox>,
+    ) -> Result<()> {
+        // 既存のすべての列と値を取得
+        let mut all_column_data = HashMap::new();
+        
+        // 現在のデータを収集
+        for col_name in result.column_names().to_vec() {
+            if let Some(series) = result.get_column(&col_name) {
+                let values: Vec<DataBox> = series.values()
+                    .iter()
+                    .map(|v| DataBox(Box::new(v.to_string())))
+                    .collect();
+                all_column_data.insert(col_name.clone(), values);
+            }
+        }
+        
+        // 行データを各列に追加
+        for (col_name, values) in all_column_data.iter_mut() {
+            if let Some(value) = row_data.get(col_name) {
+                values.push(value.clone());
+            } else {
+                // デフォルト値を追加（空文字列など）
+                let default_value = DataBox(Box::new("".to_string()));
+                values.push(default_value);
+            }
+        }
+        
+        // 新しいDataFrameの構築を開始
+        let mut new_df = DataFrame::new();
+        
+        // 元のカラム順序を維持
+        for col_name in result.column_names().to_vec() {
+            if let Some(values) = all_column_data.get(&col_name) {
+                let new_series = Series::<DataBox>::new(values.clone(), Some(col_name.clone()))?;
+                new_df.add_column(col_name.clone(), new_series)?;
+            }
+        }
+        
+        // 結果を更新
+        *result = new_df;
+        
+        Ok(())
+    }
+
     // 結合された行を結果DataFrameに追加
     fn add_join_row(
         &self,
@@ -195,8 +243,8 @@ impl DataFrame {
             }
         }
 
-        // TODO: 行データをDataFrameに追加
-        // 現在の実装では行の直接追加はサポートされていないため、一時的なスタブ
+        // 行データをDataFrameに追加
+        self.add_row_to_dataframe(result, row_data)?;
 
         Ok(())
     }
@@ -248,8 +296,8 @@ impl DataFrame {
             }
         }
 
-        // TODO: 行データをDataFrameに追加
-        // 現在の実装では行の直接追加はサポートされていないため、一時的なスタブ
+        // 行データをDataFrameに追加
+        self.add_row_to_dataframe(result, row_data)?;
 
         Ok(())
     }
@@ -310,8 +358,8 @@ impl DataFrame {
             }
         }
 
-        // TODO: 行データをDataFrameに追加
-        // 現在の実装では行の直接追加はサポートされていないため、一時的なスタブ
+        // 行データをDataFrameに追加
+        self.add_row_to_dataframe(result, row_data)?;
 
         Ok(())
     }
