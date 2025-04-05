@@ -8,6 +8,7 @@ pub mod preprocessing;
 pub mod metrics;
 pub mod models;
 pub mod dimension_reduction;
+pub mod clustering;
 
 // 外部クレートをreexportする予定
 // pub use linfa;
