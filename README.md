@@ -10,6 +10,7 @@ Rustで実装されたデータ分析用DataFrameライブラリです。Python�
 - 遅延評価システムによる最適化実行計画
 - スレッドセーフな実装
 - Rustの型安全性と所有権システムを活かした堅牢性
+- モジュール化された設計（機能ごとに分割された実装）
 - Pythonとの連携機能（PyO3バインディング）
 
 ## 機能
@@ -27,10 +28,12 @@ Rustで実装されたデータ分析用DataFrameライブラリです。Python�
 - 時系列データ処理の基本機能
 - カテゴリカルデータ型（効率的なメモリ使用、順序付きカテゴリ）
 - ピボットテーブル
-- テキストベースの可視化
+- テキストベースおよび高品質グラフの可視化
 - 並列処理サポート
 - 統計分析機能（記述統計、t検定、回帰分析など）
+- 機械学習評価指標（MSE、R²、精度、F1など）
 - 最適化実装（列指向ストレージ、遅延評価、文字列プール）
+- 高性能な分割実装（サブモジュール化された機能ごとのファイル）
 
 ## 使用例
 
@@ -147,10 +150,12 @@ let moving_avg = time_series.rolling_mean(3)?;
 let weekly = time_series.resample(Frequency::Weekly).mean()?;
 ```
 
-### 統計分析機能
+### 統計分析と機械学習評価機能
 
 ```rust
 use pandrs::{DataFrame, Series, stats};
+use pandrs::ml::metrics::regression::{mean_squared_error, r2_score};
+use pandrs::ml::metrics::classification::{accuracy_score, f1_score};
 
 // 記述統計
 let data = vec![1.0, 2.0, 3.0, 4.0, 5.0];
@@ -181,6 +186,22 @@ df.add_column("y".to_string(), Series::new(vec![3.0, 5.0, 7.0, 9.0, 11.0], Some(
 let model = stats::linear_regression(&df, "y", &["x1", "x2"])?;
 println!("係数: {:?}", model.coefficients());
 println!("決定係数: {}", model.r_squared());
+
+// 機械学習モデルの評価 - 回帰指標
+let y_true = vec![3.0, 5.0, 2.5, 7.0, 10.0];
+let y_pred = vec![2.8, 4.8, 2.7, 7.2, 9.8];
+
+let mse = mean_squared_error(&y_true, &y_pred)?;
+let r2 = r2_score(&y_true, &y_pred)?;
+println!("MSE: {:.4}, R²: {:.4}", mse, r2);
+
+// 機械学習モデルの評価 - 分類指標
+let true_labels = vec![true, false, true, true, false, false];
+let pred_labels = vec![true, false, false, true, true, false];
+
+let accuracy = accuracy_score(&true_labels, &pred_labels)?;
+let f1 = f1_score(&true_labels, &pred_labels)?;
+println!("Accuracy: {:.2}, F1 Score: {:.2}", accuracy, f1);
 ```
 
 ### ピボットテーブルとグループ化
@@ -271,6 +292,13 @@ let pivot_result = df.pivot_table(
   - [x] 仮説検定（t検定）
   - [x] 回帰分析（単回帰・重回帰）
   - [x] サンプリング手法（ブートストラップなど）
+- [x] 機械学習評価指標
+  - [x] 回帰評価（MSE、MAE、RMSE、R²スコア）
+  - [x] 分類評価（精度、適合率、再現率、F1スコア）
+- [x] コードベースの保守性向上
+  - [x] OptimizedDataFrameの機能別ファイル分割
+  - [x] 再エクスポートによるAPI互換性の維持
+  - [x] ML指標モジュールの独立実装
 
 ### マルチレベルインデックスの操作
 

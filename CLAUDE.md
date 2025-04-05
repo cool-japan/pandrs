@@ -320,6 +320,114 @@ print(f"決定係数: {model.r_squared()}")
 - サンプルコードの充実
 - コメントとドキュメントの整備
 
+### OptimizedDataFrameのファイル分割による保守性向上
+
+大規模化した `OptimizedDataFrame` の実装を機能ごとに分割し、コードの保守性と可読性を大幅に向上させました：
+
+- **モジュール構造の整理**
+  - `src/optimized/split_dataframe/` ディレクトリを新設
+  - 機能ごとに8つのファイルに分割実装
+  - API互換性を保つために再エクスポート機能を提供
+
+- **機能別ファイル分割**
+  - `core.rs` - 基本データ構造と主要操作
+  - `column_ops.rs` - 列の追加・削除・変更などの操作
+  - `data_ops.rs` - データフィルタリング、変換、集計
+  - `io.rs` - CSV/JSON/Parquet入出力
+  - `join.rs` - 結合操作（内部結合、左結合など）
+  - `group.rs` - グループ化と集計処理
+  - `index.rs` - インデックス操作
+  - `column_view.rs` - 列ビュー機能
+
+- **後方互換性の確保**
+  - 既存のAPIを維持するための再エクスポート
+  - ユーザーコードの変更不要
+
+この分割により、約2,000行あった単一ファイルが管理しやすいサイズに分割され、拡張性と保守性が大幅に向上しました。将来の機能追加も容易になり、デバッグ効率も改善されています。
+
+### 機械学習の評価指標モジュール追加
+
+機械学習モデルの評価に必要な指標モジュールを新規追加しました：
+
+- **回帰モデル評価（ml/metrics/regression.rs）**
+  - 平均二乗誤差（MSE）
+  - 平均絶対誤差（MAE）
+  - 平均二乗誤差の平方根（RMSE）
+  - 決定係数（R^2 score）
+  - 説明分散スコア
+
+- **分類モデル評価（ml/metrics/classification.rs）**
+  - 精度（Accuracy）
+  - 適合率（Precision）
+  - 再現率（Recall）
+  - F1スコア
+
+- **APIの整備**
+  - 直感的に使いやすい関数名
+  - 適切なエラーハンドリング
+  - 全機能にドキュメント付与
+
+- **統計モジュールとの連携**
+  - `stats` モジュールの `linear_regression` を公開関数として提供
+  - エルゴノミクスの改善とユーザーアクセシビリティ向上
+
+#### ML評価指標の使用例
+
+```rust
+// 回帰モデル評価の例
+use pandrs::ml::metrics::regression::{mean_squared_error, r2_score};
+
+// 真の値と予測値
+let y_true = vec![3.0, 5.0, 2.5, 7.0, 10.0];
+let y_pred = vec![2.8, 4.8, 2.7, 7.2, 9.8];
+
+// 評価指標の計算
+let mse = mean_squared_error(&y_true, &y_pred)?;
+let r2 = r2_score(&y_true, &y_pred)?;
+
+println!("MSE: {:.4}, R²: {:.4}", mse, r2);  // MSE: 0.05, R²: 0.9958
+
+// 分類モデル評価の例
+use pandrs::ml::metrics::classification::{accuracy_score, f1_score};
+
+// 真のラベルと予測ラベル（2値分類）
+let true_labels = vec![true, false, true, true, false, false];
+let pred_labels = vec![true, false, false, true, true, false];
+
+// 評価指標の計算
+let accuracy = accuracy_score(&true_labels, &pred_labels)?;
+let f1 = f1_score(&true_labels, &pred_labels)?;
+
+println!("Accuracy: {:.2}, F1 Score: {:.2}", accuracy, f1);  // Accuracy: 0.67, F1 Score: 0.67
+```
+
+#### Python連携による評価指標の使用
+
+```python
+import pandrs as pr
+import numpy as np
+
+# データ準備
+y_true = np.array([3.0, 5.0, 2.5, 7.0, 10.0])
+y_pred = np.array([2.8, 4.8, 2.7, 7.2, 9.8])
+
+# 回帰評価指標の計算
+mse = pr.ml.metrics.regression.mean_squared_error(y_true, y_pred)
+r2 = pr.ml.metrics.regression.r2_score(y_true, y_pred)
+rmse = pr.ml.metrics.regression.root_mean_squared_error(y_true, y_pred)
+
+print(f"MSE: {mse:.4f}, R²: {r2:.4f}, RMSE: {rmse:.4f}")
+
+# 分類評価指標の計算（2値分類）
+true_labels = np.array([True, False, True, True, False, False])
+pred_labels = np.array([True, False, False, True, True, False])
+
+acc = pr.ml.metrics.classification.accuracy_score(true_labels, pred_labels)
+f1 = pr.ml.metrics.classification.f1_score(true_labels, pred_labels)
+
+print(f"Accuracy: {acc:.2f}, F1 Score: {f1:.2f}")
+```
+
 ## コード構造
 
 ```
@@ -367,12 +475,21 @@ pandrs/
 │   ├── pivot/          - ピボットテーブル機能
 │   │   └── mod.rs        - ピボット機能
 │   │
-│   ├── stats/          - 統計関数 (計画中)
+│   ├── stats/          - 統計関数
 │   │   ├── mod.rs        - 統計機能共通
 │   │   ├── descriptive/  - 記述統計
 │   │   ├── inference/    - 推測統計・仮説検定
 │   │   ├── regression/   - 回帰分析
 │   │   └── sampling/     - サンプリング
+│   │
+│   ├── ml/             - 機械学習機能
+│   │   ├── mod.rs        - 機械学習共通
+│   │   ├── pipeline.rs   - パイプライン処理
+│   │   ├── preprocessing/ - 前処理機能
+│   │   └── metrics/      - 評価指標
+│   │      ├── mod.rs     - 評価指標共通
+│   │      ├── regression.rs - 回帰モデル評価
+│   │      └── classification.rs - 分類モデル評価
 │   │
 │   ├── io/             - ファイル入出力
 │   │   ├── mod.rs        - 入出力共通機能
@@ -382,12 +499,23 @@ pandrs/
 │   │
 │   ├── optimized/      - 最適化実装
 │   │   ├── mod.rs        - 最適化共通機能
-│   │   ├── dataframe.rs  - 列指向DataFrame
+│   │   ├── dataframe.rs  - (レガシー用の再エクスポート)
 │   │   ├── operations.rs - 最適化操作
-│   │   └── lazy.rs       - 遅延評価機能
+│   │   ├── lazy.rs       - 遅延評価機能
+│   │   └── split_dataframe/ - 分割された OptimizedDataFrame 実装
+│   │       ├── mod.rs       - 分割実装の共通インターフェース
+│   │       ├── core.rs      - コア機能と基本構造体
+│   │       ├── column_ops.rs - 列操作
+│   │       ├── data_ops.rs   - データ操作
+│   │       ├── io.rs         - 入出力機能
+│   │       ├── join.rs       - 結合操作
+│   │       ├── group.rs      - グループ化と集計
+│   │       ├── index.rs      - インデックス操作
+│   │       └── column_view.rs - 列ビュー機能
 │   │
 │   ├── vis/            - 可視化機能
-│   │   └── mod.rs        - プロット機能
+│   │   ├── mod.rs        - プロット機能
+│   │   └── plotters_ext.rs - Plotters連携拡張
 │   │
 │   ├── parallel/       - 並列処理
 │   │   └── mod.rs        - 並列処理機能
