@@ -7,6 +7,7 @@ pub mod pipeline;
 pub mod preprocessing;
 pub mod metrics;
 pub mod models;
+pub mod dimension_reduction;
 
 // 外部クレートをreexportする予定
 // pub use linfa;

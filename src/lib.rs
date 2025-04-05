@@ -43,6 +43,7 @@ pub use ml::preprocessing::{StandardScaler, MinMaxScaler, OneHotEncoder, Polynom
 pub use ml::models::{SupervisedModel, LinearRegression, LogisticRegression};
 pub use ml::models::model_selection::{train_test_split, cross_val_score, k_fold_split, GridSearchCV};
 pub use ml::models::model_persistence::ModelPersistence;
+pub use ml::dimension_reduction::{PCA, TSNE, TSNEInit};
 
 // Export version info
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
