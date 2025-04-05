@@ -58,7 +58,16 @@ MANIFEST
 test_env/
 py_bindings/target/
 py_bindings/test_env/
+.venv/
+*/.venv/
+py_bindings/.venv/
 
 # Local development files
 /dev/
 /tmp/
+
+# 可視化出力サンプル
+examples/*.png
+examples/*.svg
+examples/temp_*
+examples/weather_*.png
