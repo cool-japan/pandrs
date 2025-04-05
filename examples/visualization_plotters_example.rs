@@ -1,12 +1,12 @@
 use pandrs::{DataFrame, Series, vis::plotters_ext::{PlotSettings, PlotKind, OutputType}};
-use rand::{thread_rng, Rng};
+use rand::{rng, Rng};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // ランダムデータの生成
-    let mut rng = thread_rng();
+    let mut rng = rng();
     let x: Vec<i32> = (0..100).collect();
-    let y1: Vec<f64> = (0..100).map(|i| i as f64 + rng.gen_range(-5.0..5.0)).collect();
-    let y2: Vec<f64> = (0..100).map(|i| i as f64 * 0.8 + 10.0 + rng.gen_range(-3.0..3.0)).collect();
+    let y1: Vec<f64> = (0..100).map(|i| i as f64 + rng.random_range(-5.0..5.0)).collect();
+    let y2: Vec<f64> = (0..100).map(|i| i as f64 * 0.8 + 10.0 + rng.random_range(-3.0..3.0)).collect();
     let y3: Vec<f64> = (0..100).map(|i| 50.0 + 30.0 * (i as f64 * 0.1).sin()).collect();
 
     // 単一系列の折れ線グラフ
@@ -25,7 +25,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("-> line_chart.png に保存しました");
 
     // ヒストグラム
-    let hist_data: Vec<f64> = (0..1000).map(|_| rng.gen_range(-50.0..50.0)).collect();
+    let hist_data: Vec<f64> = (0..1000).map(|_| rng.random_range(-50.0..50.0)).collect();
     let hist_series = Series::new(hist_data, Some("分布".to_string()))?;
     
     let hist_settings = PlotSettings {
@@ -59,7 +59,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     
     println!("散布図を作成中...");
-    df.plotters_xy("X", "データ1", "scatter_chart.png", scatter_settings)?;
+    df.plotters_scatter("X", "データ1", "scatter_chart.png", scatter_settings)?;
     println!("-> scatter_chart.png に保存しました");
 
     // 複数系列の折れ線グラフ
@@ -73,7 +73,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     
     println!("複数系列の折れ線グラフを作成中...");
-    df.plotters_multi(&["データ1", "データ2", "データ3"], "multi_line_chart.svg", multi_line_settings)?;
+    df.plotters_plot_columns(&["データ1", "データ2", "データ3"], "multi_line_chart.svg", multi_line_settings)?;
     println!("-> multi_line_chart.svg に保存しました");
 
     // 棒グラフ
