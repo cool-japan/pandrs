@@ -6,8 +6,22 @@ use std::f64::consts::PI;
 
 /// 標準正規分布のCDF（累積分布関数）を計算
 fn normal_cdf(z: f64) -> f64 {
-    // 誤差関数（erf）を使った近似計算
-    0.5 * (1.0 + (z / (2.0_f64).sqrt()).erf())
+    // 誤差関数の近似計算（純Rustで実装）
+    // 標準正規分布のCDFの近似計算（Abramowitz and Stegun近似式）
+    const A1: f64 = 0.254829592;
+    const A2: f64 = -0.284496736;
+    const A3: f64 = 1.421413741;
+    const A4: f64 = -1.453152027;
+    const A5: f64 = 1.061405429;
+    const P: f64 = 0.3275911;
+
+    let sign = if z < 0.0 { -1.0 } else { 1.0 };
+    let x = z.abs() / (2.0_f64).sqrt();
+    
+    let t = 1.0 / (1.0 + P * x);
+    let y = 1.0 - (((((A5 * t + A4) * t) + A3) * t + A2) * t + A1) * t * (-x * x).exp();
+    
+    0.5 * (1.0 + sign * y)
 }
 
 /// t分布のCDF（累積分布関数）を計算

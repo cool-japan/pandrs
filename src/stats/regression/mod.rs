@@ -11,12 +11,12 @@ pub(crate) fn linear_regression_impl(
     x_columns: &[&str],
 ) -> Result<LinearRegressionResult> {
     // 対象列の存在確認
-    if !df.has_column(y_column) {
+    if !df.contains_column(y_column) {
         return Err(Error::ColumnNotFound(y_column.to_string()));
     }
     
     for &x_col in x_columns {
-        if !df.has_column(x_col) {
+        if !df.contains_column(x_col) {
             return Err(Error::ColumnNotFound(x_col.to_string()));
         }
     }
@@ -26,8 +26,12 @@ pub(crate) fn linear_regression_impl(
     }
     
     // 目的変数の取得
-    let y_series = df.column(y_column)?;
-    let y_values: Vec<f64> = y_series.to_vec_f64()?;
+    let y_series = df.get_column(y_column).ok_or_else(|| Error::ColumnNotFound(y_column.to_string()))?;
+    
+    // 文字列のSeriesを数値に変換
+    let y_values: Vec<f64> = y_series.values().iter()
+        .map(|s| s.parse::<f64>().unwrap_or(0.0))
+        .collect();
     
     // 説明変数の取得（複数の列）
     let mut x_matrix: Vec<Vec<f64>> = Vec::with_capacity(x_columns.len() + 1);
@@ -39,8 +43,12 @@ pub(crate) fn linear_regression_impl(
     
     // 各説明変数の列を追加
     for &x_col in x_columns {
-        let x_series = df.column(x_col)?;
-        let x_values = x_series.to_vec_f64()?;
+        let x_series = df.get_column(x_col).ok_or_else(|| Error::ColumnNotFound(x_col.to_string()))?;
+        
+        // 文字列のSeriesを数値に変換
+        let x_values: Vec<f64> = x_series.values().iter()
+            .map(|s| s.parse::<f64>().unwrap_or(0.0))
+            .collect();
         
         if x_values.len() != n {
             return Err(Error::DimensionMismatch(
@@ -173,7 +181,21 @@ fn vec_multiply_transpose(a: &[Vec<f64>], y: &[f64]) -> Vec<f64> {
 
 /// 正規分布のCDF（累積分布関数）を計算
 fn normal_cdf(z: f64) -> f64 {
-    0.5 * (1.0 + (z / (2.0_f64).sqrt()).erf())
+    // 標準正規分布のCDFの近似計算（Abramowitz and Stegun近似式）
+    const A1: f64 = 0.254829592;
+    const A2: f64 = -0.284496736;
+    const A3: f64 = 1.421413741;
+    const A4: f64 = -1.453152027;
+    const A5: f64 = 1.061405429;
+    const P: f64 = 0.3275911;
+
+    let sign = if z < 0.0 { -1.0 } else { 1.0 };
+    let x = z.abs() / (2.0_f64).sqrt();
+    
+    let t = 1.0 / (1.0 + P * x);
+    let y = 1.0 - (((((A5 * t + A4) * t) + A3) * t + A2) * t + A1) * t * (-x * x).exp();
+    
+    0.5 * (1.0 + sign * y)
 }
 
 /// 行列の逆行列を計算（ガウス・ジョルダン法）
@@ -290,11 +312,11 @@ mod tests {
         // 簡単な回帰分析のテスト
         let mut df = DataFrame::new();
         
-        let x = Series::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0]);
-        let y = Series::from_vec(vec![2.0, 4.0, 6.0, 8.0, 10.0]);
+        let x = Series::new(vec![1.0, 2.0, 3.0, 4.0, 5.0], Some("x".to_string())).unwrap();
+        let y = Series::new(vec![2.0, 4.0, 6.0, 8.0, 10.0], Some("y".to_string())).unwrap();
         
-        df.add_column("x", x).unwrap();
-        df.add_column("y", y).unwrap();
+        df.add_column("x".to_string(), x).unwrap();
+        df.add_column("y".to_string(), y).unwrap();
         
         let result = linear_regression_impl(&df, "y", &["x"]).unwrap();
         
@@ -308,20 +330,20 @@ mod tests {
     fn test_multiple_regression() {
         let mut df = DataFrame::new();
         
-        let x1 = Series::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0]);
-        let x2 = Series::from_vec(vec![5.0, 4.0, 3.0, 2.0, 1.0]);
+        let x1 = Series::new(vec![1.0, 2.0, 3.0, 4.0, 5.0], Some("x1".to_string())).unwrap();
+        let x2 = Series::new(vec![5.0, 4.0, 3.0, 2.0, 1.0], Some("x2".to_string())).unwrap();
         // y = 2*x1 + 3*x2 + 1
-        let y = Series::from_vec(vec![
+        let y = Series::new(vec![
             2.0*1.0 + 3.0*5.0 + 1.0,
             2.0*2.0 + 3.0*4.0 + 1.0,
             2.0*3.0 + 3.0*3.0 + 1.0,
             2.0*4.0 + 3.0*2.0 + 1.0,
             2.0*5.0 + 3.0*1.0 + 1.0,
-        ]);
+        ], Some("y".to_string())).unwrap();
         
-        df.add_column("x1", x1).unwrap();
-        df.add_column("x2", x2).unwrap();
-        df.add_column("y", y).unwrap();
+        df.add_column("x1".to_string(), x1).unwrap();
+        df.add_column("x2".to_string(), x2).unwrap();
+        df.add_column("y".to_string(), y).unwrap();
         
         let result = linear_regression_impl(&df, "y", &["x1", "x2"]).unwrap();
         

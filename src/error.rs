@@ -92,6 +92,21 @@ pub enum Error {
     #[error("操作エラー: {0}")]
     Operation(String),
     
+    #[error("次元不一致エラー: {0}")]
+    DimensionMismatch(String),
+    
+    #[error("データ不足エラー: {0}")]
+    InsufficientData(String),
+    
+    #[error("計算エラー: {0}")]
+    ComputationError(String),
+    
+    #[error("無効な操作です: {0}")]
+    InvalidOperation(String),
+    
+    #[error("無効な値です: {0}")]
+    InvalidValue(String),
+    
     #[error("その他のエラー: {0}")]
     Other(String),
 }
