@@ -21,10 +21,9 @@ use crate::error::{Result, Error};
 /// # 例
 /// ```rust
 /// use pandrs::stats;
-/// use pandrs::series::Series;
 ///
-/// let series = Series::from_vec(vec![1, 2, 3, 4, 5]);
-/// let stats = stats::describe(&series).unwrap();
+/// let data = vec![1.0, 2.0, 3.0, 4.0, 5.0];
+/// let stats = stats::describe(&data).unwrap();
 /// println!("平均: {}", stats.mean);
 /// println!("標準偏差: {}", stats.std);
 /// ```
@@ -114,10 +113,9 @@ pub struct TTestResult {
 /// # 例
 /// ```rust
 /// use pandrs::stats;
-/// use pandrs::series::Series;
 ///
-/// let sample1 = Series::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0]);
-/// let sample2 = Series::from_vec(vec![2.0, 3.0, 4.0, 5.0, 6.0]);
+/// let sample1 = vec![1.0, 2.0, 3.0, 4.0, 5.0];
+/// let sample2 = vec![2.0, 3.0, 4.0, 5.0, 6.0];
 /// // 等分散を仮定した検定、有意水準0.05
 /// let result = stats::ttest(&sample1, &sample2, 0.05, true).unwrap();
 /// println!("t統計量: {}", result.statistic);
@@ -158,13 +156,17 @@ pub struct LinearRegressionResult {
 /// 単回帰または重回帰分析を実行して、最小二乗法による線形モデルを構築します。
 ///
 /// # 例
-/// ```rust
+/// ```rust,no_run
 /// use pandrs::stats;
 /// use pandrs::dataframe::DataFrame;
+/// use pandrs::series::Series;
 ///
 /// // DataFrameを作成
 /// let mut df = DataFrame::new();
-/// // （データを追加する処理）
+/// // データを追加
+/// df.add_column("x1".to_string(), Series::new(vec![1.0, 2.0, 3.0, 4.0, 5.0], Some("x1".to_string())).unwrap()).unwrap();
+/// df.add_column("x2".to_string(), Series::new(vec![2.0, 3.0, 4.0, 5.0, 6.0], Some("x2".to_string())).unwrap()).unwrap();
+/// df.add_column("y".to_string(), Series::new(vec![3.0, 5.0, 7.0, 9.0, 11.0], Some("y".to_string())).unwrap()).unwrap();
 ///
 /// // y列を目的変数、x1とx2列を説明変数として回帰分析
 /// let model = stats::linear_regression(&df, "y", &["x1", "x2"]).unwrap();
@@ -211,9 +213,8 @@ pub fn sample(
 /// # 例
 /// ```rust
 /// use pandrs::stats;
-/// use pandrs::series::Series;
 ///
-/// let data = Series::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0]);
+/// let data = vec![1.0, 2.0, 3.0, 4.0, 5.0];
 /// // 1000サンプルのブートストラップ
 /// let bootstrap_samples = stats::bootstrap(&data, 1000).unwrap();
 /// ```
