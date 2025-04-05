@@ -4,6 +4,7 @@
 
 use pandrs::{DataFrame, Series};
 use pandrs::vis::plotters_ext::{PlotSettings, PlotKind, OutputType};
+use pandrs::vis::PlotConfig;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 1. Series単体のプロット例
@@ -72,12 +73,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     df.add_column("気圧".to_string(), pressure)?;
     
     // XY散布図の作成（気温と湿度の関係）
-    let xy_settings = PlotSettings {
+    let xy_config = PlotConfig {
         title: "気温と湿度の関係".to_string(),
-        plot_kind: PlotKind::Scatter,
-        ..PlotSettings::default()
+        x_label: "気温".to_string(),
+        y_label: "湿度".to_string(),
+        ..PlotConfig::default()
     };
-    df.plotters_xy("気温", "湿度", "examples/temp_humidity.png", xy_settings)?;
+    df.plot_xy("気温", "湿度", "examples/temp_humidity.png", xy_config)?;
     println!("  ✓ 散布図（気温と湿度）を生成しました: examples/temp_humidity.png");
     
     // 複数系列の比較
@@ -87,7 +89,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         plot_kind: PlotKind::Line,
         ..PlotSettings::default()
     };
-    df.plotters_multi(&["気温", "湿度", "気圧"], "examples/weather_multi.png", multi_settings)?;
+    df.plotters_plot_columns(&["気温", "湿度", "気圧"], "examples/weather_multi.png", multi_settings)?;
     println!("  ✓ 複数系列のプロットを生成しました: examples/weather_multi.png");
     
     println!("\n全てのサンプルが正常に実行されました。生成されたファイルを確認してください。");
