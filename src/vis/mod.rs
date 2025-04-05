@@ -1,4 +1,7 @@
-//! データ可視化機能を提供するモジュール（テキストベース）
+//! データ可視化機能を提供するモジュール
+//!
+//! このモジュールには、テキストベース（textplots）と高品質な可視化（plotters）の
+//! 両方の機能が含まれています。
 
 use std::fs::File;
 use std::io::Write;
@@ -9,6 +12,9 @@ use crate::error::{PandRSError, Result};
 use crate::temporal::TimeSeries;
 use crate::DataFrame;
 use crate::Series;
+
+// 高品質な可視化モジュールをエクスポート（一時的に無効化）
+// pub mod plotters_ext;
 
 /// プロットの種類
 #[derive(Debug, Clone, Copy)]
