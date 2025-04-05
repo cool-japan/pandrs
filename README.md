@@ -380,6 +380,30 @@ display_dataframe(df, max_rows=10, max_cols=5)
   - 包括的なテストスイートの実装
   - エラー処理の改善と警告の除去
   - ドキュメントの充実
+  - 依存関係の最新化（Rust 2023コンパチブル）
+
+## 依存関係バージョン
+
+最新の依存関係バージョン（2024年4月）:
+
+```toml
+[dependencies]
+num-traits = "0.2.19"        # 数値型特性サポート
+thiserror = "2.0.12"          # エラーハンドリング
+serde = { version = "1.0.219", features = ["derive"] }  # シリアライゼーション
+serde_json = "1.0.114"       # JSON処理
+chrono = "0.4.40"            # 日付・時間処理
+regex = "1.10.2"             # 正規表現
+csv = "1.3.1"                # CSV処理
+rayon = "1.9.0"              # 並列処理
+lazy_static = "1.5.0"        # 遅延初期化
+rand = "0.9.0"               # 乱数生成
+tempfile = "3.8.1"           # 一時ファイル
+textplots = "0.8.7"          # テキストベースの可視化
+chrono-tz = "0.10.3"         # タイムゾーン処理
+parquet = "54.3.1"           # Parquetファイルのサポート
+arrow = "54.3.1"             # Arrowフォーマットのサポート
+```
 
 ## ライセンス
 
