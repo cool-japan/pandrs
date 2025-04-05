@@ -20,6 +20,7 @@ pub mod optimized;
 pub mod parallel;
 pub mod pivot;
 pub mod series;
+pub mod stats;
 pub mod temporal;
 pub mod vis;
 
@@ -34,6 +35,7 @@ pub use optimized::{OptimizedDataFrame, LazyFrame, AggregateOp, JoinType};
 pub use parallel::ParallelUtils;
 pub use series::{Categorical, CategoricalOrder, NASeries, Series, StringCategorical};
 pub use dataframe::{MeltOptions, StackOptions, UnstackOptions};
+pub use stats::{DescriptiveStats, TTestResult, LinearRegressionResult};
 pub use vis::{OutputFormat, PlotConfig, PlotType};
 
 // Export version info
