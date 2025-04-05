@@ -57,6 +57,37 @@ PandRSはRustで実装されたデータ分析用DataFrameライブラリです�
 
 ## 改善・修正履歴
 
+### 依存関係の全面更新（2024年4月）
+
+- **依存クレートの最新版対応**: 以下の依存関係を最新版にアップデート
+  - Stage 1（低リスク）:
+    - num-traits: 0.2.14 → 0.2.19
+    - serde: 1.0.x → 1.0.219
+    - serde_json: 1.0.64 → 1.0.114+
+    - lazy_static: 1.4.0 → 1.5.0
+    - tempfile: 3.8 → 3.8.1
+  - Stage 2（中リスク）:
+    - chrono: 0.4.19 → 0.4.40
+    - csv: 1.1.6 → 1.3.1
+    - textplots: 0.6.3 → 0.8.7
+    - rayon: 1.5.1 → 1.9.0
+    - regex: 1.5.4 → 1.10.2
+  - Stage 3（高リスク）:
+    - thiserror: 1.0.24 → 2.0.12
+    - rand: 0.8.4 → 0.9.0
+    - chrono-tz: 0.6.1 → 0.10.3
+    - parquet: → 54.3.1
+    - arrow: → 54.3.1
+
+- **API変更対応**:
+  - rand: `gen_range` → `random_range` に変更
+  - Parquet圧縮定数: 新しいAPI形式（GZIP, BROTLI, ZSTDなどにデフォルト値指定が必要）に対応
+  - 破壊的変更を最小限に抑えるため慎重に移行
+
+- **CI/CD改善**:
+  - コードカバレッジ測定ワークフローを削除（GitHub Actions）
+  - CI/CDパイプラインをシンプル化
+
 ### カテゴリカルデータ型の完全実装
 
 - メモリ効率の良いカテゴリカルデータ表現を実装
@@ -159,45 +190,69 @@ PandRSはRustで実装されたデータ分析用DataFrameライブラリです�
 pandrs/
 │
 ├── src/
-│   ├── dataframe/    - DataFrame関連の実装
-│   │   ├── mod.rs    - DataFrame本体
-│   │   ├── join.rs   - 結合操作
-│   │   ├── apply.rs  - 関数適用とウィンドウ操作
-│   │   └── transform.rs - 形状変換（melt, stack, unstack）
+│   ├── column/         - 列データ型の実装
+│   │   ├── mod.rs        - 列の共通インターフェース
+│   │   ├── common.rs     - 共通ユーティリティ
+│   │   ├── boolean_column.rs - ブール型列
+│   │   ├── float64_column.rs - 浮動小数点型列
+│   │   ├── int64_column.rs   - 整数型列
+│   │   ├── string_column.rs  - 文字列型列
+│   │   └── string_pool.rs    - 文字列プール機能
 │   │
-│   ├── series/       - Series関連の実装
-│   │   ├── mod.rs    - Series本体
-│   │   └── na_series.rs - 欠損値対応
+│   ├── dataframe/      - DataFrame関連の実装
+│   │   ├── mod.rs        - DataFrame本体
+│   │   ├── join.rs       - 結合操作
+│   │   ├── apply.rs      - 関数適用とウィンドウ操作
+│   │   ├── transform.rs  - 形状変換（melt, stack, unstack）
+│   │   └── categorical.rs - カテゴリカルデータ処理
 │   │
-│   ├── temporal/     - 時系列データ処理
-│   │   ├── mod.rs       - 時系列本体
-│   │   ├── date_range.rs - 日付範囲生成
-│   │   ├── frequency.rs  - 頻度定義
-│   │   ├── window.rs     - ウィンドウ操作
-│   │   └── resample.rs   - リサンプリング
+│   ├── series/         - Series関連の実装
+│   │   ├── mod.rs        - Series本体
+│   │   ├── na_series.rs  - 欠損値対応
+│   │   └── categorical.rs - カテゴリカルSeries
 │   │
-│   ├── groupby/      - グループ化処理
-│   │   └── mod.rs    - グループ化機能
+│   ├── temporal/       - 時系列データ処理
+│   │   ├── mod.rs         - 時系列本体
+│   │   ├── date_range.rs  - 日付範囲生成
+│   │   ├── frequency.rs   - 頻度定義
+│   │   ├── window.rs      - ウィンドウ操作
+│   │   └── resample.rs    - リサンプリング
 │   │
-│   ├── pivot/        - ピボットテーブル機能
-│   │   └── mod.rs    - ピボット機能
+│   ├── groupby/        - グループ化処理
+│   │   └── mod.rs        - グループ化機能
 │   │
-│   ├── io/           - ファイル入出力
-│   │   ├── mod.rs    - 入出力共通機能
-│   │   ├── csv.rs    - CSV入出力
-│   │   └── json.rs   - JSON入出力
+│   ├── index/          - インデックス機能
+│   │   ├── mod.rs        - インデックス基本機能
+│   │   └── multi_index.rs - 複数レベルインデックス
 │   │
-│   ├── vis/          - 可視化機能
-│   │   └── mod.rs    - プロット機能
+│   ├── index_impl/     - インデックス実装の詳細
+│   │   └── multi_index.rs - マルチインデックスの実装
 │   │
-│   ├── parallel/     - 並列処理
-│   │   └── mod.rs    - 並列処理機能
+│   ├── pivot/          - ピボットテーブル機能
+│   │   └── mod.rs        - ピボット機能
 │   │
-│   ├── na.rs         - 欠損値(NA)の定義
-│   ├── error.rs      - エラー型定義
-│   ├── index.rs      - インデックス機能
-│   ├── lib.rs        - ライブラリのエントリポイント
-│   └── main.rs       - 実行バイナリのエントリポイント
+│   ├── io/             - ファイル入出力
+│   │   ├── mod.rs        - 入出力共通機能
+│   │   ├── csv.rs        - CSV入出力
+│   │   ├── json.rs       - JSON入出力
+│   │   └── parquet.rs    - Parquetファイルサポート
+│   │
+│   ├── optimized/      - 最適化実装
+│   │   ├── mod.rs        - 最適化共通機能
+│   │   ├── dataframe.rs  - 列指向DataFrame
+│   │   ├── operations.rs - 最適化操作
+│   │   └── lazy.rs       - 遅延評価機能
+│   │
+│   ├── vis/            - 可視化機能
+│   │   └── mod.rs        - プロット機能
+│   │
+│   ├── parallel/       - 並列処理
+│   │   └── mod.rs        - 並列処理機能
+│   │
+│   ├── na.rs           - 欠損値(NA)の定義
+│   ├── error.rs        - エラー型定義
+│   ├── lib.rs          - ライブラリのエントリポイント
+│   └── main.rs         - 実行バイナリのエントリポイント
 │
 ├── py_bindings/      - Python連携機能
 │   ├── src/
@@ -243,9 +298,14 @@ pandrs/
 ## 実行コマンド
 
 - ビルド: `cargo build`
+- リリースビルド: `cargo build --release`
 - テスト実行: `cargo test`
+- 特定テスト実行: `cargo test <test_name>`
+- 全テスト（最適化含む）: `cargo test --features "optimized"`
 - サンプル実行: `cargo run --example <example_name>`
+- 最適化サンプル実行: `cargo run --example optimized_<example_name> --features "optimized"`
 - 警告チェック: `cargo fix --lib -p pandrs --allow-dirty`
+- Clippy静的解析: `cargo clippy`
 
 ### Pythonバインディング関連コマンド
 
@@ -519,20 +579,34 @@ df.add_string_column_from_pylist('text', text_data)  # 効率的な追加
 
 ## メンテナンスガイド
 
-1. **警告への対応**
-   - `cargo fix --lib -p pandas --allow-dirty`で自動修正可能な警告を解消
+1. **依存関係の管理**
+   - 定期的なアップデート確認: `cargo outdated`
+   - 依存関係更新時の互換性検証: `cargo test`
+   - 新規依存追加時のドキュメント更新: `README.md`と本ドキュメントに追記
+
+2. **警告への対応**
+   - `cargo fix --lib -p pandrs --allow-dirty`で自動修正可能な警告を解消
    - 必要に応じて`#[allow(dead_code)]`を使用
    - コード品質を継続的に監視
+   - `cargo clippy`による静的解析を定期的に実行
 
-2. **テスト手順**
+3. **テスト手順**
    - 全テスト実行: `cargo test`
    - 特定のテスト実行: `cargo test <test_name>`
+   - 最適化実装のテスト: `cargo test --features "optimized"`
+   - Python連携テスト: `cd py_bindings && python -m unittest discover -s tests`
    - サンプル実行テスト: 各examplesが正常に動作するか確認
 
-3. **バージョン管理**
+4. **CI/CD管理**
+   - GitHub Actionsによるビルド・テスト自動化
+   - master向けのPRのレビュープロセス確立
+   - リリースバージョンタグでの自動ビルド
+
+5. **バージョン管理**
    - セマンティックバージョニングの採用
    - 破壊的変更は明確にドキュメント化
    - 変更履歴の詳細な記録
+   - リリースノートの作成
 
 ## 結論
 
