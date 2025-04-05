@@ -88,101 +88,133 @@ PandRSはRustで実装されたデータ分析用DataFrameライブラリです�
   - コードカバレッジ測定ワークフローを削除（GitHub Actions）
   - CI/CDパイプラインをシンプル化
 
-### 統計関数の充実計画（2024年5月）
+### 統計関数モジュールの実装（2024年5月）
 
-PandRSのデータ分析能力を強化するため、統計関数の充実を計画しています。pandasの統計機能を参考に、以下の機能を段階的に実装する予定です。
+PandRSのデータ分析能力を強化するために、統計関数モジュールを実装しました。pandasの統計機能を参考に、以下の機能を実装しています。
 
-#### 実装予定の統計関数
+#### 実装済みの統計関数
 
 1. **記述統計**
-   - 標本分散・標準偏差（不偏分散対応）
-   - 歪度・尖度
-   - 四分位数・分位数
-   - 共分散・相関係数
-   - ローリング統計の強化
+   - ✅ 標本分散・標準偏差（不偏分散対応）
+   - ✅ 四分位数・分位数
+   - ✅ 共分散・相関係数
+   - ✅ 基本統計量（平均、最小/最大値、中央値など）
 
 2. **推測統計**
-   - 単一標本および2標本のt検定
-   - カイ二乗検定
-   - 分散分析（一元配置ANOVA）
-   - ノンパラメトリック検定（Mann-Whitney U検定など）
+   - ✅ 2標本のt検定
+   - 📝 カイ二乗検定（今後実装予定）
+   - 📝 分散分析（一元配置ANOVA）（今後実装予定）
+   - 📝 ノンパラメトリック検定（今後実装予定）
 
 3. **回帰分析**
-   - 単回帰・重回帰分析
-   - 最小二乗法の実装
-   - 線形回帰の信頼区間と予測区間
-   - 回帰診断（決定係数、残差分析）
+   - ✅ 単回帰・重回帰分析
+   - ✅ 最小二乗法の実装
+   - ✅ 線形回帰の係数と決定係数
+   - 📝 信頼区間と予測区間（今後実装予定）
+   - 📝 詳細な残差分析（今後実装予定）
 
 4. **サンプリングと乱数生成**
-   - 層化サンプリング
-   - リサンプリング手法（ブートストラップ）
-   - 多様な確率分布からの乱数生成
+   - ✅ リサンプリング手法（ブートストラップ）
+   - ✅ 単純ランダムサンプリング
+   - 📝 層化サンプリング（今後実装予定）
+   - ✅ 乱数生成（rand 0.9.0による改善）
 
-#### 実装方針
+#### 実装されたモジュール構成
 
-1. **モジュール構成**
-   - 新たに`stats/`モジュールを追加し、統計関数を整理
-   - サブモジュールとして`descriptive/`、`inference/`、`regression/`、`sampling/`を設置
-   - 既存の集計関数との連携強化
+1. **モジュール構造**
+   - ✅ `stats/`モジュールの追加
+   - ✅ サブモジュールとして`descriptive/`、`inference/`、`regression/`、`sampling/`を設置
+   - ✅ 独立した関数としてのAPI提供
 
 2. **API設計**
-   - SeriesとDataFrameの拡張メソッドとして実装
-   - 独立した関数としても利用可能なデザイン
-   - エルゴノミクスを重視した使いやすいインターフェース
+   - ✅ 独立した関数としての利用が可能
+   - 📝 SeriesとDataFrameの拡張メソッドとしての実装（今後追加予定）
+   - ✅ エルゴノミクスを重視した使いやすいインターフェース
 
-3. **実装手順**
-   - Phase 1: 記述統計（2週間）
-   - Phase 2: 推測統計（3週間）
-   - Phase 3: 回帰分析（2週間）
-   - Phase 4: サンプリング機能（1週間）
+3. **最適化方法**
+   - ✅ 効率的なアルゴリズム実装
+   - 📝 大規模データセット対応の並列処理実装（今後追加予定）
+   - 📝 BLAS/LAPACK連携の検討（今後検討予定）
 
-4. **最適化方針**
-   - 行列計算の効率化
-   - BLAS/LAPACK連携の検討（ndarray経由）
-   - 大規模データセット対応の並列処理実装
-
-#### サンプルコード
+#### 使用例コード
 
 ```rust
 // 記述統計の例
-let df = DataFrame::new_from_csv("data.csv")?;
-// 共分散行列
-let cov_matrix = df.cov();
-// 相関行列
-let corr_matrix = df.corr(CorrelationMethod::Pearson);
-// 指定列の記述統計まとめ
-let stats = df.describe(&["column_a", "column_b"]);
+let data = vec![1.0, 2.0, 3.0, 4.0, 5.0];
+let desc_stats = stats::describe(&data)?;
+println!("平均: {}, 標準偏差: {}", desc_stats.mean, desc_stats.std);
+println!("中央値: {}, 四分位数: ({}, {})", desc_stats.median, desc_stats.q1, desc_stats.q3);
 
-// 検定の例
-// 2標本のt検定
-let ttest_result = stats::ttest(series1, series2, 0.05);
-println!("t統計量: {}, p値: {}", ttest_result.statistic, ttest_result.pvalue);
-println!("有意: {}", ttest_result.significant);  // 5%有意水準で判定
+// 相関係数と共分散の計算
+let x = vec![1.0, 2.0, 3.0, 4.0, 5.0];
+let y = vec![2.0, 3.0, 4.0, 5.0, 6.0];
+let correlation = stats::correlation(&x, &y)?;
+let covariance = stats::covariance(&x, &y)?;
+println!("相関係数: {}, 共分散: {}", correlation, covariance);
+
+// t検定の例
+let sample1 = vec![1.0, 2.0, 3.0, 4.0, 5.0];
+let sample2 = vec![2.0, 3.0, 4.0, 5.0, 6.0];
+// 等分散を仮定した検定、有意水準0.05
+let result = stats::ttest(&sample1, &sample2, 0.05, true)?;
+println!("t統計量: {}, p値: {}", result.statistic, result.pvalue);
+println!("有意差: {}", result.significant);  // 5%有意水準で判定
 
 // 回帰分析の例
+let mut df = DataFrame::new();
+df.add_column("x1".to_string(), Series::new(vec![1.0, 2.0, 3.0, 4.0, 5.0], Some("x1".to_string()))?)?;
+df.add_column("x2".to_string(), Series::new(vec![2.0, 3.0, 5.0, 4.0, 8.0], Some("x2".to_string()))?)?;
+df.add_column("y".to_string(), Series::new(vec![3.0, 5.0, 7.0, 9.0, 11.0], Some("y".to_string()))?)?;
+
 let model = stats::linear_regression(&df, "y", &["x1", "x2"])?;
 println!("係数: {:?}", model.coefficients());
 println!("決定係数: {}", model.r_squared());
-println!("p値: {:?}", model.p_values());
+
+// サンプリングの例
+let data = vec![1.0, 2.0, 3.0, 4.0, 5.0];
+// 3つの要素をランダムに選択
+let sample = stats::sample(&data, 3)?;
+// 1000サンプルのブートストラップ
+let bootstrap_samples = stats::bootstrap(&data, 1000)?;
 ```
 
 #### Python連携
 
 ```python
 import pandrs as pr
+import numpy as np
 
-# Python APIでの統計分析例
-df = pr.DataFrame.from_csv("data.csv")
-# 相関行列
-corr = df.corr(method="pearson")
+# データ準備
+data = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
+x1 = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
+x2 = np.array([2.0, 3.0, 4.0, 5.0, 6.0])
+y = np.array([3.0, 5.0, 7.0, 9.0, 11.0])
+
+# 統計分析
+# 記述統計
+stats_summary = pr.stats.describe(data)
+print(f"平均: {stats_summary.mean}, 標準偏差: {stats_summary.std}")
+
+# 相関係数
+corr = pr.stats.correlation(x1, x2)
+print(f"相関係数: {corr}")
+
 # t検定
-ttest = pr.stats.ttest(df["group_a"], df["group_b"])
+ttest = pr.stats.ttest(x1, x2, 0.05)
 print(f"t統計量: {ttest.statistic}, p値: {ttest.pvalue}")
-# 回帰分析
+
+# DataFrameを使った回帰分析
+df = pr.DataFrame({
+    "x1": x1,
+    "x2": x2,
+    "y": y
+})
 model = pr.stats.linear_regression(df, "y", ["x1", "x2"])
-print(f"係数: {model.coefficients}")
-print(f"決定係数: {model.r_squared}")
+print(f"係数: {model.coefficients()}")
+print(f"決定係数: {model.r_squared()}")
 ```
+
+今後、より高度な統計機能（ノンパラメトリック検定、分散分析、高度な回帰診断など）の実装を継続的に行っていく予定です。
 
 ### カテゴリカルデータ型の完全実装
 

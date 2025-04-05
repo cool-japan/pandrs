@@ -29,6 +29,7 @@ Rustで実装されたデータ分析用DataFrameライブラリです。Python�
 - ピボットテーブル
 - テキストベースの可視化
 - 並列処理サポート
+- 統計分析機能（記述統計、t検定、回帰分析など）
 - 最適化実装（列指向ストレージ、遅延評価、文字列プール）
 
 ## 使用例
@@ -146,6 +147,42 @@ let moving_avg = time_series.rolling_mean(3)?;
 let weekly = time_series.resample(Frequency::Weekly).mean()?;
 ```
 
+### 統計分析機能
+
+```rust
+use pandrs::{DataFrame, Series, stats};
+
+// 記述統計
+let data = vec![1.0, 2.0, 3.0, 4.0, 5.0];
+let stats_summary = stats::describe(&data)?;
+println!("平均: {}, 標準偏差: {}", stats_summary.mean, stats_summary.std);
+println!("中央値: {}, 四分位数: {} - {}", stats_summary.median, stats_summary.q1, stats_summary.q3);
+
+// 相関係数を計算
+let x = vec![1.0, 2.0, 3.0, 4.0, 5.0];
+let y = vec![2.0, 3.0, 4.0, 5.0, 6.0];
+let correlation = stats::correlation(&x, &y)?;
+println!("相関係数: {}", correlation);
+
+// t検定を実行
+let sample1 = vec![1.0, 2.0, 3.0, 4.0, 5.0];
+let sample2 = vec![2.0, 3.0, 4.0, 5.0, 6.0];
+let alpha = 0.05; // 有意水準
+let result = stats::ttest(&sample1, &sample2, alpha, true)?;
+println!("t統計量: {}, p値: {}", result.statistic, result.pvalue);
+println!("有意差: {}", result.significant);
+
+// 回帰分析
+let mut df = DataFrame::new();
+df.add_column("x1".to_string(), Series::new(vec![1.0, 2.0, 3.0, 4.0, 5.0], Some("x1".to_string()))?)?;
+df.add_column("x2".to_string(), Series::new(vec![2.0, 3.0, 4.0, 5.0, 6.0], Some("x2".to_string()))?)?;
+df.add_column("y".to_string(), Series::new(vec![3.0, 5.0, 7.0, 9.0, 11.0], Some("y".to_string()))?)?;
+
+let model = stats::linear_regression(&df, "y", &["x1", "x2"])?;
+println!("係数: {:?}", model.coefficients());
+println!("決定係数: {}", model.r_squared());
+```
+
 ### ピボットテーブルとグループ化
 
 ```rust
@@ -222,6 +259,12 @@ let pivot_result = df.pivot_table(
   - [x] 計算グラフによる操作最適化
   - [x] オペレーション融合
   - [x] 不要な中間結果の生成回避
+- [x] 統計分析機能
+  - [x] 記述統計（平均、標準偏差、分位数など）
+  - [x] 相関係数と共分散
+  - [x] 仮説検定（t検定）
+  - [x] 回帰分析（単回帰・重回帰）
+  - [x] サンプリング手法（ブートストラップなど）
 
 ### マルチレベルインデックスの操作
 
