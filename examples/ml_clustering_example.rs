@@ -1,197 +1,135 @@
-use pandrs::{DataFrame, Series, PandRSError};
+extern crate pandrs;
+
 use pandrs::optimized::OptimizedDataFrame;
+use pandrs::ml::clustering::{KMeans, DBSCAN, AgglomerativeClustering, DistanceMetric, Linkage};
+use pandrs::column::{Float64Column, Column};
 use rand::Rng;
-use pandrs::column::{Float64Column, Int64Column, Column};
+use rand::SeedableRng;
+use rand::rngs::StdRng;
 
-// 注: ml::clustering と ml::dimension_reduction モジュールは現在実装されていません
-// 今後実装される予定の機能のプレースホルダーとして残しています
-
-fn main() -> Result<(), PandRSError> {
-    println!("PandRS クラスタリングアルゴリズムの例");
-    println!("================================");
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // 擬似的なクラスタリングデータを生成
+    println!("✅ クラスタリングアルゴリズムの例");
+    println!("=================================");
+    println!("1. 擬似データの生成");
     
-    // サンプルデータの生成
-    let df = create_sample_data()?;
-    let _opt_df = convert_to_optimized_df()?;
+    let mut rng = StdRng::seed_from_u64(42);
+    let n_samples = 1000;
+    let n_clusters = 3;
     
-    println!("元のデータフレーム: {} 行 x {} 列", df.row_count(), df.column_names().len());
+    // クラスタごとに異なる中心点からデータを生成
+    let cluster_centers = vec![
+        (0.0, 0.0),       // クラスタ1の中心
+        (5.0, 5.0),       // クラスタ2の中心
+        (-5.0, 5.0),     // クラスタ3の中心
+    ];
     
-    println!("\n注意: クラスタリング機能は現在実装中です。");
-    println!("このサンプルは将来のAPIリファレンスとして提供されています。");
+    let mut x_values = Vec::with_capacity(n_samples);
+    let mut y_values = Vec::with_capacity(n_samples);
+    let mut true_labels = Vec::with_capacity(n_samples);
     
-    // 将来実装予定のAPIの使用例（コメントアウト）
-    println!("\n==== 将来実装予定のK-meansクラスタリングAPI ====");
-    println!("// K-meansインスタンスの作成（クラスタ数=3）");
-    println!("let mut kmeans = KMeans::new(3, 100, 1e-4, Some(42));");
-    println!("// クラスタリングの実行");
-    println!("let kmeans_result = kmeans.fit_transform(&opt_df)?;");
+    for i in 0..n_samples {
+        // 各サンプルを均等にクラスタに割り当て
+        let cluster_idx = i % n_clusters;
+        let (center_x, center_y) = cluster_centers[cluster_idx];
+        
+        // クラスタ中心からのばらつきを生成（正規分布）
+        let x = center_x + rng.gen_range(-1.5..1.5);
+        let y = center_y + rng.gen_range(-1.5..1.5);
+        
+        x_values.push(x);
+        y_values.push(y);
+        true_labels.push(cluster_idx as i64);
+    }
     
-    println!("\n==== 将来実装予定の階層的クラスタリングAPI ====");
-    println!("// 階層的クラスタリングインスタンスの作成");
-    println!("let mut hierarchical = AgglomerativeClustering::new(");
-    println!("    3, Linkage::Ward, DistanceMetric::Euclidean");
-    println!(");");
+    // データフレームの作成
+    let mut df = OptimizedDataFrame::new();
     
-    println!("\n==== 将来実装予定のDBSCANクラスタリングAPI ====");
-    println!("// DBSCANインスタンスの作成");
-    println!("let mut dbscan = DBSCAN::new(1.0, 5, DistanceMetric::Euclidean);");
+    let x_col = Column::Float64(Float64Column::new(x_values, false, "x".to_string())?);
+    let y_col = Column::Float64(Float64Column::new(y_values, false, "y".to_string())?);
+    let true_labels_col = Column::Int64(pandrs::column::Int64Column::new(true_labels, false, "true_cluster".to_string())?);
     
-    // データの可視化についての説明
-    println!("\n==== クラスタリング結果の可視化の例 ====");
-    println!("// 可視化機能は現在利用可能なplottersモジュールを使用して実装予定です");
-    println!("// 詳細は examples/plotters_visualization_example.rs を参照してください");
+    df.add_column("x".to_string(), x_col)?;
+    df.add_column("y".to_string(), y_col)?;
+    df.add_column("true_cluster".to_string(), true_labels_col)?;
+    
+    println!("データ生成完了: {} サンプル, {} クラスタ", n_samples, n_clusters);
+    println!("データフレームの最初の数行:");
+    println!("{}", df.head(5)?);
+    
+    // K-means クラスタリング
+    println!("\n2. k-means クラスタリング");
+    let mut kmeans = KMeans::new(3, 100, 1e-4, Some(42));
+    let kmeans_result = kmeans.fit_transform(&df)?;
+    
+    println!("k-means クラスタリング完了");
+    println!("クラスタ中心: {:?}", kmeans.centroids());
+    println!("イナーシャ: {:.4}", kmeans.inertia());
+    println!("反復回数: {}", kmeans.n_iter());
+    println!("結果の最初の数行:");
+    println!("{}", kmeans_result.head(5)?);
+    
+    // クラスタの分布を表示
+    let cluster_counts = count_clusters(&kmeans_result, "cluster")?;
+    println!("クラスタの分布:");
+    for (cluster, count) in cluster_counts {
+        println!("クラスタ {} に含まれるサンプル数: {}", cluster, count);
+    }
+    
+    // DBSCAN クラスタリング
+    println!("\n3. DBSCAN クラスタリング");
+    let mut dbscan = DBSCAN::new(1.0, 5, DistanceMetric::Euclidean);
+    let dbscan_result = dbscan.fit_transform(&df)?;
+    
+    println!("DBSCAN クラスタリング完了");
+    println!("結果の最初の数行:");
+    println!("{}", dbscan_result.head(5)?);
+    
+    // クラスタの分布を表示
+    let cluster_counts = count_clusters(&dbscan_result, "cluster")?;
+    println!("クラスタの分布:");
+    for (cluster, count) in cluster_counts {
+        println!("クラスタ {} に含まれるサンプル数: {}", cluster, count);
+    }
+    
+    // 階層的クラスタリング
+    println!("\n4. 階層的クラスタリング");
+    let mut agg_clustering = AgglomerativeClustering::new(3, Linkage::Ward, DistanceMetric::Euclidean);
+    let agg_result = agg_clustering.fit_transform(&df)?;
+    
+    println!("階層的クラスタリング完了");
+    println!("結果の最初の数行:");
+    println!("{}", agg_result.head(5)?);
+    
+    // クラスタの分布を表示
+    let cluster_counts = count_clusters(&agg_result, "cluster")?;
+    println!("クラスタの分布:");
+    for (cluster, count) in cluster_counts {
+        println!("クラスタ {} に含まれるサンプル数: {}", cluster, count);
+    }
+    
+    println!("\n=================================");
+    println!("✅ クラスタリングの例が正常に完了しました");
     
     Ok(())
 }
 
-// サンプルデータの生成
-fn create_sample_data() -> Result<DataFrame, PandRSError> {
-    let mut rng = rand::rng();
+// クラスタごとのサンプル数をカウントする関数
+fn count_clusters(df: &OptimizedDataFrame, column: &str) -> Result<Vec<(i64, usize)>, Box<dyn std::error::Error>> {
+    let mut counts = std::collections::HashMap::new();
     
-    // 300サンプルのデータを生成
-    let n_samples = 300;
-    let n_features = 5; // 5次元データ
+    // クラスタごとの数をカウント
+    let cluster_col = df.column(column)?;
     
-    // 3つのクラスタを生成
-    let mut features = Vec::new();
-    for _ in 0..n_features {
-        features.push(Vec::with_capacity(n_samples));
-    }
-    
-    let mut true_clusters = Vec::with_capacity(n_samples);
-    
-    // クラスタ1: 多変量正規分布 (中心 [0, 0, ..., 0], 小さな分散)
-    for _ in 0..n_samples/3 {
-        for j in 0..n_features {
-            features[j].push(rng.random_range(-1.0..1.0));
-        }
-        true_clusters.push(0);
-    }
-    
-    // クラスタ2: 多変量正規分布 (中心 [5, 5, ..., 5], 大きな分散)
-    for _ in 0..n_samples/3 {
-        for j in 0..n_features {
-            features[j].push(5.0 + rng.random_range(-1.5..1.5));
-        }
-        true_clusters.push(1);
-    }
-    
-    // クラスタ3: 多変量正規分布 (中心 [-5, -5, ..., -5], 中程度の分散)
-    for _ in 0..n_samples/3 {
-        for j in 0..n_features {
-            features[j].push(-5.0 + rng.random_range(-1.0..1.0));
-        }
-        true_clusters.push(2);
-    }
-    
-    // DataFrame作成
-    let mut df = DataFrame::new();
-    
-    for (j, feature) in features.iter().enumerate() {
-        df.add_column(format!("feature{}", j + 1), Series::new(feature.clone(), Some(format!("feature{}", j + 1)))?)?;
-    }
-    
-    // 真のクラスタラベルを追加
-    df.add_column("true_cluster".to_string(), Series::new(true_clusters, Some("true_cluster".to_string()))?)?;
-    
-    Ok(df)
-}
-
-// 最適化されたDataFrame生成（OptimizedDataFrameを使用）
-fn convert_to_optimized_df() -> Result<OptimizedDataFrame, PandRSError> {
-    let mut rng = rand::rng();
-    let mut opt_df = OptimizedDataFrame::new();
-    
-    // 5次元のデータを生成（特徴量が5つ）
-    let n_samples = 300;
-    let n_features = 5;
-    
-    // クラスター中心点を定義
-    let centers = [
-        vec![0.0, 0.0, 0.0, 0.0, 0.0],         // クラスタ1: 原点付近
-        vec![5.0, 5.0, 5.0, 5.0, 5.0],         // クラスタ2: 正象限
-        vec![-5.0, -5.0, -5.0, -5.0, -5.0],    // クラスタ3: 負象限
-    ];
-    
-    // 特徴量列を追加
-    for j in 0..n_features {
-        let mut features = Vec::with_capacity(n_samples);
-        
-        // クラスタ1 (中心 [0, 0, ..., 0], 小さな分散)
-        for _ in 0..n_samples/3 {
-            features.push(centers[0][j] + rng.random_range(-1.0..1.0));
-        }
-        
-        // クラスタ2 (中心 [5, 5, ..., 5], 大きな分散)
-        for _ in 0..n_samples/3 {
-            features.push(centers[1][j] + rng.random_range(-1.5..1.5));
-        }
-        
-        // クラスタ3 (中心 [-5, -5, ..., -5], 中程度の分散)
-        for _ in 0..n_samples/3 {
-            features.push(centers[2][j] + rng.random_range(-1.0..1.0));
-        }
-        
-        // 特徴量列を追加
-        let col = Float64Column::new(features);
-        opt_df.add_column(format!("feature{}", j + 1), Column::Float64(col))?;
-    }
-    
-    // 真のクラスタラベルを追加
-    let mut true_clusters = Vec::with_capacity(n_samples);
-    
-    // 各クラスタに100サンプルずつ
-    for i in 0..3 {
-        for _ in 0..n_samples/3 {
-            true_clusters.push(i as i64);
+    for i in 0..cluster_col.len() {
+        if let Some(cluster) = cluster_col.get_i64(i)? {
+            *counts.entry(cluster).or_insert(0) += 1;
         }
     }
     
-    let true_cluster_col = Int64Column::new(true_clusters);
-    opt_df.add_column("true_cluster", Column::Int64(true_cluster_col))?;
+    // ソートされた結果を返す
+    let mut result: Vec<(i64, usize)> = counts.into_iter().collect();
+    result.sort_by_key(|(cluster, _)| *cluster);
     
-    Ok(opt_df)
+    Ok(result)
 }
-
-// 以下は今後実装予定のクラスタリング機能のインターフェース例です
-// これらの構造体やトレイトは実際には実装されていません
-
-/*
-// K-meansクラスタリングアルゴリズム
-struct KMeans {
-    n_clusters: usize,        // クラスタ数
-    max_iter: usize,          // 最大反復回数
-    tol: f64,                 // 収束閾値
-    random_state: Option<u64>, // 乱数シード
-    centroids: Vec<Vec<f64>>, // クラスタ中心
-    inertia: f64,             // クラスタ内二乗距離の合計
-    n_iter: usize,            // 実際の反復回数
-}
-
-// 階層的クラスタリングアルゴリズム
-enum Linkage {
-    Single,    // 単連結法（最小距離法）
-    Complete,  // 完全連結法（最大距離法）
-    Average,   // 群平均法
-    Ward,      // ウォード法
-}
-
-enum DistanceMetric {
-    Euclidean,
-    Manhattan,
-    Cosine,
-}
-
-struct AgglomerativeClustering {
-    n_clusters: usize,
-    linkage: Linkage,
-    metric: DistanceMetric,
-}
-
-// DBSCANクラスタリングアルゴリズム
-struct DBSCAN {
-    eps: f64,
-    min_samples: usize,
-    metric: DistanceMetric,
-}
-*/

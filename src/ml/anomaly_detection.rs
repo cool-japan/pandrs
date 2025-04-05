@@ -2,12 +2,12 @@
 //!
 //! データセットから外れ値や異常パターンを検出するためのアルゴリズムを提供します。
 
-use crate::dataframe::DataFrame;
-use crate::error::Result;
+use crate::optimized::{OptimizedDataFrame, ColumnView};
+use crate::column::{Float64Column, Int64Column, Column, ColumnTrait};
+use crate::error::{Result, Error};
 use crate::ml::pipeline::Transformer;
-use crate::series::Series;
-use crate::na::DataValue;
-use rand::{Rng, SeedableRng};
+use rand::Rng;
+use rand::SeedableRng;
 use rand::rngs::StdRng;
 use std::collections::{HashMap, HashSet};
 
@@ -142,7 +142,7 @@ impl IsolationForest {
             // 最低1つの特徴量を選択
             return Some(Box::new(ITreeNode {
                 split_feature: Some(rng.gen_range(0..n_features)),
-                split_threshold: Some(rng.gen::<f64>()),
+                split_threshold: Some(rng.gen()),
                 left: None,
                 right: None,
                 depth,
@@ -229,24 +229,54 @@ impl IsolationForest {
         
         c.round() as usize
     }
+    
+    /// カラムから数値データを抽出するヘルパーメソッド
+    fn extract_numeric_values(&self, col: &ColumnView) -> Result<Vec<f64>> {
+        match col.column_type() {
+            crate::column::ColumnType::Float64 => {
+                let mut values = Vec::with_capacity(col.len());
+                for i in 0..col.len() {
+                    if let Some(value) = col.get_f64(i)? {
+                        values.push(value);
+                    } else {
+                        values.push(0.0); // NAは0として扱う（または適切な戦略を実装）
+                    }
+                }
+                Ok(values)
+            },
+            crate::column::ColumnType::Int64 => {
+                let mut values = Vec::with_capacity(col.len());
+                for i in 0..col.len() {
+                    if let Some(value) = col.get_i64(i)? {
+                        values.push(value as f64);
+                    } else {
+                        values.push(0.0); // NAは0として扱う
+                    }
+                }
+                Ok(values)
+            },
+            _ => Err(Error::Type(format!("Column type {:?} cannot be converted to numeric", col.column_type())))
+        }
+    }
 }
 
 impl Transformer for IsolationForest {
-    fn fit(&mut self, df: &DataFrame) -> Result<()> {
+    fn fit(&mut self, df: &OptimizedDataFrame) -> Result<()> {
         // 数値列のみ抽出
         let numeric_columns: Vec<String> = df.column_names()
             .into_iter()
             .filter(|col_name| {
-                if let Some(series) = df.column(col_name) {
-                    matches!(series.get(0), DataValue::Float64(_) | DataValue::Int64(_))
+                if let Ok(col_view) = df.column(col_name) {
+                    col_view.as_float64().is_some() || col_view.as_int64().is_some()
                 } else {
                     false
                 }
             })
+            .map(|s| s.to_string())
             .collect();
         
         if numeric_columns.is_empty() {
-            return Err(crate::error::Error::InvalidOperation(
+            return Err(Error::InvalidOperation(
                 "DataFrame must contain at least one numeric column for IsolationForest".to_string()
             ));
         }
@@ -254,25 +284,19 @@ impl Transformer for IsolationForest {
         self.feature_names = numeric_columns.clone();
         
         // データの準備
-        let n_samples = df.nrows();
+        let n_samples = df.row_count();
         let n_features = self.feature_names.len();
         let mut data = vec![vec![0.0; n_features]; n_samples];
         
         // データの読み込み
         for (col_idx, col_name) in self.feature_names.iter().enumerate() {
-            let series = df.column(col_name).unwrap();
+            let column = df.column(col_name)?;
+            
+            let values = self.extract_numeric_values(&column)?;
             
             for row_idx in 0..n_samples {
-                match series.get(row_idx) {
-                    DataValue::Float64(v) => {
-                        data[row_idx][col_idx] = *v;
-                    }
-                    DataValue::Int64(v) => {
-                        data[row_idx][col_idx] = *v as f64;
-                    }
-                    _ => {
-                        data[row_idx][col_idx] = 0.0;
-                    }
+                if row_idx < values.len() {
+                    data[row_idx][col_idx] = values[row_idx];
                 }
             }
         }
@@ -297,7 +321,13 @@ impl Transformer for IsolationForest {
         for _ in 0..self.n_estimators {
             // サブサンプリング
             let mut indices: Vec<usize> = (0..n_samples).collect();
-            indices.shuffle(&mut rng);
+            
+            // インデックスをシャッフル
+            for i in (1..indices.len()).rev() {
+                let j = rng.gen_range(0..=i);
+                indices.swap(i, j);
+            }
+            
             indices.truncate(sub_sample_size);
             
             // 木を構築
@@ -347,9 +377,9 @@ impl Transformer for IsolationForest {
         Ok(())
     }
     
-    fn transform(&self, df: &DataFrame) -> Result<DataFrame> {
+    fn transform(&self, df: &OptimizedDataFrame) -> Result<OptimizedDataFrame> {
         if !self.fitted {
-            return Err(crate::error::Error::InvalidOperation(
+            return Err(Error::InvalidOperation(
                 "IsolationForest has not been fitted yet".to_string()
             ));
         }
@@ -358,27 +388,16 @@ impl Transformer for IsolationForest {
         let mut result = df.clone();
         
         // 異常スコアと予測ラベルをデータフレームに追加
-        let scores = Series::from_vec(
-            self.anomaly_scores
-                .iter()
-                .map(|&s| DataValue::Float64(s))
-                .collect(),
-        )?;
+        let scores_column = Column::Float64(Float64Column::new(self.anomaly_scores.clone(), false, "anomaly_score".to_string())?);
+        let labels_column = Column::Int64(Int64Column::new(self.labels.clone(), false, "anomaly".to_string())?);
         
-        let labels = Series::from_vec(
-            self.labels
-                .iter()
-                .map(|&l| DataValue::Int64(l))
-                .collect(),
-        )?;
-        
-        result.add_column("anomaly_score".to_string(), scores)?;
-        result.add_column("anomaly".to_string(), labels)?;
+        result.add_column("anomaly_score".to_string(), scores_column)?;
+        result.add_column("anomaly".to_string(), labels_column)?;
         
         Ok(result)
     }
     
-    fn fit_transform(&mut self, df: &DataFrame) -> Result<DataFrame> {
+    fn fit_transform(&mut self, df: &OptimizedDataFrame) -> Result<OptimizedDataFrame> {
         self.fit(df)?;
         self.transform(df)
     }
@@ -507,24 +526,54 @@ impl LocalOutlierFactor {
         let direct_distance = self.compute_distance(&self.data[point_a_idx], &self.data[point_b_idx]);
         direct_distance.max(k_distance)
     }
+    
+    /// カラムから数値データを抽出するヘルパーメソッド
+    fn extract_numeric_values(&self, col: &ColumnView) -> Result<Vec<f64>> {
+        match col.column_type() {
+            crate::column::ColumnType::Float64 => {
+                let mut values = Vec::with_capacity(col.len());
+                for i in 0..col.len() {
+                    if let Some(value) = col.get_f64(i)? {
+                        values.push(value);
+                    } else {
+                        values.push(0.0); // NAは0として扱う（または適切な戦略を実装）
+                    }
+                }
+                Ok(values)
+            },
+            crate::column::ColumnType::Int64 => {
+                let mut values = Vec::with_capacity(col.len());
+                for i in 0..col.len() {
+                    if let Some(value) = col.get_i64(i)? {
+                        values.push(value as f64);
+                    } else {
+                        values.push(0.0); // NAは0として扱う
+                    }
+                }
+                Ok(values)
+            },
+            _ => Err(Error::Type(format!("Column type {:?} cannot be converted to numeric", col.column_type())))
+        }
+    }
 }
 
 impl Transformer for LocalOutlierFactor {
-    fn fit(&mut self, df: &DataFrame) -> Result<()> {
+    fn fit(&mut self, df: &OptimizedDataFrame) -> Result<()> {
         // 数値列のみ抽出
         let numeric_columns: Vec<String> = df.column_names()
             .into_iter()
             .filter(|col_name| {
-                if let Some(series) = df.column(col_name) {
-                    matches!(series.get(0), DataValue::Float64(_) | DataValue::Int64(_))
+                if let Ok(col_view) = df.column(col_name) {
+                    col_view.as_float64().is_some() || col_view.as_int64().is_some()
                 } else {
                     false
                 }
             })
+            .map(|s| s.to_string())
             .collect();
         
         if numeric_columns.is_empty() {
-            return Err(crate::error::Error::InvalidOperation(
+            return Err(Error::InvalidOperation(
                 "DataFrame must contain at least one numeric column for LocalOutlierFactor".to_string()
             ));
         }
@@ -532,25 +581,19 @@ impl Transformer for LocalOutlierFactor {
         self.feature_names = numeric_columns.clone();
         
         // データの準備
-        let n_samples = df.nrows();
+        let n_samples = df.row_count();
         let n_features = self.feature_names.len();
         self.data = vec![vec![0.0; n_features]; n_samples];
         
         // データの読み込み
         for (col_idx, col_name) in self.feature_names.iter().enumerate() {
-            let series = df.column(col_name).unwrap();
+            let column = df.column(col_name)?;
+            
+            let values = self.extract_numeric_values(&column)?;
             
             for row_idx in 0..n_samples {
-                match series.get(row_idx) {
-                    DataValue::Float64(v) => {
-                        self.data[row_idx][col_idx] = *v;
-                    }
-                    DataValue::Int64(v) => {
-                        self.data[row_idx][col_idx] = *v as f64;
-                    }
-                    _ => {
-                        self.data[row_idx][col_idx] = 0.0;
-                    }
+                if row_idx < values.len() {
+                    self.data[row_idx][col_idx] = values[row_idx];
                 }
             }
         }
@@ -621,16 +664,16 @@ impl Transformer for LocalOutlierFactor {
         Ok(())
     }
     
-    fn transform(&self, df: &DataFrame) -> Result<DataFrame> {
+    fn transform(&self, df: &OptimizedDataFrame) -> Result<OptimizedDataFrame> {
         if !self.fitted {
-            return Err(crate::error::Error::InvalidOperation(
+            return Err(Error::InvalidOperation(
                 "LocalOutlierFactor has not been fitted yet".to_string()
             ));
         }
         
         // データサイズが一致しているか確認
-        if df.nrows() != self.lof_scores.len() {
-            return Err(crate::error::Error::InvalidOperation(
+        if df.row_count() != self.lof_scores.len() {
+            return Err(Error::InvalidOperation(
                 "Number of samples in the input DataFrame does not match the number of samples used during fitting".to_string()
             ));
         }
@@ -639,27 +682,16 @@ impl Transformer for LocalOutlierFactor {
         let mut result = df.clone();
         
         // LOFスコアと予測ラベルをデータフレームに追加
-        let scores = Series::from_vec(
-            self.lof_scores
-                .iter()
-                .map(|&s| DataValue::Float64(s))
-                .collect(),
-        )?;
+        let scores_column = Column::Float64(Float64Column::new(self.lof_scores.clone(), false, "lof_score".to_string())?);
+        let labels_column = Column::Int64(Int64Column::new(self.labels.clone(), false, "anomaly".to_string())?);
         
-        let labels = Series::from_vec(
-            self.labels
-                .iter()
-                .map(|&l| DataValue::Int64(l))
-                .collect(),
-        )?;
-        
-        result.add_column("lof_score".to_string(), scores)?;
-        result.add_column("anomaly".to_string(), labels)?;
+        result.add_column("lof_score".to_string(), scores_column)?;
+        result.add_column("anomaly".to_string(), labels_column)?;
         
         Ok(result)
     }
     
-    fn fit_transform(&mut self, df: &DataFrame) -> Result<DataFrame> {
+    fn fit_transform(&mut self, df: &OptimizedDataFrame) -> Result<OptimizedDataFrame> {
         self.fit(df)?;
         self.transform(df)
     }
@@ -748,24 +780,54 @@ impl OneClassSVM {
         
         sum - self.rho
     }
+    
+    /// カラムから数値データを抽出するヘルパーメソッド
+    fn extract_numeric_values(&self, col: &ColumnView) -> Result<Vec<f64>> {
+        match col.column_type() {
+            crate::column::ColumnType::Float64 => {
+                let mut values = Vec::with_capacity(col.len());
+                for i in 0..col.len() {
+                    if let Some(value) = col.get_f64(i)? {
+                        values.push(value);
+                    } else {
+                        values.push(0.0); // NAは0として扱う（または適切な戦略を実装）
+                    }
+                }
+                Ok(values)
+            },
+            crate::column::ColumnType::Int64 => {
+                let mut values = Vec::with_capacity(col.len());
+                for i in 0..col.len() {
+                    if let Some(value) = col.get_i64(i)? {
+                        values.push(value as f64);
+                    } else {
+                        values.push(0.0); // NAは0として扱う
+                    }
+                }
+                Ok(values)
+            },
+            _ => Err(Error::Type(format!("Column type {:?} cannot be converted to numeric", col.column_type())))
+        }
+    }
 }
 
 impl Transformer for OneClassSVM {
-    fn fit(&mut self, df: &DataFrame) -> Result<()> {
+    fn fit(&mut self, df: &OptimizedDataFrame) -> Result<()> {
         // 数値列のみ抽出
         let numeric_columns: Vec<String> = df.column_names()
             .into_iter()
             .filter(|col_name| {
-                if let Some(series) = df.column(col_name) {
-                    matches!(series.get(0), DataValue::Float64(_) | DataValue::Int64(_))
+                if let Ok(col_view) = df.column(col_name) {
+                    col_view.as_float64().is_some() || col_view.as_int64().is_some()
                 } else {
                     false
                 }
             })
+            .map(|s| s.to_string())
             .collect();
         
         if numeric_columns.is_empty() {
-            return Err(crate::error::Error::InvalidOperation(
+            return Err(Error::InvalidOperation(
                 "DataFrame must contain at least one numeric column for OneClassSVM".to_string()
             ));
         }
@@ -773,25 +835,19 @@ impl Transformer for OneClassSVM {
         self.feature_names = numeric_columns.clone();
         
         // データの準備
-        let n_samples = df.nrows();
+        let n_samples = df.row_count();
         let n_features = self.feature_names.len();
         let mut data = vec![vec![0.0; n_features]; n_samples];
         
         // データの読み込み
         for (col_idx, col_name) in self.feature_names.iter().enumerate() {
-            let series = df.column(col_name).unwrap();
+            let column = df.column(col_name)?;
+            
+            let values = self.extract_numeric_values(&column)?;
             
             for row_idx in 0..n_samples {
-                match series.get(row_idx) {
-                    DataValue::Float64(v) => {
-                        data[row_idx][col_idx] = *v;
-                    }
-                    DataValue::Int64(v) => {
-                        data[row_idx][col_idx] = *v as f64;
-                    }
-                    _ => {
-                        data[row_idx][col_idx] = 0.0;
-                    }
+                if row_idx < values.len() {
+                    data[row_idx][col_idx] = values[row_idx];
                 }
             }
         }
@@ -924,16 +980,16 @@ impl Transformer for OneClassSVM {
         Ok(())
     }
     
-    fn transform(&self, df: &DataFrame) -> Result<DataFrame> {
+    fn transform(&self, df: &OptimizedDataFrame) -> Result<OptimizedDataFrame> {
         if !self.fitted {
-            return Err(crate::error::Error::InvalidOperation(
+            return Err(Error::InvalidOperation(
                 "OneClassSVM has not been fitted yet".to_string()
             ));
         }
         
         // データサイズが一致しているか確認
-        if df.nrows() != self.decision_scores.len() {
-            return Err(crate::error::Error::InvalidOperation(
+        if df.row_count() != self.decision_scores.len() {
+            return Err(Error::InvalidOperation(
                 "Number of samples in the input DataFrame does not match the number of samples used during fitting".to_string()
             ));
         }
@@ -942,27 +998,16 @@ impl Transformer for OneClassSVM {
         let mut result = df.clone();
         
         // 決定スコアと予測ラベルをデータフレームに追加
-        let scores = Series::from_vec(
-            self.decision_scores
-                .iter()
-                .map(|&s| DataValue::Float64(s))
-                .collect(),
-        )?;
+        let scores_column = Column::Float64(Float64Column::new(self.decision_scores.clone(), false, "decision_score".to_string())?);
+        let labels_column = Column::Int64(Int64Column::new(self.labels.clone(), false, "anomaly".to_string())?);
         
-        let labels = Series::from_vec(
-            self.labels
-                .iter()
-                .map(|&l| DataValue::Int64(l))
-                .collect(),
-        )?;
-        
-        result.add_column("decision_score".to_string(), scores)?;
-        result.add_column("anomaly".to_string(), labels)?;
+        result.add_column("decision_score".to_string(), scores_column)?;
+        result.add_column("anomaly".to_string(), labels_column)?;
         
         Ok(result)
     }
     
-    fn fit_transform(&mut self, df: &DataFrame) -> Result<DataFrame> {
+    fn fit_transform(&mut self, df: &OptimizedDataFrame) -> Result<OptimizedDataFrame> {
         self.fit(df)?;
         self.transform(df)
     }
