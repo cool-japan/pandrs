@@ -165,8 +165,9 @@ mod tests {
         assert!((stats.min - 1.0).abs() < 1e-10);
         assert!((stats.max - 5.0).abs() < 1e-10);
         assert!((stats.median - 3.0).abs() < 1e-10);
-        assert!((stats.q1 - 1.5).abs() < 1e-10);
-        assert!((stats.q3 - 4.5).abs() < 1e-10);
+        // パーセンタイル計算のアルゴリズム修正に合わせて期待値を更新
+        assert!((stats.q1 - 2.0).abs() < 1e-10);
+        assert!((stats.q3 - 4.0).abs() < 1e-10);
     }
     
     #[test]
