@@ -39,7 +39,7 @@ pub use dataframe::{MeltOptions, StackOptions, UnstackOptions};
 pub use stats::{DescriptiveStats, TTestResult, LinearRegressionResult};
 pub use vis::{OutputFormat, PlotConfig, PlotType};
 pub use ml::pipeline::Pipeline;
-pub use ml::preprocessing::{StandardScaler, MinMaxScaler, OneHotEncoder};
+pub use ml::preprocessing::{StandardScaler, MinMaxScaler, OneHotEncoder, PolynomialFeatures, Binner, Imputer, ImputeStrategy, FeatureSelector};
 
 // Export version info
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
