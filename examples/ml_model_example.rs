@@ -1,4 +1,5 @@
 use pandrs::*;
+use pandrs::dataframe::DataValue;
 use pandrs::ml::models::{SupervisedModel, LinearRegression, LogisticRegression};
 use pandrs::ml::models::model_selection::{train_test_split, cross_val_score};
 use pandrs::ml::models::model_persistence::ModelPersistence;
@@ -220,7 +221,7 @@ fn model_persistence_example() -> Result<(), PandRSError> {
 
 // 回帰データの生成
 fn create_regression_data() -> Result<DataFrame, PandRSError> {
-    let mut rng = rand::rng();
+    let mut rng = rand::thread_rng();
     
     // 100行のデータを生成
     let n = 100;
@@ -252,7 +253,7 @@ fn create_regression_data() -> Result<DataFrame, PandRSError> {
 
 // 分類データの生成
 fn create_classification_data() -> Result<DataFrame, PandRSError> {
-    let mut rng = rand::rng();
+    let mut rng = rand::thread_rng();
     
     // 100行のデータを生成
     let n = 100;
