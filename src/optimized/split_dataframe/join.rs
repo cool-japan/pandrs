@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 
 use super::core::OptimizedDataFrame;
-use crate::column::{Column, ColumnType, Int64Column, BooleanColumn};
+use crate::column::{Column, ColumnType, Int64Column, BooleanColumn, ColumnTrait};
 use crate::error::{Error, Result};
 
 /// 結合タイプを表す列挙型

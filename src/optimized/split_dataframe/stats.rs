@@ -82,7 +82,17 @@ impl OptimizedDataFrame {
                 ("max".to_string(), stats.max),
             ];
             
-            Ok(StatDescribe { stats, stats_list })
+            let mut result = HashMap::new();
+            result.insert("count".to_string(), stats.count as f64);
+            result.insert("mean".to_string(), stats.mean);
+            result.insert("std".to_string(), stats.std);
+            result.insert("min".to_string(), stats.min);
+            result.insert("25%".to_string(), stats.q1);
+            result.insert("50%".to_string(), stats.median);
+            result.insert("75%".to_string(), stats.q3);
+            result.insert("max".to_string(), stats.max);
+            
+            Ok(StatDescribe { stats: result, stats_list })
         } else if let Some(int_col) = col.as_int64() {
             // 整数列の場合は浮動小数点に変換して計算
             let values: Vec<f64> = (0..self.row_count())
@@ -115,7 +125,17 @@ impl OptimizedDataFrame {
                 ("max".to_string(), stats.max),
             ];
             
-            Ok(StatDescribe { stats, stats_list })
+            let mut result = HashMap::new();
+            result.insert("count".to_string(), stats.count as f64);
+            result.insert("mean".to_string(), stats.mean);
+            result.insert("std".to_string(), stats.std);
+            result.insert("min".to_string(), stats.min);
+            result.insert("25%".to_string(), stats.q1);
+            result.insert("50%".to_string(), stats.median);
+            result.insert("75%".to_string(), stats.q3);
+            result.insert("max".to_string(), stats.max);
+            
+            Ok(StatDescribe { stats: result, stats_list })
         } else {
             Err(crate::error::Error::Type(format!("列 '{}' は数値型ではありません", column_name)))
         }
@@ -387,10 +407,15 @@ impl OptimizedDataFrame {
                 count_values.get(i)
             ) {
                 if let (Some(row_idx), Some(col_idx)) = (
-                    unique_rows.iter().position(|r| r == row_val),
-                    unique_cols.iter().position(|c| c == col_val)
+                    unique_rows.iter().position(|r| r == &row_val),
+                    unique_cols.iter().position(|c| c == &col_val)
                 ) {
-                    observed[row_idx][col_idx] += count;
+                    // カウント値がある場合はそれを、なければ1.0を追加
+                    if let Some(cnt) = count {
+                        observed[row_idx][col_idx] += *cnt;
+                    } else {
+                        observed[row_idx][col_idx] += 1.0;
+                    }
                 }
             }
         }

@@ -1,8 +1,7 @@
 //! ColumnViewの実装
 
 use super::core::ColumnView;
-use crate::column::{Column, Int64Column, Float64Column, StringColumn, BooleanColumn};
-use crate::column::common::ColumnType;
+use crate::column::{Column, Int64Column, Float64Column, StringColumn, BooleanColumn, ColumnType};
 use crate::error::{Error, Result};
 use std::any::Any;
 

@@ -15,7 +15,7 @@ impl OptimizedDataFrame {
     pub fn set_index(&mut self, index: DataFrameIndex<String>) -> Result<()> {
         // インデックス長がデータフレームの行数と一致するか確認
         if index.len() != self.row_count {
-            return Err(Error::IndexError(format!(
+            return Err(Error::Index(format!(
                 "インデックスの長さ ({}) がデータフレームの行数 ({}) と一致しません",
                 index.len(),
                 self.row_count
@@ -44,7 +44,7 @@ impl OptimizedDataFrame {
             return Ok(());
         }
 
-        let index = DataFrameIndex::default_with_len(self.row_count)?;
+        let index = DataFrameIndex::<String>::default_with_len(self.row_count)?;
         self.index = Some(index);
         Ok(())
     }
@@ -84,7 +84,7 @@ impl OptimizedDataFrame {
                     },
                     crate::column::Column::String(c) => {
                         if let Ok(Some(v)) = c.get(i) {
-                            Some(v.clone())
+                            Some(v.to_string())
                         } else {
                             Some("NULL".to_string())
                         }
@@ -107,7 +107,9 @@ impl OptimizedDataFrame {
         
         // 元の列を削除するかどうか
         if drop {
-            self.drop_column(column_name)?;
+            // 列の削除機能を実装する必要があります
+            // self.drop_column(column_name)?;
+            return Err(Error::NotImplemented("列の削除機能はまだ実装されていません".to_string()));
         }
         
         Ok(())
@@ -174,15 +176,17 @@ impl OptimizedDataFrame {
             
             if let Some(row_idx) = pos {
                 // 行インデックスを使用して行を抽出
-                self.get_row(row_idx)
+                // 1行を含むDataFrameを作成
+                let indices = vec![row_idx];
+                self.filter_by_indices(&indices)
             } else {
-                Err(Error::IndexError(format!(
+                Err(Error::Index(format!(
                     "インデックス '{}' が見つかりません",
                     key
                 )))
             }
         } else {
-            Err(Error::IndexError("インデックスが設定されていません".to_string()))
+            Err(Error::Index("インデックスが設定されていません".to_string()))
         }
     }
 
@@ -199,7 +203,7 @@ impl OptimizedDataFrame {
         S: AsRef<str>,
     {
         if self.index.is_none() {
-            return Err(Error::IndexError("インデックスが設定されていません".to_string()));
+            return Err(Error::Index("インデックスが設定されていません".to_string()));
         }
         
         let index = self.index.as_ref().unwrap();
@@ -217,7 +221,7 @@ impl OptimizedDataFrame {
             if let Some(idx) = pos {
                 indices.push(idx);
             } else {
-                return Err(Error::IndexError(format!(
+                return Err(Error::Index(format!(
                     "インデックス '{}' が見つかりません",
                     key.as_ref()
                 )));

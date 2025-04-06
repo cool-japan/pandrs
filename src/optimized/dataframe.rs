@@ -9,6 +9,8 @@ use crate::column::{Column, ColumnTrait, ColumnType, Int64Column, Float64Column,
 use crate::error::{Error, Result};
 use crate::index::{DataFrameIndex, IndexTrait, Index};
 use crate::optimized::operations::JoinType;
+use crate::optimized::split_dataframe::io::ParquetCompression;
+use simple_excel_writer::{Workbook, Sheet};
 
 /// 最適化されたDataFrame実装
 /// 列指向ストレージを使用し、高速なデータ処理を実現
@@ -2434,5 +2436,259 @@ impl ColumnView {
     /// 内部のColumnを取得（消費的）
     pub fn into_column(self) -> Column {
         self.column
+    }
+}
+
+// IO関連のメソッドを追加
+impl OptimizedDataFrame {
+
+    /// Excelファイルからデータフレームを読み込む
+    pub fn from_excel<P: AsRef<Path>>(
+        path: P, 
+        sheet_name: Option<&str>,
+        header: bool,
+        skip_rows: usize,
+        use_cols: Option<&[&str]>,
+    ) -> Result<Self> {
+        let df = crate::io::read_excel(path, sheet_name, header, skip_rows, use_cols)?;
+        Self::from_standard_dataframe(&df)
+    }
+
+    /// データフレームをExcelファイルに書き込む
+    pub fn to_excel<P: AsRef<Path>>(
+        &self,
+        path: P,
+        sheet_name: Option<&str>,
+        index: bool,
+    ) -> Result<()> {
+        // 新しいExcelファイルを作成
+        let mut workbook = simple_excel_writer::Workbook::create(path.as_ref()
+            .to_str()
+            .ok_or_else(|| Error::IoError("ファイルパスを文字列に変換できませんでした".to_string()))?);
+        
+        let sheet_name = sheet_name.unwrap_or("Sheet1");
+        
+        // シートを作成
+        let mut sheet = workbook.create_sheet(sheet_name);
+        
+        // ヘッダー行を作成
+        let mut headers = Vec::new();
+        
+        // インデックスを含める場合
+        if index {
+            headers.push("Index".to_string());
+        }
+        
+        // 列名を追加
+        for col_name in &self.column_names {
+            headers.push(col_name.clone());
+        }
+        
+        // データを書き込む
+        workbook.write_sheet(&mut sheet, |sheet_writer| {
+            // ヘッダー行を追加
+            if !headers.is_empty() {
+                let header_row: Vec<&str> = headers.iter().map(|s| s.as_str()).collect();
+                // Rowを直接作成
+                let row = simple_excel_writer::Row::from_iter(header_row.iter().cloned());
+                sheet_writer.append_row(row)?;
+            }
+            
+            // データ行を書き込む
+            for row_idx in 0..self.row_count {
+                let mut row_values = Vec::new();
+                
+                // インデックスを含める場合
+                if index {
+                    row_values.push(row_idx.to_string());
+                }
+                
+                // 各列のデータを追加
+                for col_idx in 0..self.columns.len() {
+                    let col = &self.columns[col_idx];
+                    let value = match col {
+                        Column::Int64(c) => {
+                            if let Ok(Some(val)) = c.get(row_idx) {
+                                val.to_string()
+                            } else {
+                                String::new()
+                            }
+                        },
+                        Column::Float64(c) => {
+                            if let Ok(Some(val)) = c.get(row_idx) {
+                                val.to_string()
+                            } else {
+                                String::new()
+                            }
+                        },
+                        Column::String(c) => {
+                            if let Ok(Some(val)) = c.get(row_idx) {
+                                val.to_string()
+                            } else {
+                                String::new()
+                            }
+                        },
+                        Column::Boolean(c) => {
+                            if let Ok(Some(val)) = c.get(row_idx) {
+                                val.to_string()
+                            } else {
+                                String::new()
+                            }
+                        },
+                    };
+                    
+                    row_values.push(value);
+                }
+                
+                // 行をExcelに追加（文字列参照のスライスに変換）
+                let row_str_refs: Vec<&str> = row_values.iter().map(|s| s.as_str()).collect();
+                // Rowを直接作成
+                let row = simple_excel_writer::Row::from_iter(row_str_refs.iter().cloned());
+                sheet_writer.append_row(row)?;
+            }
+            
+            Ok(())
+        })?;
+        
+        // ワークブックを閉じて保存
+        workbook.close()
+            .map_err(|e| Error::IoError(format!("Excelファイルを保存できませんでした: {}", e)))?;
+        
+        Ok(())
+    }
+
+    /// データフレームをParquetファイルに書き込む
+    pub fn to_parquet<P: AsRef<Path>>(
+        &self,
+        path: P,
+        compression: Option<ParquetCompression>,
+    ) -> Result<()> {
+        // まず標準のDataFrameに変換
+        let df = self.to_standard_dataframe()?;
+        // 圧縮設定を変換
+        let io_compression = compression.map(|c| match c {
+            ParquetCompression::None => crate::io::parquet::ParquetCompression::None,
+            ParquetCompression::Snappy => crate::io::parquet::ParquetCompression::Snappy,
+            ParquetCompression::Gzip => crate::io::parquet::ParquetCompression::Gzip,
+            ParquetCompression::Lzo => crate::io::parquet::ParquetCompression::Lzo,
+            ParquetCompression::Brotli => crate::io::parquet::ParquetCompression::Brotli,
+            ParquetCompression::Lz4 => crate::io::parquet::ParquetCompression::Lz4,
+            ParquetCompression::Zstd => crate::io::parquet::ParquetCompression::Zstd,
+        });
+        // 標準APIを使用して書き込む
+        crate::io::write_parquet(&df, path, io_compression)
+    }
+
+    /// Parquetファイルからデータフレームを読み込む
+    pub fn from_parquet<P: AsRef<Path>>(path: P) -> Result<Self> {
+        let df = crate::io::read_parquet(path)?;
+        Self::from_standard_dataframe(&df)
+    }
+
+    /// 標準のDataFrameからOptimizedDataFrameを作成する
+    fn from_standard_dataframe(df: &crate::dataframe::DataFrame) -> Result<Self> {
+        let mut opt_df = Self::new();
+        
+        for col_name in df.column_names() {
+            if let Some(col) = df.get_column(col_name) {
+                // Seriesのイテレート用に値を一つずつ取り出し
+                let mut values = Vec::new();
+                for i in 0..col.len() {
+                    if let Some(val) = col.get(i) {
+                        values.push(val.to_string());
+                    } else {
+                        values.push(String::new());
+                    }
+                }
+                
+                // 型推論して列を追加
+                // 整数型
+                let all_ints = values.iter().all(|s| s.is_empty() || s.parse::<i64>().is_ok());
+                if all_ints {
+                    let int_values: Vec<i64> = values.iter()
+                        .map(|s| s.parse::<i64>().unwrap_or(0))
+                        .collect();
+                    opt_df.add_column(col_name.clone(), Column::Int64(Int64Column::new(int_values)))?;
+                    continue;
+                }
+                
+                // 浮動小数点型
+                let all_floats = values.iter().all(|s| s.is_empty() || s.parse::<f64>().is_ok());
+                if all_floats {
+                    let float_values: Vec<f64> = values.iter()
+                        .map(|s| s.parse::<f64>().unwrap_or(0.0))
+                        .collect();
+                    opt_df.add_column(col_name.clone(), Column::Float64(Float64Column::new(float_values)))?;
+                    continue;
+                }
+                
+                // ブール型
+                let all_bools = values.iter().all(|s| {
+                    let s = s.to_lowercase();
+                    s.is_empty() || s == "true" || s == "false" || s == "1" || s == "0"
+                });
+                if all_bools {
+                    let bool_values: Vec<bool> = values.iter()
+                        .map(|s| {
+                            let s = s.to_lowercase();
+                            s == "true" || s == "1"
+                        })
+                        .collect();
+                    opt_df.add_column(col_name.clone(), Column::Boolean(BooleanColumn::new(bool_values)))?;
+                    continue;
+                }
+                
+                // デフォルトは文字列型
+                opt_df.add_column(col_name.clone(), Column::String(StringColumn::new(values)))?;
+            }
+        }
+        
+        Ok(opt_df)
+    }
+    
+    /// OptimizedDataFrameを標準のDataFrameに変換する
+    fn to_standard_dataframe(&self) -> Result<crate::dataframe::DataFrame> {
+        let mut df = crate::dataframe::DataFrame::new();
+        
+        for (col_idx, col_name) in self.column_names.iter().enumerate() {
+            let col = &self.columns[col_idx];
+            let mut series_values = Vec::with_capacity(self.row_count);
+            
+            for row_idx in 0..self.row_count {
+                let value = match col {
+                    Column::Int64(int_col) => {
+                        match int_col.get(row_idx) {
+                            Ok(Some(val)) => val.to_string(),
+                            _ => String::new(),
+                        }
+                    },
+                    Column::Float64(float_col) => {
+                        match float_col.get(row_idx) {
+                            Ok(Some(val)) => val.to_string(),
+                            _ => String::new(),
+                        }
+                    },
+                    Column::String(str_col) => {
+                        match str_col.get(row_idx) {
+                            Ok(Some(val)) => val.to_string(),
+                            _ => String::new(),
+                        }
+                    },
+                    Column::Boolean(bool_col) => {
+                        match bool_col.get(row_idx) {
+                            Ok(Some(val)) => val.to_string(),
+                            _ => String::new(),
+                        }
+                    },
+                };
+                series_values.push(value);
+            }
+            
+            // シリーズを作成して追加
+            let series = crate::series::Series::new(series_values, Some(col_name.clone()))?;
+            df.add_column(col_name.clone(), series)?;
+        }
+        
+        Ok(df)
     }
 }

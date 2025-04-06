@@ -8,7 +8,6 @@ use std::sync::Arc;
 
 use calamine::{open_workbook, Reader, Xlsx};
 use csv::{ReaderBuilder, Writer};
-use office::excel::{Excel, Row, WorkbookContext};
 use rusqlite::{Connection, params};
 use serde_json::{Map, Value};
 use arrow::array::{ArrayRef, BooleanArray, Float64Array, Int64Array, StringArray};
@@ -18,6 +17,7 @@ use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 use parquet::arrow::arrow_writer::ArrowWriter;
 use parquet::basic::Compression;
 use parquet::file::properties::WriterProperties;
+use simple_excel_writer::{Workbook, Sheet};
 
 use super::core::OptimizedDataFrame;
 use crate::column::{Column, Int64Column, Float64Column, StringColumn, BooleanColumn};
@@ -67,7 +67,7 @@ impl OptimizedDataFrame {
     /// # Returns
     /// * `Result<Self>` - 読み込んだDataFrame
     pub fn from_csv<P: AsRef<Path>>(path: P, has_header: bool) -> Result<Self> {
-        let file = File::open(path.as_ref()).map_err(|e| Error::IO(e.to_string()))?;
+        let file = File::open(path.as_ref()).map_err(|e| Error::Io(e))?;
 
         // CSVリーダーを設定
         let mut rdr = ReaderBuilder::new()
@@ -81,14 +81,14 @@ impl OptimizedDataFrame {
         // ヘッダー行を取得
         let headers: Vec<String> = if has_header {
             rdr.headers()
-                .map_err(|e| Error::CSV(e.to_string()))?
+                .map_err(|e| Error::Csv(e))?
                 .iter()
                 .map(|h| h.to_string())
                 .collect()
         } else {
             // ヘッダーがない場合は、列名を生成
             if let Some(first_record_result) = rdr.records().next() {
-                let first_record = first_record_result.map_err(|e| Error::CSV(e.to_string()))?;
+                let first_record = first_record_result.map_err(|e| Error::Csv(e))?;
                 (0..first_record.len())
                     .map(|i| format!("column_{}", i))
                     .collect()
@@ -103,7 +103,7 @@ impl OptimizedDataFrame {
 
         // すべての行を読み込み
         for result in rdr.records() {
-            let record = result.map_err(|e| Error::CSV(e.to_string()))?;
+            let record = result.map_err(|e| Error::Csv(e))?;
             for (i, field) in record.iter().enumerate() {
                 if i < str_buffers.len() {
                     str_buffers[i].push(field.to_string());
@@ -190,18 +190,18 @@ impl OptimizedDataFrame {
     /// # Returns
     /// * `Result<()>` - 成功時はOk
     pub fn to_csv<P: AsRef<Path>>(&self, path: P, has_header: bool) -> Result<()> {
-        let file = File::create(path.as_ref()).map_err(|e| Error::IO(e.to_string()))?;
+        let file = File::create(path.as_ref()).map_err(|e| Error::Io(e))?;
         let mut wtr = Writer::from_writer(file);
 
         // ヘッダー行を書き込む
         if has_header {
             wtr.write_record(&self.column_names)
-                .map_err(|e| Error::CSV(e.to_string()))?;
+                .map_err(|e| Error::Csv(e))?;
         }
 
         // 行がない場合は何もせず終了
         if self.row_count == 0 {
-            wtr.flush().map_err(|e| Error::IO(e.to_string()))?;
+            wtr.flush().map_err(|e| Error::Io(e))?;
             return Ok(());
         }
 
@@ -244,10 +244,10 @@ impl OptimizedDataFrame {
                 row.push(value);
             }
             
-            wtr.write_record(&row).map_err(|e| Error::CSV(e.to_string()))?;
+            wtr.write_record(&row).map_err(|e| Error::Csv(e))?;
         }
 
-        wtr.flush().map_err(|e| Error::IO(e.to_string()))?;
+        wtr.flush().map_err(|e| Error::Io(e))?;
         Ok(())
     }
 
@@ -259,11 +259,11 @@ impl OptimizedDataFrame {
     /// # Returns
     /// * `Result<Self>` - 読み込んだDataFrame
     pub fn from_json<P: AsRef<Path>>(path: P) -> Result<Self> {
-        let file = File::open(path.as_ref()).map_err(|e| Error::IO(e.to_string()))?;
+        let file = File::open(path.as_ref()).map_err(|e| Error::Io(e))?;
         let reader = BufReader::new(file);
 
         // JSONを解析
-        let json_value: Value = serde_json::from_reader(reader).map_err(|e| Error::Json(e.to_string()))?;
+        let json_value: Value = serde_json::from_reader(reader).map_err(|e| Error::Json(e))?;
 
         match json_value {
             Value::Array(array) => Self::from_records_array(array),
@@ -456,7 +456,7 @@ impl OptimizedDataFrame {
     /// # Returns
     /// * `Result<()>` - 成功時はOk
     pub fn to_json<P: AsRef<Path>>(&self, path: P, orient: JsonOrient) -> Result<()> {
-        let file = File::create(path.as_ref()).map_err(|e| Error::IO(e.to_string()))?;
+        let file = File::create(path.as_ref()).map_err(|e| Error::Io(e))?;
         let writer = BufWriter::new(file);
 
         let json_value = match orient {
@@ -464,7 +464,7 @@ impl OptimizedDataFrame {
             JsonOrient::Columns => self.to_column_json()?,
         };
 
-        serde_json::to_writer_pretty(writer, &json_value).map_err(|e| Error::Json(e.to_string()))?;
+        serde_json::to_writer_pretty(writer, &json_value).map_err(|e| Error::Json(e))?;
 
         Ok(())
     }
@@ -663,19 +663,19 @@ impl OptimizedDataFrame {
         
         // ファイルを作成
         let file = File::create(path.as_ref())
-            .map_err(|e| Error::IO(format!("Parquetファイルを作成できませんでした: {}", e)))?;
+            .map_err(|e| Error::Io(format!("Parquetファイルを作成できませんでした: {}", e)))?;
         
         // Arrowライターを作成して書き込み
         let mut writer = ArrowWriter::try_new(file, schema_ref, Some(props))
-            .map_err(|e| Error::IO(format!("Parquetライターの作成に失敗しました: {}", e)))?;
+            .map_err(|e| Error::Io(format!("Parquetライターの作成に失敗しました: {}", e)))?;
         
         // レコードバッチを書き込む
         writer.write(&batch)
-            .map_err(|e| Error::IO(format!("レコードバッチの書き込みに失敗しました: {}", e)))?;
+            .map_err(|e| Error::Io(format!("レコードバッチの書き込みに失敗しました: {}", e)))?;
         
         // ファイルを閉じる
         writer.close()
-            .map_err(|e| Error::IO(format!("Parquetファイルの閉じる操作に失敗しました: {}", e)))?;
+            .map_err(|e| Error::Io(format!("Parquetファイルの閉じる操作に失敗しました: {}", e)))?;
         
         Ok(())
     }
@@ -690,24 +690,24 @@ impl OptimizedDataFrame {
     pub fn from_parquet<P: AsRef<Path>>(path: P) -> Result<Self> {
         // ファイルを開く
         let file = File::open(path.as_ref())
-            .map_err(|e| Error::IO(format!("Parquetファイルを開けませんでした: {}", e)))?;
+            .map_err(|e| Error::Io(format!("Parquetファイルを開けませんでした: {}", e)))?;
         
         // ArrowのParquetReaderを作成
         let builder = ParquetRecordBatchReaderBuilder::try_new(file)
-            .map_err(|e| Error::IO(format!("Parquetファイルの解析に失敗しました: {}", e)))?;
+            .map_err(|e| Error::Io(format!("Parquetファイルの解析に失敗しました: {}", e)))?;
         
         // スキーマ情報を取得
         let schema = builder.schema();
         
         // レコードバッチリーダーを作成
         let mut reader = builder.build()
-            .map_err(|e| Error::IO(format!("Parquetファイルの読み込みに失敗しました: {}", e)))?;
+            .map_err(|e| Error::Io(format!("Parquetファイルの読み込みに失敗しました: {}", e)))?;
         
         // 全てのレコードバッチを読み込む
         let mut all_batches = Vec::new();
         for batch_result in reader {
             let batch = batch_result
-                .map_err(|e| Error::IO(format!("レコードバッチの読み込みに失敗しました: {}", e)))?;
+                .map_err(|e| Error::Io(format!("レコードバッチの読み込みに失敗しました: {}", e)))?;
             all_batches.push(batch);
         }
         
@@ -841,19 +841,19 @@ impl OptimizedDataFrame {
     ) -> Result<Self> {
         // ファイルを開く
         let mut workbook: Xlsx<BufReader<File>> = open_workbook(path.as_ref())
-            .map_err(|e| Error::IO(format!("Excelファイルを開けませんでした: {}", e)))?;
+            .map_err(|e| Error::Io(format!("Excelファイルを開けませんでした: {}", e)))?;
         
         // シート名を取得（指定がなければ最初のシート）
         let sheet_name = match sheet_name {
             Some(name) => name.to_string(),
             None => workbook.sheet_names().get(0)
-                .ok_or_else(|| Error::IO("Excelファイルにシートがありません".to_string()))?
+                .ok_or_else(|| Error::Io("Excelファイルにシートがありません".to_string()))?
                 .clone(),
         };
         
         // シートを取得
         let range = workbook.worksheet_range(&sheet_name)
-            .map_err(|e| Error::IO(format!("シート '{}' を読み込めませんでした: {}", sheet_name, e)))?;
+            .map_err(|e| Error::Io(format!("シート '{}' を読み込めませんでした: {}", sheet_name, e)))?;
         
         // 列名（ヘッダー）を取得
         let mut column_names: Vec<String> = Vec::new();
@@ -1002,14 +1002,16 @@ impl OptimizedDataFrame {
         index: bool,
     ) -> Result<()> {
         // 新しいExcelファイルを作成
-        let mut workbook = Excel::new();
+        let mut workbook = Workbook::create(path.as_ref()
+            .to_str()
+            .ok_or_else(|| Error::Io("ファイルパスを文字列に変換できませんでした".to_string()))?);
+        
         let sheet_name = sheet_name.unwrap_or("Sheet1");
         
-        // シートを追加
-        let worksheet = workbook.create_worksheet(sheet_name);
-        let context = WorkbookContext::new();
+        // シートを作成
+        let mut sheet = workbook.create_sheet(sheet_name);
         
-        // ヘッダー行を追加
+        // ヘッダー行を作成
         let mut headers = Vec::new();
         
         // インデックスを含める場合
@@ -1022,66 +1024,74 @@ impl OptimizedDataFrame {
             headers.push(col_name.clone());
         }
         
-        // ヘッダー行を書き込む
-        let header_row = worksheet.add_row();
-        for (col_idx, header) in headers.iter().enumerate() {
-            header_row.set_value(col_idx as u32, header.clone(), &context);
-        }
-        
-        // データ行を書き込む
-        for row_idx in 0..self.row_count {
-            let row = worksheet.add_row();
-            let mut col_offset = 0;
-            
-            // インデックスを含める場合
-            if index {
-                row.set_value(0, row_idx.to_string(), &context);
-                col_offset = 1;
+        // データを書き込む
+        workbook.write_sheet(&mut sheet, |sheet_writer| {
+            // ヘッダー行を追加
+            if !headers.is_empty() {
+                let header_row: Vec<&str> = headers.iter().map(|s| s.as_str()).collect();
+                // Rowを直接作成
+                let row = simple_excel_writer::Row::from_iter(header_row.iter().cloned());
+                sheet_writer.append_row(row)?;
             }
             
-            // 各列のデータを書き込む
-            for (col_idx, col) in self.columns.iter().enumerate() {
-                let value = match col {
-                    Column::Int64(c) => {
-                        if let Ok(Some(val)) = c.get(row_idx) {
-                            val.to_string()
-                        } else {
-                            String::new()
-                        }
-                    },
-                    Column::Float64(c) => {
-                        if let Ok(Some(val)) = c.get(row_idx) {
-                            val.to_string()
-                        } else {
-                            String::new()
-                        }
-                    },
-                    Column::String(c) => {
-                        if let Ok(Some(val)) = c.get(row_idx) {
-                            val.clone()
-                        } else {
-                            String::new()
-                        }
-                    },
-                    Column::Boolean(c) => {
-                        if let Ok(Some(val)) = c.get(row_idx) {
-                            val.to_string()
-                        } else {
-                            String::new()
-                        }
-                    },
-                };
+            // データ行を書き込む
+            for row_idx in 0..self.row_count {
+                let mut row_values = Vec::new();
                 
-                row.set_value((col_idx + col_offset) as u32, value, &context);
+                // インデックスを含める場合
+                if index {
+                    row_values.push(row_idx.to_string());
+                }
+                
+                // 各列のデータを追加
+                for col in &self.columns {
+                    let value = match col {
+                        Column::Int64(c) => {
+                            if let Ok(Some(val)) = c.get(row_idx) {
+                                val.to_string()
+                            } else {
+                                String::new()
+                            }
+                        },
+                        Column::Float64(c) => {
+                            if let Ok(Some(val)) = c.get(row_idx) {
+                                val.to_string()
+                            } else {
+                                String::new()
+                            }
+                        },
+                        Column::String(c) => {
+                            if let Ok(Some(val)) = c.get(row_idx) {
+                                val.clone()
+                            } else {
+                                String::new()
+                            }
+                        },
+                        Column::Boolean(c) => {
+                            if let Ok(Some(val)) = c.get(row_idx) {
+                                val.to_string()
+                            } else {
+                                String::new()
+                            }
+                        },
+                    };
+                    
+                    row_values.push(value);
+                }
+                
+                // 行をExcelに追加（文字列参照のスライスに変換）
+                let row_str_refs: Vec<&str> = row_values.iter().map(|s| s.as_str()).collect();
+                // Rowを直接作成
+                let row = simple_excel_writer::Row::from_iter(row_str_refs.iter().cloned());
+                sheet_writer.append_row(row)?;
             }
-        }
+            
+            Ok(())
+        })?;
         
-        // ファイルに保存
-        let file = File::create(path)
-            .map_err(|e| Error::IO(format!("Excelファイルを作成できませんでした: {}", e)))?;
-        let mut writer = BufWriter::new(file);
-        workbook.save(&mut writer)
-            .map_err(|e| Error::IO(format!("Excelファイルに書き込めませんでした: {}", e)))?;
+        // ワークブックを閉じて保存
+        workbook.close()
+            .map_err(|e| Error::Io(format!("Excelファイルを保存できませんでした: {}", e)))?;
         
         Ok(())
     }
@@ -1097,11 +1107,11 @@ impl OptimizedDataFrame {
     pub fn from_sql<P: AsRef<Path>>(query: &str, db_path: P) -> Result<Self> {
         // データベース接続
         let conn = Connection::open(db_path)
-            .map_err(|e| Error::IO(format!("データベースに接続できませんでした: {}", e)))?;
+            .map_err(|e| Error::Io(format!("データベースに接続できませんでした: {}", e)))?;
         
         // クエリを準備
         let mut stmt = conn.prepare(query)
-            .map_err(|e| Error::IO(format!("SQLクエリの準備に失敗しました: {}", e)))?;
+            .map_err(|e| Error::Io(format!("SQLクエリの準備に失敗しました: {}", e)))?;
         
         // 列名を取得
         let column_names: Vec<String> = stmt.column_names().iter()
@@ -1116,15 +1126,15 @@ impl OptimizedDataFrame {
         
         // クエリを実行して結果を取得
         let mut rows = stmt.query([])
-            .map_err(|e| Error::IO(format!("SQLクエリの実行に失敗しました: {}", e)))?;
+            .map_err(|e| Error::Io(format!("SQLクエリの実行に失敗しました: {}", e)))?;
         
         // 各行のデータを処理
         while let Some(row) = rows.next()
-            .map_err(|e| Error::IO(format!("SQLクエリの結果取得に失敗しました: {}", e)))? {
+            .map_err(|e| Error::Io(format!("SQLクエリの結果取得に失敗しました: {}", e)))? {
             
             for (idx, name) in column_names.iter().enumerate() {
                 let value: Option<String> = row.get(idx)
-                    .map_err(|e| Error::IO(format!("行データの取得に失敗しました: {}", e)))?;
+                    .map_err(|e| Error::Io(format!("行データの取得に失敗しました: {}", e)))?;
                 
                 if let Some(data) = column_data.get_mut(name) {
                     data.push(value.unwrap_or_else(|| "NULL".to_string()));
@@ -1222,24 +1232,24 @@ impl OptimizedDataFrame {
     pub fn to_sql<P: AsRef<Path>>(&self, table_name: &str, db_path: P, if_exists: &str) -> Result<()> {
         // データベース接続
         let conn = Connection::open(db_path)
-            .map_err(|e| Error::IO(format!("データベースに接続できませんでした: {}", e)))?;
+            .map_err(|e| Error::Io(format!("データベースに接続できませんでした: {}", e)))?;
         
         // テーブルが存在するか確認
         let table_exists = conn.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name=?")
-            .map_err(|e| Error::IO(format!("テーブル確認クエリの準備に失敗しました: {}", e)))?
+            .map_err(|e| Error::Io(format!("テーブル確認クエリの準備に失敗しました: {}", e)))?
             .exists(params![table_name])
-            .map_err(|e| Error::IO(format!("テーブル存在確認に失敗しました: {}", e)))?;
+            .map_err(|e| Error::Io(format!("テーブル存在確認に失敗しました: {}", e)))?;
         
         // if_exists に基づいてテーブルを処理
         if table_exists {
             match if_exists {
                 "fail" => {
-                    return Err(Error::IO(format!("テーブル '{}' は既に存在します", table_name)));
+                    return Err(Error::Io(format!("テーブル '{}' は既に存在します", table_name)));
                 },
                 "replace" => {
                     // テーブルを削除して新規作成
                     conn.execute(&format!("DROP TABLE IF EXISTS {}", table_name), [])
-                        .map_err(|e| Error::IO(format!("テーブルの削除に失敗しました: {}", e)))?;
+                        .map_err(|e| Error::Io(format!("テーブルの削除に失敗しました: {}", e)))?;
                     
                     // 新しいテーブルを作成
                     self.create_table_from_df(&conn, table_name)?;
@@ -1248,7 +1258,7 @@ impl OptimizedDataFrame {
                     // テーブルは既に存在するので、このままデータを追加
                 },
                 _ => {
-                    return Err(Error::IO(format!("不明なif_exists値: {}", if_exists)));
+                    return Err(Error::Io(format!("不明なif_exists値: {}", if_exists)));
                 }
             }
         } else {
@@ -1271,7 +1281,7 @@ impl OptimizedDataFrame {
         
         // トランザクション開始
         let tx = conn.transaction()
-            .map_err(|e| Error::IO(format!("トランザクションの開始に失敗しました: {}", e)))?;
+            .map_err(|e| Error::Io(format!("トランザクションの開始に失敗しました: {}", e)))?;
         
         // 各行のデータを挿入
         for row_idx in 0..self.row_count {
@@ -1315,19 +1325,19 @@ impl OptimizedDataFrame {
             
             // INSERT実行
             let mut stmt = tx.prepare(&insert_sql)
-                .map_err(|e| Error::IO(format!("INSERT文の準備に失敗しました: {}", e)))?;
+                .map_err(|e| Error::Io(format!("INSERT文の準備に失敗しました: {}", e)))?;
             
             let params: Vec<&dyn rusqlite::ToSql> = row_values.iter()
                 .map(|s| s as &dyn rusqlite::ToSql)
                 .collect();
             
             stmt.execute(params.as_slice())
-                .map_err(|e| Error::IO(format!("データの挿入に失敗しました: {}", e)))?;
+                .map_err(|e| Error::Io(format!("データの挿入に失敗しました: {}", e)))?;
         }
         
         // トランザクションをコミット
         tx.commit()
-            .map_err(|e| Error::IO(format!("トランザクションのコミットに失敗しました: {}", e)))?;
+            .map_err(|e| Error::Io(format!("トランザクションのコミットに失敗しました: {}", e)))?;
         
         Ok(())
     }
@@ -1351,7 +1361,7 @@ impl OptimizedDataFrame {
         // CREATE TABLE文を作成して実行
         let create_sql = format!("CREATE TABLE {} ({})", table_name, columns.join(", "));
         conn.execute(&create_sql, [])
-            .map_err(|e| Error::IO(format!("テーブルの作成に失敗しました: {}", e)))?;
+            .map_err(|e| Error::Io(format!("テーブルの作成に失敗しました: {}", e)))?;
         
         Ok(())
     }
