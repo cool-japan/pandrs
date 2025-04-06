@@ -852,6 +852,29 @@ impl OptimizedDataFrame {
         Ok(())
     }
     
+    /// 文字列インデックスを直接設定する内部メソッド（変換処理用）
+    /// 
+    /// # Arguments
+    /// * `index` - 設定するインデックス
+    ///
+    /// # Returns
+    /// * `Result<()>` - 成功した場合はOk、失敗した場合はエラー
+    #[deprecated(note = "This is an internal method that should not be used directly. Use set_index_from_simple_index instead.")]
+    pub fn set_index_from_simple_index_internal(&mut self, index: crate::index::Index<String>) -> Result<()> {
+        // インデックス長がデータフレームの行数と一致するか確認
+        if self.row_count > 0 && index.len() != self.row_count {
+            return Err(crate::error::Error::Index(format!(
+                "インデックスの長さ ({}) がデータフレームの行数 ({}) と一致しません",
+                index.len(),
+                self.row_count
+            )));
+        }
+        
+        // シンプルなインデックスに変換して設定
+        self.index = Some(crate::index::DataFrameIndex::Simple(index));
+        Ok(())
+    }
+    
     /// 整数インデックスを使用して行を取得（新しいDataFrameとして）
     pub fn get_row(&self, row_idx: usize) -> Result<Self> {
         if row_idx >= self.row_count {
@@ -1264,7 +1287,9 @@ impl OptimizedDataFrame {
         }
         
         // SplitDataFrameのselect_rows_columnsを呼び出す
-        let split_result = split_df.select_rows_columns(indices, None)?;
+        // 空の配列を渡して全列を選択
+        let empty_cols: [&str; 0] = [];
+        let split_result = split_df.select_rows_columns(indices, &empty_cols)?;
         
         // 結果をOptimizedDataFrameに変換
         let mut result = Self::new();

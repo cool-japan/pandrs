@@ -32,7 +32,7 @@ impl OptimizedDataFrame {
                     .sum::<f64>();
                 Ok(sum)
             },
-            _ => Err(Error::TypeError(format!(
+            _ => Err(Error::Type(format!(
                 "列 '{}' は数値型ではありません", column_name
             ))),
         }
@@ -58,7 +58,7 @@ impl OptimizedDataFrame {
                     .collect();
                 
                 if values.is_empty() {
-                    return Err(Error::EmptyColumn(column_name.to_string()));
+                    return Err(Error::Empty(format!("列 '{}' が空です", column_name)));
                 }
                 
                 let sum: i64 = values.iter().sum();
@@ -70,13 +70,13 @@ impl OptimizedDataFrame {
                     .collect();
                 
                 if values.is_empty() {
-                    return Err(Error::EmptyColumn(column_name.to_string()));
+                    return Err(Error::Empty(format!("列 '{}' が空です", column_name)));
                 }
                 
                 let sum: f64 = values.iter().sum();
                 Ok(sum / values.len() as f64)
             },
-            _ => Err(Error::TypeError(format!(
+            _ => Err(Error::Type(format!(
                 "列 '{}' は数値型ではありません", column_name
             ))),
         }
@@ -103,7 +103,7 @@ impl OptimizedDataFrame {
                     
                 match max {
                     Some(val) => Ok(val as f64),
-                    None => Err(Error::EmptyColumn(column_name.to_string())),
+                    None => Err(Error::Empty(format!("列 '{}' が空です", column_name))),
                 }
             },
             Column::Float64(col) => {
@@ -112,12 +112,12 @@ impl OptimizedDataFrame {
                     .fold(f64::NEG_INFINITY, |a, b| a.max(b));
                     
                 if max.is_infinite() {
-                    Err(Error::EmptyColumn(column_name.to_string()))
+                    Err(Error::Empty(format!("列 '{}' が空です", column_name)))
                 } else {
                     Ok(max)
                 }
             },
-            _ => Err(Error::TypeError(format!(
+            _ => Err(Error::Type(format!(
                 "列 '{}' は数値型ではありません", column_name
             ))),
         }
@@ -144,7 +144,7 @@ impl OptimizedDataFrame {
                     
                 match min {
                     Some(val) => Ok(val as f64),
-                    None => Err(Error::EmptyColumn(column_name.to_string())),
+                    None => Err(Error::Empty(format!("列 '{}' が空です", column_name))),
                 }
             },
             Column::Float64(col) => {
@@ -153,12 +153,12 @@ impl OptimizedDataFrame {
                     .fold(f64::INFINITY, |a, b| a.min(b));
                     
                 if min.is_infinite() {
-                    Err(Error::EmptyColumn(column_name.to_string()))
+                    Err(Error::Empty(format!("列 '{}' が空です", column_name)))
                 } else {
                     Ok(min)
                 }
             },
-            _ => Err(Error::TypeError(format!(
+            _ => Err(Error::Type(format!(
                 "列 '{}' は数値型ではありません", column_name
             ))),
         }
@@ -213,7 +213,7 @@ impl OptimizedDataFrame {
                 "max" => self.max(column_name),
                 "min" => self.min(column_name),
                 "count" => self.count(column_name).map(|c| c as f64),
-                _ => return Err(Error::OperationNotSupported(operation.to_string())),
+                _ => return Err(Error::Operation(format!("操作 '{}' はサポートされていません", operation))),
             };
             
             // エラーの場合はその列をスキップ

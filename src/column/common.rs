@@ -225,6 +225,38 @@ impl Column {
     pub fn clone_column(&self) -> Self {
         self.clone()
     }
+    
+    /// Int64Columnへのキャスト
+    pub fn as_int64(&self) -> Option<&crate::column::Int64Column> {
+        match self {
+            Column::Int64(col) => Some(col),
+            _ => None,
+        }
+    }
+    
+    /// Float64Columnへのキャスト
+    pub fn as_float64(&self) -> Option<&crate::column::Float64Column> {
+        match self {
+            Column::Float64(col) => Some(col),
+            _ => None,
+        }
+    }
+    
+    /// StringColumnへのキャスト
+    pub fn as_string(&self) -> Option<&crate::column::StringColumn> {
+        match self {
+            Column::String(col) => Some(col),
+            _ => None,
+        }
+    }
+    
+    /// BooleanColumnへのキャスト
+    pub fn as_boolean(&self) -> Option<&crate::column::BooleanColumn> {
+        match self {
+            Column::Boolean(col) => Some(col),
+            _ => None,
+        }
+    }
 }
 
 // 型変換のFrom実装

@@ -372,7 +372,7 @@ impl OptimizedDataFrame {
         let schema = builder.schema().clone();
         
         // レコードバッチリーダーを作成
-        let mut reader = builder.build()
+        let reader = builder.build()
             .map_err(|e| Error::Io(crate::error::io_error(format!("Parquetファイルの読み込みに失敗しました: {}", e))))?;
         
         // 全てのレコードバッチを読み込む
@@ -783,7 +783,7 @@ impl OptimizedDataFrame {
     /// * `Result<Self>` - クエリ結果を含むDataFrame
     pub fn from_sql<P: AsRef<Path>>(query: &str, db_path: P) -> Result<Self> {
         // データベース接続
-        let mut conn = Connection::open(db_path)
+        let conn = Connection::open(db_path)
             .map_err(|e| Error::Io(crate::error::io_error(format!("データベースに接続できませんでした: {}", e))))?;
         
         // クエリを準備

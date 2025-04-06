@@ -38,7 +38,7 @@ impl<T: 'static + Debug + Clone + Send + Sync> DataValue for T {
 
 /// DataValueを格納するラッパー型
 #[derive(Debug)]
-pub struct DataBox(Box<dyn DataValue>);
+pub struct DataBox(pub Box<dyn DataValue>);
 
 impl Clone for DataBox {
     fn clone(&self) -> Self {

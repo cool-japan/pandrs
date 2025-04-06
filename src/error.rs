@@ -113,6 +113,15 @@ pub enum Error {
     #[error("無効な値です: {0}")]
     InvalidValue(String),
     
+    #[error("空の列リストです")]
+    EmptyColumnList,
+    
+    #[error("配列の長さが一致しません: 期待値 {expected}, 実際 {found}")]
+    InconsistentArrayLengths {
+        expected: usize,
+        found: usize,
+    },
+    
     #[error("その他のエラー: {0}")]
     Other(String),
 }
