@@ -58,9 +58,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // データフレームの作成
     let mut df = OptimizedDataFrame::new();
     
-    let x_col = Column::Float64(Float64Column::with_name(x_values, "x"));
-    let y_col = Column::Float64(Float64Column::with_name(y_values, "y"));
-    let true_labels_col = Column::Int64(Int64Column::with_name(true_labels, "true_anomaly"));
+    // clone()を使用して値のコピーを作成
+    let x_col = Column::Float64(Float64Column::with_name(x_values.clone(), "x"));
+    let y_col = Column::Float64(Float64Column::with_name(y_values.clone(), "y"));
+    let true_labels_col = Column::Int64(Int64Column::with_name(true_labels.clone(), "true_anomaly"));
     
     df.add_column("x".to_string(), x_col)?;
     df.add_column("y".to_string(), y_col)?;
@@ -192,8 +193,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             
             // 最初の数個の「全アルゴリズムが一致した」異常値を表示
             if if_label == 1 && all_agree <= 5 { // 最初の5個のみ表示
-                println!("サンプル {} は全アルゴリズムが異常値と判定: x={:.2}, y={:.2}", 
-                    i, x_values[i], y_values[i]);
+                // 値にアクセスする代わりに、データフレームから値を取得
+                if let (Ok(Some(x)), Ok(Some(y))) = (
+                    df.column("x").unwrap().as_float64().unwrap().get(i),
+                    df.column("y").unwrap().as_float64().unwrap().get(i)
+                ) {
+                    println!("サンプル {} は全アルゴリズムが異常値と判定: x={:.2}, y={:.2}", 
+                        i, x, y);
+                }
             }
         }
         
@@ -240,10 +247,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 algorithm_name, precision * 100.0, recall * 100.0, f1, accuracy * 100.0);
     };
     
+    // データフレームから真のラベルを取得する
+    let extracted_true_labels: Vec<i64> = (0..df.row_count())
+        .filter_map(|i| df.column("true_anomaly").unwrap().as_int64().unwrap().get(i).ok().flatten())
+        .collect();
+    
     // 各アルゴリズムの評価指標を計算
-    calc_metrics("Isolation Forest", isolation_forest.labels(), &true_labels);
-    calc_metrics("Local Outlier Factor", lof.labels(), &true_labels);
-    calc_metrics("One-Class SVM", one_class_svm.labels(), &true_labels);
+    calc_metrics("Isolation Forest", isolation_forest.labels(), &extracted_true_labels);
+    calc_metrics("Local Outlier Factor", lof.labels(), &extracted_true_labels);
+    calc_metrics("One-Class SVM", one_class_svm.labels(), &extracted_true_labels);
     
     println!("\n==========================");
     println!("✅ 異常検出の例が正常に完了しました");
