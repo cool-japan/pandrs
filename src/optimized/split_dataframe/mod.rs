@@ -24,6 +24,9 @@ pub mod index;
 // ColumnView実装
 pub mod column_view;
 
+// 統計関数モジュール
+pub mod stats;
+
 // 再エクスポート
 pub use core::{OptimizedDataFrame, ColumnView};
 
@@ -35,3 +38,6 @@ pub use join::JoinType;
 
 // グループ化系の型を再エクスポート
 pub use group::{GroupBy, AggregateOp};
+
+// 統計系の型を再エクスポート
+pub use stats::{StatDescribe, StatResult};

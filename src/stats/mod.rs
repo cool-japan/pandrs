@@ -11,6 +11,7 @@ pub mod sampling;
 use crate::dataframe::DataFrame;
 use crate::series::Series;
 use crate::error::{Result, Error};
+use std::collections::HashMap;
 
 /// データの基本統計量を計算
 ///
@@ -223,4 +224,149 @@ pub fn bootstrap<T: AsRef<[f64]>>(
     n_samples: usize,
 ) -> Result<Vec<Vec<f64>>> {
     sampling::bootstrap_impl(data.as_ref(), n_samples)
+}
+
+/// 一元配置分散分析（ANOVA）の結果
+#[derive(Debug, Clone)]
+pub struct AnovaResult {
+    /// F統計量
+    pub f_statistic: f64,
+    /// p値
+    pub p_value: f64,
+    /// グループ間平方和
+    pub ss_between: f64,
+    /// グループ内平方和
+    pub ss_within: f64,
+    /// 総平方和
+    pub ss_total: f64,
+    /// グループ間自由度
+    pub df_between: usize,
+    /// グループ内自由度
+    pub df_within: usize,
+    /// 総自由度
+    pub df_total: usize,
+    /// グループ間平均平方
+    pub ms_between: f64,
+    /// グループ内平均平方
+    pub ms_within: f64,
+    /// 有意水準で有意か
+    pub significant: bool,
+}
+
+/// 一元配置分散分析（ANOVA）を実行
+///
+/// # 説明
+/// 3つ以上のグループの平均値に有意差があるかを検定します。
+/// グループ間の分散とグループ内の分散の比率（F値）を使用します。
+///
+/// # 例
+/// ```rust
+/// use pandrs::stats;
+/// use std::collections::HashMap;
+///
+/// let mut groups = HashMap::new();
+/// groups.insert("グループA", vec![1.0, 2.0, 3.0, 4.0, 5.0]);
+/// groups.insert("グループB", vec![2.0, 3.0, 4.0, 5.0, 6.0]);
+/// groups.insert("グループC", vec![3.0, 4.0, 5.0, 6.0, 7.0]);
+///
+/// // 有意水準0.05でANOVA検定
+/// let result = stats::anova(&groups, 0.05).unwrap();
+/// println!("F統計量: {}", result.f_statistic);
+/// println!("p値: {}", result.p_value);
+/// println!("有意差あり: {}", result.significant);
+/// ```
+pub fn anova<T: AsRef<[f64]>>(
+    groups: &HashMap<&str, T>,
+    alpha: f64,
+) -> Result<AnovaResult> {
+    if groups.len() < 2 {
+        return Err(Error::InsufficientData("分散分析には少なくとも2つのグループが必要です".into()));
+    }
+    
+    // 実装をinferenceモジュールに委譲
+    let groups_converted: HashMap<&str, &[f64]> = groups.iter()
+        .map(|(k, v)| (*k, v.as_ref()))
+        .collect();
+    
+    inference::anova_impl(&groups_converted, alpha)
+}
+
+/// Mann-Whitney U検定（ノンパラメトリック検定）の結果
+#[derive(Debug, Clone)]
+pub struct MannWhitneyResult {
+    /// U統計量
+    pub u_statistic: f64,
+    /// p値
+    pub p_value: f64,
+    /// 有意水準で有意か
+    pub significant: bool,
+}
+
+/// Mann-Whitney U検定を実行（ノンパラメトリック検定）
+///
+/// # 説明
+/// データが正規分布に従わない場合にt検定の代わりに使用できる
+/// ノンパラメトリック検定です。2つの独立したサンプルの分布を比較します。
+///
+/// # 例
+/// ```rust
+/// use pandrs::stats;
+///
+/// let sample1 = vec![1.0, 2.0, 3.0, 4.0, 5.0];
+/// let sample2 = vec![2.0, 3.0, 4.0, 5.0, 6.0];
+/// // 有意水準0.05でMann-Whitney U検定
+/// let result = stats::mann_whitney_u(&sample1, &sample2, 0.05).unwrap();
+/// println!("U統計量: {}", result.u_statistic);
+/// println!("p値: {}", result.p_value);
+/// println!("有意差あり: {}", result.significant);
+/// ```
+pub fn mann_whitney_u<T: AsRef<[f64]>, U: AsRef<[f64]>>(
+    sample1: T,
+    sample2: U,
+    alpha: f64,
+) -> Result<MannWhitneyResult> {
+    inference::mann_whitney_u_impl(sample1.as_ref(), sample2.as_ref(), alpha)
+}
+
+/// カイ二乗検定の結果
+#[derive(Debug, Clone)]
+pub struct ChiSquareResult {
+    /// カイ二乗統計量
+    pub chi2_statistic: f64,
+    /// p値
+    pub p_value: f64,
+    /// 自由度
+    pub df: usize,
+    /// 有意水準で有意か
+    pub significant: bool,
+    /// 期待度数
+    pub expected_freq: Vec<Vec<f64>>,
+}
+
+/// カイ二乗検定を実行
+///
+/// # 説明
+/// カテゴリ変数間の関連性を検定します。
+/// 観測値と期待値の差に基づいて、変数が独立しているかを評価します。
+///
+/// # 例
+/// ```rust
+/// use pandrs::stats;
+///
+/// // 2x2の分割表（観測値）
+/// let observed = vec![
+///     vec![20.0, 30.0],
+///     vec![25.0, 25.0]
+/// ];
+/// // 有意水準0.05でカイ二乗検定
+/// let result = stats::chi_square_test(&observed, 0.05).unwrap();
+/// println!("カイ二乗統計量: {}", result.chi2_statistic);
+/// println!("p値: {}", result.p_value);
+/// println!("有意差あり: {}", result.significant);
+/// ```
+pub fn chi_square_test(
+    observed: &[Vec<f64>],
+    alpha: f64,
+) -> Result<ChiSquareResult> {
+    inference::chi_square_test_impl(observed, alpha)
 }

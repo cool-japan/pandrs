@@ -195,7 +195,6 @@ where
     }
 }
 
-// 文字列型のSeriesに対する特化実装
 // Seriesに対するDefaultトレイト実装
 impl<T> Default for Series<T>
 where
@@ -208,6 +207,203 @@ where
             index: RangeIndex::from_range(0..0).unwrap(),
             name: None,
         }
+    }
+}
+
+// 数値型Seriesに統計関数を追加（f64特化版）
+impl Series<f64> {
+    /// 分散を計算（標本分散）
+    /// 
+    /// 不偏分散を計算します（n-1で割る）
+    pub fn var(&self) -> Result<f64> {
+        if self.values.is_empty() {
+            return Err(PandRSError::Consistency(
+                "空のSeriesの分散は計算できません".to_string(),
+            ));
+        }
+        
+        if self.values.len() == 1 {
+            return Err(PandRSError::Consistency(
+                "1つの要素しかないSeriesの分散は定義されていません".to_string(),
+            ));
+        }
+        
+        let mean = self.mean()?;
+        let sum_squared_diff: f64 = self.values.iter()
+            .map(|&v| (v - mean).powi(2))
+            .sum();
+        
+        // 不偏分散（標本分散）を計算
+        Ok(sum_squared_diff / (self.values.len() - 1) as f64)
+    }
+    
+    /// 母分散を計算
+    /// 
+    /// 母分散を計算します（nで割る）
+    pub fn var_pop(&self) -> Result<f64> {
+        if self.values.is_empty() {
+            return Err(PandRSError::Consistency(
+                "空のSeriesの分散は計算できません".to_string(),
+            ));
+        }
+        
+        let mean = self.mean()?;
+        let sum_squared_diff: f64 = self.values.iter()
+            .map(|&v| (v - mean).powi(2))
+            .sum();
+        
+        // 母分散を計算
+        Ok(sum_squared_diff / self.values.len() as f64)
+    }
+    
+    /// 標準偏差を計算（標本標準偏差）
+    pub fn std(&self) -> Result<f64> {
+        Ok(self.var()?.sqrt())
+    }
+    
+    /// 母標準偏差を計算
+    pub fn std_pop(&self) -> Result<f64> {
+        Ok(self.var_pop()?.sqrt())
+    }
+    
+    /// 分位数を計算
+    /// 
+    /// q: 0.0から1.0の間の分位数（0.5は中央値）
+    pub fn quantile(&self, q: f64) -> Result<f64> {
+        if self.values.is_empty() {
+            return Err(PandRSError::Consistency(
+                "空のSeriesの分位数は計算できません".to_string(),
+            ));
+        }
+        
+        if q < 0.0 || q > 1.0 {
+            return Err(PandRSError::InvalidInput(
+                "分位数は0.0から1.0の間である必要があります".to_string(),
+            ));
+        }
+        
+        let mut sorted_values = self.values.clone();
+        sorted_values.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        
+        if q == 0.0 {
+            return Ok(sorted_values[0]);
+        }
+        
+        if q == 1.0 {
+            return Ok(sorted_values[sorted_values.len() - 1]);
+        }
+        
+        let pos = q * (sorted_values.len() - 1) as f64;
+        let idx_lower = pos.floor() as usize;
+        let idx_upper = pos.ceil() as usize;
+        
+        if idx_lower == idx_upper {
+            Ok(sorted_values[idx_lower])
+        } else {
+            let weight_upper = pos - idx_lower as f64;
+            let weight_lower = 1.0 - weight_upper;
+            Ok(weight_lower * sorted_values[idx_lower] + weight_upper * sorted_values[idx_upper])
+        }
+    }
+    
+    /// 中央値を計算
+    pub fn median(&self) -> Result<f64> {
+        self.quantile(0.5)
+    }
+    
+    /// 尖度を計算
+    pub fn kurtosis(&self) -> Result<f64> {
+        if self.values.len() < 4 {
+            return Err(PandRSError::Consistency(
+                "尖度を計算するには少なくとも4つのデータポイントが必要です".to_string(),
+            ));
+        }
+        
+        let mean = self.mean()?;
+        let n = self.values.len() as f64;
+        
+        let m4: f64 = self.values.iter()
+            .map(|&x| (x - mean).powi(4))
+            .sum::<f64>() / n;
+            
+        let m2: f64 = self.values.iter()
+            .map(|&x| (x - mean).powi(2))
+            .sum::<f64>() / n;
+            
+        // エクセス尖度（正規分布の尖度3を引いた値）
+        let kurtosis = m4 / m2.powi(2) - 3.0;
+        
+        Ok(kurtosis)
+    }
+    
+    /// 歪度を計算
+    pub fn skewness(&self) -> Result<f64> {
+        if self.values.len() < 3 {
+            return Err(PandRSError::Consistency(
+                "歪度を計算するには少なくとも3つのデータポイントが必要です".to_string(),
+            ));
+        }
+        
+        let mean = self.mean()?;
+        let n = self.values.len() as f64;
+        
+        let m3: f64 = self.values.iter()
+            .map(|&x| (x - mean).powi(3))
+            .sum::<f64>() / n;
+            
+        let m2: f64 = self.values.iter()
+            .map(|&x| (x - mean).powi(2))
+            .sum::<f64>() / n;
+            
+        let skewness = m3 / m2.powf(1.5);
+        
+        Ok(skewness)
+    }
+    
+    /// 別のSeriesとの共分散を計算
+    pub fn cov(&self, other: &Series<f64>) -> Result<f64> {
+        if self.values.is_empty() || other.values.is_empty() {
+            return Err(PandRSError::Consistency(
+                "空のSeriesとの共分散は計算できません".to_string(),
+            ));
+        }
+        
+        if self.values.len() != other.values.len() {
+            return Err(PandRSError::Consistency(
+                "共分散を計算するには両方のSeriesが同じ長さである必要があります".to_string(),
+            ));
+        }
+        
+        let mean_x = self.mean()?;
+        let mean_y = other.mean()?;
+        let n = self.values.len() as f64;
+        
+        let sum_xy = self.values.iter().zip(other.values.iter())
+            .map(|(&x, &y)| (x - mean_x) * (y - mean_y))
+            .sum::<f64>();
+            
+        // 不偏共分散推定量を使用
+        Ok(sum_xy / (n - 1.0))
+    }
+    
+    /// 別のSeriesとの相関係数を計算
+    pub fn corr(&self, other: &Series<f64>) -> Result<f64> {
+        let cov = self.cov(other)?;
+        let std_x = self.std()?;
+        let std_y = other.std()?;
+        
+        if std_x == 0.0 || std_y == 0.0 {
+            return Err(PandRSError::Consistency(
+                "標準偏差が0の場合、相関係数は計算できません".to_string(),
+            ));
+        }
+        
+        Ok(cov / (std_x * std_y))
+    }
+    
+    /// 記述統計を一括取得
+    pub fn describe(&self) -> Result<crate::stats::DescriptiveStats> {
+        crate::stats::describe(self.values())
     }
 }
 
