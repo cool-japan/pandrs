@@ -24,6 +24,9 @@ pub mod index;
 // 行操作
 pub mod row_ops;
 
+// 関数適用
+pub mod apply;
+
 // ColumnView実装
 pub mod column_view;
 
