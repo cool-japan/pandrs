@@ -27,6 +27,21 @@ pub mod row_ops;
 // 関数適用
 pub mod apply;
 
+// 並列処理
+pub mod parallel;
+
+// 選択操作
+pub mod select;
+
+// 集計操作
+pub mod aggregate;
+
+// ソート操作
+pub mod sort;
+
+// シリアライズ操作
+pub mod serialize;
+
 // ColumnView実装
 pub mod column_view;
 
@@ -37,7 +52,8 @@ pub mod stats;
 pub use core::{OptimizedDataFrame, ColumnView};
 
 // 入出力系の型を再エクスポート
-pub use io::{JsonOrient, ParquetCompression};
+pub use io::ParquetCompression;
+pub use serialize::JsonOrient;
 
 // 結合系の型を再エクスポート
 pub use join::JoinType;

@@ -65,7 +65,50 @@ PandRSプロジェクトでは、コードベースの肥大化に対処し、�
    - データフレーム間の型変換アダプタの実装
    - dataframe.rsは2266行に微増（アダプタ関数追加のため）
 
-**現在の削減率**: 元のサイズ2694行 → 現在2266行 (約15.9%削減)
+9. **並列処理機能の移行** (2024-04-07)
+   - 並列処理機能を`split_dataframe/parallel.rs`へ移行
+   - `par_filter`メソッドの実装
+   - データサイズに応じた最適な並列/直列処理の自動選択
+   - 効率的なチャンク処理による並列フィルタリング
+   - 複雑な並列処理ロジックの集約と管理の改善
+   - dataframe.rsのサイズを2266行から2071行に削減 (-8.6%)
+
+10. **選択操作機能の移行** (2024-04-07)
+   - 選択操作機能を`split_dataframe/select.rs`へ移行
+   - `select`と`filter_by_indices`を移行して拡張・改善
+   - より汎用的な選択操作として`select_columns`、`select_rows_columns`、`select_by_mask`を実装
+   - 内部ヘルパー関数の再利用による重複コードの削減
+   - ユーティリティの集約と一貫性の向上
+   - dataframe.rsのサイズを2071行から2047行に削減 (-1.2%)
+
+11. **集計操作機能の移行** (2024-04-07)
+   - 集計操作機能を`split_dataframe/aggregate.rs`へ移行
+   - `sum`、`mean`、`max`、`min`、`count`といった基本統計関数の実装
+   - より高度な集計APIとして`aggregate`と`aggregate_numeric`メソッドを実装
+   - 型に応じた最適な計算アルゴリズムの採用
+   - 集計操作のモジュール化による拡張性の向上
+   - dataframe.rsのサイズが2047行から2187行に増加 (+6.8%)（新機能追加のため）
+
+12. **ソート操作機能の移行** (2024-04-07)
+   - ソート操作機能を`split_dataframe/sort.rs`へ移行
+   - `sort_by`で単一列によるソート機能を実装
+   - `sort_by_columns`で複数列によるソート機能を実装
+   - 型に応じたソート比較ロジックの最適化
+   - 欠損値（NULL）の扱いを統一（常に最後に配置）
+   - `select_rows_by_indices`ヘルパーメソッドの実装によるコード共有
+   - NaNやInfなどの特殊な浮動小数点値の適切な扱い
+   - dataframe.rsのサイズが2187行から2279行に増加 (+4.2%)（新機能追加のため）
+
+13. **シリアライズ操作機能の移行** (2024-04-07)
+   - JSON シリアライズ/デシリアライズ機能を`split_dataframe/serialize.rs`へ移行
+   - `from_json`メソッドでJSONファイルからのデータフレーム読み込み機能を実装
+   - `to_json`メソッドでデータフレームのJSON形式保存機能を実装
+   - レコード指向JSON形式と列指向JSON形式の両方をサポート
+   - 文字列データの型推論機能の実装（整数型、浮動小数点型、ブール型、文字列型）
+   - 特殊な浮動小数点値（NaN、Infinity）の適切な処理
+   - dataframe.rsのサイズが2279行から2363行に増加 (+3.7%)（JSON機能のエニューム定義と変換ロジック追加のため）
+
+**現在の削減率**: 元のサイズ2694行 → 現在2363行 (約12.3%削減)
 
 ## リファクタリング方針
 
@@ -111,8 +154,13 @@ PandRSプロジェクトでは、コードベースの肥大化に対処し、�
    - ✅ 行操作（フィルタリング、選択、head、tail、sample）→ `split_dataframe/row_ops.rs`
    - ✅ 統計処理 → `split_dataframe/stats.rs`（すでに完全に実装済み）
    - ✅ 関数適用（apply, applymap, par_apply）→ `split_dataframe/apply.rs`
+   - ✅ 並列処理（par_filter）→ `split_dataframe/parallel.rs`
+   - ✅ 選択操作（select, filter_by_indices）→ `split_dataframe/select.rs`
+   - ✅ 集計操作（sum, mean, count, min, max）→ `split_dataframe/aggregate.rs`
+   - ✅ ソート操作（sort_by, sort_by_columns）→ `split_dataframe/sort.rs`
+   - ✅ シリアライズ操作（to_json, from_json）→ `split_dataframe/serialize.rs`
    - 次の候補:
-     - 並列処理（par_filter）→ `split_dataframe/parallel.rs`
+     - 説明的アクセサメソッド（describe, info）→ `split_dataframe/describe.rs`
 
 3. **移行プロセス**:
    - 各機能を`split_dataframe/`の対応するファイルに実装
