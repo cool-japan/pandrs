@@ -134,7 +134,7 @@ impl OptimizedDataFrame {
         }
         
         // ソート済み行インデックスから新しいDataFrameを作成
-        self.select_rows_by_indices(&indices)
+        self.select_rows_by_indices_internal(&indices)
     }
     
     /// 複数列でDataFrameをソート
@@ -257,59 +257,13 @@ impl OptimizedDataFrame {
         });
         
         // ソート済み行インデックスから新しいDataFrameを作成
-        self.select_rows_by_indices(&indices)
+        self.select_rows_by_indices_internal(&indices)
     }
     
-    /// 行インデックスに基づいて行を選択
-    fn select_rows_by_indices(&self, indices: &[usize]) -> Result<Self> {
-        // 行が0の場合は空のデータフレームを返す
-        if indices.is_empty() {
-            return Ok(Self::new());
-        }
-        
-        let mut result = Self::new();
-        
-        // 各列を処理
-        for (name, &column_idx) in &self.column_indices {
-            let column = &self.columns[column_idx];
-            
-            // 列の型に応じて行インデックスから取得
-            let selected_col = match column {
-                Column::Int64(col) => {
-                    let selected_data: Vec<i64> = indices.iter()
-                        .map(|&idx| col.get(idx).ok().flatten().unwrap_or_default())
-                        .collect();
-                    Column::Int64(crate::column::Int64Column::new(selected_data))
-                },
-                Column::Float64(col) => {
-                    let selected_data: Vec<f64> = indices.iter()
-                        .map(|&idx| col.get(idx).ok().flatten().unwrap_or_default())
-                        .collect();
-                    Column::Float64(crate::column::Float64Column::new(selected_data))
-                },
-                Column::String(col) => {
-                    let selected_data: Vec<String> = indices.iter()
-                        .map(|&idx| col.get(idx).ok().flatten().map(|s| s.to_string()).unwrap_or_default())
-                        .collect();
-                    Column::String(crate::column::StringColumn::new(selected_data))
-                },
-                Column::Boolean(col) => {
-                    let selected_data: Vec<bool> = indices.iter()
-                        .map(|&idx| col.get(idx).ok().flatten().unwrap_or_default())
-                        .collect();
-                    Column::Boolean(crate::column::BooleanColumn::new(selected_data))
-                },
-            };
-            
-            result.add_column(name.clone(), selected_col)?;
-        }
-        
-        // インデックスの取得
-        if let Some(ref idx) = self.index {
-            // TODO: インデックスの選択処理
-            result.index = Some(idx.clone());
-        }
-        
-        Ok(result)
+    /// 行インデックスに基づいて行を選択（selectモジュールの実装を使用）
+    fn select_rows_by_indices_internal(&self, indices: &[usize]) -> Result<Self> {
+        // select.rsに実装された関数を使用
+        use crate::optimized::split_dataframe::select;
+        select::select_rows_by_indices_impl(self, indices)
     }
 }

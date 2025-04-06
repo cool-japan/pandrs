@@ -47,6 +47,8 @@ impl OptimizedDataFrame {
     ///
     /// # Returns
     /// * `Result<Self>` - 選択された行を含む新しいDataFrame
+    /// 
+    /// Note: sort.rsにも同名のメソッドが存在しますが、そちらはprivateです
     pub fn select_rows_by_indices(&self, indices: &[usize]) -> Result<Self> {
         let mut df = Self::new();
         
@@ -148,4 +150,65 @@ impl OptimizedDataFrame {
         // インデックスによる選択を実行
         self.select_rows_by_indices(&indices)
     }
+}
+
+/// 行インデックスに基づいて行を選択する実装（他のモジュールで使用）
+pub(crate) fn select_rows_by_indices_impl(df: &OptimizedDataFrame, indices: &[usize]) -> Result<OptimizedDataFrame> {
+    // 行が0の場合は空のデータフレームを返す
+    if indices.is_empty() {
+        return Ok(OptimizedDataFrame::new());
+    }
+    
+    let mut result = OptimizedDataFrame::new();
+    
+    // 各列を処理
+    for (name, &column_idx) in &df.column_indices {
+        let column = &df.columns[column_idx];
+        
+        // 列の型に応じて行インデックスから取得
+        let selected_col = match column {
+            Column::Int64(col) => {
+                let selected_data: Vec<i64> = indices.iter()
+                    .map(|&idx| col.get(idx).ok().flatten().unwrap_or_default())
+                    .collect();
+                Column::Int64(crate::column::Int64Column::new(selected_data))
+            },
+            Column::Float64(col) => {
+                let selected_data: Vec<f64> = indices.iter()
+                    .map(|&idx| col.get(idx).ok().flatten().unwrap_or_default())
+                    .collect();
+                Column::Float64(crate::column::Float64Column::new(selected_data))
+            },
+            Column::String(col) => {
+                let selected_data: Vec<String> = indices.iter()
+                    .map(|&idx| col.get(idx).ok().flatten().map(|s| s.to_string()).unwrap_or_default())
+                    .collect();
+                Column::String(crate::column::StringColumn::new(selected_data))
+            },
+            Column::Boolean(col) => {
+                let selected_data: Vec<bool> = indices.iter()
+                    .map(|&idx| col.get(idx).ok().flatten().unwrap_or_default())
+                    .collect();
+                Column::Boolean(crate::column::BooleanColumn::new(selected_data))
+            },
+        };
+        
+        result.add_column(name.clone(), selected_col)?;
+    }
+    
+    // インデックスの取得
+    if let Some(ref idx) = df.get_index() {
+        // TODO: インデックスの選択処理
+        match idx {
+            crate::index::DataFrameIndex::Simple(simple_idx) => {
+                result.set_index_from_simple_index(simple_idx.clone())?;
+            },
+            _ => {
+                // 暫定対応：デフォルトのインデックスを設定
+                result.set_default_index()?;
+            }
+        }
+    }
+    
+    Ok(result)
 }

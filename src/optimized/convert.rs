@@ -3,6 +3,7 @@
 use std::collections::HashMap;
 
 use crate::column::{Column, ColumnTrait, Int64Column, Float64Column, StringColumn, BooleanColumn};
+use crate::dataframe::DataValue;
 use crate::error::{Error, Result};
 use crate::index::DataFrameIndex;
 use crate::optimized::dataframe::OptimizedDataFrame;
@@ -66,14 +67,14 @@ pub(crate) fn from_standard_dataframe(df: &crate::dataframe::DataFrame) -> Resul
     }
     
     // インデックスのセット（あれば）
-    if let Some(ref index) = df.get_index() {
+    if let Some(index) = df.get_index() {
         // 文字列ベースのインデックスとしてコピー
         let string_index = match index {
             DataFrameIndex::Simple(simple_index) => {
                 let labels: Vec<String> = (0..simple_index.len())
-                    .map(|i| simple_index.get_by_loc(i).map(|v| v.to_string()).unwrap_or_default())
+                    .map(|i| simple_index.get_value(i).map(|v| v.to_string()).unwrap_or_default())
                     .collect();
-                DataFrameIndex::Simple(crate::index::Index::new(labels))
+                DataFrameIndex::Simple(crate::index::Index::new(labels)?)
             },
             DataFrameIndex::Multi(_) => {
                 // マルチインデックスのサポートは今後の課題
@@ -81,7 +82,7 @@ pub(crate) fn from_standard_dataframe(df: &crate::dataframe::DataFrame) -> Resul
                 let labels: Vec<String> = (0..df.row_count())
                     .map(|i| i.to_string())
                     .collect();
-                DataFrameIndex::Simple(crate::index::Index::new(labels))
+                DataFrameIndex::Simple(crate::index::Index::new(labels)?)
             }
         };
         
@@ -104,53 +105,55 @@ pub(crate) fn to_standard_dataframe(df: &OptimizedDataFrame) -> Result<crate::da
         
         match column {
             Column::Int64(col) => {
-                let mut series = crate::series::Series::new(
+                let series = crate::series::Series::new(
                     (0..col.len())
-                        .map(|i| col.get(i).map_or(None, |v| v.map(crate::series::DataValue::Int64)))
+                        .map(|i| col.get(i).map_or(None, |v| v.map(|val| crate::dataframe::DataBox(Box::new(val)))))
                         .collect(),
                     Some(col_name.clone()),
                 )?;
-                std_df.add_series(series)?;
+                std_df.add_column(col_name.clone(), series)?;
             },
             Column::Float64(col) => {
-                let mut series = crate::series::Series::new(
+                let series = crate::series::Series::new(
                     (0..col.len())
-                        .map(|i| col.get(i).map_or(None, |v| v.map(crate::series::DataValue::Float64)))
+                        .map(|i| col.get(i).map_or(None, |v| v.map(|val| crate::dataframe::DataBox(Box::new(val)))))
                         .collect(),
                     Some(col_name.clone()),
                 )?;
-                std_df.add_series(series)?;
+                std_df.add_column(col_name.clone(), series)?;
             },
             Column::String(col) => {
-                let mut series = crate::series::Series::new(
+                let series = crate::series::Series::new(
                     (0..col.len())
-                        .map(|i| col.get(i).map_or(None, |v| v.map(|s| crate::series::DataValue::String(s.to_string()))))
+                        .map(|i| col.get(i).map_or(None, |v| v.map(|s| crate::dataframe::DataBox(Box::new(s.to_string())))))
                         .collect(),
                     Some(col_name.clone()),
                 )?;
-                std_df.add_series(series)?;
+                std_df.add_column(col_name.clone(), series)?;
             },
             Column::Boolean(col) => {
-                let mut series = crate::series::Series::new(
+                let series = crate::series::Series::new(
                     (0..col.len())
-                        .map(|i| col.get(i).map_or(None, |v| v.map(crate::series::DataValue::Boolean)))
+                        .map(|i| col.get(i).map_or(None, |v| v.map(|val| crate::dataframe::DataBox(Box::new(val)))))
                         .collect(),
                     Some(col_name.clone()),
                 )?;
-                std_df.add_series(series)?;
+                std_df.add_column(col_name.clone(), series)?;
             },
         }
     }
     
     // インデックスの設定（あれば）
-    if let Some(ref index) = df.index {
+    // OptimizedDataFrameのget_indexメソッドを使用
+    if let Some(ref index) = df.get_index() {
         match index {
             DataFrameIndex::Simple(simple_index) => {
                 let values: Vec<String> = (0..simple_index.len())
-                    .map(|i| simple_index.get_by_loc(i).unwrap_or_default().to_string())
+                    .map(|i| simple_index.get_value(i).map(|s| s.to_string()).unwrap_or_default())
                     .collect();
                 
-                std_df.set_index_from_vec(values)?;
+                let string_index = crate::index::Index::new(values)?;
+                std_df.set_index(string_index)?;
             },
             DataFrameIndex::Multi(_) => {
                 // マルチインデックスのサポートは今後の課題
