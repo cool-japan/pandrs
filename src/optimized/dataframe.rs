@@ -2260,108 +2260,13 @@ impl OptimizedDataFrame {
 
     /// 標準のDataFrameからOptimizedDataFrameを作成する
     fn from_standard_dataframe(df: &crate::dataframe::DataFrame) -> Result<Self> {
-        let mut opt_df = Self::new();
-        
-        for col_name in df.column_names() {
-            if let Some(col) = df.get_column(col_name) {
-                // Seriesのイテレート用に値を一つずつ取り出し
-                let mut values = Vec::new();
-                for i in 0..col.len() {
-                    if let Some(val) = col.get(i) {
-                        values.push(val.to_string());
-                    } else {
-                        values.push(String::new());
-                    }
-                }
-                
-                // 型推論して列を追加
-                // 整数型
-                let all_ints = values.iter().all(|s| s.is_empty() || s.parse::<i64>().is_ok());
-                if all_ints {
-                    let int_values: Vec<i64> = values.iter()
-                        .map(|s| s.parse::<i64>().unwrap_or(0))
-                        .collect();
-                    opt_df.add_column(col_name.clone(), Column::Int64(Int64Column::new(int_values)))?;
-                    continue;
-                }
-                
-                // 浮動小数点型
-                let all_floats = values.iter().all(|s| s.is_empty() || s.parse::<f64>().is_ok());
-                if all_floats {
-                    let float_values: Vec<f64> = values.iter()
-                        .map(|s| s.parse::<f64>().unwrap_or(0.0))
-                        .collect();
-                    opt_df.add_column(col_name.clone(), Column::Float64(Float64Column::new(float_values)))?;
-                    continue;
-                }
-                
-                // ブール型
-                let all_bools = values.iter().all(|s| {
-                    let s = s.to_lowercase();
-                    s.is_empty() || s == "true" || s == "false" || s == "1" || s == "0"
-                });
-                if all_bools {
-                    let bool_values: Vec<bool> = values.iter()
-                        .map(|s| {
-                            let s = s.to_lowercase();
-                            s == "true" || s == "1"
-                        })
-                        .collect();
-                    opt_df.add_column(col_name.clone(), Column::Boolean(BooleanColumn::new(bool_values)))?;
-                    continue;
-                }
-                
-                // デフォルトは文字列型
-                opt_df.add_column(col_name.clone(), Column::String(StringColumn::new(values)))?;
-            }
-        }
-        
-        Ok(opt_df)
+        // convert モジュールの関数を使用
+        crate::optimized::convert::from_standard_dataframe(df)
     }
     
     /// OptimizedDataFrameを標準のDataFrameに変換する
     fn to_standard_dataframe(&self) -> Result<crate::dataframe::DataFrame> {
-        let mut df = crate::dataframe::DataFrame::new();
-        
-        for (col_idx, col_name) in self.column_names.iter().enumerate() {
-            let col = &self.columns[col_idx];
-            let mut series_values = Vec::with_capacity(self.row_count);
-            
-            for row_idx in 0..self.row_count {
-                let value = match col {
-                    Column::Int64(int_col) => {
-                        match int_col.get(row_idx) {
-                            Ok(Some(val)) => val.to_string(),
-                            _ => String::new(),
-                        }
-                    },
-                    Column::Float64(float_col) => {
-                        match float_col.get(row_idx) {
-                            Ok(Some(val)) => val.to_string(),
-                            _ => String::new(),
-                        }
-                    },
-                    Column::String(str_col) => {
-                        match str_col.get(row_idx) {
-                            Ok(Some(val)) => val.to_string(),
-                            _ => String::new(),
-                        }
-                    },
-                    Column::Boolean(bool_col) => {
-                        match bool_col.get(row_idx) {
-                            Ok(Some(val)) => val.to_string(),
-                            _ => String::new(),
-                        }
-                    },
-                };
-                series_values.push(value);
-            }
-            
-            // シリーズを作成して追加
-            let series = crate::series::Series::new(series_values, Some(col_name.clone()))?;
-            df.add_column(col_name.clone(), series)?;
-        }
-        
-        Ok(df)
+        // convert モジュールの関数を使用
+        crate::optimized::convert::to_standard_dataframe(self)
     }
 }
