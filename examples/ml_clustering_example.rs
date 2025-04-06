@@ -3,6 +3,7 @@ extern crate pandrs;
 use pandrs::optimized::OptimizedDataFrame;
 use pandrs::ml::clustering::{KMeans, DBSCAN, AgglomerativeClustering, DistanceMetric, Linkage};
 use pandrs::column::{Float64Column, Column};
+use pandrs::ml::pipeline::Transformer;
 use rand::Rng;
 use rand::SeedableRng;
 use rand::rngs::StdRng;
@@ -34,8 +35,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let (center_x, center_y) = cluster_centers[cluster_idx];
         
         // クラスタ中心からのばらつきを生成（正規分布）
-        let x = center_x + rng.gen_range(-1.5..1.5);
-        let y = center_y + rng.gen_range(-1.5..1.5);
+        let x = center_x + rng.random_range(-1.5..1.5);
+        let y = center_y + rng.random_range(-1.5..1.5);
         
         x_values.push(x);
         y_values.push(y);
@@ -45,9 +46,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // データフレームの作成
     let mut df = OptimizedDataFrame::new();
     
-    let x_col = Column::Float64(Float64Column::new(x_values, false, "x".to_string())?);
-    let y_col = Column::Float64(Float64Column::new(y_values, false, "y".to_string())?);
-    let true_labels_col = Column::Int64(pandrs::column::Int64Column::new(true_labels, false, "true_cluster".to_string())?);
+    let x_col = Column::Float64(Float64Column::with_name(x_values, "x"));
+    let y_col = Column::Float64(Float64Column::with_name(y_values, "y"));
+    let true_labels_col = Column::Int64(pandrs::column::Int64Column::with_name(true_labels, "true_cluster"));
     
     df.add_column("x".to_string(), x_col)?;
     df.add_column("y".to_string(), y_col)?;
@@ -55,7 +56,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     
     println!("データ生成完了: {} サンプル, {} クラスタ", n_samples, n_clusters);
     println!("データフレームの最初の数行:");
-    println!("{}", df.head(5)?);
+    // df.head() の代わりに最初の5行を直接表示
+    println!("データフレーム (最初の5行):");
+    for i in 0..std::cmp::min(5, df.row_count()) {
+        if let (Ok(Some(x)), Ok(Some(y)), Ok(Some(cluster))) = (
+            df.column("x").unwrap().as_float64().unwrap().get(i),
+            df.column("y").unwrap().as_float64().unwrap().get(i),
+            df.column("true_cluster").unwrap().as_int64().unwrap().get(i)
+        ) {
+            println!("行 {}: x={:.4}, y={:.4}, cluster={}", i, x, y, cluster);
+        }
+    }
     
     // K-means クラスタリング
     println!("\n2. k-means クラスタリング");
@@ -67,7 +78,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("イナーシャ: {:.4}", kmeans.inertia());
     println!("反復回数: {}", kmeans.n_iter());
     println!("結果の最初の数行:");
-    println!("{}", kmeans_result.head(5)?);
+    // kmeans_result.head() の代わりに最初の5行を直接表示
+    println!("k-means結果 (最初の5行):");
+    for i in 0..std::cmp::min(5, kmeans_result.row_count()) {
+        if let (Ok(Some(x)), Ok(Some(y)), Ok(Some(cluster))) = (
+            kmeans_result.column("x").unwrap().as_float64().unwrap().get(i),
+            kmeans_result.column("y").unwrap().as_float64().unwrap().get(i),
+            kmeans_result.column("cluster").unwrap().as_int64().unwrap().get(i)
+        ) {
+            println!("行 {}: x={:.4}, y={:.4}, cluster={}", i, x, y, cluster);
+        }
+    }
     
     // クラスタの分布を表示
     let cluster_counts = count_clusters(&kmeans_result, "cluster")?;
@@ -83,7 +104,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     
     println!("DBSCAN クラスタリング完了");
     println!("結果の最初の数行:");
-    println!("{}", dbscan_result.head(5)?);
+    // dbscan_result.head() の代わりに最初の5行を直接表示
+    println!("DBSCAN結果 (最初の5行):");
+    for i in 0..std::cmp::min(5, dbscan_result.row_count()) {
+        if let (Ok(Some(x)), Ok(Some(y)), Ok(Some(cluster))) = (
+            dbscan_result.column("x").unwrap().as_float64().unwrap().get(i),
+            dbscan_result.column("y").unwrap().as_float64().unwrap().get(i),
+            dbscan_result.column("cluster").unwrap().as_int64().unwrap().get(i)
+        ) {
+            println!("行 {}: x={:.4}, y={:.4}, cluster={}", i, x, y, cluster);
+        }
+    }
     
     // クラスタの分布を表示
     let cluster_counts = count_clusters(&dbscan_result, "cluster")?;
@@ -99,7 +130,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     
     println!("階層的クラスタリング完了");
     println!("結果の最初の数行:");
-    println!("{}", agg_result.head(5)?);
+    // agg_result.head() の代わりに最初の5行を直接表示
+    println!("階層的クラスタリング結果 (最初の5行):");
+    for i in 0..std::cmp::min(5, agg_result.row_count()) {
+        if let (Ok(Some(x)), Ok(Some(y)), Ok(Some(cluster))) = (
+            agg_result.column("x").unwrap().as_float64().unwrap().get(i),
+            agg_result.column("y").unwrap().as_float64().unwrap().get(i),
+            agg_result.column("cluster").unwrap().as_int64().unwrap().get(i)
+        ) {
+            println!("行 {}: x={:.4}, y={:.4}, cluster={}", i, x, y, cluster);
+        }
+    }
     
     // クラスタの分布を表示
     let cluster_counts = count_clusters(&agg_result, "cluster")?;
@@ -121,9 +162,11 @@ fn count_clusters(df: &OptimizedDataFrame, column: &str) -> Result<Vec<(i64, usi
     // クラスタごとの数をカウント
     let cluster_col = df.column(column)?;
     
-    for i in 0..cluster_col.len() {
-        if let Some(cluster) = cluster_col.get_i64(i)? {
-            *counts.entry(cluster).or_insert(0) += 1;
+    if let Some(int_col) = cluster_col.as_int64() {
+        for i in 0..cluster_col.len() {
+            if let Ok(Some(cluster)) = int_col.get(i) {
+                *counts.entry(cluster).or_insert(0) += 1;
+            }
         }
     }
     

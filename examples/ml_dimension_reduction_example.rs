@@ -10,7 +10,7 @@ fn main() -> Result<(), PandRSError> {
     
     // サンプルデータの生成
     let df = create_sample_data()?;
-    println!("元のデータフレーム: {} 行 x {} 列", df.row_count(), df.column_names().len());
+    println!("元のデータフレーム: {:?} 行 x {:?} 列", df.row_count(), df.column_names().len());
     
     // PCAの例
     pca_example(&df)?;
@@ -31,7 +31,7 @@ fn pca_example(df: &OptimizedDataFrame) -> Result<(), PandRSError> {
     // PCAの実行
     let pca_result = pca.fit_transform(df)?;
     
-    println!("\nPCA実行後のデータフレーム: {} 行 x {} 列", pca_result.row_count(), pca_result.column_names().len());
+    println!("\nPCA実行後のデータフレーム: {:?} 行 x {:?} 列", pca_result.row_count(), pca_result.column_names().len());
     
     // 主成分1と主成分2の値を表示
     if let Ok(pc1_view) = pca_result.column("PC1") {
@@ -107,7 +107,7 @@ fn pca_example(df: &OptimizedDataFrame) -> Result<(), PandRSError> {
     let mut pca3d = PCA::new(3);
     let pca3d_result = pca3d.fit_transform(df)?;
     
-    println!("\n3次元PCA実行後のデータフレーム: {} 行 x {} 列", pca3d_result.row_count(), pca3d_result.column_names().len());
+    println!("\n3次元PCA実行後のデータフレーム: {:?} 行 x {:?} 列", pca3d_result.row_count(), pca3d_result.column_names().len());
     
     // 分散説明率の表示
     println!("\n3次元PCAの分散説明率:");
@@ -139,7 +139,7 @@ fn tsne_example(df: &OptimizedDataFrame) -> Result<(), PandRSError> {
     // t-SNEの実行
     let tsne_result = tsne.fit_transform(df)?;
     
-    println!("t-SNE実行後のデータフレーム: {} 行 x {} 列", tsne_result.row_count(), tsne_result.column_names().len());
+    println!("t-SNE実行後のデータフレーム: {:?} 行 x {:?} 列", tsne_result.row_count(), tsne_result.column_names().len());
     
     // クラスタごとの埋め込み座標の平均を計算
     calculate_cluster_means(&tsne_result, "TSNE1", "TSNE2")?;
@@ -239,7 +239,7 @@ fn create_sample_data() -> Result<OptimizedDataFrame, PandRSError> {
         }
         
         // 特徴量列をデータフレームに追加
-        let column = Float64Column::new(feature_values);
+        let column = Float64Column::with_name(feature_values, format!("feature{}", j + 1));
         df.add_column(format!("feature{}", j + 1), Column::Float64(column))?;
     }
     
@@ -252,7 +252,7 @@ fn create_sample_data() -> Result<OptimizedDataFrame, PandRSError> {
         }
     }
     
-    let cluster_column = StringColumn::new(cluster_labels);
+    let cluster_column = StringColumn::with_name(cluster_labels, "cluster");
     df.add_column("cluster", Column::String(cluster_column))?;
     
     Ok(df)

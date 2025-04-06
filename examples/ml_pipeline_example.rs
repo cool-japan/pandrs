@@ -1,6 +1,7 @@
 use pandrs::*;
-use pandrs::ml::pipeline::Pipeline;
-use pandrs::ml::preprocessing::MinMaxScaler;
+use pandrs::stats;
+use pandrs::ml::metrics::regression::{mean_squared_error, root_mean_squared_error, r2_score};
+use pandrs::ml::metrics::classification::{accuracy_score, precision_score, recall_score, f1_score};
 use rand::Rng;
 
 // サンプルコードのため、OptimizedDataFrameにしか対応していないパイプラインを
