@@ -22,7 +22,13 @@ PandRSプロジェクトでは、コードベースの肥大化に対処し、�
    - 結合操作のテスト（6種類）を新規追加
    - dataframe.rsのサイズを2501行から2286行に削減 (-8.6%)
 
-**現在の削減率**: 元のサイズ2694行 → 現在2286行 (約15.1%削減)
+4. **データ変換操作** (2024-04-06)
+   - melt操作（広形式から長形式への変換）と append操作（縦方向結合）を`split_dataframe/data_ops.rs`へ移行
+   - 526行を委譲パターンに置き換え
+   - すべての変換操作関連テストが正常に動作
+   - dataframe.rsのサイズを2286行から1884行に削減 (-17.6%)
+
+**現在の削減率**: 元のサイズ2694行 → 現在1884行 (約30.1%削減)
 
 ## リファクタリング方針
 
@@ -62,10 +68,11 @@ PandRSプロジェクトでは、コードベースの肥大化に対処し、�
    - ✅ 入出力機能（CSV、JSON、Parquet、Excel、SQL）→ `split_dataframe/io.rs`
    - ✅ グループ化と集計 → `split_dataframe/group.rs`
    - ✅ 結合操作 → `split_dataframe/join.rs`
+   - ✅ データ変換（melt、append）→ `split_dataframe/data_ops.rs`
    - 次の候補:
-     - データ変換 → `split_dataframe/data_ops.rs`
      - 列操作（追加、削除、名前変更）→ `split_dataframe/column_ops.rs`
      - インデックス操作 → `split_dataframe/index.rs`
+     - 行操作（フィルタリング、選択）→ `split_dataframe/row_ops.rs`
 
 3. **移行プロセス**:
    - 各機能を`split_dataframe/`の対応するファイルに実装
