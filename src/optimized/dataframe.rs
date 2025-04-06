@@ -537,61 +537,173 @@ impl OptimizedDataFrame {
         self.columns.len()
     }
     
-    /// インデックスを設定
+    /// インデックスを取得
+    pub fn get_index(&self) -> Option<&DataFrameIndex<String>> {
+        // split_dataframe/index.rsの実装を利用
+        use crate::optimized::split_dataframe::core::OptimizedDataFrame as SplitDataFrame;
+        
+        self.index.as_ref()
+    }
+    
+    /// デフォルトのインデックスを設定
+    pub fn set_default_index(&mut self) -> Result<()> {
+        // split_dataframe/index.rsの実装を利用
+        use crate::optimized::split_dataframe::core::OptimizedDataFrame as SplitDataFrame;
+        
+        // SplitDataFrameに変換
+        let mut split_df = SplitDataFrame::new();
+        
+        // 列データをコピー
+        for name in &self.column_names {
+            if let Ok(column_view) = self.column(name) {
+                let column = column_view.column;
+                split_df.add_column(name.clone(), column.clone())?;
+            }
+        }
+        
+        // SplitDataFrameのset_default_indexを呼び出す
+        split_df.set_default_index()?;
+        
+        // インデックスを元のDataFrameに設定
+        if let Some(index) = split_df.get_index() {
+            self.index = Some(index.clone());
+        } else {
+            self.index = None;
+        }
+        
+        Ok(())
+    }
+    
+    /// インデックスを直接設定
+    pub fn set_index_directly(&mut self, index: DataFrameIndex<String>) -> Result<()> {
+        // split_dataframe/index.rsの実装を利用
+        use crate::optimized::split_dataframe::core::OptimizedDataFrame as SplitDataFrame;
+        
+        // インデックス長がデータフレームの行数と一致するか確認
+        if index.len() != self.row_count {
+            return Err(Error::Index(format!(
+                "インデックスの長さ ({}) がデータフレームの行数 ({}) と一致しません",
+                index.len(),
+                self.row_count
+            )));
+        }
+        
+        self.index = Some(index);
+        Ok(())
+    }
+    
+    /// シンプルインデックスを設定
+    pub fn set_index_from_simple_index(&mut self, index: crate::index::Index<String>) -> Result<()> {
+        // split_dataframe/index.rsの実装を利用
+        use crate::optimized::split_dataframe::core::OptimizedDataFrame as SplitDataFrame;
+        
+        // SplitDataFrameに変換
+        let mut split_df = SplitDataFrame::new();
+        
+        // 列データをコピー
+        for name in &self.column_names {
+            if let Ok(column_view) = self.column(name) {
+                let column = column_view.column;
+                split_df.add_column(name.clone(), column.clone())?;
+            }
+        }
+        
+        // SplitDataFrameのset_index_from_simple_indexを呼び出す
+        split_df.set_index_from_simple_index(index)?;
+        
+        // インデックスを元のDataFrameに設定
+        if let Some(index) = split_df.get_index() {
+            self.index = Some(index.clone());
+        }
+        
+        Ok(())
+    }
+    
+    /// インデックスを列として追加
+    pub fn reset_index(&mut self, name: &str, drop_index: bool) -> Result<()> {
+        // split_dataframe/index.rsの実装を利用
+        use crate::optimized::split_dataframe::core::OptimizedDataFrame as SplitDataFrame;
+        
+        // SplitDataFrameに変換
+        let mut split_df = SplitDataFrame::new();
+        
+        // 列データをコピー
+        for col_name in &self.column_names {
+            if let Ok(column_view) = self.column(col_name) {
+                let column = column_view.column;
+                split_df.add_column(col_name.clone(), column.clone())?;
+            }
+        }
+        
+        // インデックスがあれば設定
+        if let Some(ref index) = self.index {
+            if let crate::index::DataFrameIndex::Simple(simple_index) = index {
+                split_df.set_index_from_simple_index(simple_index.clone())?;
+            }
+        }
+        
+        // SplitDataFrameのreset_indexを呼び出す
+        split_df.reset_index(name, drop_index)?;
+        
+        // 結果を元のDataFrameに反映
+        
+        // 既存の列をクリア
+        self.columns.clear();
+        self.column_indices.clear();
+        self.column_names.clear();
+        
+        // 新しい列をコピー
+        for col_name in split_df.column_names() {
+            if let Ok(column_view) = split_df.column(col_name) {
+                let column = column_view.column;
+                self.add_column(col_name.to_string(), column.clone())?;
+            }
+        }
+        
+        // インデックスを設定
+        if let Some(index) = split_df.get_index() {
+            self.index = Some(index.clone());
+        } else if drop_index {
+            self.index = None;
+        }
+        
+        Ok(())
+    }
+    
+    /// 列の値をインデックスとして設定
     pub fn set_index(&mut self, name: &str) -> Result<()> {
-        // 列の存在チェック
-        let column_idx = self.column_indices.get(name)
-            .ok_or_else(|| Error::ColumnNotFound(name.to_string()))?;
+        // split_dataframe/index.rsの実装を利用
+        use crate::optimized::split_dataframe::core::OptimizedDataFrame as SplitDataFrame;
         
-        let column = &self.columns[*column_idx];
+        // SplitDataFrameに変換
+        let mut split_df = SplitDataFrame::new();
         
-        // 文字列列からインデックスを作成
-        if let Column::String(string_col) = column {
-            let mut index_values = Vec::new();
-            let mut index_map = HashMap::new();
-            
-            for i in 0..string_col.len() {
-                if let Ok(Some(value)) = string_col.get(i) {
-                    let value_string = value.to_string();
-                    index_values.push(value_string.clone());
-                    index_map.insert(value_string, i);
-                } else {
-                    let value_string = i.to_string();
-                    index_values.push(value_string.clone());
-                    index_map.insert(value_string, i);
-                }
+        // 列データをコピー
+        for name in &self.column_names {
+            if let Ok(column_view) = self.column(name) {
+                let column = column_view.column;
+                split_df.add_column(name.clone(), column.clone())?;
             }
-            
-            let index = Index::with_name(index_values, Some(name.to_string()))?;
-            self.index = Some(DataFrameIndex::from_simple(index));
-            return Ok(());
         }
         
-        // 整数列からインデックスを作成
-        if let Column::Int64(int_col) = column {
-            let mut index_values = Vec::new();
-            let mut index_map = HashMap::new();
-            
-            for i in 0..int_col.len() {
-                if let Ok(Some(value)) = int_col.get(i) {
-                    let value_string = value.to_string();
-                    index_values.push(value_string.clone());
-                    index_map.insert(value_string, i);
-                } else {
-                    let value_string = i.to_string();
-                    index_values.push(value_string.clone());
-                    index_map.insert(value_string, i);
-                }
+        // インデックスがあれば設定
+        if let Some(ref index) = self.index {
+            // DataFrameIndexからIndex<String>を取り出す
+            if let crate::index::DataFrameIndex::Simple(simple_index) = index {
+                split_df.set_index_from_simple_index(simple_index.clone())?;
             }
-            
-            let index = Index::with_name(index_values, Some(name.to_string()))?;
-            self.index = Some(DataFrameIndex::from_simple(index));
-            return Ok(());
         }
         
-        Err(Error::Operation(format!(
-            "列 '{}' はインデックスとして使用できる型ではありません", name
-        )))
+        // SplitDataFrameのset_index_from_columnを呼び出す
+        // dropパラメータはfalseに設定（元の列を残す）
+        split_df.set_index_from_column(name, false)?;
+        
+        // インデックスを元のDataFrameに設定
+        if let Some(index) = split_df.get_index() {
+            self.index = Some(index.clone());
+        }
+        
+        Ok(())
     }
     
     /// 整数インデックスを使用して行を取得（新しいDataFrameとして）
@@ -628,6 +740,104 @@ impl OptimizedDataFrame {
             };
             
             result.add_column(name.clone(), new_column)?;
+        }
+        
+        Ok(result)
+    }
+    
+    /// インデックスを使って行を取得
+    pub fn get_row_by_index(&self, key: &str) -> Result<Self> {
+        // split_dataframe/index.rsの実装を利用
+        use crate::optimized::split_dataframe::core::OptimizedDataFrame as SplitDataFrame;
+        
+        // SplitDataFrameに変換
+        let mut split_df = SplitDataFrame::new();
+        
+        // 列データをコピー
+        for name in &self.column_names {
+            if let Ok(column_view) = self.column(name) {
+                let column = column_view.column;
+                split_df.add_column(name.clone(), column.clone())?;
+            }
+        }
+        
+        // インデックスがあれば設定
+        if let Some(ref index) = self.index {
+            if let crate::index::DataFrameIndex::Simple(simple_index) = index {
+                split_df.set_index_from_simple_index(simple_index.clone())?;
+            }
+        } else {
+            return Err(Error::Index("インデックスが設定されていません".to_string()));
+        }
+        
+        // SplitDataFrameのget_row_by_indexを呼び出す
+        let result_split_df = split_df.get_row_by_index(key)?;
+        
+        // 結果をOptimizedDataFrameに変換
+        let mut result = Self::new();
+        
+        // 列データをコピー
+        for name in result_split_df.column_names() {
+            if let Ok(column_view) = result_split_df.column(name) {
+                let column = column_view.column;
+                result.add_column(name.to_string(), column.clone())?;
+            }
+        }
+        
+        // インデックスを設定
+        if let Some(index) = result_split_df.get_index() {
+            result.index = Some(index.clone());
+        }
+        
+        Ok(result)
+    }
+    
+    /// インデックスを使って行を選択
+    pub fn select_by_index<I, S>(&self, keys: I) -> Result<Self>
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        // split_dataframe/index.rsの実装を利用
+        use crate::optimized::split_dataframe::core::OptimizedDataFrame as SplitDataFrame;
+        
+        // SplitDataFrameに変換
+        let mut split_df = SplitDataFrame::new();
+        
+        // 列データをコピー
+        for name in &self.column_names {
+            if let Ok(column_view) = self.column(name) {
+                let column = column_view.column;
+                split_df.add_column(name.clone(), column.clone())?;
+            }
+        }
+        
+        // インデックスがあれば設定
+        if let Some(ref index) = self.index {
+            if let crate::index::DataFrameIndex::Simple(simple_index) = index {
+                split_df.set_index_from_simple_index(simple_index.clone())?;
+            }
+        } else {
+            return Err(Error::Index("インデックスが設定されていません".to_string()));
+        }
+        
+        // SplitDataFrameのselect_by_indexを呼び出す
+        let result_split_df = split_df.select_by_index(keys)?;
+        
+        // 結果をOptimizedDataFrameに変換
+        let mut result = Self::new();
+        
+        // 列データをコピー
+        for name in result_split_df.column_names() {
+            if let Ok(column_view) = result_split_df.column(name) {
+                let column = column_view.column;
+                result.add_column(name.to_string(), column.clone())?;
+            }
+        }
+        
+        // インデックスを設定
+        if let Some(index) = result_split_df.get_index() {
+            result.index = Some(index.clone());
         }
         
         Ok(result)

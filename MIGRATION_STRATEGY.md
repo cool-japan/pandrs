@@ -37,7 +37,15 @@ PandRSプロジェクトでは、コードベースの肥大化に対処し、�
    - すべての列操作関連テストが正常に動作
    - dataframe.rsのサイズを1884行から2018行に増加 (+7.1%)（新機能追加のため）
 
-**現在の削減率**: 元のサイズ2694行 → 現在2018行 (約25.1%削減)
+6. **インデックス操作の強化** (2024-04-06)
+   - インデックス操作を`split_dataframe/index.rs`との連携で強化
+   - set_index、get_index、set_default_index、set_index_directly、set_index_from_simple_indexの実装
+   - reset_index（インデックスを列として追加する機能）の実装
+   - get_row_by_index、select_by_indexなどインデックスを使用した行取得メソッドの実装
+   - すべてのインデックス関連テストが正常に動作
+   - dataframe.rsのサイズを2018行から2228行に増加 (+10.4%)（新機能追加のため）
+
+**現在の削減率**: 元のサイズ2694行 → 現在2228行 (約17.3%削減)
 
 ## リファクタリング方針
 
@@ -79,10 +87,11 @@ PandRSプロジェクトでは、コードベースの肥大化に対処し、�
    - ✅ 結合操作 → `split_dataframe/join.rs`
    - ✅ データ変換（melt、append）→ `split_dataframe/data_ops.rs`
    - ✅ 列操作（追加、削除、名前変更、値取得）→ `split_dataframe/column_ops.rs`
+   - ✅ インデックス操作（設定、取得、選択）→ `split_dataframe/index.rs`
    - 次の候補:
-     - インデックス操作 → `split_dataframe/index.rs`
      - 行操作（フィルタリング、選択）→ `split_dataframe/row_ops.rs`
      - 統計処理 → `split_dataframe/stats.rs`
+     - 基本データ構造 → `split_dataframe/core.rs`
 
 3. **移行プロセス**:
    - 各機能を`split_dataframe/`の対応するファイルに実装
