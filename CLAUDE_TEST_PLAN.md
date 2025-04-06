@@ -125,19 +125,19 @@ cargo check --example benchmark_million
 ### ML関連修正のテスト計画と結果
 
 #### 単体テスト
-- [ ] cargo test --test ml_basic_test
+- [x] cargo test --test ml_basic_test
 
 #### 例コードコンパイルチェック
 - [x] cargo check --example ml_dimension_reduction_example
 - [x] cargo check --example ml_clustering_example
 - [x] cargo check --example ml_anomaly_detection_example
-- [ ] cargo check --example ml_basic_example
-- [ ] cargo check --example ml_feature_engineering_example
-- [ ] cargo check --example ml_model_example
-- [ ] cargo check --example ml_pipeline_example
+- [x] cargo check --example ml_basic_example
+- [x] cargo check --example ml_feature_engineering_example
+- [x] cargo check --example ml_pipeline_example
+- [ ] cargo check --example ml_model_example (大幅な修正が必要)
 
 #### GitHub Actionsでのテスト
-- [ ] 最新コミット(46337a2)のCIテスト完了確認
+- [ ] 最新コミット(8e35eb7)のCIテスト完了確認
 
 ### 修正済みの問題
 1. rand APIの更新（0.9.0対応）
@@ -147,11 +147,18 @@ cargo check --example benchmark_million
 
 2. コンストラクタパターンの更新
    - `Float64Column::new(values, has_nulls, name)` → `Float64Column::with_name(values, name)`
+   - `Int64Column::new(values, has_nulls, name)` → `Int64Column::with_name(values, name)`
+   - `StringColumn::new(values, has_nulls, name)` → `StringColumn::with_name(values, name)`
 
 3. 所有権問題の解決
    - 値の移動後に再利用しないよう修正
    - 必要に応じて`clone()`を使用
 
-4. API対応
+4. 文字列フォーマット修正
+   - 非表示型を持つ値の出力: `{}` → `{:?}`
+   - プレースホルダの修正
+
+5. API対応
    - `Transformer`トレイトのインポート追加
    - 新しいAPIパターンへの対応
+   - `head()`メソッドの代替処理の実装

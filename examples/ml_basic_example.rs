@@ -13,15 +13,15 @@ fn main() -> Result<(), Error> {
     let mut df = OptimizedDataFrame::new();
     
     // 特徴量1: Float64型
-    let feature1 = Float64Column::new(vec![1.0, 2.0, 3.0, 4.0, 5.0]);
+    let feature1 = Float64Column::with_name(vec![1.0, 2.0, 3.0, 4.0, 5.0], "feature1");
     df.add_column("feature1", Column::Float64(feature1))?;
     
     // 特徴量2: Float64型
-    let feature2 = Float64Column::new(vec![10.0, 20.0, 30.0, 40.0, 50.0]);
+    let feature2 = Float64Column::with_name(vec![10.0, 20.0, 30.0, 40.0, 50.0], "feature2");
     df.add_column("feature2", Column::Float64(feature2))?;
     
     // 特徴量3: Int64型
-    let feature3 = Int64Column::new(vec![100, 200, 300, 400, 500]);
+    let feature3 = Int64Column::with_name(vec![100, 200, 300, 400, 500], "feature3");
     df.add_column("feature3", Column::Int64(feature3))?;
     
     println!("元のデータフレーム:");

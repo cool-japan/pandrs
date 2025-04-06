@@ -11,7 +11,7 @@ fn main() -> Result<(), PandRSError> {
     
     // サンプルデータの作成
     let df = create_sample_data()?;
-    println!("元のデータフレーム: {} 行 x {} 列", df.row_count(), df.column_names().len());
+    println!("元のデータフレーム: {:?} 行 x {:?} 列", df.row_count(), df.column_names().len());
     
     // 最適化されたDataFrameに変換
     let opt_df = convert_to_optimized_df(&df)?;
@@ -20,13 +20,13 @@ fn main() -> Result<(), PandRSError> {
     let mut poly_features = PolynomialFeatures::new(vec!["value1".to_string(), "value2".to_string()], 2, false);
     let poly_df = poly_features.fit_transform(&opt_df)?;
     
-    println!("\n多項式特徴量を追加したデータフレーム: {} 列", poly_df.column_names().len());
+    println!("\n多項式特徴量を追加したデータフレーム: {:?} 列", poly_df.column_names().len());
     
     // 2. ビニング（離散化）
     let mut binner = Binner::new_uniform(vec!["value1".to_string()], 4);
     let binned_df = binner.fit_transform(&opt_df)?;
     
-    println!("\nビニング適用後のデータフレーム: {} 列", binned_df.column_names().len());
+    println!("\nビニング適用後のデータフレーム: {:?} 列", binned_df.column_names().len());
     
     // 3. 欠損値の処理
     // サンプルデータに欠損値を追加
@@ -63,23 +63,23 @@ fn main() -> Result<(), PandRSError> {
         }
     }
     
-    println!("\n欠損値を含むデータフレーム: {} 行", na_opt_df.row_count());
+    println!("\n欠損値を含むデータフレーム: {:?} 行", na_opt_df.row_count());
     
     // 欠損値を含むデータフレームを表示（シンプル化）
-    println!("\n欠損値を含むデータフレーム: {} 列", na_opt_df.column_names().len());
+    println!("\n欠損値を含むデータフレーム: {:?} 列", na_opt_df.column_names().len());
     
     // 平均値で補完
     let mut imputer = Imputer::new(vec!["value1".to_string()], ImputeStrategy::Mean);
     let imputed_df = imputer.fit_transform(&na_opt_df)?;
     
-    println!("\n欠損値を平均値で補完したデータフレーム: {} 列", imputed_df.column_names().len());
+    println!("\n欠損値を平均値で補完したデータフレーム: {:?} 列", imputed_df.column_names().len());
     
     // 4. 特徴量選択
     // 分散に基づく選択
     let mut selector = FeatureSelector::variance_threshold(0.5);
     let selected_df = selector.fit_transform(&poly_df)?;
     
-    println!("\n分散に基づいて選択された特徴量: {} 列", selected_df.column_names().len());
+    println!("\n分散に基づいて選択された特徴量: {:?} 列", selected_df.column_names().len());
     
     // 5. パイプラインを使用した特徴量エンジニアリング
     let mut pipeline = Pipeline::new();
@@ -99,7 +99,7 @@ fn main() -> Result<(), PandRSError> {
     // パイプラインによるデータ変換（シンプル化した実装）
     println!("\n特徴量エンジニアリングパイプラインを実行中...");
     let transformed_df = pipeline.fit_transform(&opt_df)?;
-    println!("パイプライン変換後のデータフレーム: {} 列", transformed_df.column_names().len());
+    println!("パイプライン変換後のデータフレーム: {:?} 列", transformed_df.column_names().len());
     
     // 学習のデモは簡略化
     println!("\n回帰分析のデモ（シンプル化）:");
@@ -165,20 +165,20 @@ fn convert_to_optimized_df(_df: &DataFrame) -> Result<OptimizedDataFrame, PandRS
     use pandrs::column::{Float64Column, StringColumn};
     
     // 例として、Float64Column列を追加
-    let col1 = Float64Column::new(vec![1.0, 2.0, 3.0, 4.0, 5.0]);
+    let col1 = Float64Column::with_name(vec![1.0, 2.0, 3.0, 4.0, 5.0], "value1");
     opt_df.add_column("value1".to_string(), pandrs::column::Column::Float64(col1))?;
     
     // 例として、別のFloat64Column列を追加
-    let col2 = Float64Column::new(vec![10.0, 20.0, 30.0, 40.0, 50.0]);
+    let col2 = Float64Column::with_name(vec![10.0, 20.0, 30.0, 40.0, 50.0], "value2");
     opt_df.add_column("value2".to_string(), pandrs::column::Column::Float64(col2))?;
     
     // 例として、StringColumn列を追加
-    let col3 = StringColumn::new(vec!["A".to_string(), "B".to_string(), "C".to_string(), 
-                                     "A".to_string(), "B".to_string()]);
+    let col3 = StringColumn::with_name(vec!["A".to_string(), "B".to_string(), "C".to_string(), 
+                                     "A".to_string(), "B".to_string()], "category");
     opt_df.add_column("category".to_string(), pandrs::column::Column::String(col3))?;
     
     // 例として、ターゲット列を追加
-    let col4 = Float64Column::new(vec![1.5, 2.5, 3.5, 4.5, 5.5]);
+    let col4 = Float64Column::with_name(vec![1.5, 2.5, 3.5, 4.5, 5.5], "target");
     opt_df.add_column("target".to_string(), pandrs::column::Column::Float64(col4))?;
     
     Ok(opt_df)
