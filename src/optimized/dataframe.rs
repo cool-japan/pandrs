@@ -2576,7 +2576,8 @@ impl OptimizedDataFrame {
             ParquetCompression::Zstd => crate::io::parquet::ParquetCompression::Zstd,
         });
         // 標準APIを使用して書き込む
-        crate::io::write_parquet(&df, path, io_compression)
+        // 互換性のためにself参照を使う
+        crate::io::write_parquet(self, path, io_compression)
     }
 
     /// Parquetファイルからデータフレームを読み込む
