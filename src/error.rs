@@ -148,6 +148,11 @@ impl From<std::io::Error> for Error {
     }
 }
 
+// String型のエラーメッセージからstd::io::Errorを生成するヘルパー関数
+pub fn io_error<T: AsRef<str>>(msg: T) -> std::io::Error {
+    std::io::Error::new(std::io::ErrorKind::Other, msg.as_ref())
+}
+
 // Plottersエラーの変換
 impl<E: std::error::Error + Send + Sync + 'static> From<plotters::drawing::DrawingAreaErrorKind<E>> for Error {
     fn from(err: plotters::drawing::DrawingAreaErrorKind<E>) -> Self {

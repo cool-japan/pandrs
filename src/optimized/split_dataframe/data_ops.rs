@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use rayon::prelude::*;
 
 use super::core::{OptimizedDataFrame, ColumnView};
-use crate::column::{Column, ColumnType, Int64Column, Float64Column, StringColumn, BooleanColumn};
+use crate::column::{Column, ColumnType, Int64Column, Float64Column, StringColumn, BooleanColumn, ColumnTrait};
 use crate::error::{Error, Result};
 use crate::index::{DataFrameIndex, IndexTrait, Index};
 
