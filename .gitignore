@@ -72,3 +72,4 @@ examples/*.png
 examples/*.svg
 examples/temp_*
 examples/weather_*.png
+**/CLAUDE.local.md
