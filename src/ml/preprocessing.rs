@@ -140,7 +140,7 @@ impl Transformer for StandardScaler {
     }
 }
 
-/// 数値データを[0,1]の範囲に正規化するための変換器
+/// 数値データを\[0,1\]の範囲に正規化するための変換器
 #[derive(Debug)]
 pub struct MinMaxScaler {
     /// 各列の最小値

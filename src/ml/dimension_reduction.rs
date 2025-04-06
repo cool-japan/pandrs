@@ -9,6 +9,7 @@ use crate::error::{Result, Error};
 use crate::ml::pipeline::Transformer;
 use std::collections::HashMap;
 use rand::Rng;
+use rand::SeedableRng;
 
 /// 主成分分析（PCA）の実装
 #[derive(Debug)]
@@ -666,7 +667,7 @@ impl Transformer for TSNE {
         self.embedding = match self.init {
             TSNEInit::Random => {
                 // ランダム初期化
-                let mut rng = rand::rng();
+                let mut rng = rand::rngs::StdRng::seed_from_u64(rand::random());
                 (0..n_samples)
                     .map(|_| {
                         (0..self.n_components)

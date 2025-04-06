@@ -135,14 +135,14 @@ impl IsolationForest {
         let sampled_features: Vec<usize> = feature_indices
             .iter()
             .copied()
-            .filter(|_| rng.gen_bool(n_features_to_use as f64 / n_features as f64))
+            .filter(|_| rng.random_bool(n_features_to_use as f64 / n_features as f64))
             .collect();
         
         if sampled_features.is_empty() {
             // 最低1つの特徴量を選択
             return Some(Box::new(ITreeNode {
-                split_feature: Some(rng.gen_range(0..n_features)),
-                split_threshold: Some(rng.gen()),
+                split_feature: Some(rng.random_range(0..n_features)),
+                split_threshold: Some(rng.random()),
                 left: None,
                 right: None,
                 depth,
@@ -151,7 +151,7 @@ impl IsolationForest {
         }
         
         // ランダムに特徴量と閾値を選択
-        let split_feature = sampled_features[rng.gen_range(0..sampled_features.len())];
+        let split_feature = sampled_features[rng.random_range(0..sampled_features.len())];
         
         // 選択した特徴量の最小値と最大値を求める
         let min_val = indices.iter().map(|&i| data[i][split_feature]).fold(f64::INFINITY, f64::min);
@@ -170,7 +170,7 @@ impl IsolationForest {
         }
         
         // 閾値をランダムに選択
-        let split_threshold = min_val + rng.gen::<f64>() * (max_val - min_val);
+        let split_threshold = min_val + rng.random::<f64>() * (max_val - min_val);
         
         // データを分割
         let mut left_indices = Vec::new();
@@ -234,9 +234,17 @@ impl IsolationForest {
     fn extract_numeric_values(&self, col: &ColumnView) -> Result<Vec<f64>> {
         match col.column_type() {
             crate::column::ColumnType::Float64 => {
+                let float_col = col.as_float64().ok_or_else(|| 
+                    Error::ColumnTypeMismatch {
+                        name: col.column().name().unwrap_or("").to_string(),
+                        expected: crate::column::ColumnType::Float64,
+                        found: col.column_type(),
+                    }
+                )?;
+                
                 let mut values = Vec::with_capacity(col.len());
                 for i in 0..col.len() {
-                    if let Some(value) = col.get_f64(i)? {
+                    if let Ok(Some(value)) = float_col.get(i) {
                         values.push(value);
                     } else {
                         values.push(0.0); // NAは0として扱う（または適切な戦略を実装）
@@ -245,9 +253,17 @@ impl IsolationForest {
                 Ok(values)
             },
             crate::column::ColumnType::Int64 => {
+                let int_col = col.as_int64().ok_or_else(|| 
+                    Error::ColumnTypeMismatch {
+                        name: col.column().name().unwrap_or("").to_string(),
+                        expected: crate::column::ColumnType::Int64,
+                        found: col.column_type(),
+                    }
+                )?;
+                
                 let mut values = Vec::with_capacity(col.len());
                 for i in 0..col.len() {
-                    if let Some(value) = col.get_i64(i)? {
+                    if let Ok(Some(value)) = int_col.get(i) {
                         values.push(value as f64);
                     } else {
                         values.push(0.0); // NAは0として扱う
@@ -304,7 +320,7 @@ impl Transformer for IsolationForest {
         // 乱数生成器を初期化
         let mut rng = match self.random_seed {
             Some(seed) => StdRng::seed_from_u64(seed),
-            None => StdRng::from_entropy(),
+            None => StdRng::seed_from_u64(rand::random()),
         };
         
         // サブサンプリングサイズを決定
@@ -324,7 +340,7 @@ impl Transformer for IsolationForest {
             
             // インデックスをシャッフル
             for i in (1..indices.len()).rev() {
-                let j = rng.gen_range(0..=i);
+                let j = rng.random_range(0..=i);
                 indices.swap(i, j);
             }
             
@@ -388,8 +404,14 @@ impl Transformer for IsolationForest {
         let mut result = df.clone();
         
         // 異常スコアと予測ラベルをデータフレームに追加
-        let scores_column = Column::Float64(Float64Column::new(self.anomaly_scores.clone(), false, "anomaly_score".to_string())?);
-        let labels_column = Column::Int64(Int64Column::new(self.labels.clone(), false, "anomaly".to_string())?);
+        let mut scores_float_col = Float64Column::new(self.anomaly_scores.clone());
+        let mut labels_int_col = Int64Column::new(self.labels.clone());
+        
+        scores_float_col.set_name("anomaly_score");
+        labels_int_col.set_name("anomaly");
+        
+        let scores_column = Column::Float64(scores_float_col);
+        let labels_column = Column::Int64(labels_int_col);
         
         result.add_column("anomaly_score".to_string(), scores_column)?;
         result.add_column("anomaly".to_string(), labels_column)?;
@@ -531,9 +553,17 @@ impl LocalOutlierFactor {
     fn extract_numeric_values(&self, col: &ColumnView) -> Result<Vec<f64>> {
         match col.column_type() {
             crate::column::ColumnType::Float64 => {
+                let float_col = col.as_float64().ok_or_else(|| 
+                    Error::ColumnTypeMismatch {
+                        name: col.column().name().unwrap_or("").to_string(),
+                        expected: crate::column::ColumnType::Float64,
+                        found: col.column_type(),
+                    }
+                )?;
+                
                 let mut values = Vec::with_capacity(col.len());
                 for i in 0..col.len() {
-                    if let Some(value) = col.get_f64(i)? {
+                    if let Ok(Some(value)) = float_col.get(i) {
                         values.push(value);
                     } else {
                         values.push(0.0); // NAは0として扱う（または適切な戦略を実装）
@@ -542,9 +572,17 @@ impl LocalOutlierFactor {
                 Ok(values)
             },
             crate::column::ColumnType::Int64 => {
+                let int_col = col.as_int64().ok_or_else(|| 
+                    Error::ColumnTypeMismatch {
+                        name: col.column().name().unwrap_or("").to_string(),
+                        expected: crate::column::ColumnType::Int64,
+                        found: col.column_type(),
+                    }
+                )?;
+                
                 let mut values = Vec::with_capacity(col.len());
                 for i in 0..col.len() {
-                    if let Some(value) = col.get_i64(i)? {
+                    if let Ok(Some(value)) = int_col.get(i) {
                         values.push(value as f64);
                     } else {
                         values.push(0.0); // NAは0として扱う
@@ -682,8 +720,14 @@ impl Transformer for LocalOutlierFactor {
         let mut result = df.clone();
         
         // LOFスコアと予測ラベルをデータフレームに追加
-        let scores_column = Column::Float64(Float64Column::new(self.lof_scores.clone(), false, "lof_score".to_string())?);
-        let labels_column = Column::Int64(Int64Column::new(self.labels.clone(), false, "anomaly".to_string())?);
+        let mut scores_float_col = Float64Column::new(self.lof_scores.clone());
+        let mut labels_int_col = Int64Column::new(self.labels.clone());
+        
+        scores_float_col.set_name("lof_score");
+        labels_int_col.set_name("anomaly");
+        
+        let scores_column = Column::Float64(scores_float_col);
+        let labels_column = Column::Int64(labels_int_col);
         
         result.add_column("lof_score".to_string(), scores_column)?;
         result.add_column("anomaly".to_string(), labels_column)?;
@@ -785,9 +829,17 @@ impl OneClassSVM {
     fn extract_numeric_values(&self, col: &ColumnView) -> Result<Vec<f64>> {
         match col.column_type() {
             crate::column::ColumnType::Float64 => {
+                let float_col = col.as_float64().ok_or_else(|| 
+                    Error::ColumnTypeMismatch {
+                        name: col.column().name().unwrap_or("").to_string(),
+                        expected: crate::column::ColumnType::Float64,
+                        found: col.column_type(),
+                    }
+                )?;
+                
                 let mut values = Vec::with_capacity(col.len());
                 for i in 0..col.len() {
-                    if let Some(value) = col.get_f64(i)? {
+                    if let Ok(Some(value)) = float_col.get(i) {
                         values.push(value);
                     } else {
                         values.push(0.0); // NAは0として扱う（または適切な戦略を実装）
@@ -796,9 +848,17 @@ impl OneClassSVM {
                 Ok(values)
             },
             crate::column::ColumnType::Int64 => {
+                let int_col = col.as_int64().ok_or_else(|| 
+                    Error::ColumnTypeMismatch {
+                        name: col.column().name().unwrap_or("").to_string(),
+                        expected: crate::column::ColumnType::Int64,
+                        found: col.column_type(),
+                    }
+                )?;
+                
                 let mut values = Vec::with_capacity(col.len());
                 for i in 0..col.len() {
-                    if let Some(value) = col.get_i64(i)? {
+                    if let Ok(Some(value)) = int_col.get(i) {
                         values.push(value as f64);
                     } else {
                         values.push(0.0); // NAは0として扱う
@@ -998,8 +1058,14 @@ impl Transformer for OneClassSVM {
         let mut result = df.clone();
         
         // 決定スコアと予測ラベルをデータフレームに追加
-        let scores_column = Column::Float64(Float64Column::new(self.decision_scores.clone(), false, "decision_score".to_string())?);
-        let labels_column = Column::Int64(Int64Column::new(self.labels.clone(), false, "anomaly".to_string())?);
+        let mut scores_float_col = Float64Column::new(self.decision_scores.clone());
+        let mut labels_int_col = Int64Column::new(self.labels.clone());
+        
+        scores_float_col.set_name("decision_score");
+        labels_int_col.set_name("anomaly");
+        
+        let scores_column = Column::Float64(scores_float_col);
+        let labels_column = Column::Int64(labels_int_col);
         
         result.add_column("decision_score".to_string(), scores_column)?;
         result.add_column("anomaly".to_string(), labels_column)?;

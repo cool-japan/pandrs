@@ -21,14 +21,9 @@ pub trait SupervisedModel {
     /// モデルのスコアを計算（デフォルトはR^2）
     fn score(&self, df: &OptimizedDataFrame, target: &str) -> Result<f64> {
         // 目標変数を取得
-        let y_true = match df.column(target) {
-            Some(col) => {
-                // Float64Columnに変換
-                let numeric_data = self.extract_numeric_values(&col)?;
-                numeric_data
-            },
-            None => return Err(Error::Column(format!("Target column '{}' not found", target)))
-        };
+        let col = df.column(target)?;
+        // Float64Columnに変換
+        let y_true = self.extract_numeric_values(&col)?;
         
         // 予測を取得
         let y_pred = self.predict(df)?;
@@ -41,9 +36,17 @@ pub trait SupervisedModel {
     fn extract_numeric_values(&self, col: &ColumnView) -> Result<Vec<f64>> {
         match col.column_type() {
             crate::column::ColumnType::Float64 => {
+                let float_col = col.as_float64().ok_or_else(|| 
+                    Error::ColumnTypeMismatch {
+                        name: col.column().name().unwrap_or("").to_string(),
+                        expected: crate::column::ColumnType::Float64,
+                        found: col.column_type(),
+                    }
+                )?;
+                
                 let mut values = Vec::with_capacity(col.len());
                 for i in 0..col.len() {
-                    if let Some(value) = col.get_f64(i)? {
+                    if let Ok(Some(value)) = float_col.get(i) {
                         values.push(value);
                     } else {
                         values.push(0.0); // NAは0として扱う（または適切な戦略を実装）
@@ -52,9 +55,17 @@ pub trait SupervisedModel {
                 Ok(values)
             },
             crate::column::ColumnType::Int64 => {
+                let int_col = col.as_int64().ok_or_else(|| 
+                    Error::ColumnTypeMismatch {
+                        name: col.column().name().unwrap_or("").to_string(),
+                        expected: crate::column::ColumnType::Int64,
+                        found: col.column_type(),
+                    }
+                )?;
+                
                 let mut values = Vec::with_capacity(col.len());
                 for i in 0..col.len() {
-                    if let Some(value) = col.get_i64(i)? {
+                    if let Ok(Some(value)) = int_col.get(i) {
                         values.push(value as f64);
                     } else {
                         values.push(0.0); // NAは0として扱う
@@ -119,9 +130,7 @@ impl LinearRegression {
         
         // 特徴量の値を取得
         for &feature in features {
-            let column = df.column(feature).ok_or_else(|| {
-                Error::Column(format!("Feature column '{}' not found", feature))
-            })?;
+            let column = df.column(feature)?;
             
             let values = self.extract_numeric_values(&column)?;
             
@@ -134,9 +143,7 @@ impl LinearRegression {
         }
         
         // 目標変数の値を取得
-        let target_column = df.column(target).ok_or_else(|| {
-            Error::Column(format!("Target column '{}' not found", target))
-        })?;
+        let target_column = df.column(target)?;
         
         let y_data = self.extract_numeric_values(&target_column)?;
         
@@ -287,9 +294,7 @@ impl SupervisedModel for LinearRegression {
         // 特徴量の存在確認と列インデックスのマッピング
         let mut feature_columns = Vec::with_capacity(self.feature_names.len());
         for feature_name in &self.feature_names {
-            let column = df.column(feature_name).ok_or_else(|| {
-                Error::Column(format!("Feature column '{}' not found", feature_name))
-            })?;
+            let column = df.column(feature_name)?;
             feature_columns.push(column);
         }
         
@@ -301,10 +306,18 @@ impl SupervisedModel for LinearRegression {
             for (i, column) in feature_columns.iter().enumerate() {
                 let feature_value = match column.column_type() {
                     crate::column::ColumnType::Float64 => {
-                        column.get_f64(row_idx)?.unwrap_or(0.0)
+                        if let Some(float_col) = column.as_float64() {
+                            float_col.get(row_idx)?.unwrap_or(0.0)
+                        } else {
+                            0.0
+                        }
                     },
                     crate::column::ColumnType::Int64 => {
-                        column.get_i64(row_idx)?.map(|v| v as f64).unwrap_or(0.0)
+                        if let Some(int_col) = column.as_int64() {
+                            int_col.get(row_idx)?.map(|v| v as f64).unwrap_or(0.0)
+                        } else {
+                            0.0
+                        }
                     },
                     _ => 0.0 // 数値型以外は0として扱う（または適切な戦略を実装）
                 };
@@ -399,9 +412,7 @@ impl LogisticRegression {
         // 特徴量の列を取得
         let mut feature_columns = Vec::with_capacity(self.feature_names.len());
         for feature_name in &self.feature_names {
-            let column = df.column(feature_name).ok_or_else(|| {
-                Error::Column(format!("Feature column '{}' not found", feature_name))
-            })?;
+            let column = df.column(feature_name)?;
             feature_columns.push(column);
         }
         
@@ -413,10 +424,18 @@ impl LogisticRegression {
             for column in &feature_columns {
                 let value = match column.column_type() {
                     crate::column::ColumnType::Float64 => {
-                        column.get_f64(row_idx)?.unwrap_or(0.0)
+                        if let Some(float_col) = column.as_float64() {
+                            float_col.get(row_idx)?.unwrap_or(0.0)
+                        } else {
+                            0.0
+                        }
                     },
                     crate::column::ColumnType::Int64 => {
-                        column.get_i64(row_idx)?.map(|v| v as f64).unwrap_or(0.0)
+                        if let Some(int_col) = column.as_int64() {
+                            int_col.get(row_idx)?.map(|v| v as f64).unwrap_or(0.0)
+                        } else {
+                            0.0
+                        }
                     },
                     _ => 0.0
                 };
@@ -434,11 +453,11 @@ impl LogisticRegression {
         let mut result_df = OptimizedDataFrame::new();
         
         // 確率列を追加
-        let class0_col = Float64Column::new(proba_class0, false, "probability_0".to_string())?;
-        let class1_col = Float64Column::new(proba_class1, false, "probability_1".to_string())?;
+        let class0_col = Float64Column::with_name(proba_class0, "probability_0");
+        let class1_col = Float64Column::with_name(proba_class1, "probability_1");
         
-        result_df.add_float_column("probability_0", class0_col)?;
-        result_df.add_float_column("probability_1", class1_col)?;
+        result_df.add_column("probability_0", Column::Float64(class0_col))?;
+        result_df.add_column("probability_1", Column::Float64(class1_col))?;
         
         Ok(result_df)
     }
@@ -493,9 +512,7 @@ impl LogisticRegression {
                 }
             }
             
-            // 平均損失
-            loss /= n_samples as f64;
-            
+            // 損失は監視するだけで実際にはここでは使用しない
             // パラメータの更新
             intercept -= self.learning_rate * intercept_grad / n_samples as f64;
             for j in 0..n_features {
@@ -528,9 +545,7 @@ impl SupervisedModel for LogisticRegression {
         
         // 特徴量の値を取得
         for &feature in features {
-            let column = df.column(feature).ok_or_else(|| {
-                Error::Column(format!("Feature column '{}' not found", feature))
-            })?;
+            let column = df.column(feature)?;
             
             let values = self.extract_numeric_values(&column)?;
             
@@ -543,9 +558,7 @@ impl SupervisedModel for LogisticRegression {
         }
         
         // 目標変数の値を取得（バイナリ分類用に0/1に変換）
-        let target_column = df.column(target).ok_or_else(|| {
-            Error::Column(format!("Target column '{}' not found", target))
-        })?;
+        let target_column = df.column(target)?;
         
         let target_values = self.extract_target_values(&target_column)?;
         
@@ -560,16 +573,22 @@ impl SupervisedModel for LogisticRegression {
         let proba_df = self.predict_proba(df)?;
         
         // 確率が0.5以上なら1、そうでなければ0
-        let proba_col = proba_df.column("probability_1").ok_or_else(|| {
-            Error::Column("Probability column not found".to_string())
-        })?;
+        let proba_col = proba_df.column("probability_1")?;
         
         let mut predictions = Vec::with_capacity(proba_col.len());
         
-        for i in 0..proba_col.len() {
-            let prob = proba_col.get_f64(i)?.unwrap_or(0.0);
-            let prediction = if prob >= 0.5 { 1.0 } else { 0.0 };
-            predictions.push(prediction);
+        if let Some(float_col) = proba_col.as_float64() {
+            for i in 0..proba_col.len() {
+                let prob = float_col.get(i)?.unwrap_or(0.0);
+                let prediction = if prob >= 0.5 { 1.0 } else { 0.0 };
+                predictions.push(prediction);
+            }
+        } else {
+            return Err(Error::ColumnTypeMismatch {
+                name: "probability_1".to_string(),
+                expected: crate::column::ColumnType::Float64,
+                found: proba_col.column_type(),
+            });
         }
         
         Ok(predictions)
@@ -584,8 +603,16 @@ impl LogisticRegression {
         match col.column_type() {
             // 数値型の場合はそのまま使用
             crate::column::ColumnType::Float64 => {
+                let float_col = col.as_float64().ok_or_else(|| 
+                    Error::ColumnTypeMismatch {
+                        name: col.column().name().unwrap_or("").to_string(),
+                        expected: crate::column::ColumnType::Float64,
+                        found: col.column_type(),
+                    }
+                )?;
+                
                 for i in 0..col.len() {
-                    if let Some(value) = col.get_f64(i)? {
+                    if let Ok(Some(value)) = float_col.get(i) {
                         values.push(if value > 0.5 { 1.0 } else { 0.0 });
                     } else {
                         values.push(0.0); // 欠損値は0として扱う
@@ -593,8 +620,16 @@ impl LogisticRegression {
                 }
             },
             crate::column::ColumnType::Int64 => {
+                let int_col = col.as_int64().ok_or_else(|| 
+                    Error::ColumnTypeMismatch {
+                        name: col.column().name().unwrap_or("").to_string(),
+                        expected: crate::column::ColumnType::Int64,
+                        found: col.column_type(),
+                    }
+                )?;
+                
                 for i in 0..col.len() {
-                    if let Some(value) = col.get_i64(i)? {
+                    if let Ok(Some(value)) = int_col.get(i) {
                         values.push(if value != 0 { 1.0 } else { 0.0 });
                     } else {
                         values.push(0.0); // 欠損値は0として扱う
@@ -603,8 +638,16 @@ impl LogisticRegression {
             },
             // 文字列型の場合は"1", "true", "yes"などをポジティブクラスとみなす
             crate::column::ColumnType::String => {
+                let string_col = col.as_string().ok_or_else(|| 
+                    Error::ColumnTypeMismatch {
+                        name: col.column().name().unwrap_or("").to_string(),
+                        expected: crate::column::ColumnType::String,
+                        found: col.column_type(),
+                    }
+                )?;
+                
                 for i in 0..col.len() {
-                    if let Some(value) = col.get_string(i)? {
+                    if let Ok(Some(value)) = string_col.get(i) {
                         let lower_val = value.to_lowercase();
                         let is_positive = lower_val == "1" || 
                                         lower_val == "true" || 
@@ -619,15 +662,23 @@ impl LogisticRegression {
             },
             // ブール型の場合はtrueを1、falseを0に変換
             crate::column::ColumnType::Boolean => {
+                let bool_col = col.as_boolean().ok_or_else(|| 
+                    Error::ColumnTypeMismatch {
+                        name: col.column().name().unwrap_or("").to_string(),
+                        expected: crate::column::ColumnType::Boolean,
+                        found: col.column_type(),
+                    }
+                )?;
+                
                 for i in 0..col.len() {
-                    if let Some(value) = col.get_bool(i)? {
+                    if let Ok(Some(value)) = bool_col.get(i) {
                         values.push(if value { 1.0 } else { 0.0 });
                     } else {
                         values.push(0.0); // 欠損値は0として扱う
                     }
                 }
-            },
-            _ => return Err(Error::Type(format!("Column type {:?} cannot be used as target for classification", col.column_type())))
+            }
+            // 全てのケースは上で網羅されているため、このパターンは不要
         }
         
         Ok(values)
@@ -672,12 +723,12 @@ pub mod model_selection {
         // ランダムにシャッフル
         let mut rng = match random_state {
             Some(seed) => StdRng::seed_from_u64(seed),
-            None => StdRng::from_entropy(),
+            None => StdRng::seed_from_u64(rand::random()),
         };
         
         // Fisher-Yatesアルゴリズムでシャッフル
         for i in (1..indices.len()).rev() {
-            let j = rng.gen_range(0..=i);
+            let j = rng.random_range(0..=i);
             indices.swap(i, j);
         }
         
@@ -698,30 +749,56 @@ pub mod model_selection {
                 crate::column::ColumnType::Float64 => {
                     let mut train_values = Vec::with_capacity(n_train);
                     for &idx in train_indices {
-                        train_values.push(column.get_f64(idx)?.unwrap_or(0.0));
+                        if let Some(float_col) = column.as_float64() {
+                            train_values.push(float_col.get(idx)?.unwrap_or(0.0));
+                        } else {
+                            train_values.push(0.0); // Default for incompatible column type
+                        }
                     }
-                    Column::Float64(Float64Column::new(train_values, false, col_name.clone())?)
+                    {
+                        let col = Float64Column::with_name(train_values, col_name.clone());
+                        Column::Float64(col)
+                    }
                 },
                 crate::column::ColumnType::Int64 => {
                     let mut train_values = Vec::with_capacity(n_train);
                     for &idx in train_indices {
-                        train_values.push(column.get_i64(idx)?.unwrap_or(0));
+                        if let Some(int_col) = column.as_int64() {
+                            train_values.push(int_col.get(idx)?.unwrap_or(0));
+                        } else {
+                            train_values.push(0); // Default for incompatible column type
+                        }
                     }
-                    Column::Int64(crate::column::Int64Column::new(train_values, false, col_name.clone())?)
+                    {
+                        let col = crate::column::Int64Column::with_name(train_values, col_name.clone());
+                        Column::Int64(col)
+                    }
                 },
                 crate::column::ColumnType::String => {
                     let mut train_values = Vec::with_capacity(n_train);
                     for &idx in train_indices {
-                        train_values.push(column.get_string(idx)?.unwrap_or_default());
+                        if let Some(string_col) = column.as_string() {
+                            if let Ok(Some(val)) = string_col.get(idx) {
+                                train_values.push(val.to_string());
+                            } else {
+                                train_values.push(String::default());
+                            }
+                        } else {
+                            train_values.push(String::default());
+                        }
                     }
-                    Column::String(crate::column::StringColumn::new(train_values, col_name.clone())?)
+                    Column::String(crate::column::StringColumn::with_name(train_values, col_name.clone()))
                 },
                 crate::column::ColumnType::Boolean => {
                     let mut train_values = Vec::with_capacity(n_train);
                     for &idx in train_indices {
-                        train_values.push(column.get_bool(idx)?.unwrap_or(false));
+                        if let Some(bool_col) = column.as_boolean() {
+                            train_values.push(bool_col.get(idx)?.unwrap_or(false));
+                        } else {
+                            train_values.push(false);
+                        }
                     }
-                    Column::Boolean(crate::column::BooleanColumn::new(train_values, false, col_name.clone())?)
+                    Column::Boolean(crate::column::BooleanColumn::with_name(train_values, col_name.clone()))
                 },
             };
             
@@ -730,30 +807,56 @@ pub mod model_selection {
                 crate::column::ColumnType::Float64 => {
                     let mut test_values = Vec::with_capacity(n_test);
                     for &idx in test_indices {
-                        test_values.push(column.get_f64(idx)?.unwrap_or(0.0));
+                        if let Some(float_col) = column.as_float64() {
+                            test_values.push(float_col.get(idx)?.unwrap_or(0.0));
+                        } else {
+                            test_values.push(0.0); // Default for incompatible column type
+                        }
                     }
-                    Column::Float64(Float64Column::new(test_values, false, col_name.clone())?)
+                    {
+                        let col = Float64Column::with_name(test_values, col_name.clone());
+                        Column::Float64(col)
+                    }
                 },
                 crate::column::ColumnType::Int64 => {
                     let mut test_values = Vec::with_capacity(n_test);
                     for &idx in test_indices {
-                        test_values.push(column.get_i64(idx)?.unwrap_or(0));
+                        if let Some(int_col) = column.as_int64() {
+                            test_values.push(int_col.get(idx)?.unwrap_or(0));
+                        } else {
+                            test_values.push(0); // Default for incompatible column type
+                        }
                     }
-                    Column::Int64(crate::column::Int64Column::new(test_values, false, col_name.clone())?)
+                    {
+                        let col = crate::column::Int64Column::with_name(test_values, col_name.clone());
+                        Column::Int64(col)
+                    }
                 },
                 crate::column::ColumnType::String => {
                     let mut test_values = Vec::with_capacity(n_test);
                     for &idx in test_indices {
-                        test_values.push(column.get_string(idx)?.unwrap_or_default());
+                        if let Some(string_col) = column.as_string() {
+                            if let Ok(Some(val)) = string_col.get(idx) {
+                                test_values.push(val.to_string());
+                            } else {
+                                test_values.push(String::default());
+                            }
+                        } else {
+                            test_values.push(String::default());
+                        }
                     }
-                    Column::String(crate::column::StringColumn::new(test_values, col_name.clone())?)
+                    Column::String(crate::column::StringColumn::with_name(test_values, col_name.clone()))
                 },
                 crate::column::ColumnType::Boolean => {
                     let mut test_values = Vec::with_capacity(n_test);
                     for &idx in test_indices {
-                        test_values.push(column.get_bool(idx)?.unwrap_or(false));
+                        if let Some(bool_col) = column.as_boolean() {
+                            test_values.push(bool_col.get(idx)?.unwrap_or(false));
+                        } else {
+                            test_values.push(false);
+                        }
                     }
-                    Column::Boolean(crate::column::BooleanColumn::new(test_values, false, col_name.clone())?)
+                    Column::Boolean(crate::column::BooleanColumn::with_name(test_values, col_name.clone()))
                 },
             };
             
@@ -818,7 +921,11 @@ pub mod model_selection {
                         let mut test_values = Vec::with_capacity(test_end - test_start);
                         
                         for i in 0..n_rows {
-                            let value = column.get_f64(i)?.unwrap_or(0.0);
+                            let value = if let Some(float_col) = column.as_float64() {
+                                float_col.get(i)?.unwrap_or(0.0)
+                            } else {
+                                0.0 // Default for incompatible column type
+                            };
                             if i < test_start || i >= test_end {
                                 train_values.push(value);
                             } else {
@@ -826,18 +933,22 @@ pub mod model_selection {
                             }
                         }
                         
-                        let train_col = Float64Column::new(train_values, false, col_name.clone())?;
-                        let test_col = Float64Column::new(test_values, false, col_name.clone())?;
+                        let train_col = Float64Column::with_name(train_values, col_name.clone());
+                        let test_col = Float64Column::with_name(test_values, col_name.clone());
                         
-                        train_df.add_float_column(col_name, train_col)?;
-                        test_df.add_float_column(col_name, test_col)?;
+                        train_df.add_column(col_name, Column::Float64(train_col))?;
+                        test_df.add_column(col_name, Column::Float64(test_col))?;
                     },
                     crate::column::ColumnType::Int64 => {
                         let mut train_values = Vec::with_capacity(n_rows - (test_end - test_start));
                         let mut test_values = Vec::with_capacity(test_end - test_start);
                         
                         for i in 0..n_rows {
-                            let value = column.get_i64(i)?.unwrap_or(0);
+                            let value = if let Some(int_col) = column.as_int64() {
+                                int_col.get(i)?.unwrap_or(0)
+                            } else {
+                                0 // Default for incompatible column type
+                            };
                             if i < test_start || i >= test_end {
                                 train_values.push(value);
                             } else {
@@ -845,18 +956,26 @@ pub mod model_selection {
                             }
                         }
                         
-                        let train_col = crate::column::Int64Column::new(train_values, false, col_name.clone())?;
-                        let test_col = crate::column::Int64Column::new(test_values, false, col_name.clone())?;
+                        let train_col = crate::column::Int64Column::with_name(train_values, col_name.clone());
+                        let test_col = crate::column::Int64Column::with_name(test_values, col_name.clone());
                         
-                        train_df.add_int_column(col_name, train_col)?;
-                        test_df.add_int_column(col_name, test_col)?;
+                        train_df.add_column(col_name, Column::Int64(train_col))?;
+                        test_df.add_column(col_name, Column::Int64(test_col))?;
                     },
                     crate::column::ColumnType::String => {
                         let mut train_values = Vec::with_capacity(n_rows - (test_end - test_start));
                         let mut test_values = Vec::with_capacity(test_end - test_start);
                         
                         for i in 0..n_rows {
-                            let value = column.get_string(i)?.unwrap_or_default();
+                            let value = if let Some(string_col) = column.as_string() {
+                                if let Ok(Some(val)) = string_col.get(i) {
+                                    val.to_string()
+                                } else {
+                                    String::default()
+                                }
+                            } else {
+                                String::default()
+                            };
                             if i < test_start || i >= test_end {
                                 train_values.push(value);
                             } else {
@@ -864,18 +983,22 @@ pub mod model_selection {
                             }
                         }
                         
-                        let train_col = crate::column::StringColumn::new(train_values, col_name.clone())?;
-                        let test_col = crate::column::StringColumn::new(test_values, col_name.clone())?;
+                        let train_col = crate::column::StringColumn::with_name(train_values, col_name.clone());
+                        let test_col = crate::column::StringColumn::with_name(test_values, col_name.clone());
                         
-                        train_df.add_string_column(col_name, train_col)?;
-                        test_df.add_string_column(col_name, test_col)?;
+                        train_df.add_column(col_name, Column::String(train_col))?;
+                        test_df.add_column(col_name, Column::String(test_col))?;
                     },
                     crate::column::ColumnType::Boolean => {
                         let mut train_values = Vec::with_capacity(n_rows - (test_end - test_start));
                         let mut test_values = Vec::with_capacity(test_end - test_start);
                         
                         for i in 0..n_rows {
-                            let value = column.get_bool(i)?.unwrap_or(false);
+                            let value = if let Some(bool_col) = column.as_boolean() {
+                                bool_col.get(i)?.unwrap_or(false)
+                            } else {
+                                false
+                            };
                             if i < test_start || i >= test_end {
                                 train_values.push(value);
                             } else {
@@ -883,11 +1006,11 @@ pub mod model_selection {
                             }
                         }
                         
-                        let train_col = crate::column::BooleanColumn::new(train_values, false, col_name.clone())?;
-                        let test_col = crate::column::BooleanColumn::new(test_values, false, col_name.clone())?;
+                        let train_col = crate::column::BooleanColumn::with_name(train_values, col_name.clone());
+                        let test_col = crate::column::BooleanColumn::with_name(test_values, col_name.clone());
                         
-                        train_df.add_bool_column(col_name, train_col)?;
-                        test_df.add_bool_column(col_name, test_col)?;
+                        train_df.add_column(col_name, Column::Boolean(train_col))?;
+                        test_df.add_column(col_name, Column::Boolean(test_col))?;
                     },
                 }
             }
@@ -930,12 +1053,12 @@ pub mod model_selection {
         // ランダムにシャッフル
         let mut rng = match random_state {
             Some(seed) => StdRng::seed_from_u64(seed),
-            None => StdRng::from_entropy(),
+            None => StdRng::seed_from_u64(rand::random()),
         };
         
         // Fisher-Yatesアルゴリズムでシャッフル
         for i in (1..indices.len()).rev() {
-            let j = rng.gen_range(0..=i);
+            let j = rng.random_range(0..=i);
             indices.swap(i, j);
         }
         
@@ -974,18 +1097,26 @@ pub mod model_selection {
                         let mut test_values = Vec::with_capacity(test_indices.len());
                         
                         for &idx in &train_indices {
-                            train_values.push(column.get_f64(idx)?.unwrap_or(0.0));
+                            if let Some(float_col) = column.as_float64() {
+                            train_values.push(float_col.get(idx)?.unwrap_or(0.0));
+                        } else {
+                            train_values.push(0.0); // Default for incompatible column type
+                        }
                         }
                         
                         for &idx in &test_indices {
-                            test_values.push(column.get_f64(idx)?.unwrap_or(0.0));
+                            if let Some(float_col) = column.as_float64() {
+                            test_values.push(float_col.get(idx)?.unwrap_or(0.0));
+                        } else {
+                            test_values.push(0.0); // Default for incompatible column type
+                        }
                         }
                         
-                        let train_col = Float64Column::new(train_values, false, col_name.clone())?;
-                        let test_col = Float64Column::new(test_values, false, col_name.clone())?;
+                        let train_col = Float64Column::with_name(train_values, col_name.clone());
+                        let test_col = Float64Column::with_name(test_values, col_name.clone());
                         
-                        train_df.add_float_column(col_name, train_col)?;
-                        test_df.add_float_column(col_name, test_col)?;
+                        train_df.add_column(col_name, Column::Float64(train_col))?;
+                        test_df.add_column(col_name, Column::Float64(test_col))?;
                     },
                     // 他のデータ型も同様に処理
                     _ => {

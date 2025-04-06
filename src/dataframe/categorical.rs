@@ -503,7 +503,7 @@ impl DataFrame {
     ///
     /// # 引数
     /// * `name` - 列名
-    /// * `series` - NASeries<String>
+    /// * `series` - `NASeries<String>`
     /// * `categories` - カテゴリのリスト（省略可）
     /// * `ordered` - カテゴリの順序（省略可）
     ///

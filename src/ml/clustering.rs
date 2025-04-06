@@ -87,11 +87,11 @@ impl KMeans {
         
         let mut rng = match self.random_seed {
             Some(seed) => StdRng::seed_from_u64(seed),
-            None => StdRng::from_entropy(),
+            None => StdRng::seed_from_u64(rand::random()),
         };
         
         // 最初の中心をランダムに選択
-        let first_idx = rng.gen_range(0..n_samples);
+        let first_idx = rng.random_range(0..n_samples);
         let mut centroids = vec![data[first_idx].clone()];
         
         // 残りのk-1個の中心を選択
@@ -113,7 +113,7 @@ impl KMeans {
             
             // 距離の二乗に比例した確率で次の中心を選択
             let mut cumsum = 0.0;
-            let threshold = rng.gen_range(0.0..sum_distances);
+            let threshold = rng.random_range(0.0..sum_distances);
             
             for (i, &dist) in distances.iter().enumerate() {
                 cumsum += dist;
@@ -132,8 +132,16 @@ impl KMeans {
         match col.column_type() {
             crate::column::ColumnType::Float64 => {
                 let mut values = Vec::with_capacity(col.len());
+                let float_col = col.as_float64().ok_or_else(|| 
+                    Error::ColumnTypeMismatch {
+                        name: col.column().name().unwrap_or("").to_string(),
+                        expected: crate::column::ColumnType::Float64,
+                        found: col.column_type(),
+                    }
+                )?;
+                
                 for i in 0..col.len() {
-                    if let Some(value) = col.get_f64(i)? {
+                    if let Ok(Some(value)) = float_col.get(i) {
                         values.push(value);
                     } else {
                         values.push(0.0); // NAは0として扱う（または適切な戦略を実装）
@@ -143,8 +151,16 @@ impl KMeans {
             },
             crate::column::ColumnType::Int64 => {
                 let mut values = Vec::with_capacity(col.len());
+                let int_col = col.as_int64().ok_or_else(|| 
+                    Error::ColumnTypeMismatch {
+                        name: col.column().name().unwrap_or("").to_string(),
+                        expected: crate::column::ColumnType::Int64,
+                        found: col.column_type(),
+                    }
+                )?;
+                
                 for i in 0..col.len() {
-                    if let Some(value) = col.get_i64(i)? {
+                    if let Ok(Some(value)) = int_col.get(i) {
                         values.push(value as f64);
                     } else {
                         values.push(0.0); // NAは0として扱う
@@ -332,8 +348,8 @@ impl Transformer for KMeans {
         }
         
         // クラスタラベルと距離を新しい列として追加
-        let labels_column = Column::Int64(crate::column::Int64Column::new(labels, false, "cluster".to_string())?);
-        let distances_column = Column::Float64(Float64Column::new(distances, false, "distance_to_centroid".to_string())?);
+        let labels_column = Column::Int64(crate::column::Int64Column::with_name(labels, "cluster".to_string()));
+        let distances_column = Column::Float64(Float64Column::with_name(distances, "distance_to_centroid".to_string()));
         
         result.add_column("cluster".to_string(), labels_column)?;
         result.add_column("distance_to_centroid".to_string(), distances_column)?;
@@ -465,7 +481,7 @@ impl AgglomerativeClustering {
             }
             Linkage::Complete => {
                 // 完全連結法：最大距離
-                let mut max_dist = 0.0;
+                let mut max_dist: f64 = 0.0;
                 
                 for &i in cluster1 {
                     for &j in cluster2 {
@@ -554,8 +570,16 @@ impl AgglomerativeClustering {
         match col.column_type() {
             crate::column::ColumnType::Float64 => {
                 let mut values = Vec::with_capacity(col.len());
+                let float_col = col.as_float64().ok_or_else(|| 
+                    Error::ColumnTypeMismatch {
+                        name: col.column().name().unwrap_or("").to_string(),
+                        expected: crate::column::ColumnType::Float64,
+                        found: col.column_type(),
+                    }
+                )?;
+                
                 for i in 0..col.len() {
-                    if let Some(value) = col.get_f64(i)? {
+                    if let Ok(Some(value)) = float_col.get(i) {
                         values.push(value);
                     } else {
                         values.push(0.0); // NAは0として扱う（または適切な戦略を実装）
@@ -565,8 +589,16 @@ impl AgglomerativeClustering {
             },
             crate::column::ColumnType::Int64 => {
                 let mut values = Vec::with_capacity(col.len());
+                let int_col = col.as_int64().ok_or_else(|| 
+                    Error::ColumnTypeMismatch {
+                        name: col.column().name().unwrap_or("").to_string(),
+                        expected: crate::column::ColumnType::Int64,
+                        found: col.column_type(),
+                    }
+                )?;
+                
                 for i in 0..col.len() {
-                    if let Some(value) = col.get_i64(i)? {
+                    if let Ok(Some(value)) = int_col.get(i) {
                         values.push(value as f64);
                     } else {
                         values.push(0.0); // NAは0として扱う
@@ -689,7 +721,7 @@ impl Transformer for AgglomerativeClustering {
         
         // クラスタラベルを新しい列として追加
         let labels: Vec<i64> = self.labels.iter().map(|&l| l as i64).collect();
-        let labels_column = Column::Int64(crate::column::Int64Column::new(labels, false, "cluster".to_string())?);
+        let labels_column = Column::Int64(crate::column::Int64Column::with_name(labels, "cluster".to_string()));
         
         result.add_column("cluster".to_string(), labels_column)?;
         
@@ -830,8 +862,16 @@ impl DBSCAN {
         match col.column_type() {
             crate::column::ColumnType::Float64 => {
                 let mut values = Vec::with_capacity(col.len());
+                let float_col = col.as_float64().ok_or_else(|| 
+                    Error::ColumnTypeMismatch {
+                        name: col.column().name().unwrap_or("").to_string(),
+                        expected: crate::column::ColumnType::Float64,
+                        found: col.column_type(),
+                    }
+                )?;
+                
                 for i in 0..col.len() {
-                    if let Some(value) = col.get_f64(i)? {
+                    if let Ok(Some(value)) = float_col.get(i) {
                         values.push(value);
                     } else {
                         values.push(0.0); // NAは0として扱う（または適切な戦略を実装）
@@ -841,8 +881,16 @@ impl DBSCAN {
             },
             crate::column::ColumnType::Int64 => {
                 let mut values = Vec::with_capacity(col.len());
+                let int_col = col.as_int64().ok_or_else(|| 
+                    Error::ColumnTypeMismatch {
+                        name: col.column().name().unwrap_or("").to_string(),
+                        expected: crate::column::ColumnType::Int64,
+                        found: col.column_type(),
+                    }
+                )?;
+                
                 for i in 0..col.len() {
-                    if let Some(value) = col.get_i64(i)? {
+                    if let Ok(Some(value)) = int_col.get(i) {
                         values.push(value as f64);
                     } else {
                         values.push(0.0); // NAは0として扱う
@@ -914,7 +962,46 @@ impl Transformer for DBSCAN {
                     self.labels[i] = -1;
                 } else {
                     // 新しいクラスタを開始
-                    self.expand_cluster(i, &neighbors, cluster_id, &mut self.labels, &data, &mut visited);
+                    // クラスタを拡張（自己参照の問題を避けるために手動で実装）
+                    self.labels[i] = cluster_id;
+                    
+                    // 近傍点リストを作業用にコピー
+                    let mut process_queue = neighbors.clone();
+                    let mut index = 0;
+                    
+                    // キュー内のすべての点を処理
+                    while index < process_queue.len() {
+                        let current_point = process_queue[index];
+                        index += 1;
+                        
+                        // 未訪問の点を処理
+                        if !visited.contains(&current_point) {
+                            visited.insert(current_point);
+                            
+                            // 現在の点の近傍を取得
+                            let current_neighbors: Vec<usize> = data.iter().enumerate()
+                                .filter(|(idx, point)| {
+                                    *idx != current_point && 
+                                    self.compute_distance(&data[current_point], point) <= self.eps
+                                })
+                                .map(|(idx, _)| idx)
+                                .collect::<Vec<_>>();
+                            
+                            // コア点の場合、そのエッジも処理
+                            if current_neighbors.len() >= self.min_samples {
+                                for &neighbor in &current_neighbors {
+                                    if !process_queue.contains(&neighbor) {
+                                        process_queue.push(neighbor);
+                                    }
+                                }
+                            }
+                        }
+                        
+                        // ラベルを割り当て
+                        if self.labels[current_point] == -1 {
+                            self.labels[current_point] = cluster_id;
+                        }
+                    }
                     cluster_id += 1;
                 }
             }
@@ -943,7 +1030,8 @@ impl Transformer for DBSCAN {
         let mut result = df.clone();
         
         // クラスタラベルを新しい列として追加
-        let labels_column = Column::Int64(crate::column::Int64Column::new(self.labels.clone(), false, "cluster".to_string())?);
+        let int_column = crate::column::Int64Column::with_name(self.labels.clone(), "cluster".to_string());
+        let labels_column = Column::Int64(int_column);
         
         result.add_column("cluster".to_string(), labels_column)?;
         

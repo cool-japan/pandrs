@@ -446,7 +446,7 @@ where
         })
     }
     
-    /// カテゴリカルデータをNA<T>ベクトルに変換
+    /// カテゴリカルデータを`NA<T>`ベクトルに変換
     pub fn to_na_vec(&self) -> Vec<NA<T>> {
         self.codes
             .iter()

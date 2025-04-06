@@ -212,7 +212,7 @@ where
 }
 
 impl Series<String> {
-    /// 文字列Seriesを数値のNA<f64>ベクトルに変換
+    /// 文字列Seriesを数値の`NA<f64>`ベクトルに変換
     /// 
     /// 各要素を数値に変換します。変換できない場合はNAを返します。
     pub fn to_numeric_vec(&self) -> Result<Vec<NA<f64>>> {

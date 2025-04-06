@@ -71,6 +71,9 @@ pub enum Error {
     #[error("型変換エラー: {0}")]
     Cast(String),
     
+    #[error("型エラー: {0}")]
+    Type(String),
+    
     #[error("データ形式エラー: {0}")]
     Format(String),
     
@@ -91,6 +94,9 @@ pub enum Error {
     
     #[error("操作エラー: {0}")]
     Operation(String),
+    
+    #[error("計算エラー: {0}")]
+    Computation(String),
     
     #[error("次元不一致エラー: {0}")]
     DimensionMismatch(String),
