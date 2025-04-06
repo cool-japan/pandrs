@@ -9,6 +9,10 @@
 #![allow(clippy::too_many_arguments)]
 #![allow(clippy::needless_lifetimes)]
 
+// マクロを利用するクレート
+#[macro_use]
+extern crate simple_excel_writer;
+
 pub mod column;
 pub mod dataframe;
 pub mod error;

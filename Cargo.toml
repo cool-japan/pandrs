@@ -28,6 +28,12 @@ lazy_static = "1.5.0"  # グローバル変数/シングルトン用
 parquet = "54.3.1"  # Parquetファイルのサポート
 arrow = "54.3.1"  # Arrowフォーマットのサポート
 plotters = "0.3.7"
+# Excel対応
+calamine = "0.23.1"  # Excel読み込み用
+simple_excel_writer = "0.2.0"  # Excel書き込み用
+# SQL対応
+sqlx = { version = "0.7.3", features = ["runtime-tokio", "mysql", "postgres", "sqlite"], optional = true }
+rusqlite = "0.30.0"  # SQLite対応
 
 [features]
 default = []

@@ -111,6 +111,15 @@ where
         self.name = Some(name);
         self
     }
+    
+    /// Series<T>をSeries<String>に変換するメソッド
+    pub fn to_string_series(&self) -> Result<Series<String>> 
+    where 
+        T: std::fmt::Display,
+    {
+        let string_values: Vec<String> = self.values.iter().map(|v| v.to_string()).collect();
+        Series::new(string_values, self.name.clone())
+    }
 }
 
 // 数値型のSeriesに対する特化実装

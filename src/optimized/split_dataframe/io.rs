@@ -1,11 +1,15 @@
 //! OptimizedDataFrameの入出力関連機能
 
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufReader, BufWriter};
 use std::path::Path;
 use std::sync::Arc;
 
+use calamine::{open_workbook, Reader, Xlsx};
 use csv::{ReaderBuilder, Writer};
+use office::excel::{Excel, Row, WorkbookContext};
+use rusqlite::{Connection, params};
 use serde_json::{Map, Value};
 use arrow::array::{ArrayRef, BooleanArray, Float64Array, Int64Array, StringArray};
 use arrow::datatypes::{DataType, Field, Schema};
@@ -591,15 +595,89 @@ impl OptimizedDataFrame {
     ///
     /// # Arguments
     /// * `path` - 書き込み先のParquetファイルパス
-    /// * `compression` - 圧縮方式（オプション、Noneの場合はZSTDが使用される）
+    /// * `compression` - 圧縮方式（オプション、Noneの場合はSnappyが使用される）
     ///
     /// # Returns
     /// * `Result<()>` - 成功時はOk
     pub fn to_parquet<P: AsRef<Path>>(&self, path: P, compression: Option<ParquetCompression>) -> Result<()> {
-        // 現在は実装されていないので、未実装エラーを返す
-        Err(Error::NotImplemented(
-            "Parquet書き込み機能は現在実装中です。将来のバージョンで利用可能になります。".to_string()
-        ))
+        // 行がない場合でも空のデータフレームとして書き込む
+        
+        // Arrowスキーマを作成
+        let schema_fields: Vec<Field> = self.column_names.iter()
+            .enumerate()
+            .map(|(idx, col_name)| {
+                match &self.columns[idx] {
+                    Column::Int64(_) => Field::new(col_name, DataType::Int64, true),
+                    Column::Float64(_) => Field::new(col_name, DataType::Float64, true),
+                    Column::Boolean(_) => Field::new(col_name, DataType::Boolean, true),
+                    Column::String(_) => Field::new(col_name, DataType::Utf8, true),
+                }
+            })
+            .collect();
+        
+        let schema = Schema::new(schema_fields);
+        let schema_ref = Arc::new(schema);
+        
+        // 列データをArrow配列に変換
+        let arrays: Vec<ArrayRef> = self.column_names.iter()
+            .enumerate()
+            .map(|(idx, _)| {
+                match &self.columns[idx] {
+                    Column::Int64(col) => {
+                        let values: Vec<i64> = (0..self.row_count)
+                            .map(|i| col.get(i).unwrap_or(Ok(Some(0))).unwrap_or(Some(0)).unwrap_or(0))
+                            .collect();
+                        Arc::new(Int64Array::from(values)) as ArrayRef
+                    },
+                    Column::Float64(col) => {
+                        let values: Vec<f64> = (0..self.row_count)
+                            .map(|i| col.get(i).unwrap_or(Ok(Some(f64::NAN))).unwrap_or(Some(f64::NAN)).unwrap_or(f64::NAN))
+                            .collect();
+                        Arc::new(Float64Array::from(values)) as ArrayRef
+                    },
+                    Column::Boolean(col) => {
+                        let values: Vec<bool> = (0..self.row_count)
+                            .map(|i| col.get(i).unwrap_or(Ok(Some(false))).unwrap_or(Some(false)).unwrap_or(false))
+                            .collect();
+                        Arc::new(BooleanArray::from(values)) as ArrayRef
+                    },
+                    Column::String(col) => {
+                        let values: Vec<String> = (0..self.row_count)
+                            .map(|i| col.get(i).unwrap_or(Ok(Some(String::new()))).unwrap_or(Some(String::new())).unwrap_or_else(|| String::new()))
+                            .collect();
+                        Arc::new(StringArray::from(values)) as ArrayRef
+                    },
+                }
+            })
+            .collect();
+        
+        // レコードバッチを作成
+        let batch = RecordBatch::try_new(schema_ref.clone(), arrays)
+            .map_err(|e| Error::Conversion(format!("レコードバッチの作成に失敗しました: {}", e)))?;
+        
+        // 圧縮オプションを設定
+        let compression_type = compression.unwrap_or(ParquetCompression::Snappy);
+        let props = WriterProperties::builder()
+            .set_compression(Compression::from(compression_type))
+            .build();
+        
+        // ファイルを作成
+        let file = File::create(path.as_ref())
+            .map_err(|e| Error::IO(format!("Parquetファイルを作成できませんでした: {}", e)))?;
+        
+        // Arrowライターを作成して書き込み
+        let mut writer = ArrowWriter::try_new(file, schema_ref, Some(props))
+            .map_err(|e| Error::IO(format!("Parquetライターの作成に失敗しました: {}", e)))?;
+        
+        // レコードバッチを書き込む
+        writer.write(&batch)
+            .map_err(|e| Error::IO(format!("レコードバッチの書き込みに失敗しました: {}", e)))?;
+        
+        // ファイルを閉じる
+        writer.close()
+            .map_err(|e| Error::IO(format!("Parquetファイルの閉じる操作に失敗しました: {}", e)))?;
+        
+        Ok(())
     }
 
     /// ParquetファイルからDataFrameを読み込む
@@ -610,9 +688,671 @@ impl OptimizedDataFrame {
     /// # Returns
     /// * `Result<Self>` - 読み込んだDataFrame
     pub fn from_parquet<P: AsRef<Path>>(path: P) -> Result<Self> {
-        // 現在は実装されていないので、未実装エラーを返す
-        Err(Error::NotImplemented(
-            "Parquet読み込み機能は現在実装中です。将来のバージョンで利用可能になります。".to_string()
-        ))
+        // ファイルを開く
+        let file = File::open(path.as_ref())
+            .map_err(|e| Error::IO(format!("Parquetファイルを開けませんでした: {}", e)))?;
+        
+        // ArrowのParquetReaderを作成
+        let builder = ParquetRecordBatchReaderBuilder::try_new(file)
+            .map_err(|e| Error::IO(format!("Parquetファイルの解析に失敗しました: {}", e)))?;
+        
+        // スキーマ情報を取得
+        let schema = builder.schema();
+        
+        // レコードバッチリーダーを作成
+        let mut reader = builder.build()
+            .map_err(|e| Error::IO(format!("Parquetファイルの読み込みに失敗しました: {}", e)))?;
+        
+        // 全てのレコードバッチを読み込む
+        let mut all_batches = Vec::new();
+        for batch_result in reader {
+            let batch = batch_result
+                .map_err(|e| Error::IO(format!("レコードバッチの読み込みに失敗しました: {}", e)))?;
+            all_batches.push(batch);
+        }
+        
+        // レコードバッチがない場合は空のデータフレームを返す
+        if all_batches.is_empty() {
+            return Ok(Self::new());
+        }
+        
+        // データフレームに変換
+        let mut df = Self::new();
+        
+        // スキーマから列情報を取得
+        for (col_idx, field) in schema.fields().iter().enumerate() {
+            let col_name = field.name().clone();
+            let col_type = field.data_type();
+            
+            // 全てのバッチから列データを収集
+            match col_type {
+                DataType::Int64 => {
+                    let mut values = Vec::new();
+                    
+                    for batch in &all_batches {
+                        let array = batch.column(col_idx).as_any().downcast_ref::<Int64Array>()
+                            .ok_or_else(|| Error::Conversion(format!("列 '{}' をInt64Arrayに変換できませんでした", col_name)))?;
+                        
+                        for i in 0..array.len() {
+                            if array.is_null(i) {
+                                values.push(0);  // NULLの場合はデフォルト値として0を使用
+                            } else {
+                                values.push(array.value(i));
+                            }
+                        }
+                    }
+                    
+                    df.add_column(col_name, Column::Int64(Int64Column::new(values)))?;
+                },
+                DataType::Float64 => {
+                    let mut values = Vec::new();
+                    
+                    for batch in &all_batches {
+                        let array = batch.column(col_idx).as_any().downcast_ref::<Float64Array>()
+                            .ok_or_else(|| Error::Conversion(format!("列 '{}' をFloat64Arrayに変換できませんでした", col_name)))?;
+                        
+                        for i in 0..array.len() {
+                            if array.is_null(i) {
+                                values.push(f64::NAN);  // NULLの場合はNaNを使用
+                            } else {
+                                values.push(array.value(i));
+                            }
+                        }
+                    }
+                    
+                    df.add_column(col_name, Column::Float64(Float64Column::new(values)))?;
+                },
+                DataType::Boolean => {
+                    let mut values = Vec::new();
+                    
+                    for batch in &all_batches {
+                        let array = batch.column(col_idx).as_any().downcast_ref::<BooleanArray>()
+                            .ok_or_else(|| Error::Conversion(format!("列 '{}' をBooleanArrayに変換できませんでした", col_name)))?;
+                        
+                        for i in 0..array.len() {
+                            if array.is_null(i) {
+                                values.push(false);  // NULLの場合はデフォルト値としてfalseを使用
+                            } else {
+                                values.push(array.value(i));
+                            }
+                        }
+                    }
+                    
+                    df.add_column(col_name, Column::Boolean(BooleanColumn::new(values)))?;
+                },
+                DataType::Utf8 | DataType::LargeUtf8 => {
+                    let mut values = Vec::new();
+                    
+                    for batch in &all_batches {
+                        let array = batch.column(col_idx).as_any().downcast_ref::<StringArray>()
+                            .ok_or_else(|| Error::Conversion(format!("列 '{}' をStringArrayに変換できませんでした", col_name)))?;
+                        
+                        for i in 0..array.len() {
+                            if array.is_null(i) {
+                                values.push("".to_string());  // NULLの場合は空文字列を使用
+                            } else {
+                                values.push(array.value(i).to_string());
+                            }
+                        }
+                    }
+                    
+                    df.add_column(col_name, Column::String(StringColumn::new(values)))?;
+                },
+                _ => {
+                    // サポートされていないデータ型は文字列として扱う
+                    let mut values = Vec::new();
+                    
+                    for batch in &all_batches {
+                        let array = batch.column(col_idx);
+                        for i in 0..array.len() {
+                            if array.is_null(i) {
+                                values.push("".to_string());
+                            } else {
+                                values.push(format!("{:?}", array.value(i)));
+                            }
+                        }
+                    }
+                    
+                    df.add_column(col_name, Column::String(StringColumn::new(values)))?;
+                },
+            }
+        }
+        
+        Ok(df)
+    }
+    
+    /// Excelファイル (.xlsx) からDataFrameを読み込む
+    ///
+    /// # Arguments
+    /// * `path` - Excelファイルのパス
+    /// * `sheet_name` - 読み込むシート名 (Noneの場合、最初のシートを読み込む)
+    /// * `header` - ヘッダー行があるかどうか
+    /// * `skip_rows` - 読み込み開始前にスキップする行数
+    /// * `use_cols` - 読み込む列名または列番号のリスト (Noneの場合、すべての列を読み込む)
+    ///
+    /// # Returns
+    /// * `Result<Self>` - 読み込んだDataFrame
+    pub fn from_excel<P: AsRef<Path>>(
+        path: P, 
+        sheet_name: Option<&str>,
+        header: bool,
+        skip_rows: usize,
+        use_cols: Option<&[&str]>,
+    ) -> Result<Self> {
+        // ファイルを開く
+        let mut workbook: Xlsx<BufReader<File>> = open_workbook(path.as_ref())
+            .map_err(|e| Error::IO(format!("Excelファイルを開けませんでした: {}", e)))?;
+        
+        // シート名を取得（指定がなければ最初のシート）
+        let sheet_name = match sheet_name {
+            Some(name) => name.to_string(),
+            None => workbook.sheet_names().get(0)
+                .ok_or_else(|| Error::IO("Excelファイルにシートがありません".to_string()))?
+                .clone(),
+        };
+        
+        // シートを取得
+        let range = workbook.worksheet_range(&sheet_name)
+            .map_err(|e| Error::IO(format!("シート '{}' を読み込めませんでした: {}", sheet_name, e)))?;
+        
+        // 列名（ヘッダー）を取得
+        let mut column_names: Vec<String> = Vec::new();
+        if header && !range.is_empty() && skip_rows < range.rows().len() {
+            // ヘッダー行を取得
+            let header_row = range.rows().nth(skip_rows).unwrap();
+            
+            // 列名を文字列に変換
+            for cell in header_row {
+                column_names.push(cell.to_string());
+            }
+        } else {
+            // ヘッダーがない場合、列番号を列名として使用
+            if !range.is_empty() {
+                let first_row = range.rows().next().unwrap();
+                for i in 0..first_row.len() {
+                    column_names.push(format!("Column{}", i+1));
+                }
+            }
+        }
+        
+        // 読み込む列を決定
+        let use_cols_indices = if let Some(cols) = use_cols {
+            // 指定された列のインデックスを取得
+            let mut indices = Vec::new();
+            for col_name in cols {
+                if let Some(pos) = column_names.iter().position(|name| name == col_name) {
+                    indices.push(pos);
+                }
+            }
+            Some(indices)
+        } else {
+            None
+        };
+        
+        // データフレームを作成
+        let mut df = Self::new();
+        
+        // 列ごとにデータを収集
+        let mut column_data: HashMap<usize, Vec<String>> = HashMap::new();
+        let start_row = if header { skip_rows + 1 } else { skip_rows };
+        
+        for (row_idx, row) in range.rows().enumerate().skip(start_row) {
+            for (col_idx, cell) in row.iter().enumerate() {
+                // 使用する列のみ処理
+                if let Some(ref indices) = use_cols_indices {
+                    if !indices.contains(&col_idx) {
+                        continue;
+                    }
+                }
+                
+                // 列データに追加
+                column_data.entry(col_idx)
+                    .or_insert_with(Vec::new)
+                    .push(cell.to_string());
+            }
+        }
+        
+        // 列データをDataFrameに追加
+        for col_idx in 0..column_names.len() {
+            // 使用する列のみ処理
+            if let Some(ref indices) = use_cols_indices {
+                if !indices.contains(&col_idx) {
+                    continue;
+                }
+            }
+            
+            let col_name = column_names.get(col_idx)
+                .unwrap_or(&format!("Column{}", col_idx+1))
+                .clone();
+            
+            // 列データを取得
+            let data = column_data.get(&col_idx).cloned().unwrap_or_default();
+            
+            // 空の列はスキップ
+            if data.is_empty() {
+                continue;
+            }
+            
+            // データ型を推測して適切な列を作成
+            let non_empty_values: Vec<&String> = data.iter().filter(|s| !s.is_empty()).collect();
+            
+            if non_empty_values.is_empty() {
+                // すべて空の場合は文字列型
+                df.add_column(col_name, Column::String(StringColumn::new(data)))?;
+                continue;
+            }
+            
+            // 整数型として解析を試みる
+            let all_ints = non_empty_values.iter().all(|&s| s.parse::<i64>().is_ok());
+            if all_ints {
+                let int_values: Vec<i64> = data.iter()
+                    .map(|s| s.parse::<i64>().unwrap_or(0))
+                    .collect();
+                df.add_column(col_name, Column::Int64(Int64Column::new(int_values)))?;
+                continue;
+            }
+            
+            // 浮動小数点型として解析を試みる
+            let all_floats = non_empty_values.iter().all(|&s| s.parse::<f64>().is_ok());
+            if all_floats {
+                let float_values: Vec<f64> = data.iter()
+                    .map(|s| s.parse::<f64>().unwrap_or(0.0))
+                    .collect();
+                df.add_column(col_name, Column::Float64(Float64Column::new(float_values)))?;
+                continue;
+            }
+            
+            // ブール型として解析を試みる
+            let all_bools = non_empty_values.iter().all(|&s| {
+                let s = s.trim().to_lowercase();
+                s == "true" || s == "false" || s == "1" || s == "0" || 
+                s == "yes" || s == "no" || s == "t" || s == "f"
+            });
+            
+            if all_bools {
+                let bool_values: Vec<bool> = data.iter()
+                    .map(|s| {
+                        let s = s.trim().to_lowercase();
+                        s == "true" || s == "1" || s == "yes" || s == "t"
+                    })
+                    .collect();
+                df.add_column(col_name, Column::Boolean(BooleanColumn::new(bool_values)))?;
+            } else {
+                // デフォルトは文字列型
+                df.add_column(col_name, Column::String(StringColumn::new(data)))?;
+            }
+        }
+        
+        Ok(df)
+    }
+    
+    /// DataFrameをExcelファイル (.xlsx) に書き込む
+    ///
+    /// # Arguments
+    /// * `path` - 出力するExcelファイルのパス
+    /// * `sheet_name` - シート名 (Noneの場合、"Sheet1"が使用される)
+    /// * `index` - インデックスを含めるかどうか
+    ///
+    /// # Returns
+    /// * `Result<()>` - 成功時はOk
+    pub fn to_excel<P: AsRef<Path>>(
+        &self,
+        path: P,
+        sheet_name: Option<&str>,
+        index: bool,
+    ) -> Result<()> {
+        // 新しいExcelファイルを作成
+        let mut workbook = Excel::new();
+        let sheet_name = sheet_name.unwrap_or("Sheet1");
+        
+        // シートを追加
+        let worksheet = workbook.create_worksheet(sheet_name);
+        let context = WorkbookContext::new();
+        
+        // ヘッダー行を追加
+        let mut headers = Vec::new();
+        
+        // インデックスを含める場合
+        if index {
+            headers.push("Index".to_string());
+        }
+        
+        // 列名を追加
+        for col_name in &self.column_names {
+            headers.push(col_name.clone());
+        }
+        
+        // ヘッダー行を書き込む
+        let header_row = worksheet.add_row();
+        for (col_idx, header) in headers.iter().enumerate() {
+            header_row.set_value(col_idx as u32, header.clone(), &context);
+        }
+        
+        // データ行を書き込む
+        for row_idx in 0..self.row_count {
+            let row = worksheet.add_row();
+            let mut col_offset = 0;
+            
+            // インデックスを含める場合
+            if index {
+                row.set_value(0, row_idx.to_string(), &context);
+                col_offset = 1;
+            }
+            
+            // 各列のデータを書き込む
+            for (col_idx, col) in self.columns.iter().enumerate() {
+                let value = match col {
+                    Column::Int64(c) => {
+                        if let Ok(Some(val)) = c.get(row_idx) {
+                            val.to_string()
+                        } else {
+                            String::new()
+                        }
+                    },
+                    Column::Float64(c) => {
+                        if let Ok(Some(val)) = c.get(row_idx) {
+                            val.to_string()
+                        } else {
+                            String::new()
+                        }
+                    },
+                    Column::String(c) => {
+                        if let Ok(Some(val)) = c.get(row_idx) {
+                            val.clone()
+                        } else {
+                            String::new()
+                        }
+                    },
+                    Column::Boolean(c) => {
+                        if let Ok(Some(val)) = c.get(row_idx) {
+                            val.to_string()
+                        } else {
+                            String::new()
+                        }
+                    },
+                };
+                
+                row.set_value((col_idx + col_offset) as u32, value, &context);
+            }
+        }
+        
+        // ファイルに保存
+        let file = File::create(path)
+            .map_err(|e| Error::IO(format!("Excelファイルを作成できませんでした: {}", e)))?;
+        let mut writer = BufWriter::new(file);
+        workbook.save(&mut writer)
+            .map_err(|e| Error::IO(format!("Excelファイルに書き込めませんでした: {}", e)))?;
+        
+        Ok(())
+    }
+    
+    /// SQLクエリの実行結果からDataFrameを作成する
+    ///
+    /// # Arguments
+    /// * `query` - 実行するSQLクエリ
+    /// * `db_path` - SQLiteデータベースファイルのパス
+    ///
+    /// # Returns
+    /// * `Result<Self>` - クエリ結果を含むDataFrame
+    pub fn from_sql<P: AsRef<Path>>(query: &str, db_path: P) -> Result<Self> {
+        // データベース接続
+        let conn = Connection::open(db_path)
+            .map_err(|e| Error::IO(format!("データベースに接続できませんでした: {}", e)))?;
+        
+        // クエリを準備
+        let mut stmt = conn.prepare(query)
+            .map_err(|e| Error::IO(format!("SQLクエリの準備に失敗しました: {}", e)))?;
+        
+        // 列名を取得
+        let column_names: Vec<String> = stmt.column_names().iter()
+            .map(|&name| name.to_string())
+            .collect();
+        
+        // 列ごとのデータを格納するためのマップ
+        let mut column_data: HashMap<String, Vec<String>> = HashMap::new();
+        for name in &column_names {
+            column_data.insert(name.clone(), Vec::new());
+        }
+        
+        // クエリを実行して結果を取得
+        let mut rows = stmt.query([])
+            .map_err(|e| Error::IO(format!("SQLクエリの実行に失敗しました: {}", e)))?;
+        
+        // 各行のデータを処理
+        while let Some(row) = rows.next()
+            .map_err(|e| Error::IO(format!("SQLクエリの結果取得に失敗しました: {}", e)))? {
+            
+            for (idx, name) in column_names.iter().enumerate() {
+                let value: Option<String> = row.get(idx)
+                    .map_err(|e| Error::IO(format!("行データの取得に失敗しました: {}", e)))?;
+                
+                if let Some(data) = column_data.get_mut(name) {
+                    data.push(value.unwrap_or_else(|| "NULL".to_string()));
+                }
+            }
+        }
+        
+        // DataFrameを作成
+        let mut df = Self::new();
+        
+        // 列データからデータフレームを作成
+        for name in column_names {
+            if let Some(data) = column_data.get(&name) {
+                // 空でない値のチェック
+                let non_empty_values: Vec<&String> = data.iter()
+                    .filter(|s| !s.is_empty() && *s != "NULL")
+                    .collect();
+                
+                if non_empty_values.is_empty() {
+                    // すべて空の場合は文字列型
+                    df.add_column(name, Column::String(StringColumn::new(
+                        data.iter().map(|s| s.clone()).collect()
+                    )))?;
+                    continue;
+                }
+                
+                // 整数型として解析を試みる
+                let all_ints = non_empty_values.iter().all(|&s| s.parse::<i64>().is_ok());
+                if all_ints {
+                    let int_values: Vec<i64> = data.iter()
+                        .map(|s| {
+                            if s.is_empty() || s == "NULL" {
+                                0
+                            } else {
+                                s.parse::<i64>().unwrap_or(0)
+                            }
+                        })
+                        .collect();
+                    df.add_column(name, Column::Int64(Int64Column::new(int_values)))?;
+                    continue;
+                }
+                
+                // 浮動小数点型として解析を試みる
+                let all_floats = non_empty_values.iter().all(|&s| s.parse::<f64>().is_ok());
+                if all_floats {
+                    let float_values: Vec<f64> = data.iter()
+                        .map(|s| {
+                            if s.is_empty() || s == "NULL" {
+                                0.0
+                            } else {
+                                s.parse::<f64>().unwrap_or(0.0)
+                            }
+                        })
+                        .collect();
+                    df.add_column(name, Column::Float64(Float64Column::new(float_values)))?;
+                    continue;
+                }
+                
+                // ブール型として解析を試みる
+                let all_bools = non_empty_values.iter().all(|&s| {
+                    let s = s.trim().to_lowercase();
+                    s == "true" || s == "false" || s == "1" || s == "0" || 
+                    s == "yes" || s == "no" || s == "t" || s == "f"
+                });
+                
+                if all_bools {
+                    let bool_values: Vec<bool> = data.iter()
+                        .map(|s| {
+                            let s = s.trim().to_lowercase();
+                            s == "true" || s == "1" || s == "yes" || s == "t"
+                        })
+                        .collect();
+                    df.add_column(name, Column::Boolean(BooleanColumn::new(bool_values)))?;
+                } else {
+                    // デフォルトは文字列型
+                    df.add_column(name, Column::String(StringColumn::new(
+                        data.iter().map(|s| if s == "NULL" { String::new() } else { s.clone() }).collect()
+                    )))?;
+                }
+            }
+        }
+        
+        Ok(df)
+    }
+    
+    /// DataFrameをSQLiteテーブルに書き込む
+    ///
+    /// # Arguments
+    /// * `table_name` - テーブル名
+    /// * `db_path` - SQLiteデータベースファイルのパス
+    /// * `if_exists` - テーブルが存在する場合の動作 ("fail", "replace", "append")
+    ///
+    /// # Returns
+    /// * `Result<()>` - 成功時はOk
+    pub fn to_sql<P: AsRef<Path>>(&self, table_name: &str, db_path: P, if_exists: &str) -> Result<()> {
+        // データベース接続
+        let conn = Connection::open(db_path)
+            .map_err(|e| Error::IO(format!("データベースに接続できませんでした: {}", e)))?;
+        
+        // テーブルが存在するか確認
+        let table_exists = conn.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name=?")
+            .map_err(|e| Error::IO(format!("テーブル確認クエリの準備に失敗しました: {}", e)))?
+            .exists(params![table_name])
+            .map_err(|e| Error::IO(format!("テーブル存在確認に失敗しました: {}", e)))?;
+        
+        // if_exists に基づいてテーブルを処理
+        if table_exists {
+            match if_exists {
+                "fail" => {
+                    return Err(Error::IO(format!("テーブル '{}' は既に存在します", table_name)));
+                },
+                "replace" => {
+                    // テーブルを削除して新規作成
+                    conn.execute(&format!("DROP TABLE IF EXISTS {}", table_name), [])
+                        .map_err(|e| Error::IO(format!("テーブルの削除に失敗しました: {}", e)))?;
+                    
+                    // 新しいテーブルを作成
+                    self.create_table_from_df(&conn, table_name)?;
+                },
+                "append" => {
+                    // テーブルは既に存在するので、このままデータを追加
+                },
+                _ => {
+                    return Err(Error::IO(format!("不明なif_exists値: {}", if_exists)));
+                }
+            }
+        } else {
+            // テーブルが存在しない場合は新規作成
+            self.create_table_from_df(&conn, table_name)?;
+        }
+        
+        // データの挿入
+        // カラム名のリスト
+        let columns = self.column_names.join(", ");
+        
+        // プレースホルダーのリスト
+        let placeholders: Vec<String> = (0..self.column_names.len())
+            .map(|_| "?".to_string())
+            .collect();
+        let placeholders = placeholders.join(", ");
+        
+        // INSERT文を準備
+        let insert_sql = format!("INSERT INTO {} ({}) VALUES ({})", table_name, columns, placeholders);
+        
+        // トランザクション開始
+        let tx = conn.transaction()
+            .map_err(|e| Error::IO(format!("トランザクションの開始に失敗しました: {}", e)))?;
+        
+        // 各行のデータを挿入
+        for row_idx in 0..self.row_count {
+            // 行データを取得
+            let mut row_values: Vec<String> = Vec::new();
+            
+            for col in &self.columns {
+                let value = match col {
+                    Column::Int64(c) => {
+                        if let Ok(Some(val)) = c.get(row_idx) {
+                            val.to_string()
+                        } else {
+                            "NULL".to_string()
+                        }
+                    },
+                    Column::Float64(c) => {
+                        if let Ok(Some(val)) = c.get(row_idx) {
+                            val.to_string()
+                        } else {
+                            "NULL".to_string()
+                        }
+                    },
+                    Column::String(c) => {
+                        if let Ok(Some(val)) = c.get(row_idx) {
+                            val.clone()
+                        } else {
+                            "NULL".to_string()
+                        }
+                    },
+                    Column::Boolean(c) => {
+                        if let Ok(Some(val)) = c.get(row_idx) {
+                            val.to_string()
+                        } else {
+                            "NULL".to_string()
+                        }
+                    },
+                };
+                
+                row_values.push(value);
+            }
+            
+            // INSERT実行
+            let mut stmt = tx.prepare(&insert_sql)
+                .map_err(|e| Error::IO(format!("INSERT文の準備に失敗しました: {}", e)))?;
+            
+            let params: Vec<&dyn rusqlite::ToSql> = row_values.iter()
+                .map(|s| s as &dyn rusqlite::ToSql)
+                .collect();
+            
+            stmt.execute(params.as_slice())
+                .map_err(|e| Error::IO(format!("データの挿入に失敗しました: {}", e)))?;
+        }
+        
+        // トランザクションをコミット
+        tx.commit()
+            .map_err(|e| Error::IO(format!("トランザクションのコミットに失敗しました: {}", e)))?;
+        
+        Ok(())
+    }
+    
+    // DataFrameからSQLiteテーブルを作成するヘルパーメソッド
+    fn create_table_from_df(&self, conn: &Connection, table_name: &str) -> Result<()> {
+        // 列名と型のリストを作成
+        let mut columns = Vec::new();
+        
+        for (idx, col_name) in self.column_names.iter().enumerate() {
+            let sql_type = match &self.columns[idx] {
+                Column::Int64(_) => "INTEGER",
+                Column::Float64(_) => "REAL",
+                Column::Boolean(_) => "INTEGER", // SQLiteではブール値は整数として保存
+                Column::String(_) => "TEXT",
+            };
+            
+            columns.push(format!("{} {}", col_name, sql_type));
+        }
+        
+        // CREATE TABLE文を作成して実行
+        let create_sql = format!("CREATE TABLE {} ({})", table_name, columns.join(", "));
+        conn.execute(&create_sql, [])
+            .map_err(|e| Error::IO(format!("テーブルの作成に失敗しました: {}", e)))?;
+        
+        Ok(())
     }
 }
