@@ -130,6 +130,37 @@ impl OptimizedDataFrame {
         }
     }
     
+    /// 文字列インデックスでDataFrameを作成
+    pub fn with_index(index: Index<String>) -> Self {
+        Self {
+            columns: Vec::new(),
+            column_indices: HashMap::new(),
+            column_names: Vec::new(),
+            row_count: index.len(),
+            index: Some(DataFrameIndex::<String>::from_simple(index)),
+        }
+    }
+    
+    /// 複合インデックスでDataFrameを作成
+    pub fn with_multi_index(index: crate::index::MultiIndex<String>) -> Self {
+        Self {
+            columns: Vec::new(),
+            column_indices: HashMap::new(),
+            column_names: Vec::new(),
+            row_count: index.len(),
+            index: Some(DataFrameIndex::<String>::from_multi(index)),
+        }
+    }
+    
+    /// 範囲インデックスでDataFrameを作成
+    pub fn with_range_index(range: std::ops::Range<usize>) -> Result<Self> {
+        let range_idx = Index::<usize>::from_range(range)?;
+        // 数値インデックスを文字列インデックスに変換
+        let string_values: Vec<String> = range_idx.values().iter().map(|i| i.to_string()).collect();
+        let string_idx = Index::<String>::new(string_values)?;
+        Ok(Self::with_index(string_idx))
+    }
+    
     /// 行数を取得
     pub fn row_count(&self) -> usize {
         self.row_count

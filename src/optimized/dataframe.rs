@@ -143,49 +143,28 @@ impl OptimizedDataFrame {
     /// # Returns
     /// * `Result<Self>` - 成功時はDataFrame、失敗時はエラー
     pub fn from_csv<P: AsRef<Path>>(path: P, has_header: bool) -> Result<Self> {
-        let file = File::open(path)?;
-        let reader = BufReader::new(file);
-        let mut csv_reader = csv::ReaderBuilder::new()
-            .has_headers(has_header)
-            .from_reader(reader);
+        // split_dataframe/io.rsの実装を利用
+        use crate::optimized::split_dataframe::core::OptimizedDataFrame as SplitDataFrame;
         
-        // 列名を取得
-        let headers = if has_header {
-            csv_reader.headers()?.clone()
-        } else {
-            let record = csv_reader.records().next()
-                .ok_or_else(|| Error::InvalidInput("CSVファイルが空です".to_string()))??;
-            
-            // 列番号を列名として使用
-            csv::StringRecord::from(
-                (0..record.len()).map(|i| format!("Column{}", i)).collect::<Vec<String>>()
-            )
-        };
+        // SplitDataFrameのfrom_csvを呼び出す
+        let split_df = SplitDataFrame::from_csv(path, has_header)?;
         
-        // 各列のデータを格納するベクター
-        let mut column_data: Vec<Vec<String>> = vec![Vec::new(); headers.len()];
+        // StandardDataFrameに変換（互換性のため）
+        let mut df = Self::new();
         
-        // レコードを読み込み、列単位にデータを整理（パフォーマンス最適化）
-        for result in csv_reader.records() {
-            let record = result?;
-            for (i, field) in record.iter().enumerate() {
-                if i < column_data.len() {
-                    column_data[i].push(field.to_string());
-                }
+        // 列データをコピー
+        for name in split_df.column_names() {
+            let column_result = split_df.column(name);
+            if let Ok(column_view) = column_result {
+                let column = column_view.column;
+                // 以下は元のコードと同じ
+                df.add_column(name.to_string(), column.clone())?;
             }
         }
         
-        // データをプリアロケーションしてDataFrameを構築（メモリ効率向上）
-        let mut df = Self::new();
-        let row_count = if column_data.is_empty() { 0 } else { column_data[0].len() };
-        
-        // 並列処理で列を追加
-        for (i, header) in headers.iter().enumerate() {
-            if i < column_data.len() {
-                // 列タイプを自動推定して最適な形式で格納
-                let column = Self::infer_and_create_column(&column_data[i], header);
-                df.add_column(header.to_string(), column)?;
-            }
+        // インデックスがあれば設定
+        if let Some(index) = split_df.get_index() {
+            df.index = Some(index.clone());
         }
         
         Ok(df)
@@ -251,59 +230,31 @@ impl OptimizedDataFrame {
     /// # Returns
     /// * `Result<()>` - 成功時はOk、失敗時はエラー
     pub fn to_csv<P: AsRef<Path>>(&self, path: P, write_header: bool) -> Result<()> {
-        let file = File::create(path)?;
-        let writer = BufWriter::new(file);
+        // split_dataframe/io.rsの実装を利用
+        use crate::optimized::split_dataframe::core::OptimizedDataFrame as SplitDataFrame;
         
-        let mut csv_writer = csv::WriterBuilder::new()
-            .has_headers(write_header)
-            .from_writer(writer);
+        // SplitDataFrameに変換
+        let mut split_df = SplitDataFrame::new();
         
-        // ヘッダ書き込み
-        if write_header {
-            csv_writer.write_record(&self.column_names)?;
-        }
-        
-        // 行単位でデータを書き込む（パフォーマンス最適化）
-        for row_idx in 0..self.row_count {
-            let mut record = Vec::with_capacity(self.column_count());
-            
-            // 各列からこの行の値を取得
-            for col_idx in 0..self.columns.len() {
-                let col = &self.columns[col_idx];
-                let value = match col {
-                    Column::Int64(c) => {
-                        match c.get(row_idx) {
-                            Ok(Some(v)) => v.to_string(),
-                            _ => String::new(),
-                        }
-                    },
-                    Column::Float64(c) => {
-                        match c.get(row_idx) {
-                            Ok(Some(v)) => v.to_string(),
-                            _ => String::new(),
-                        }
-                    },
-                    Column::String(c) => {
-                        match c.get(row_idx) {
-                            Ok(Some(v)) => v.to_string(),
-                            _ => String::new(),
-                        }
-                    },
-                    Column::Boolean(c) => {
-                        match c.get(row_idx) {
-                            Ok(Some(v)) => v.to_string(),
-                            _ => String::new(),
-                        }
-                    },
-                };
-                record.push(value);
+        // 列データをコピー
+        for name in &self.column_names {
+            if let Ok(column_view) = self.column(name) {
+                let column = column_view.column;
+                split_df.add_column(name.clone(), column.clone())?;
             }
-            
-            csv_writer.write_record(&record)?;
         }
         
-        csv_writer.flush()?;
-        Ok(())
+        // インデックスがあれば設定
+        if let Some(ref index) = self.index {
+            // DataFrameIndexからIndex<String>を取り出す
+            if let crate::index::DataFrameIndex::Simple(simple_index) = index {
+                split_df.set_index_from_simple_index(simple_index.clone())?;
+            }
+            // TODO: マルチインデックスの場合の処理
+        }
+        
+        // SplitDataFrameのto_csvを呼び出す
+        split_df.to_csv(path, write_header)
     }
     
     /// 列を追加
@@ -1211,197 +1162,54 @@ impl OptimizedDataFrame {
     
     /// グループ化操作を並列で実行（データサイズに応じて最適化）
     pub fn par_groupby(&self, group_by_columns: &[&str]) -> Result<HashMap<String, Self>> {
-        use rayon::prelude::*;
-        use std::collections::hash_map::Entry;
-        use std::sync::{Arc, Mutex};
+        // split_dataframe/group.rsの実装を利用
+        use crate::optimized::split_dataframe::core::OptimizedDataFrame as SplitDataFrame;
         
-        // データサイズに基づく最適化閾値
-        const PARALLEL_THRESHOLD: usize = 50_000;
+        // SplitDataFrameに変換
+        let mut split_df = SplitDataFrame::new();
         
-        // グループ化キーのカラムインデックスを取得
-        let mut group_col_indices = Vec::with_capacity(group_by_columns.len());
-        for &col_name in group_by_columns {
-            let col_idx = self.column_indices.get(col_name)
-                .ok_or_else(|| Error::ColumnNotFound(col_name.to_string()))?;
-            group_col_indices.push(*col_idx);
+        // 列データをコピー
+        for name in &self.column_names {
+            if let Ok(column_view) = self.column(name) {
+                let column = column_view.column;
+                split_df.add_column(name.clone(), column.clone())?;
+            }
         }
         
-        // グループキーを生成し、各行のインデックスをグループ化
-        let groups: HashMap<String, Vec<usize>> = if self.row_count < PARALLEL_THRESHOLD {
-            // 小規模データでは直列処理の方が効率的
-            let mut groups = HashMap::new();
-            
-            for row_idx in 0..self.row_count {
-                // この行のグループキーを生成
-                let mut key_parts = Vec::with_capacity(group_col_indices.len());
-                
-                for &col_idx in &group_col_indices {
-                    let column = &self.columns[col_idx];
-                    let part = match column {
-                        Column::Int64(col) => {
-                            if let Ok(Some(val)) = col.get(row_idx) {
-                                val.to_string()
-                            } else {
-                                "NA".to_string()
-                            }
-                        },
-                        Column::Float64(col) => {
-                            if let Ok(Some(val)) = col.get(row_idx) {
-                                val.to_string()
-                            } else {
-                                "NA".to_string()
-                            }
-                        },
-                        Column::String(col) => {
-                            if let Ok(Some(val)) = col.get(row_idx) {
-                                val.to_string()
-                            } else {
-                                "NA".to_string()
-                            }
-                        },
-                        Column::Boolean(col) => {
-                            if let Ok(Some(val)) = col.get(row_idx) {
-                                val.to_string()
-                            } else {
-                                "NA".to_string()
-                            }
-                        },
-                    };
-                    key_parts.push(part);
-                }
-                
-                let group_key = key_parts.join("_");
-                
-                match groups.entry(group_key) {
-                    Entry::Vacant(e) => { e.insert(vec![row_idx]); },
-                    Entry::Occupied(mut e) => { e.get_mut().push(row_idx); }
-                }
+        // インデックスがあれば設定
+        if let Some(ref index) = self.index {
+            // DataFrameIndexからIndex<String>を取り出す
+            if let crate::index::DataFrameIndex::Simple(simple_index) = index {
+                split_df.set_index_from_simple_index(simple_index.clone())?;
             }
-            
-            groups
-        } else {
-            // 大規模データでは並列処理+ロックフリーアプローチ
-            // 1. 並列でローカルなグループマップを作成
-            // 2. それらをマージ
-            let chunk_size = (self.row_count / rayon::current_num_threads()).max(1000);
-            
-            // ステップ1: 並列でローカルな中間グループマップを作成
-            let local_maps: Vec<HashMap<String, Vec<usize>>> = 
-                (0..self.row_count).collect::<Vec<_>>()
-                .par_chunks(chunk_size)
-                .map(|chunk| {
-                    let mut local_groups = HashMap::new();
-                    
-                    for &row_idx in chunk {
-                        // この行のグループキーを生成
-                        let mut key_parts = Vec::with_capacity(group_col_indices.len());
-                        
-                        for &col_idx in &group_col_indices {
-                            let column = &self.columns[col_idx];
-                            let part = match column {
-                                Column::Int64(col) => {
-                                    if let Ok(Some(val)) = col.get(row_idx) {
-                                        val.to_string()
-                                    } else {
-                                        "NA".to_string()
-                                    }
-                                },
-                                Column::Float64(col) => {
-                                    if let Ok(Some(val)) = col.get(row_idx) {
-                                        val.to_string()
-                                    } else {
-                                        "NA".to_string()
-                                    }
-                                },
-                                Column::String(col) => {
-                                    if let Ok(Some(val)) = col.get(row_idx) {
-                                        val.to_string()
-                                    } else {
-                                        "NA".to_string()
-                                    }
-                                },
-                                Column::Boolean(col) => {
-                                    if let Ok(Some(val)) = col.get(row_idx) {
-                                        val.to_string()
-                                    } else {
-                                        "NA".to_string()
-                                    }
-                                },
-                            };
-                            key_parts.push(part);
-                        }
-                        
-                        let group_key = key_parts.join("_");
-                        
-                        match local_groups.entry(group_key) {
-                            Entry::Vacant(e) => { e.insert(vec![row_idx]); },
-                            Entry::Occupied(mut e) => { e.get_mut().push(row_idx); }
-                        }
-                    }
-                    
-                    local_groups
-                })
-                .collect();
-            
-            // ステップ2: 中間マップをマージ
-            let mut merged_groups = HashMap::new();
-            for local_map in local_maps {
-                for (key, indices) in local_map {
-                    match merged_groups.entry(key) {
-                        Entry::Vacant(e) => { e.insert(indices); },
-                        Entry::Occupied(mut e) => { e.get_mut().extend(indices); }
-                    }
-                }
-            }
-            
-            merged_groups
-        };
+            // TODO: マルチインデックスの場合の処理
+        }
         
-        // 各グループに対してDataFrameを効率的に作成
-        let result = if groups.len() < 100 || self.row_count < PARALLEL_THRESHOLD {
-            // グループ数が少ない場合や小規模データでは直列処理
-            let mut result = HashMap::with_capacity(groups.len());
-            for (key, indices) in groups {
-                let group_df = self.filter_by_indices(&indices)?;
-                result.insert(key, group_df);
+        // SplitDataFrameのpar_groupbyを呼び出す
+        let split_result = split_df.par_groupby(group_by_columns)?;
+        
+        // 結果を変換して返す
+        let mut result = HashMap::with_capacity(split_result.len());
+        
+        for (key, split_group_df) in split_result {
+            // 各グループのSplitDataFrameをStandardDataFrameに変換
+            let mut group_df = Self::new();
+            
+            // 列データをコピー
+            for name in split_group_df.column_names() {
+                if let Ok(column_view) = split_group_df.column(name) {
+                    let column = column_view.column;
+                    group_df.add_column(name.to_string(), column.clone())?;
+                }
             }
-            result
-        } else {
-            // 大規模データでのグループ処理は並列化
-            // 各グループを並列処理し、スレッドセーフに結果を集約
-            let result_mutex = Arc::new(Mutex::new(HashMap::with_capacity(groups.len())));
             
-            // チャンクサイズを調整して、オーバーヘッドを最小化
-            let chunk_size = (groups.len() / rayon::current_num_threads()).max(10);
-            
-            // グループのリストを作成し、チャンクに分割して並列処理
-            let group_items: Vec<(String, Vec<usize>)> = groups.into_iter().collect();
-            
-            group_items.par_chunks(chunk_size)
-                .for_each(|chunk| {
-                    // 各チャンクの処理結果を一時保存
-                    let mut local_results = HashMap::new();
-                    
-                    for (key, indices) in chunk {
-                        if let Ok(group_df) = self.filter_by_indices(indices) {
-                            local_results.insert(key.clone(), group_df);
-                        }
-                    }
-                    
-                    // 結果をメインのHashMapにマージ
-                    if let Ok(mut result_map) = result_mutex.lock() {
-                        for (key, df) in local_results {
-                            result_map.insert(key, df);
-                        }
-                    }
-                });
-            
-            // 最終結果を取得
-            match Arc::try_unwrap(result_mutex) {
-                Ok(mutex) => mutex.into_inner().unwrap_or_default(),
-                Err(_) => HashMap::new(), // アークの解除に失敗した場合
+            // インデックスがあれば設定
+            if let Some(index) = split_group_df.get_index() {
+                group_df.index = Some(index.clone());
             }
-        };
+            
+            result.insert(key, group_df);
+        }
         
         Ok(result)
     }
@@ -1504,478 +1312,263 @@ impl OptimizedDataFrame {
     
     /// 内部結合
     pub fn inner_join(&self, other: &Self, left_on: &str, right_on: &str) -> Result<Self> {
-        self.join_impl(other, left_on, right_on, JoinType::Inner)
+        // split_dataframe/join.rsの実装を利用
+        use crate::optimized::split_dataframe::core::OptimizedDataFrame as SplitDataFrame;
+        use crate::optimized::split_dataframe::JoinType;
+        
+        // SplitDataFrameに変換
+        let mut left_split_df = SplitDataFrame::new();
+        let mut right_split_df = SplitDataFrame::new();
+        
+        // 左側の列データをコピー
+        for name in &self.column_names {
+            if let Ok(column_view) = self.column(name) {
+                let column = column_view.column;
+                left_split_df.add_column(name.clone(), column.clone())?;
+            }
+        }
+        
+        // 右側の列データをコピー
+        for name in &other.column_names {
+            if let Ok(column_view) = other.column(name) {
+                let column = column_view.column;
+                right_split_df.add_column(name.clone(), column.clone())?;
+            }
+        }
+        
+        // インデックスがあれば設定（左側）
+        if let Some(ref index) = self.index {
+            // DataFrameIndexからIndex<String>を取り出す
+            if let crate::index::DataFrameIndex::Simple(simple_index) = index {
+                left_split_df.set_index_from_simple_index(simple_index.clone())?;
+            }
+            // TODO: マルチインデックスの場合の処理
+        }
+        
+        // インデックスがあれば設定（右側）
+        if let Some(ref index) = other.index {
+            // DataFrameIndexからIndex<String>を取り出す
+            if let crate::index::DataFrameIndex::Simple(simple_index) = index {
+                right_split_df.set_index_from_simple_index(simple_index.clone())?;
+            }
+            // TODO: マルチインデックスの場合の処理
+        }
+        
+        // SplitDataFrameのinner_joinを呼び出す
+        let split_result = left_split_df.inner_join(&right_split_df, left_on, right_on)?;
+        
+        // 結果を変換して返す
+        let mut result = Self::new();
+        
+        // 列データをコピー
+        for name in split_result.column_names() {
+            if let Ok(column_view) = split_result.column(name) {
+                let column = column_view.column;
+                result.add_column(name.to_string(), column.clone())?;
+            }
+        }
+        
+        // インデックスがあれば設定
+        if let Some(index) = split_result.get_index() {
+            result.index = Some(index.clone());
+        }
+        
+        Ok(result)
     }
     
     /// 左結合
     pub fn left_join(&self, other: &Self, left_on: &str, right_on: &str) -> Result<Self> {
-        self.join_impl(other, left_on, right_on, JoinType::Left)
+        // split_dataframe/join.rsの実装を利用
+        use crate::optimized::split_dataframe::core::OptimizedDataFrame as SplitDataFrame;
+        use crate::optimized::split_dataframe::JoinType;
+        
+        // SplitDataFrameに変換
+        let mut left_split_df = SplitDataFrame::new();
+        let mut right_split_df = SplitDataFrame::new();
+        
+        // 左側の列データをコピー
+        for name in &self.column_names {
+            if let Ok(column_view) = self.column(name) {
+                let column = column_view.column;
+                left_split_df.add_column(name.clone(), column.clone())?;
+            }
+        }
+        
+        // 右側の列データをコピー
+        for name in &other.column_names {
+            if let Ok(column_view) = other.column(name) {
+                let column = column_view.column;
+                right_split_df.add_column(name.clone(), column.clone())?;
+            }
+        }
+        
+        // インデックスがあれば設定（左側）
+        if let Some(ref index) = self.index {
+            // DataFrameIndexからIndex<String>を取り出す
+            if let crate::index::DataFrameIndex::Simple(simple_index) = index {
+                left_split_df.set_index_from_simple_index(simple_index.clone())?;
+            }
+            // TODO: マルチインデックスの場合の処理
+        }
+        
+        // インデックスがあれば設定（右側）
+        if let Some(ref index) = other.index {
+            // DataFrameIndexからIndex<String>を取り出す
+            if let crate::index::DataFrameIndex::Simple(simple_index) = index {
+                right_split_df.set_index_from_simple_index(simple_index.clone())?;
+            }
+            // TODO: マルチインデックスの場合の処理
+        }
+        
+        // SplitDataFrameのleft_joinを呼び出す
+        let split_result = left_split_df.left_join(&right_split_df, left_on, right_on)?;
+        
+        // 結果を変換して返す
+        let mut result = Self::new();
+        
+        // 列データをコピー
+        for name in split_result.column_names() {
+            if let Ok(column_view) = split_result.column(name) {
+                let column = column_view.column;
+                result.add_column(name.to_string(), column.clone())?;
+            }
+        }
+        
+        // インデックスがあれば設定
+        if let Some(index) = split_result.get_index() {
+            result.index = Some(index.clone());
+        }
+        
+        Ok(result)
     }
     
     /// 右結合
     pub fn right_join(&self, other: &Self, left_on: &str, right_on: &str) -> Result<Self> {
-        self.join_impl(other, left_on, right_on, JoinType::Right)
+        // split_dataframe/join.rsの実装を利用
+        use crate::optimized::split_dataframe::core::OptimizedDataFrame as SplitDataFrame;
+        use crate::optimized::split_dataframe::JoinType;
+        
+        // SplitDataFrameに変換
+        let mut left_split_df = SplitDataFrame::new();
+        let mut right_split_df = SplitDataFrame::new();
+        
+        // 左側の列データをコピー
+        for name in &self.column_names {
+            if let Ok(column_view) = self.column(name) {
+                let column = column_view.column;
+                left_split_df.add_column(name.clone(), column.clone())?;
+            }
+        }
+        
+        // 右側の列データをコピー
+        for name in &other.column_names {
+            if let Ok(column_view) = other.column(name) {
+                let column = column_view.column;
+                right_split_df.add_column(name.clone(), column.clone())?;
+            }
+        }
+        
+        // インデックスがあれば設定（左側）
+        if let Some(ref index) = self.index {
+            // DataFrameIndexからIndex<String>を取り出す
+            if let crate::index::DataFrameIndex::Simple(simple_index) = index {
+                left_split_df.set_index_from_simple_index(simple_index.clone())?;
+            }
+            // TODO: マルチインデックスの場合の処理
+        }
+        
+        // インデックスがあれば設定（右側）
+        if let Some(ref index) = other.index {
+            // DataFrameIndexからIndex<String>を取り出す
+            if let crate::index::DataFrameIndex::Simple(simple_index) = index {
+                right_split_df.set_index_from_simple_index(simple_index.clone())?;
+            }
+            // TODO: マルチインデックスの場合の処理
+        }
+        
+        // SplitDataFrameのright_joinを呼び出す
+        let split_result = left_split_df.right_join(&right_split_df, left_on, right_on)?;
+        
+        // 結果を変換して返す
+        let mut result = Self::new();
+        
+        // 列データをコピー
+        for name in split_result.column_names() {
+            if let Ok(column_view) = split_result.column(name) {
+                let column = column_view.column;
+                result.add_column(name.to_string(), column.clone())?;
+            }
+        }
+        
+        // インデックスがあれば設定
+        if let Some(index) = split_result.get_index() {
+            result.index = Some(index.clone());
+        }
+        
+        Ok(result)
     }
     
     /// 外部結合
     pub fn outer_join(&self, other: &Self, left_on: &str, right_on: &str) -> Result<Self> {
-        self.join_impl(other, left_on, right_on, JoinType::Outer)
-    }
-    
-    // 結合の実装（内部メソッド）
-    fn join_impl(&self, other: &Self, left_on: &str, right_on: &str, join_type: JoinType) -> Result<Self> {
-        // 結合キー列の取得
-        let left_col_idx = self.column_indices.get(left_on)
-            .ok_or_else(|| Error::ColumnNotFound(left_on.to_string()))?;
+        // split_dataframe/join.rsの実装を利用
+        use crate::optimized::split_dataframe::core::OptimizedDataFrame as SplitDataFrame;
+        use crate::optimized::split_dataframe::JoinType;
         
-        let right_col_idx = other.column_indices.get(right_on)
-            .ok_or_else(|| Error::ColumnNotFound(right_on.to_string()))?;
+        // SplitDataFrameに変換
+        let mut left_split_df = SplitDataFrame::new();
+        let mut right_split_df = SplitDataFrame::new();
         
-        let left_col = &self.columns[*left_col_idx];
-        let right_col = &other.columns[*right_col_idx];
-        
-        // 両方の列が同じ型であることを確認
-        if left_col.column_type() != right_col.column_type() {
-            return Err(Error::ColumnTypeMismatch {
-                name: format!("{} と {}", left_on, right_on),
-                expected: left_col.column_type(),
-                found: right_col.column_type(),
-            });
-        }
-        
-        // 結合キーのマッピングを構築
-        let mut right_key_to_indices: HashMap<String, Vec<usize>> = HashMap::new();
-        
-        match right_col {
-            Column::Int64(col) => {
-                for i in 0..col.len() {
-                    if let Ok(Some(val)) = col.get(i) {
-                        let key = val.to_string();
-                        right_key_to_indices.entry(key).or_default().push(i);
-                    }
-                }
-            },
-            Column::Float64(col) => {
-                for i in 0..col.len() {
-                    if let Ok(Some(val)) = col.get(i) {
-                        let key = val.to_string();
-                        right_key_to_indices.entry(key).or_default().push(i);
-                    }
-                }
-            },
-            Column::String(col) => {
-                for i in 0..col.len() {
-                    if let Ok(Some(val)) = col.get(i) {
-                        let key = val.to_string();
-                        right_key_to_indices.entry(key).or_default().push(i);
-                    }
-                }
-            },
-            Column::Boolean(col) => {
-                for i in 0..col.len() {
-                    if let Ok(Some(val)) = col.get(i) {
-                        let key = val.to_string();
-                        right_key_to_indices.entry(key).or_default().push(i);
-                    }
-                }
-            },
-        }
-        
-        // 結合行の作成
-        let mut result = Self::new();
-        let mut join_indices: Vec<(Option<usize>, Option<usize>)> = Vec::new();
-        
-        // 左側のDataFrameを処理
-        match left_col {
-            Column::Int64(col) => {
-                for i in 0..col.len() {
-                    if let Ok(Some(val)) = col.get(i) {
-                        let key = val.to_string();
-                        if let Some(right_indices) = right_key_to_indices.get(&key) {
-                            // マッチがある場合、各右側インデックスと結合
-                            for &right_idx in right_indices {
-                                join_indices.push((Some(i), Some(right_idx)));
-                            }
-                        } else if join_type == JoinType::Left || join_type == JoinType::Outer {
-                            // 左結合または外部結合では、マッチがなくても左側の行を含める
-                            join_indices.push((Some(i), None));
-                        }
-                    }
-                }
-            },
-            Column::Float64(col) => {
-                for i in 0..col.len() {
-                    if let Ok(Some(val)) = col.get(i) {
-                        let key = val.to_string();
-                        if let Some(right_indices) = right_key_to_indices.get(&key) {
-                            for &right_idx in right_indices {
-                                join_indices.push((Some(i), Some(right_idx)));
-                            }
-                        } else if join_type == JoinType::Left || join_type == JoinType::Outer {
-                            join_indices.push((Some(i), None));
-                        }
-                    }
-                }
-            },
-            Column::String(col) => {
-                for i in 0..col.len() {
-                    if let Ok(Some(val)) = col.get(i) {
-                        let key = val.to_string();
-                        if let Some(right_indices) = right_key_to_indices.get(&key) {
-                            for &right_idx in right_indices {
-                                join_indices.push((Some(i), Some(right_idx)));
-                            }
-                        } else if join_type == JoinType::Left || join_type == JoinType::Outer {
-                            join_indices.push((Some(i), None));
-                        }
-                    }
-                }
-            },
-            Column::Boolean(col) => {
-                for i in 0..col.len() {
-                    if let Ok(Some(val)) = col.get(i) {
-                        let key = val.to_string();
-                        if let Some(right_indices) = right_key_to_indices.get(&key) {
-                            for &right_idx in right_indices {
-                                join_indices.push((Some(i), Some(right_idx)));
-                            }
-                        } else if join_type == JoinType::Left || join_type == JoinType::Outer {
-                            join_indices.push((Some(i), None));
-                        }
-                    }
-                }
-            },
-        }
-        
-        // 右結合または外部結合の場合、右側で未マッチの行を追加
-        if join_type == JoinType::Right || join_type == JoinType::Outer {
-            let mut right_matched = vec![false; other.row_count];
-            for (_, right_idx) in &join_indices {
-                if let Some(idx) = right_idx {
-                    right_matched[*idx] = true;
-                }
-            }
-            
-            for (i, matched) in right_matched.iter().enumerate() {
-                if !matched {
-                    join_indices.push((None, Some(i)));
-                }
-            }
-        }
-        
-        // 結果が空の場合、早期リターン
-        if join_indices.is_empty() {
-            // 空のデータフレームを返す（列だけ設定）
-            let mut result = Self::new();
-            for name in &self.column_names {
-                if name != left_on {
-                    let col_idx = self.column_indices[name];
-                    let col_type = self.columns[col_idx].column_type();
-                    
-                    // 型に応じた空の列を作成
-                    let empty_col = match col_type {
-                        ColumnType::Int64 => Column::Int64(Int64Column::new(Vec::new())),
-                        ColumnType::Float64 => Column::Float64(crate::column::Float64Column::new(Vec::new())),
-                        ColumnType::String => Column::String(crate::column::StringColumn::new(Vec::new())),
-                        ColumnType::Boolean => Column::Boolean(crate::column::BooleanColumn::new(Vec::new())),
-                    };
-                    
-                    result.add_column(name.clone(), empty_col)?;
-                }
-            }
-            
-            for name in &other.column_names {
-                if name != right_on {
-                    let suffix = "_right";
-                    let new_name = if self.column_indices.contains_key(name) {
-                        format!("{}{}", name, suffix)
-                    } else {
-                        name.clone()
-                    };
-                    
-                    let col_idx = other.column_indices[name];
-                    let col_type = other.columns[col_idx].column_type();
-                    
-                    // 型に応じた空の列を作成
-                    let empty_col = match col_type {
-                        ColumnType::Int64 => Column::Int64(Int64Column::new(Vec::new())),
-                        ColumnType::Float64 => Column::Float64(crate::column::Float64Column::new(Vec::new())),
-                        ColumnType::String => Column::String(crate::column::StringColumn::new(Vec::new())),
-                        ColumnType::Boolean => Column::Boolean(crate::column::BooleanColumn::new(Vec::new())),
-                    };
-                    
-                    result.add_column(new_name, empty_col)?;
-                }
-            }
-            
-            return Ok(result);
-        }
-        
-        // 結果用の各列データを準備
-        let row_count = join_indices.len();
-        
-        // 左側の列を追加
+        // 左側の列データをコピー
         for name in &self.column_names {
-            if name != left_on { // 結合キー列は1つだけ追加する
-                let col_idx = self.column_indices[name];
-                let col = &self.columns[col_idx];
-                
-                let joined_col = match col {
-                    Column::Int64(int_col) => {
-                        let mut data = Vec::with_capacity(row_count);
-                        for (left_idx, _) in &join_indices {
-                            if let Some(idx) = left_idx {
-                                if let Ok(Some(val)) = int_col.get(*idx) {
-                                    data.push(val);
-                                } else {
-                                    data.push(0); // デフォルト値
-                                }
-                            } else {
-                                data.push(0); // デフォルト値（右側のみ）
-                            }
-                        }
-                        Column::Int64(Int64Column::new(data))
-                    },
-                    Column::Float64(float_col) => {
-                        let mut data = Vec::with_capacity(row_count);
-                        for (left_idx, _) in &join_indices {
-                            if let Some(idx) = left_idx {
-                                if let Ok(Some(val)) = float_col.get(*idx) {
-                                    data.push(val);
-                                } else {
-                                    data.push(0.0); // デフォルト値
-                                }
-                            } else {
-                                data.push(0.0); // デフォルト値（右側のみ）
-                            }
-                        }
-                        Column::Float64(crate::column::Float64Column::new(data))
-                    },
-                    Column::String(str_col) => {
-                        let mut data = Vec::with_capacity(row_count);
-                        for (left_idx, _) in &join_indices {
-                            if let Some(idx) = left_idx {
-                                if let Ok(Some(val)) = str_col.get(*idx) {
-                                    data.push(val.to_string());
-                                } else {
-                                    data.push(String::new()); // デフォルト値
-                                }
-                            } else {
-                                data.push(String::new()); // デフォルト値（右側のみ）
-                            }
-                        }
-                        Column::String(crate::column::StringColumn::new(data))
-                    },
-                    Column::Boolean(bool_col) => {
-                        let mut data = Vec::with_capacity(row_count);
-                        for (left_idx, _) in &join_indices {
-                            if let Some(idx) = left_idx {
-                                if let Ok(Some(val)) = bool_col.get(*idx) {
-                                    data.push(val);
-                                } else {
-                                    data.push(false); // デフォルト値
-                                }
-                            } else {
-                                data.push(false); // デフォルト値（右側のみ）
-                            }
-                        }
-                        Column::Boolean(crate::column::BooleanColumn::new(data))
-                    },
-                };
-                
-                result.add_column(name.clone(), joined_col)?;
+            if let Ok(column_view) = self.column(name) {
+                let column = column_view.column;
+                left_split_df.add_column(name.clone(), column.clone())?;
             }
         }
         
-        // 結合キー列を追加（左側から）
-        let left_key_col = &self.columns[*left_col_idx];
-        let joined_key_col = match left_key_col {
-            Column::Int64(int_col) => {
-                let mut data = Vec::with_capacity(row_count);
-                for (left_idx, right_idx) in &join_indices {
-                    if let Some(idx) = left_idx {
-                        if let Ok(Some(val)) = int_col.get(*idx) {
-                            data.push(val);
-                        } else {
-                            data.push(0); // デフォルト値
-                        }
-                    } else if let Some(idx) = right_idx {
-                        // 右側のキー値を使用
-                        if let Column::Int64(right_int_col) = &other.columns[*right_col_idx] {
-                            if let Ok(Some(val)) = right_int_col.get(*idx) {
-                                data.push(val);
-                            } else {
-                                data.push(0); // デフォルト値
-                            }
-                        } else {
-                            data.push(0); // デフォルト値
-                        }
-                    } else {
-                        data.push(0); // デフォルト値
-                    }
-                }
-                Column::Int64(Int64Column::new(data))
-            },
-            Column::Float64(float_col) => {
-                let mut data = Vec::with_capacity(row_count);
-                for (left_idx, right_idx) in &join_indices {
-                    if let Some(idx) = left_idx {
-                        if let Ok(Some(val)) = float_col.get(*idx) {
-                            data.push(val);
-                        } else {
-                            data.push(0.0); // デフォルト値
-                        }
-                    } else if let Some(idx) = right_idx {
-                        // 右側のキー値を使用
-                        if let Column::Float64(right_float_col) = &other.columns[*right_col_idx] {
-                            if let Ok(Some(val)) = right_float_col.get(*idx) {
-                                data.push(val);
-                            } else {
-                                data.push(0.0); // デフォルト値
-                            }
-                        } else {
-                            data.push(0.0); // デフォルト値
-                        }
-                    } else {
-                        data.push(0.0); // デフォルト値
-                    }
-                }
-                Column::Float64(crate::column::Float64Column::new(data))
-            },
-            Column::String(str_col) => {
-                let mut data = Vec::with_capacity(row_count);
-                for (left_idx, right_idx) in &join_indices {
-                    if let Some(idx) = left_idx {
-                        if let Ok(Some(val)) = str_col.get(*idx) {
-                            data.push(val.to_string());
-                        } else {
-                            data.push(String::new()); // デフォルト値
-                        }
-                    } else if let Some(idx) = right_idx {
-                        // 右側のキー値を使用
-                        if let Column::String(right_str_col) = &other.columns[*right_col_idx] {
-                            if let Ok(Some(val)) = right_str_col.get(*idx) {
-                                data.push(val.to_string());
-                            } else {
-                                data.push(String::new()); // デフォルト値
-                            }
-                        } else {
-                            data.push(String::new()); // デフォルト値
-                        }
-                    } else {
-                        data.push(String::new()); // デフォルト値
-                    }
-                }
-                Column::String(crate::column::StringColumn::new(data))
-            },
-            Column::Boolean(bool_col) => {
-                let mut data = Vec::with_capacity(row_count);
-                for (left_idx, right_idx) in &join_indices {
-                    if let Some(idx) = left_idx {
-                        if let Ok(Some(val)) = bool_col.get(*idx) {
-                            data.push(val);
-                        } else {
-                            data.push(false); // デフォルト値
-                        }
-                    } else if let Some(idx) = right_idx {
-                        // 右側のキー値を使用
-                        if let Column::Boolean(right_bool_col) = &other.columns[*right_col_idx] {
-                            if let Ok(Some(val)) = right_bool_col.get(*idx) {
-                                data.push(val);
-                            } else {
-                                data.push(false); // デフォルト値
-                            }
-                        } else {
-                            data.push(false); // デフォルト値
-                        }
-                    } else {
-                        data.push(false); // デフォルト値
-                    }
-                }
-                Column::Boolean(crate::column::BooleanColumn::new(data))
-            },
-        };
-        
-        result.add_column(left_on.to_string(), joined_key_col)?;
-        
-        // 右側の列を追加（結合キー以外）
+        // 右側の列データをコピー
         for name in &other.column_names {
-            if name != right_on {
-                let suffix = "_right";
-                let new_name = if result.column_indices.contains_key(name) {
-                    format!("{}{}", name, suffix)
-                } else {
-                    name.clone()
-                };
-                
-                let col_idx = other.column_indices[name];
-                let col = &other.columns[col_idx];
-                
-                let joined_col = match col {
-                    Column::Int64(int_col) => {
-                        let mut data = Vec::with_capacity(row_count);
-                        for (_, right_idx) in &join_indices {
-                            if let Some(idx) = right_idx {
-                                if let Ok(Some(val)) = int_col.get(*idx) {
-                                    data.push(val);
-                                } else {
-                                    data.push(0); // デフォルト値
-                                }
-                            } else {
-                                data.push(0); // デフォルト値（左側のみ）
-                            }
-                        }
-                        Column::Int64(Int64Column::new(data))
-                    },
-                    Column::Float64(float_col) => {
-                        let mut data = Vec::with_capacity(row_count);
-                        for (_, right_idx) in &join_indices {
-                            if let Some(idx) = right_idx {
-                                if let Ok(Some(val)) = float_col.get(*idx) {
-                                    data.push(val);
-                                } else {
-                                    data.push(0.0); // デフォルト値
-                                }
-                            } else {
-                                data.push(0.0); // デフォルト値（左側のみ）
-                            }
-                        }
-                        Column::Float64(crate::column::Float64Column::new(data))
-                    },
-                    Column::String(str_col) => {
-                        let mut data = Vec::with_capacity(row_count);
-                        for (_, right_idx) in &join_indices {
-                            if let Some(idx) = right_idx {
-                                if let Ok(Some(val)) = str_col.get(*idx) {
-                                    data.push(val.to_string());
-                                } else {
-                                    data.push(String::new()); // デフォルト値
-                                }
-                            } else {
-                                data.push(String::new()); // デフォルト値（左側のみ）
-                            }
-                        }
-                        Column::String(crate::column::StringColumn::new(data))
-                    },
-                    Column::Boolean(bool_col) => {
-                        let mut data = Vec::with_capacity(row_count);
-                        for (_, right_idx) in &join_indices {
-                            if let Some(idx) = right_idx {
-                                if let Ok(Some(val)) = bool_col.get(*idx) {
-                                    data.push(val);
-                                } else {
-                                    data.push(false); // デフォルト値
-                                }
-                            } else {
-                                data.push(false); // デフォルト値（左側のみ）
-                            }
-                        }
-                        Column::Boolean(crate::column::BooleanColumn::new(data))
-                    },
-                };
-                
-                result.add_column(new_name, joined_col)?;
+            if let Ok(column_view) = other.column(name) {
+                let column = column_view.column;
+                right_split_df.add_column(name.clone(), column.clone())?;
             }
+        }
+        
+        // インデックスがあれば設定（左側）
+        if let Some(ref index) = self.index {
+            // DataFrameIndexからIndex<String>を取り出す
+            if let crate::index::DataFrameIndex::Simple(simple_index) = index {
+                left_split_df.set_index_from_simple_index(simple_index.clone())?;
+            }
+            // TODO: マルチインデックスの場合の処理
+        }
+        
+        // インデックスがあれば設定（右側）
+        if let Some(ref index) = other.index {
+            // DataFrameIndexからIndex<String>を取り出す
+            if let crate::index::DataFrameIndex::Simple(simple_index) = index {
+                right_split_df.set_index_from_simple_index(simple_index.clone())?;
+            }
+            // TODO: マルチインデックスの場合の処理
+        }
+        
+        // SplitDataFrameのouter_joinを呼び出す
+        let split_result = left_split_df.outer_join(&right_split_df, left_on, right_on)?;
+        
+        // 結果を変換して返す
+        let mut result = Self::new();
+        
+        // 列データをコピー
+        for name in split_result.column_names() {
+            if let Ok(column_view) = split_result.column(name) {
+                let column = column_view.column;
+                result.add_column(name.to_string(), column.clone())?;
+            }
+        }
+        
+        // インデックスがあれば設定
+        if let Some(index) = split_result.get_index() {
+            result.index = Some(index.clone());
         }
         
         Ok(result)
@@ -2450,8 +2043,31 @@ impl OptimizedDataFrame {
         skip_rows: usize,
         use_cols: Option<&[&str]>,
     ) -> Result<Self> {
-        let df = crate::io::read_excel(path, sheet_name, header, skip_rows, use_cols)?;
-        Self::from_standard_dataframe(&df)
+        // split_dataframe/io.rsの実装を利用
+        use crate::optimized::split_dataframe::core::OptimizedDataFrame as SplitDataFrame;
+        
+        // SplitDataFrameのfrom_excelを呼び出す
+        let split_df = SplitDataFrame::from_excel(path, sheet_name, header, skip_rows, use_cols)?;
+        
+        // StandardDataFrameに変換（互換性のため）
+        let mut df = Self::new();
+        
+        // 列データをコピー
+        for name in split_df.column_names() {
+            let column_result = split_df.column(name);
+            if let Ok(column_view) = column_result {
+                let column = column_view.column;
+                // 以下は元のコードと同じ
+                df.add_column(name.to_string(), column.clone())?;
+            }
+        }
+        
+        // インデックスがあれば設定
+        if let Some(index) = split_df.get_index() {
+            df.index = Some(index.clone());
+        }
+        
+        Ok(df)
     }
 
     /// データフレームをExcelファイルに書き込む
@@ -2461,100 +2077,31 @@ impl OptimizedDataFrame {
         sheet_name: Option<&str>,
         index: bool,
     ) -> Result<()> {
-        // 新しいExcelファイルを作成
-        let mut workbook = simple_excel_writer::Workbook::create(path.as_ref()
-            .to_str()
-            .ok_or_else(|| Error::IoError("ファイルパスを文字列に変換できませんでした".to_string()))?);
+        // split_dataframe/io.rsの実装を利用
+        use crate::optimized::split_dataframe::core::OptimizedDataFrame as SplitDataFrame;
         
-        let sheet_name = sheet_name.unwrap_or("Sheet1");
+        // SplitDataFrameに変換
+        let mut split_df = SplitDataFrame::new();
         
-        // シートを作成
-        let mut sheet = workbook.create_sheet(sheet_name);
-        
-        // ヘッダー行を作成
-        let mut headers = Vec::new();
-        
-        // インデックスを含める場合
-        if index {
-            headers.push("Index".to_string());
+        // 列データをコピー
+        for name in &self.column_names {
+            if let Ok(column_view) = self.column(name) {
+                let column = column_view.column;
+                split_df.add_column(name.clone(), column.clone())?;
+            }
         }
         
-        // 列名を追加
-        for col_name in &self.column_names {
-            headers.push(col_name.clone());
+        // インデックスがあれば設定
+        if let Some(ref index) = self.index {
+            // DataFrameIndexからIndex<String>を取り出す
+            if let crate::index::DataFrameIndex::Simple(simple_index) = index {
+                split_df.set_index_from_simple_index(simple_index.clone())?;
+            }
+            // TODO: マルチインデックスの場合の処理
         }
         
-        // データを書き込む
-        workbook.write_sheet(&mut sheet, |sheet_writer| {
-            // ヘッダー行を追加
-            if !headers.is_empty() {
-                let header_row: Vec<&str> = headers.iter().map(|s| s.as_str()).collect();
-                // Rowを直接作成
-                let row = simple_excel_writer::Row::from_iter(header_row.iter().cloned());
-                sheet_writer.append_row(row)?;
-            }
-            
-            // データ行を書き込む
-            for row_idx in 0..self.row_count {
-                let mut row_values = Vec::new();
-                
-                // インデックスを含める場合
-                if index {
-                    row_values.push(row_idx.to_string());
-                }
-                
-                // 各列のデータを追加
-                for col_idx in 0..self.columns.len() {
-                    let col = &self.columns[col_idx];
-                    let value = match col {
-                        Column::Int64(c) => {
-                            if let Ok(Some(val)) = c.get(row_idx) {
-                                val.to_string()
-                            } else {
-                                String::new()
-                            }
-                        },
-                        Column::Float64(c) => {
-                            if let Ok(Some(val)) = c.get(row_idx) {
-                                val.to_string()
-                            } else {
-                                String::new()
-                            }
-                        },
-                        Column::String(c) => {
-                            if let Ok(Some(val)) = c.get(row_idx) {
-                                val.to_string()
-                            } else {
-                                String::new()
-                            }
-                        },
-                        Column::Boolean(c) => {
-                            if let Ok(Some(val)) = c.get(row_idx) {
-                                val.to_string()
-                            } else {
-                                String::new()
-                            }
-                        },
-                    };
-                    
-                    row_values.push(value);
-                }
-                
-                // 行をExcelに追加（文字列参照のスライスに変換）
-                let row_str_refs: Vec<&str> = row_values.iter().map(|s| s.as_str()).collect();
-                // Rowを直接作成
-                let row = simple_excel_writer::Row::from_iter(row_str_refs.iter().cloned());
-                sheet_writer.append_row(row)?;
-            }
-            
-            Ok(())
-        })?;
-        
-        // ワークブックを閉じて保存
-        workbook.close()
-            .map_err(|e| Error::IoError(format!("Excelファイルを保存できませんでした: {}", e)))?;
-        
-        Ok(())
+        // SplitDataFrameのto_excelを呼び出す
+        split_df.to_excel(path, sheet_name, index)
     }
 
     /// データフレームをParquetファイルに書き込む
@@ -2563,27 +2110,72 @@ impl OptimizedDataFrame {
         path: P,
         compression: Option<ParquetCompression>,
     ) -> Result<()> {
-        // まず標準のDataFrameに変換
-        let df = self.to_standard_dataframe()?;
+        // split_dataframe/io.rsの実装を利用
+        use crate::optimized::split_dataframe::core::OptimizedDataFrame as SplitDataFrame;
+        use crate::optimized::split_dataframe::io::ParquetCompression as SplitParquetCompression;
+        
+        // SplitDataFrameに変換
+        let mut split_df = SplitDataFrame::new();
+        
+        // 列データをコピー
+        for name in &self.column_names {
+            if let Ok(column_view) = self.column(name) {
+                let column = column_view.column;
+                split_df.add_column(name.clone(), column.clone())?;
+            }
+        }
+        
+        // インデックスがあれば設定
+        if let Some(ref index) = self.index {
+            // DataFrameIndexからIndex<String>を取り出す
+            if let crate::index::DataFrameIndex::Simple(simple_index) = index {
+                split_df.set_index_from_simple_index(simple_index.clone())?;
+            }
+            // TODO: マルチインデックスの場合の処理
+        }
+        
         // 圧縮設定を変換
-        let io_compression = compression.map(|c| match c {
-            ParquetCompression::None => crate::io::parquet::ParquetCompression::None,
-            ParquetCompression::Snappy => crate::io::parquet::ParquetCompression::Snappy,
-            ParquetCompression::Gzip => crate::io::parquet::ParquetCompression::Gzip,
-            ParquetCompression::Lzo => crate::io::parquet::ParquetCompression::Lzo,
-            ParquetCompression::Brotli => crate::io::parquet::ParquetCompression::Brotli,
-            ParquetCompression::Lz4 => crate::io::parquet::ParquetCompression::Lz4,
-            ParquetCompression::Zstd => crate::io::parquet::ParquetCompression::Zstd,
+        let split_compression = compression.map(|c| match c {
+            ParquetCompression::None => SplitParquetCompression::None,
+            ParquetCompression::Snappy => SplitParquetCompression::Snappy,
+            ParquetCompression::Gzip => SplitParquetCompression::Gzip,
+            ParquetCompression::Lzo => SplitParquetCompression::Lzo,
+            ParquetCompression::Brotli => SplitParquetCompression::Brotli,
+            ParquetCompression::Lz4 => SplitParquetCompression::Lz4,
+            ParquetCompression::Zstd => SplitParquetCompression::Zstd,
         });
-        // 標準APIを使用して書き込む
-        // 互換性のためにself参照を使う
-        crate::io::write_parquet(self, path, io_compression)
+        
+        // SplitDataFrameのto_parquetを呼び出す
+        split_df.to_parquet(path, split_compression)
     }
 
     /// Parquetファイルからデータフレームを読み込む
     pub fn from_parquet<P: AsRef<Path>>(path: P) -> Result<Self> {
-        let df = crate::io::read_parquet(path)?;
-        Self::from_standard_dataframe(&df)
+        // split_dataframe/io.rsの実装を利用
+        use crate::optimized::split_dataframe::core::OptimizedDataFrame as SplitDataFrame;
+        
+        // SplitDataFrameのfrom_parquetを呼び出す
+        let split_df = SplitDataFrame::from_parquet(path)?;
+        
+        // StandardDataFrameに変換（互換性のため）
+        let mut df = Self::new();
+        
+        // 列データをコピー
+        for name in split_df.column_names() {
+            let column_result = split_df.column(name);
+            if let Ok(column_view) = column_result {
+                let column = column_view.column;
+                // 以下は元のコードと同じ
+                df.add_column(name.to_string(), column.clone())?;
+            }
+        }
+        
+        // インデックスがあれば設定
+        if let Some(index) = split_df.get_index() {
+            df.index = Some(index.clone());
+        }
+        
+        Ok(df)
     }
 
     /// 標準のDataFrameからOptimizedDataFrameを作成する
