@@ -28,7 +28,16 @@ PandRSプロジェクトでは、コードベースの肥大化に対処し、�
    - すべての変換操作関連テストが正常に動作
    - dataframe.rsのサイズを2286行から1884行に削減 (-17.6%)
 
-**現在の削減率**: 元のサイズ2694行 → 現在1884行 (約30.1%削減)
+5. **列操作機能の強化** (2024-04-06)
+   - 列追加・削除・名前変更・参照などの操作を`split_dataframe/column_ops.rs`との連携で強化
+   - 委譲パターンを用いた実装に更新
+   - add_int_column、add_float_column、add_string_column、add_boolean_column等の専用メソッドを追加
+   - remove_column、rename_column、get_valueメソッドの追加
+   - データ型特化操作のサポート強化
+   - すべての列操作関連テストが正常に動作
+   - dataframe.rsのサイズを1884行から2018行に増加 (+7.1%)（新機能追加のため）
+
+**現在の削減率**: 元のサイズ2694行 → 現在2018行 (約25.1%削減)
 
 ## リファクタリング方針
 
@@ -69,10 +78,11 @@ PandRSプロジェクトでは、コードベースの肥大化に対処し、�
    - ✅ グループ化と集計 → `split_dataframe/group.rs`
    - ✅ 結合操作 → `split_dataframe/join.rs`
    - ✅ データ変換（melt、append）→ `split_dataframe/data_ops.rs`
+   - ✅ 列操作（追加、削除、名前変更、値取得）→ `split_dataframe/column_ops.rs`
    - 次の候補:
-     - 列操作（追加、削除、名前変更）→ `split_dataframe/column_ops.rs`
      - インデックス操作 → `split_dataframe/index.rs`
      - 行操作（フィルタリング、選択）→ `split_dataframe/row_ops.rs`
+     - 統計処理 → `split_dataframe/stats.rs`
 
 3. **移行プロセス**:
    - 各機能を`split_dataframe/`の対応するファイルに実装

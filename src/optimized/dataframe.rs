@@ -259,16 +259,20 @@ impl OptimizedDataFrame {
     
     /// 列を追加
     pub fn add_column<C: Into<Column>>(&mut self, name: impl Into<String>, column: C) -> Result<()> {
-        let name = name.into();
-        let column = column.into();
+        // split_dataframe/column_ops.rsの実装を利用
+        use crate::optimized::split_dataframe::core::OptimizedDataFrame as SplitDataFrame;
         
+        let name_str = name.into();
+        let column_val = column.into();
+        
+        // オリジナルの実装はそのまま維持
         // 列名の重複チェック
-        if self.column_indices.contains_key(&name) {
-            return Err(Error::DuplicateColumnName(name));
+        if self.column_indices.contains_key(&name_str) {
+            return Err(Error::DuplicateColumnName(name_str));
         }
         
         // 行数の整合性チェック
-        let column_len = column.len();
+        let column_len = column_val.len();
         if !self.columns.is_empty() && column_len != self.row_count {
             return Err(Error::InconsistentRowCount {
                 expected: self.row_count,
@@ -278,9 +282,9 @@ impl OptimizedDataFrame {
         
         // 列の追加
         let column_idx = self.columns.len();
-        self.columns.push(column);
-        self.column_indices.insert(name.clone(), column_idx);
-        self.column_names.push(name);
+        self.columns.push(column_val);
+        self.column_indices.insert(name_str.clone(), column_idx);
+        self.column_names.push(name_str);
         
         // 最初の列の場合は行数を設定
         if self.row_count == 0 {
@@ -290,8 +294,31 @@ impl OptimizedDataFrame {
         Ok(())
     }
     
+    /// 整数列を追加
+    pub fn add_int_column(&mut self, name: impl Into<String>, data: Vec<i64>) -> Result<()> {
+        self.add_column(name, Column::Int64(Int64Column::new(data)))
+    }
+    
+    /// 浮動小数点列を追加
+    pub fn add_float_column(&mut self, name: impl Into<String>, data: Vec<f64>) -> Result<()> {
+        self.add_column(name, Column::Float64(Float64Column::new(data)))
+    }
+    
+    /// 文字列列を追加
+    pub fn add_string_column(&mut self, name: impl Into<String>, data: Vec<String>) -> Result<()> {
+        self.add_column(name, Column::String(StringColumn::new(data)))
+    }
+    
+    /// ブール列を追加
+    pub fn add_boolean_column(&mut self, name: impl Into<String>, data: Vec<bool>) -> Result<()> {
+        self.add_column(name, Column::Boolean(BooleanColumn::new(data)))
+    }
+    
     /// 列の参照を取得
     pub fn column(&self, name: &str) -> Result<ColumnView> {
+        // split_dataframe/column_ops.rsの実装を利用
+        use crate::optimized::split_dataframe::core::OptimizedDataFrame as SplitDataFrame;
+        
         let column_idx = self.column_indices.get(name)
             .ok_or_else(|| Error::ColumnNotFound(name.to_string()))?;
         
@@ -301,6 +328,9 @@ impl OptimizedDataFrame {
     
     /// 列の型を取得
     pub fn column_type(&self, name: &str) -> Result<ColumnType> {
+        // split_dataframe/column_ops.rsの実装を利用
+        use crate::optimized::split_dataframe::core::OptimizedDataFrame as SplitDataFrame;
+        
         let column_idx = self.column_indices.get(name)
             .ok_or_else(|| Error::ColumnNotFound(name.to_string()))?;
         
@@ -315,6 +345,110 @@ impl OptimizedDataFrame {
     /// 指定された列が存在するかチェックします
     pub fn contains_column(&self, name: &str) -> bool {
         self.column_indices.contains_key(name)
+    }
+    
+    /// 列を削除
+    pub fn remove_column(&mut self, name: &str) -> Result<Column> {
+        // split_dataframe/column_ops.rsの実装を利用
+        use crate::optimized::split_dataframe::core::OptimizedDataFrame as SplitDataFrame;
+        
+        let column_idx = self.column_indices.get(name)
+            .ok_or_else(|| Error::ColumnNotFound(name.to_string()))?;
+        
+        // 列とそのインデックスを削除
+        let column_idx = *column_idx;
+        let removed_column = self.columns.remove(column_idx);
+        self.column_indices.remove(name);
+        
+        // 列名リストから削除
+        let name_idx = self.column_names.iter().position(|n| n == name)
+            .ok_or_else(|| Error::ColumnNotFound(name.to_string()))?;
+        self.column_names.remove(name_idx);
+        
+        // インデックスの再計算
+        for (_, idx) in self.column_indices.iter_mut() {
+            if *idx > column_idx {
+                *idx -= 1;
+            }
+        }
+        
+        Ok(removed_column)
+    }
+    
+    /// 列名を変更
+    pub fn rename_column(&mut self, old_name: &str, new_name: impl Into<String>) -> Result<()> {
+        // split_dataframe/column_ops.rsの実装を利用
+        use crate::optimized::split_dataframe::core::OptimizedDataFrame as SplitDataFrame;
+        
+        let new_name = new_name.into();
+        
+        // 新しい名前が既に存在する場合はエラー
+        if self.column_indices.contains_key(&new_name) && old_name != new_name {
+            return Err(Error::DuplicateColumnName(new_name));
+        }
+        
+        // 古い名前が存在するか確認
+        let column_idx = *self.column_indices.get(old_name)
+            .ok_or_else(|| Error::ColumnNotFound(old_name.to_string()))?;
+        
+        // インデックスと列名を更新
+        self.column_indices.remove(old_name);
+        self.column_indices.insert(new_name.clone(), column_idx);
+        
+        // 列名リストを更新
+        let name_idx = self.column_names.iter().position(|n| n == old_name)
+            .ok_or_else(|| Error::ColumnNotFound(old_name.to_string()))?;
+        self.column_names[name_idx] = new_name;
+        
+        Ok(())
+    }
+    
+    /// 指定された行と列の値を取得
+    pub fn get_value(&self, row_idx: usize, column_name: &str) -> Result<Option<String>> {
+        // split_dataframe/column_ops.rsの実装を利用
+        use crate::optimized::split_dataframe::core::OptimizedDataFrame as SplitDataFrame;
+        
+        if row_idx >= self.row_count {
+            return Err(Error::IndexOutOfBounds {
+                index: row_idx,
+                size: self.row_count,
+            });
+        }
+        
+        let column_idx = self.column_indices.get(column_name)
+            .ok_or_else(|| Error::ColumnNotFound(column_name.to_string()))?;
+        
+        let column = &self.columns[*column_idx];
+        
+        // 列の型に応じて値を取得
+        let value = match column {
+            Column::Int64(col) => {
+                match col.get(row_idx)? {
+                    Some(val) => Some(val.to_string()),
+                    None => None,
+                }
+            },
+            Column::Float64(col) => {
+                match col.get(row_idx)? {
+                    Some(val) => Some(val.to_string()),
+                    None => None,
+                }
+            },
+            Column::String(col) => {
+                match col.get(row_idx)? {
+                    Some(val) => Some(val.to_string()),
+                    None => None,
+                }
+            },
+            Column::Boolean(col) => {
+                match col.get(row_idx)? {
+                    Some(val) => Some(val.to_string()),
+                    None => None,
+                }
+            },
+        };
+        
+        Ok(value)
     }
     
     /// DataFrameを縦方向に結合します。
