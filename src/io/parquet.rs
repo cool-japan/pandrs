@@ -238,7 +238,6 @@ pub fn write_parquet(
                     crate::column::ColumnType::Float64 => DataType::Float64,
                     crate::column::ColumnType::Boolean => DataType::Boolean,
                     crate::column::ColumnType::String => DataType::Utf8,
-                    _ => DataType::Utf8,
                 };
                 Some(Field::new(col_name, data_type, true))
             } else {
@@ -266,7 +265,6 @@ pub fn write_parquet(
                 crate::column::ColumnType::Float64 => "f64",
                 crate::column::ColumnType::Boolean => "bool",
                 crate::column::ColumnType::String => "string",
-                _ => "unknown"
             };
             
             // DOCテストを直すためにダミー実装

@@ -23,7 +23,8 @@ impl OptimizedDataFrame {
         // 指定された列を新しいDataFrameに追加
         for &col_name in columns {
             if !column_set.contains(col_name) {
-                continue; // 列が存在しない場合はスキップ
+                // 列が存在しない場合はエラーを返す
+                return Err(crate::error::Error::ColumnNotFound(col_name.to_string()));
             }
             
             let col_idx = self.column_indices.get(col_name).unwrap();

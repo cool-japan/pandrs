@@ -386,13 +386,13 @@ impl OptimizedDataFrame {
         for i in 0..self.row_count() {
             if let Ok(Some(row_val)) = row_strings.get(i) {
                 if !unique_rows.contains(&row_val) {
-                    unique_rows.push(row_val.clone());
+                    unique_rows.push(row_val);
                 }
             }
             
             if let Ok(Some(col_val)) = col_strings.get(i) {
                 if !unique_cols.contains(&col_val) {
-                    unique_cols.push(col_val.clone());
+                    unique_cols.push(col_val);
                 }
             }
         }

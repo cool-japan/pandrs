@@ -266,7 +266,7 @@ pub fn write_excel<P: AsRef<Path>>(
         if !headers.is_empty() {
             let header_row: Vec<&str> = headers.iter().map(|s| s.as_str()).collect();
             // Rowを直接作成
-            let mut row = simple_excel_writer::Row::from_iter(header_row.iter().cloned());
+            let row = simple_excel_writer::Row::from_iter(header_row.iter().cloned());
             sheet_writer.append_row(row)?;
         }
         

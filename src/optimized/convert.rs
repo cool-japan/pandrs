@@ -7,10 +7,12 @@ use crate::dataframe::DataValue;
 use crate::error::{Error, Result};
 use crate::index::DataFrameIndex;
 use crate::optimized::dataframe::OptimizedDataFrame;
+use crate::optimized::split_dataframe::core::OptimizedDataFrame as SplitDataFrame;
 
 /// 標準のDataFrameからOptimizedDataFrameを作成する
 pub(crate) fn from_standard_dataframe(df: &crate::dataframe::DataFrame) -> Result<OptimizedDataFrame> {
-    let mut opt_df = OptimizedDataFrame::new();
+    // 新しいSplitDataFrameを作成（内部実装を使用）
+    let mut split_df = SplitDataFrame::new();
     
     for col_name in df.column_names() {
         if let Some(col) = df.get_column(col_name) {
@@ -31,7 +33,7 @@ pub(crate) fn from_standard_dataframe(df: &crate::dataframe::DataFrame) -> Resul
                 let int_values: Vec<i64> = values.iter()
                     .map(|s| s.parse::<i64>().unwrap_or(0))
                     .collect();
-                opt_df.add_column(col_name.clone(), Column::Int64(Int64Column::new(int_values)))?;
+                split_df.add_column(col_name.clone(), Column::Int64(Int64Column::new(int_values)))?;
                 continue;
             }
             
@@ -41,7 +43,7 @@ pub(crate) fn from_standard_dataframe(df: &crate::dataframe::DataFrame) -> Resul
                 let float_values: Vec<f64> = values.iter()
                     .map(|s| s.parse::<f64>().unwrap_or(0.0))
                     .collect();
-                opt_df.add_column(col_name.clone(), Column::Float64(Float64Column::new(float_values)))?;
+                split_df.add_column(col_name.clone(), Column::Float64(Float64Column::new(float_values)))?;
                 continue;
             }
             
@@ -57,36 +59,57 @@ pub(crate) fn from_standard_dataframe(df: &crate::dataframe::DataFrame) -> Resul
                         !s.is_empty() && (s == "true" || s == "1")
                     })
                     .collect();
-                opt_df.add_column(col_name.clone(), Column::Boolean(BooleanColumn::new(bool_values)))?;
+                split_df.add_column(col_name.clone(), Column::Boolean(BooleanColumn::new(bool_values)))?;
                 continue;
             }
             
             // デフォルトは文字列型
-            opt_df.add_column(col_name.clone(), Column::String(StringColumn::new(values)))?;
+            split_df.add_column(col_name.clone(), Column::String(StringColumn::new(values)))?;
         }
     }
     
-    // インデックスのセット（あれば）
-    if let Some(index) = df.get_index() {
-        // 文字列ベースのインデックスとしてコピー
-        let string_index = match index {
-            DataFrameIndex::Simple(simple_index) => {
-                let labels: Vec<String> = (0..simple_index.len())
-                    .map(|i| simple_index.get_value(i).map(|v| v.to_string()).unwrap_or_default())
-                    .collect();
-                DataFrameIndex::Simple(crate::index::Index::new(labels)?)
-            },
-            DataFrameIndex::Multi(_) => {
-                // マルチインデックスのサポートは今後の課題
-                // とりあえず連番インデックスを作成
-                let labels: Vec<String> = (0..df.row_count())
-                    .map(|i| i.to_string())
-                    .collect();
-                DataFrameIndex::Simple(crate::index::Index::new(labels)?)
+    // インデックスの取得と設定
+    // DataFrameは常にインデックスを持っている
+    let df_index = df.get_index();
+    
+    // DataFrameIndexの種類に応じて処理
+    match df_index {
+        DataFrameIndex::Simple(simple_index) => {
+            // Simple Indexの場合は直接コピー
+            split_df.set_index_from_simple_index(simple_index.clone())?;
+        },
+        DataFrameIndex::Multi(_) => {
+            // マルチインデックスの場合は今後の課題
+            split_df.set_default_index()?;
+        }
+    }
+    
+    // SplitDataFrameをOptimizedDataFrameに変換
+    let mut opt_df = OptimizedDataFrame::new();
+    
+    // 列データをコピー（公開APIを使用）
+    for name in split_df.column_names() {
+        if let Ok(column_view) = split_df.column(name) {
+            let column = column_view.column().clone();
+            opt_df.add_column(name.to_string(), column)?;
+        }
+    }
+    
+    // インデックスの設定
+    if let Some(split_index) = split_df.get_index() {
+        // シンプルなインデックスの場合は、SplitDataFrameからOptimizedDataFrameにコピー
+        if let DataFrameIndex::Simple(simple_index) = split_index {
+            // 互換性を保ちながらインデックスを設定
+            let _ = opt_df.set_default_index();  // まずデフォルトのインデックスを作成
+            
+            // 現時点では公開APIだけで完全な変換は難しいため、既に作成された
+            // DataFrameの完全性を確保するために一時的に対応
+            // TODO: 適切なパブリックAPIを作成する
+            #[allow(deprecated)]
+            {
+                opt_df.set_index_from_simple_index_internal(simple_index.clone())?;
             }
-        };
-        
-        opt_df.index = Some(string_index);
+        }
     }
     
     Ok(opt_df)
@@ -94,69 +117,115 @@ pub(crate) fn from_standard_dataframe(df: &crate::dataframe::DataFrame) -> Resul
 
 /// OptimizedDataFrameを標準のDataFrameに変換する
 pub(crate) fn to_standard_dataframe(df: &OptimizedDataFrame) -> Result<crate::dataframe::DataFrame> {
+    // 内部のSplitDataFrameを使用
+    let mut split_df = SplitDataFrame::new();
+    
+    // 列データを変換
+    for col_name in df.column_names() {
+        let col_view = df.column(col_name)?;
+        let col = col_view.column();
+        
+        // SplitDataFrameに列を追加
+        split_df.add_column(col_name.clone(), col.clone())?;
+    }
+    
+    // インデックスがあれば設定
+    if let Some(df_index) = df.get_index() {
+        // 直接内部フィールドを設定せず、適切なメソッドを使用
+        if let DataFrameIndex::Simple(simple_index) = df_index {
+            split_df.set_index_from_simple_index(simple_index.clone())?;
+        } else if let DataFrameIndex::Multi(multi_index) = df_index {
+            // マルチインデックスはまだサポート外
+            split_df.set_default_index()?;
+        }
+    }
+    
+    // 標準のDataFrameに変換
     let mut std_df = crate::dataframe::DataFrame::new();
     
-    // 列データをコピー
-    for col_name in df.column_names() {
-        let col_idx = df.column_indices.get(col_name)
-            .ok_or_else(|| Error::ColumnNotFound(col_name.clone()))?;
+    // 各列を処理
+    for col_name in split_df.column_names() {
+        let col_view = split_df.column(col_name)?;
+        let col = col_view.column();
         
-        let column = &df.columns[*col_idx];
-        
-        match column {
-            Column::Int64(col) => {
+        match col {
+            Column::Int64(int_col) => {
+                // Int64Columnからシリーズを作成
                 let series = crate::series::Series::new(
-                    (0..col.len())
-                        .map(|i| col.get(i).map_or(None, |v| v.map(|val| crate::dataframe::DataBox(Box::new(val)))))
+                    (0..int_col.len())
+                        .map(|i| {
+                            let val = int_col.get(i);
+                            match val {
+                                Ok(Some(v)) => Some(crate::dataframe::DataBox(Box::new(v.clone()))),
+                                _ => None
+                            }
+                        })
                         .collect(),
-                    Some(col_name.clone()),
+                    Some(col_name.clone())
                 )?;
                 std_df.add_column(col_name.clone(), series)?;
             },
-            Column::Float64(col) => {
+            Column::Float64(float_col) => {
+                // Float64Columnからシリーズを作成
                 let series = crate::series::Series::new(
-                    (0..col.len())
-                        .map(|i| col.get(i).map_or(None, |v| v.map(|val| crate::dataframe::DataBox(Box::new(val)))))
+                    (0..float_col.len())
+                        .map(|i| {
+                            let val = float_col.get(i);
+                            match val {
+                                Ok(Some(v)) => Some(crate::dataframe::DataBox(Box::new(v.clone()))),
+                                _ => None
+                            }
+                        })
                         .collect(),
-                    Some(col_name.clone()),
+                    Some(col_name.clone())
                 )?;
                 std_df.add_column(col_name.clone(), series)?;
             },
-            Column::String(col) => {
+            Column::String(str_col) => {
+                // StringColumnからシリーズを作成
                 let series = crate::series::Series::new(
-                    (0..col.len())
-                        .map(|i| col.get(i).map_or(None, |v| v.map(|s| crate::dataframe::DataBox(Box::new(s.to_string())))))
+                    (0..str_col.len())
+                        .map(|i| {
+                            let val = str_col.get(i);
+                            match val {
+                                Ok(Some(s)) => Some(crate::dataframe::DataBox(Box::new(s.to_string()))),
+                                _ => None
+                            }
+                        })
                         .collect(),
-                    Some(col_name.clone()),
+                    Some(col_name.clone())
                 )?;
                 std_df.add_column(col_name.clone(), series)?;
             },
-            Column::Boolean(col) => {
+            Column::Boolean(bool_col) => {
+                // BooleanColumnからシリーズを作成
                 let series = crate::series::Series::new(
-                    (0..col.len())
-                        .map(|i| col.get(i).map_or(None, |v| v.map(|val| crate::dataframe::DataBox(Box::new(val)))))
+                    (0..bool_col.len())
+                        .map(|i| {
+                            let val = bool_col.get(i);
+                            match val {
+                                Ok(Some(v)) => Some(crate::dataframe::DataBox(Box::new(v.clone()))),
+                                _ => None
+                            }
+                        })
                         .collect(),
-                    Some(col_name.clone()),
+                    Some(col_name.clone())
                 )?;
                 std_df.add_column(col_name.clone(), series)?;
             },
         }
     }
     
-    // インデックスの設定（あれば）
-    // OptimizedDataFrameのget_indexメソッドを使用
-    if let Some(ref index) = df.get_index() {
-        match index {
+    // インデックスの設定
+    if let Some(split_index) = split_df.get_index() {
+        match split_index {
             DataFrameIndex::Simple(simple_index) => {
-                let values: Vec<String> = (0..simple_index.len())
-                    .map(|i| simple_index.get_value(i).map(|s| s.to_string()).unwrap_or_default())
-                    .collect();
-                
-                let string_index = crate::index::Index::new(values)?;
-                std_df.set_index(string_index)?;
+                // 文字列ベースのSimple Indexとして設定
+                std_df.set_index(simple_index.clone())?;
             },
-            DataFrameIndex::Multi(_) => {
-                // マルチインデックスのサポートは今後の課題
+            DataFrameIndex::Multi(multi_index) => {
+                // マルチインデックスの場合
+                std_df.set_multi_index(multi_index.clone())?;
             }
         }
     }

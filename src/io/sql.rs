@@ -29,7 +29,7 @@ use crate::series::Series;
 /// ```
 pub fn read_sql<P: AsRef<Path>>(query: &str, db_path: P) -> Result<DataFrame> {
     // データベース接続
-    let mut conn = Connection::open(db_path)
+    let conn = Connection::open(db_path)
         .map_err(|e| Error::IoError(format!("データベースに接続できませんでした: {}", e)))?;
     
     // クエリを準備
@@ -99,7 +99,7 @@ pub fn read_sql<P: AsRef<Path>>(query: &str, db_path: P) -> Result<DataFrame> {
 /// ```
 pub fn execute_sql<P: AsRef<Path>>(sql: &str, db_path: P) -> Result<usize> {
     // データベース接続
-    let mut conn = Connection::open(db_path)
+    let conn = Connection::open(db_path)
         .map_err(|e| Error::IoError(format!("データベースに接続できませんでした: {}", e)))?;
     
     // SQL文を実行
