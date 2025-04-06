@@ -1,16 +1,17 @@
-use pandrs::*;
+use pandrs::column::{Column, Float64Column, StringColumn};
+use pandrs::error::Error as PandRSError;
+use pandrs::ml::metrics::classification::{accuracy_score, precision_score, recall_score, f1_score};
+use pandrs::ml::metrics::regression::{mean_squared_error, r2_score};
 use pandrs::ml::models::{SupervisedModel, LinearRegression, LogisticRegression};
-use pandrs::ml::models::model_selection::train_test_split;
 use pandrs::ml::models::model_persistence::ModelPersistence;
 use pandrs::ml::pipeline::Pipeline;
 use pandrs::ml::preprocessing::{StandardScaler, PolynomialFeatures};
-use pandrs::ml::metrics::regression::{mean_squared_error, r2_score};
-use pandrs::ml::metrics::classification::{accuracy_score, precision_score, recall_score, f1_score};
+use pandrs::OptimizedDataFrame;
 use rand::Rng;
 
 fn main() -> Result<(), PandRSError> {
-    println!("PandRS モデル学習と評価の例");
-    println!("==========================");
+    println!("PandRS モデル学習と評価の例 (OptimizedDataFrame版)");
+    println!("==========================================");
     
     // 回帰モデルの例
     regression_example()?;
@@ -36,13 +37,9 @@ fn regression_example() -> Result<(), PandRSError> {
     println!("回帰データサンプル:");
     println!("{:?}", reg_df);
     
-    // ビルドエラーを避けるため、元のDataFrameを直接使用
-    // NOTE: model.fit()はOptimizedDataFrameを期待しているかもしれないが、
-    // 今回はサンプルとしてDataFrameをそのまま使用する
-    
     // 訓練データとテストデータに分割 (モック実装)
-    let train_size = (reg_df.rows() as f64 * 0.7) as usize;
-    let test_size = reg_df.rows() - train_size;
+    let train_size = (reg_df.row_count() as f64 * 0.7) as usize;
+    let test_size = reg_df.row_count() - train_size;
     println!("訓練データサイズ: {}, テストデータサイズ: {}", train_size, test_size);
     
     // 本来ならデータを分割するが、ここではオリジナルをそのまま使用
@@ -67,9 +64,15 @@ fn regression_example() -> Result<(), PandRSError> {
     
     // モデル評価
     // カラムビューをf64配列に変換
-    let y_true: Vec<f64> = (0..test_df.row_count())
-        .filter_map(|i| test_df.column(target).unwrap().as_float64().and_then(|col| col.get(i).ok().flatten()))
-        .collect();
+    let y_true: Vec<f64> = {
+        // 最初にターゲット列を取得
+        let target_col = test_df.column(target)?;
+        let float_col = target_col.as_float64().ok_or(PandRSError::Type("Expected float column".to_string()))?;
+        
+        (0..test_df.row_count())
+            .filter_map(|i| float_col.get(i).ok().flatten())
+            .collect()
+    };
     
     let mse = mean_squared_error(&y_true, &predictions)?;
     let r2 = r2_score(&y_true, &predictions)?;
@@ -113,9 +116,15 @@ fn regression_example() -> Result<(), PandRSError> {
     
     // モデル評価
     // カラムビューをf64配列に変換
-    let poly_y_true: Vec<f64> = (0..transformed_test_df.row_count())
-        .filter_map(|i| transformed_test_df.column(target).unwrap().as_float64().and_then(|col| col.get(i).ok().flatten()))
-        .collect();
+    let poly_y_true: Vec<f64> = {
+        // 最初にターゲット列を取得
+        let target_col = transformed_test_df.column(target)?;
+        let float_col = target_col.as_float64().ok_or(PandRSError::Type("Expected float column".to_string()))?;
+        
+        (0..transformed_test_df.row_count())
+            .filter_map(|i| float_col.get(i).ok().flatten())
+            .collect()
+    };
     
     let poly_mse = mean_squared_error(&poly_y_true, &poly_predictions)?;
     let poly_r2 = r2_score(&poly_y_true, &poly_predictions)?;
@@ -136,11 +145,9 @@ fn classification_example() -> Result<(), PandRSError> {
     println!("分類データサンプル:");
     println!("{:?}", cls_df);
     
-    // ビルドエラーを避けるため、元のDataFrameを直接使用
-    
     // 訓練データとテストデータに分割 (モック実装)
-    let train_size = (cls_df.rows() as f64 * 0.7) as usize;
-    let test_size = cls_df.rows() - train_size;
+    let train_size = (cls_df.row_count() as f64 * 0.7) as usize;
+    let test_size = cls_df.row_count() - train_size;
     println!("訓練データサイズ: {}, テストデータサイズ: {}", train_size, test_size);
     
     // 本来ならデータを分割するが、ここではオリジナルをそのまま使用
@@ -165,10 +172,17 @@ fn classification_example() -> Result<(), PandRSError> {
     
     // モデル評価
     // カラムビューをbool配列に変換
-    let y_true: Vec<bool> = (0..test_df.row_count())
-        .filter_map(|i| test_df.column(target).unwrap().as_string().and_then(|col| col.get(i).ok().flatten())
-            .map(|s| s == "1"))
-        .collect();
+    let y_true: Vec<bool> = {
+        // 最初にターゲット列を取得
+        let target_col = test_df.column(target)?;
+        let string_col = target_col.as_string().ok_or(PandRSError::Type("Expected string column".to_string()))?;
+        
+        (0..test_df.row_count())
+            .filter_map(|i| {
+                string_col.get(i).ok().flatten().map(|s| s == "1")
+            })
+            .collect()
+    };
     
     // 予測結果をf64からboolに変換
     let pred_bool: Vec<bool> = predictions.iter().map(|&val| val > 0.5).collect();
@@ -191,11 +205,15 @@ fn classification_example() -> Result<(), PandRSError> {
     // 最初の5行だけを取得して表示
     println!("確率予測結果（最初の5行）:");
     for i in 0..proba_df.row_count().min(5) {
-        if let (Ok(Some(prob_0)), Ok(Some(prob_1))) = (
-            proba_df.column("prob_0").unwrap().as_float64().unwrap().get(i),
-            proba_df.column("prob_1").unwrap().as_float64().unwrap().get(i)
-        ) {
-            println!("行 {}: prob_0={:.4}, prob_1={:.4}", i, prob_0, prob_1);
+        // 列データを取得
+        if let (Ok(col0), Ok(col1)) = (proba_df.column("prob_0"), proba_df.column("prob_1")) {
+            // float64型に変換
+            if let (Some(fcol0), Some(fcol1)) = (col0.as_float64(), col1.as_float64()) {
+                // 各行の値を取得
+                if let (Ok(Some(prob_0)), Ok(Some(prob_1))) = (fcol0.get(i), fcol1.get(i)) {
+                    println!("行 {}: prob_0={:.4}, prob_1={:.4}", i, prob_0, prob_1);
+                }
+            }
         }
     }
     
@@ -207,14 +225,7 @@ fn model_selection_example() -> Result<(), PandRSError> {
     println!("\n==== モデル選択と評価の例 ====");
     
     // 回帰データの生成
-    let reg_df = create_regression_data()?;
-    
-    // 元のDataFrameを直接使用
-    let df_to_use = &reg_df;
-    
-    // 特徴量のリスト
-    let features = vec!["feature1", "feature2", "feature3"];
-    let target = "target";
+    let _reg_df = create_regression_data()?;
     
     // 交差検証によるモデル評価
     println!("\n交差検証（5分割）の結果:");
@@ -222,7 +233,9 @@ fn model_selection_example() -> Result<(), PandRSError> {
     
     // 以下のコードはCloneトレイトが必要なため現在は無効化
     // let model = LinearRegression::new();
-    // let cv_scores = cross_val_score(&model, &opt_df, target, &features, 5)?;
+    // let _features = vec!["feature1", "feature2", "feature3"];
+    // let _target = "target";
+    // let cv_scores = cross_val_score(&model, &_reg_df, _target, &_features, 5)?;
     // println!("各分割のスコア: {:?}", cv_scores);
     // println!("平均スコア: {}", cv_scores.iter().sum::<f64>() / cv_scores.len() as f64);
     
@@ -275,7 +288,7 @@ fn model_persistence_example() -> Result<(), PandRSError> {
 }
 
 // 回帰データの生成
-fn create_regression_data() -> Result<DataFrame, PandRSError> {
+fn create_regression_data() -> Result<OptimizedDataFrame, PandRSError> {
     let mut rng = rand::rng();
     
     // 100行のデータを生成
@@ -296,18 +309,28 @@ fn create_regression_data() -> Result<DataFrame, PandRSError> {
         })
         .collect();
     
-    // DataFrame作成
-    let mut df = DataFrame::new();
-    df.add_column("feature1".to_string(), Series::new(feature1, Some("feature1".to_string()))?)?;
-    df.add_column("feature2".to_string(), Series::new(feature2, Some("feature2".to_string()))?)?;
-    df.add_column("feature3".to_string(), Series::new(feature3, Some("feature3".to_string()))?)?;
-    df.add_column("target".to_string(), Series::new(target, Some("target".to_string()))?)?;
+    // OptimizedDataFrame作成
+    let mut df = OptimizedDataFrame::new();
+    
+    // 特徴量の追加
+    let feature1_col = Float64Column::with_name(feature1, "feature1");
+    df.add_column("feature1", Column::Float64(feature1_col))?;
+    
+    let feature2_col = Float64Column::with_name(feature2, "feature2");
+    df.add_column("feature2", Column::Float64(feature2_col))?;
+    
+    let feature3_col = Float64Column::with_name(feature3, "feature3");
+    df.add_column("feature3", Column::Float64(feature3_col))?;
+    
+    // 目的変数の追加
+    let target_col = Float64Column::with_name(target, "target");
+    df.add_column("target", Column::Float64(target_col))?;
     
     Ok(df)
 }
 
 // 分類データの生成
-fn create_classification_data() -> Result<DataFrame, PandRSError> {
+fn create_classification_data() -> Result<OptimizedDataFrame, PandRSError> {
     let mut rng = rand::rng();
     
     // 100行のデータを生成
@@ -334,11 +357,19 @@ fn create_classification_data() -> Result<DataFrame, PandRSError> {
         })
         .collect();
     
-    // DataFrame作成
-    let mut df = DataFrame::new();
-    df.add_column("feature1".to_string(), Series::new(feature1, Some("feature1".to_string()))?)?;
-    df.add_column("feature2".to_string(), Series::new(feature2, Some("feature2".to_string()))?)?;
-    df.add_column("target".to_string(), Series::new(target, Some("target".to_string()))?)?;
+    // OptimizedDataFrame作成
+    let mut df = OptimizedDataFrame::new();
+    
+    // 特徴量の追加
+    let feature1_col = Float64Column::with_name(feature1, "feature1");
+    df.add_column("feature1", Column::Float64(feature1_col))?;
+    
+    let feature2_col = Float64Column::with_name(feature2, "feature2");
+    df.add_column("feature2", Column::Float64(feature2_col))?;
+    
+    // 目的変数の追加
+    let target_col = StringColumn::with_name(target, "target");
+    df.add_column("target", Column::String(target_col))?;
     
     Ok(df)
 }
