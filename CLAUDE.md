@@ -538,6 +538,31 @@ pandrs/
 - 警告チェック: `cargo fix --lib -p pandrs --allow-dirty`
 - Clippy静的解析: `cargo clippy`
 
+### 効率的なテスト戦略
+
+大規模なコードベースでのテスト実行は時間がかかるため、テスト計画を作成して効率的に実行します。詳細なテスト計画は `CLAUDE_TEST_PLAN.md` に記録しています。
+
+#### テスト分割の基本戦略
+
+1. **モジュール別テスト**: 個別のモジュールに対応するテストを実行
+   ```bash
+   # 例: ML関連モジュールのテスト
+   cargo test --test ml_basic_test
+   ```
+
+2. **グループ化された例コード検証**: 関連する例コードをグループ化して検証
+   ```bash
+   # 例: ML基本グループのコンパイルチェック
+   cargo check --example ml_basic_example
+   cargo check --example ml_model_example
+   cargo check --example ml_pipeline_example
+   ```
+
+3. **計画的な進行**: テスト計画ファイルを使用して進捗を管理
+   - 変更したファイルに直接関連するテストから開始
+   - 次に周辺モジュールのテストへ拡大
+   - 最後に全体テストを実行
+
 ### Pythonバインディング関連コマンド
 
 - Python用ビルド: `cd py_bindings && maturin develop`
