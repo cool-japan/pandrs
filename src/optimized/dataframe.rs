@@ -1162,197 +1162,54 @@ impl OptimizedDataFrame {
     
     /// グループ化操作を並列で実行（データサイズに応じて最適化）
     pub fn par_groupby(&self, group_by_columns: &[&str]) -> Result<HashMap<String, Self>> {
-        use rayon::prelude::*;
-        use std::collections::hash_map::Entry;
-        use std::sync::{Arc, Mutex};
+        // split_dataframe/group.rsの実装を利用
+        use crate::optimized::split_dataframe::core::OptimizedDataFrame as SplitDataFrame;
         
-        // データサイズに基づく最適化閾値
-        const PARALLEL_THRESHOLD: usize = 50_000;
+        // SplitDataFrameに変換
+        let mut split_df = SplitDataFrame::new();
         
-        // グループ化キーのカラムインデックスを取得
-        let mut group_col_indices = Vec::with_capacity(group_by_columns.len());
-        for &col_name in group_by_columns {
-            let col_idx = self.column_indices.get(col_name)
-                .ok_or_else(|| Error::ColumnNotFound(col_name.to_string()))?;
-            group_col_indices.push(*col_idx);
+        // 列データをコピー
+        for name in &self.column_names {
+            if let Ok(column_view) = self.column(name) {
+                let column = column_view.column;
+                split_df.add_column(name.clone(), column.clone())?;
+            }
         }
         
-        // グループキーを生成し、各行のインデックスをグループ化
-        let groups: HashMap<String, Vec<usize>> = if self.row_count < PARALLEL_THRESHOLD {
-            // 小規模データでは直列処理の方が効率的
-            let mut groups = HashMap::new();
-            
-            for row_idx in 0..self.row_count {
-                // この行のグループキーを生成
-                let mut key_parts = Vec::with_capacity(group_col_indices.len());
-                
-                for &col_idx in &group_col_indices {
-                    let column = &self.columns[col_idx];
-                    let part = match column {
-                        Column::Int64(col) => {
-                            if let Ok(Some(val)) = col.get(row_idx) {
-                                val.to_string()
-                            } else {
-                                "NA".to_string()
-                            }
-                        },
-                        Column::Float64(col) => {
-                            if let Ok(Some(val)) = col.get(row_idx) {
-                                val.to_string()
-                            } else {
-                                "NA".to_string()
-                            }
-                        },
-                        Column::String(col) => {
-                            if let Ok(Some(val)) = col.get(row_idx) {
-                                val.to_string()
-                            } else {
-                                "NA".to_string()
-                            }
-                        },
-                        Column::Boolean(col) => {
-                            if let Ok(Some(val)) = col.get(row_idx) {
-                                val.to_string()
-                            } else {
-                                "NA".to_string()
-                            }
-                        },
-                    };
-                    key_parts.push(part);
-                }
-                
-                let group_key = key_parts.join("_");
-                
-                match groups.entry(group_key) {
-                    Entry::Vacant(e) => { e.insert(vec![row_idx]); },
-                    Entry::Occupied(mut e) => { e.get_mut().push(row_idx); }
-                }
+        // インデックスがあれば設定
+        if let Some(ref index) = self.index {
+            // DataFrameIndexからIndex<String>を取り出す
+            if let crate::index::DataFrameIndex::Simple(simple_index) = index {
+                split_df.set_index_from_simple_index(simple_index.clone())?;
             }
-            
-            groups
-        } else {
-            // 大規模データでは並列処理+ロックフリーアプローチ
-            // 1. 並列でローカルなグループマップを作成
-            // 2. それらをマージ
-            let chunk_size = (self.row_count / rayon::current_num_threads()).max(1000);
-            
-            // ステップ1: 並列でローカルな中間グループマップを作成
-            let local_maps: Vec<HashMap<String, Vec<usize>>> = 
-                (0..self.row_count).collect::<Vec<_>>()
-                .par_chunks(chunk_size)
-                .map(|chunk| {
-                    let mut local_groups = HashMap::new();
-                    
-                    for &row_idx in chunk {
-                        // この行のグループキーを生成
-                        let mut key_parts = Vec::with_capacity(group_col_indices.len());
-                        
-                        for &col_idx in &group_col_indices {
-                            let column = &self.columns[col_idx];
-                            let part = match column {
-                                Column::Int64(col) => {
-                                    if let Ok(Some(val)) = col.get(row_idx) {
-                                        val.to_string()
-                                    } else {
-                                        "NA".to_string()
-                                    }
-                                },
-                                Column::Float64(col) => {
-                                    if let Ok(Some(val)) = col.get(row_idx) {
-                                        val.to_string()
-                                    } else {
-                                        "NA".to_string()
-                                    }
-                                },
-                                Column::String(col) => {
-                                    if let Ok(Some(val)) = col.get(row_idx) {
-                                        val.to_string()
-                                    } else {
-                                        "NA".to_string()
-                                    }
-                                },
-                                Column::Boolean(col) => {
-                                    if let Ok(Some(val)) = col.get(row_idx) {
-                                        val.to_string()
-                                    } else {
-                                        "NA".to_string()
-                                    }
-                                },
-                            };
-                            key_parts.push(part);
-                        }
-                        
-                        let group_key = key_parts.join("_");
-                        
-                        match local_groups.entry(group_key) {
-                            Entry::Vacant(e) => { e.insert(vec![row_idx]); },
-                            Entry::Occupied(mut e) => { e.get_mut().push(row_idx); }
-                        }
-                    }
-                    
-                    local_groups
-                })
-                .collect();
-            
-            // ステップ2: 中間マップをマージ
-            let mut merged_groups = HashMap::new();
-            for local_map in local_maps {
-                for (key, indices) in local_map {
-                    match merged_groups.entry(key) {
-                        Entry::Vacant(e) => { e.insert(indices); },
-                        Entry::Occupied(mut e) => { e.get_mut().extend(indices); }
-                    }
-                }
-            }
-            
-            merged_groups
-        };
+            // TODO: マルチインデックスの場合の処理
+        }
         
-        // 各グループに対してDataFrameを効率的に作成
-        let result = if groups.len() < 100 || self.row_count < PARALLEL_THRESHOLD {
-            // グループ数が少ない場合や小規模データでは直列処理
-            let mut result = HashMap::with_capacity(groups.len());
-            for (key, indices) in groups {
-                let group_df = self.filter_by_indices(&indices)?;
-                result.insert(key, group_df);
+        // SplitDataFrameのpar_groupbyを呼び出す
+        let split_result = split_df.par_groupby(group_by_columns)?;
+        
+        // 結果を変換して返す
+        let mut result = HashMap::with_capacity(split_result.len());
+        
+        for (key, split_group_df) in split_result {
+            // 各グループのSplitDataFrameをStandardDataFrameに変換
+            let mut group_df = Self::new();
+            
+            // 列データをコピー
+            for name in split_group_df.column_names() {
+                if let Ok(column_view) = split_group_df.column(name) {
+                    let column = column_view.column;
+                    group_df.add_column(name.to_string(), column.clone())?;
+                }
             }
-            result
-        } else {
-            // 大規模データでのグループ処理は並列化
-            // 各グループを並列処理し、スレッドセーフに結果を集約
-            let result_mutex = Arc::new(Mutex::new(HashMap::with_capacity(groups.len())));
             
-            // チャンクサイズを調整して、オーバーヘッドを最小化
-            let chunk_size = (groups.len() / rayon::current_num_threads()).max(10);
-            
-            // グループのリストを作成し、チャンクに分割して並列処理
-            let group_items: Vec<(String, Vec<usize>)> = groups.into_iter().collect();
-            
-            group_items.par_chunks(chunk_size)
-                .for_each(|chunk| {
-                    // 各チャンクの処理結果を一時保存
-                    let mut local_results = HashMap::new();
-                    
-                    for (key, indices) in chunk {
-                        if let Ok(group_df) = self.filter_by_indices(indices) {
-                            local_results.insert(key.clone(), group_df);
-                        }
-                    }
-                    
-                    // 結果をメインのHashMapにマージ
-                    if let Ok(mut result_map) = result_mutex.lock() {
-                        for (key, df) in local_results {
-                            result_map.insert(key, df);
-                        }
-                    }
-                });
-            
-            // 最終結果を取得
-            match Arc::try_unwrap(result_mutex) {
-                Ok(mutex) => mutex.into_inner().unwrap_or_default(),
-                Err(_) => HashMap::new(), // アークの解除に失敗した場合
+            // インデックスがあれば設定
+            if let Some(index) = split_group_df.get_index() {
+                group_df.index = Some(index.clone());
             }
-        };
+            
+            result.insert(key, group_df);
+        }
         
         Ok(result)
     }
