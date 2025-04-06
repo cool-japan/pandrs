@@ -143,49 +143,28 @@ impl OptimizedDataFrame {
     /// # Returns
     /// * `Result<Self>` - 成功時はDataFrame、失敗時はエラー
     pub fn from_csv<P: AsRef<Path>>(path: P, has_header: bool) -> Result<Self> {
-        let file = File::open(path)?;
-        let reader = BufReader::new(file);
-        let mut csv_reader = csv::ReaderBuilder::new()
-            .has_headers(has_header)
-            .from_reader(reader);
+        // split_dataframe/io.rsの実装を利用
+        use crate::optimized::split_dataframe::core::OptimizedDataFrame as SplitDataFrame;
         
-        // 列名を取得
-        let headers = if has_header {
-            csv_reader.headers()?.clone()
-        } else {
-            let record = csv_reader.records().next()
-                .ok_or_else(|| Error::InvalidInput("CSVファイルが空です".to_string()))??;
-            
-            // 列番号を列名として使用
-            csv::StringRecord::from(
-                (0..record.len()).map(|i| format!("Column{}", i)).collect::<Vec<String>>()
-            )
-        };
+        // SplitDataFrameのfrom_csvを呼び出す
+        let split_df = SplitDataFrame::from_csv(path, has_header)?;
         
-        // 各列のデータを格納するベクター
-        let mut column_data: Vec<Vec<String>> = vec![Vec::new(); headers.len()];
+        // StandardDataFrameに変換（互換性のため）
+        let mut df = Self::new();
         
-        // レコードを読み込み、列単位にデータを整理（パフォーマンス最適化）
-        for result in csv_reader.records() {
-            let record = result?;
-            for (i, field) in record.iter().enumerate() {
-                if i < column_data.len() {
-                    column_data[i].push(field.to_string());
-                }
+        // 列データをコピー
+        for name in split_df.column_names() {
+            let column_result = split_df.column(name);
+            if let Ok(column_view) = column_result {
+                let column = column_view.column;
+                // 以下は元のコードと同じ
+                df.add_column(name.to_string(), column.clone())?;
             }
         }
         
-        // データをプリアロケーションしてDataFrameを構築（メモリ効率向上）
-        let mut df = Self::new();
-        let row_count = if column_data.is_empty() { 0 } else { column_data[0].len() };
-        
-        // 並列処理で列を追加
-        for (i, header) in headers.iter().enumerate() {
-            if i < column_data.len() {
-                // 列タイプを自動推定して最適な形式で格納
-                let column = Self::infer_and_create_column(&column_data[i], header);
-                df.add_column(header.to_string(), column)?;
-            }
+        // インデックスがあれば設定
+        if let Some(index) = split_df.get_index() {
+            df.index = Some(index.clone());
         }
         
         Ok(df)
@@ -251,59 +230,31 @@ impl OptimizedDataFrame {
     /// # Returns
     /// * `Result<()>` - 成功時はOk、失敗時はエラー
     pub fn to_csv<P: AsRef<Path>>(&self, path: P, write_header: bool) -> Result<()> {
-        let file = File::create(path)?;
-        let writer = BufWriter::new(file);
+        // split_dataframe/io.rsの実装を利用
+        use crate::optimized::split_dataframe::core::OptimizedDataFrame as SplitDataFrame;
         
-        let mut csv_writer = csv::WriterBuilder::new()
-            .has_headers(write_header)
-            .from_writer(writer);
+        // SplitDataFrameに変換
+        let mut split_df = SplitDataFrame::new();
         
-        // ヘッダ書き込み
-        if write_header {
-            csv_writer.write_record(&self.column_names)?;
-        }
-        
-        // 行単位でデータを書き込む（パフォーマンス最適化）
-        for row_idx in 0..self.row_count {
-            let mut record = Vec::with_capacity(self.column_count());
-            
-            // 各列からこの行の値を取得
-            for col_idx in 0..self.columns.len() {
-                let col = &self.columns[col_idx];
-                let value = match col {
-                    Column::Int64(c) => {
-                        match c.get(row_idx) {
-                            Ok(Some(v)) => v.to_string(),
-                            _ => String::new(),
-                        }
-                    },
-                    Column::Float64(c) => {
-                        match c.get(row_idx) {
-                            Ok(Some(v)) => v.to_string(),
-                            _ => String::new(),
-                        }
-                    },
-                    Column::String(c) => {
-                        match c.get(row_idx) {
-                            Ok(Some(v)) => v.to_string(),
-                            _ => String::new(),
-                        }
-                    },
-                    Column::Boolean(c) => {
-                        match c.get(row_idx) {
-                            Ok(Some(v)) => v.to_string(),
-                            _ => String::new(),
-                        }
-                    },
-                };
-                record.push(value);
+        // 列データをコピー
+        for name in &self.column_names {
+            if let Ok(column_view) = self.column(name) {
+                let column = column_view.column;
+                split_df.add_column(name.clone(), column.clone())?;
             }
-            
-            csv_writer.write_record(&record)?;
         }
         
-        csv_writer.flush()?;
-        Ok(())
+        // インデックスがあれば設定
+        if let Some(ref index) = self.index {
+            // DataFrameIndexからIndex<String>を取り出す
+            if let crate::index::DataFrameIndex::Simple(simple_index) = index {
+                split_df.set_index_from_simple_index(simple_index.clone())?;
+            }
+            // TODO: マルチインデックスの場合の処理
+        }
+        
+        // SplitDataFrameのto_csvを呼び出す
+        split_df.to_csv(path, write_header)
     }
     
     /// 列を追加
@@ -2450,8 +2401,31 @@ impl OptimizedDataFrame {
         skip_rows: usize,
         use_cols: Option<&[&str]>,
     ) -> Result<Self> {
-        let df = crate::io::read_excel(path, sheet_name, header, skip_rows, use_cols)?;
-        Self::from_standard_dataframe(&df)
+        // split_dataframe/io.rsの実装を利用
+        use crate::optimized::split_dataframe::core::OptimizedDataFrame as SplitDataFrame;
+        
+        // SplitDataFrameのfrom_excelを呼び出す
+        let split_df = SplitDataFrame::from_excel(path, sheet_name, header, skip_rows, use_cols)?;
+        
+        // StandardDataFrameに変換（互換性のため）
+        let mut df = Self::new();
+        
+        // 列データをコピー
+        for name in split_df.column_names() {
+            let column_result = split_df.column(name);
+            if let Ok(column_view) = column_result {
+                let column = column_view.column;
+                // 以下は元のコードと同じ
+                df.add_column(name.to_string(), column.clone())?;
+            }
+        }
+        
+        // インデックスがあれば設定
+        if let Some(index) = split_df.get_index() {
+            df.index = Some(index.clone());
+        }
+        
+        Ok(df)
     }
 
     /// データフレームをExcelファイルに書き込む
@@ -2461,100 +2435,31 @@ impl OptimizedDataFrame {
         sheet_name: Option<&str>,
         index: bool,
     ) -> Result<()> {
-        // 新しいExcelファイルを作成
-        let mut workbook = simple_excel_writer::Workbook::create(path.as_ref()
-            .to_str()
-            .ok_or_else(|| Error::IoError("ファイルパスを文字列に変換できませんでした".to_string()))?);
+        // split_dataframe/io.rsの実装を利用
+        use crate::optimized::split_dataframe::core::OptimizedDataFrame as SplitDataFrame;
         
-        let sheet_name = sheet_name.unwrap_or("Sheet1");
+        // SplitDataFrameに変換
+        let mut split_df = SplitDataFrame::new();
         
-        // シートを作成
-        let mut sheet = workbook.create_sheet(sheet_name);
-        
-        // ヘッダー行を作成
-        let mut headers = Vec::new();
-        
-        // インデックスを含める場合
-        if index {
-            headers.push("Index".to_string());
+        // 列データをコピー
+        for name in &self.column_names {
+            if let Ok(column_view) = self.column(name) {
+                let column = column_view.column;
+                split_df.add_column(name.clone(), column.clone())?;
+            }
         }
         
-        // 列名を追加
-        for col_name in &self.column_names {
-            headers.push(col_name.clone());
+        // インデックスがあれば設定
+        if let Some(ref index) = self.index {
+            // DataFrameIndexからIndex<String>を取り出す
+            if let crate::index::DataFrameIndex::Simple(simple_index) = index {
+                split_df.set_index_from_simple_index(simple_index.clone())?;
+            }
+            // TODO: マルチインデックスの場合の処理
         }
         
-        // データを書き込む
-        workbook.write_sheet(&mut sheet, |sheet_writer| {
-            // ヘッダー行を追加
-            if !headers.is_empty() {
-                let header_row: Vec<&str> = headers.iter().map(|s| s.as_str()).collect();
-                // Rowを直接作成
-                let row = simple_excel_writer::Row::from_iter(header_row.iter().cloned());
-                sheet_writer.append_row(row)?;
-            }
-            
-            // データ行を書き込む
-            for row_idx in 0..self.row_count {
-                let mut row_values = Vec::new();
-                
-                // インデックスを含める場合
-                if index {
-                    row_values.push(row_idx.to_string());
-                }
-                
-                // 各列のデータを追加
-                for col_idx in 0..self.columns.len() {
-                    let col = &self.columns[col_idx];
-                    let value = match col {
-                        Column::Int64(c) => {
-                            if let Ok(Some(val)) = c.get(row_idx) {
-                                val.to_string()
-                            } else {
-                                String::new()
-                            }
-                        },
-                        Column::Float64(c) => {
-                            if let Ok(Some(val)) = c.get(row_idx) {
-                                val.to_string()
-                            } else {
-                                String::new()
-                            }
-                        },
-                        Column::String(c) => {
-                            if let Ok(Some(val)) = c.get(row_idx) {
-                                val.to_string()
-                            } else {
-                                String::new()
-                            }
-                        },
-                        Column::Boolean(c) => {
-                            if let Ok(Some(val)) = c.get(row_idx) {
-                                val.to_string()
-                            } else {
-                                String::new()
-                            }
-                        },
-                    };
-                    
-                    row_values.push(value);
-                }
-                
-                // 行をExcelに追加（文字列参照のスライスに変換）
-                let row_str_refs: Vec<&str> = row_values.iter().map(|s| s.as_str()).collect();
-                // Rowを直接作成
-                let row = simple_excel_writer::Row::from_iter(row_str_refs.iter().cloned());
-                sheet_writer.append_row(row)?;
-            }
-            
-            Ok(())
-        })?;
-        
-        // ワークブックを閉じて保存
-        workbook.close()
-            .map_err(|e| Error::IoError(format!("Excelファイルを保存できませんでした: {}", e)))?;
-        
-        Ok(())
+        // SplitDataFrameのto_excelを呼び出す
+        split_df.to_excel(path, sheet_name, index)
     }
 
     /// データフレームをParquetファイルに書き込む
@@ -2563,27 +2468,72 @@ impl OptimizedDataFrame {
         path: P,
         compression: Option<ParquetCompression>,
     ) -> Result<()> {
-        // まず標準のDataFrameに変換
-        let df = self.to_standard_dataframe()?;
+        // split_dataframe/io.rsの実装を利用
+        use crate::optimized::split_dataframe::core::OptimizedDataFrame as SplitDataFrame;
+        use crate::optimized::split_dataframe::io::ParquetCompression as SplitParquetCompression;
+        
+        // SplitDataFrameに変換
+        let mut split_df = SplitDataFrame::new();
+        
+        // 列データをコピー
+        for name in &self.column_names {
+            if let Ok(column_view) = self.column(name) {
+                let column = column_view.column;
+                split_df.add_column(name.clone(), column.clone())?;
+            }
+        }
+        
+        // インデックスがあれば設定
+        if let Some(ref index) = self.index {
+            // DataFrameIndexからIndex<String>を取り出す
+            if let crate::index::DataFrameIndex::Simple(simple_index) = index {
+                split_df.set_index_from_simple_index(simple_index.clone())?;
+            }
+            // TODO: マルチインデックスの場合の処理
+        }
+        
         // 圧縮設定を変換
-        let io_compression = compression.map(|c| match c {
-            ParquetCompression::None => crate::io::parquet::ParquetCompression::None,
-            ParquetCompression::Snappy => crate::io::parquet::ParquetCompression::Snappy,
-            ParquetCompression::Gzip => crate::io::parquet::ParquetCompression::Gzip,
-            ParquetCompression::Lzo => crate::io::parquet::ParquetCompression::Lzo,
-            ParquetCompression::Brotli => crate::io::parquet::ParquetCompression::Brotli,
-            ParquetCompression::Lz4 => crate::io::parquet::ParquetCompression::Lz4,
-            ParquetCompression::Zstd => crate::io::parquet::ParquetCompression::Zstd,
+        let split_compression = compression.map(|c| match c {
+            ParquetCompression::None => SplitParquetCompression::None,
+            ParquetCompression::Snappy => SplitParquetCompression::Snappy,
+            ParquetCompression::Gzip => SplitParquetCompression::Gzip,
+            ParquetCompression::Lzo => SplitParquetCompression::Lzo,
+            ParquetCompression::Brotli => SplitParquetCompression::Brotli,
+            ParquetCompression::Lz4 => SplitParquetCompression::Lz4,
+            ParquetCompression::Zstd => SplitParquetCompression::Zstd,
         });
-        // 標準APIを使用して書き込む
-        // 互換性のためにself参照を使う
-        crate::io::write_parquet(self, path, io_compression)
+        
+        // SplitDataFrameのto_parquetを呼び出す
+        split_df.to_parquet(path, split_compression)
     }
 
     /// Parquetファイルからデータフレームを読み込む
     pub fn from_parquet<P: AsRef<Path>>(path: P) -> Result<Self> {
-        let df = crate::io::read_parquet(path)?;
-        Self::from_standard_dataframe(&df)
+        // split_dataframe/io.rsの実装を利用
+        use crate::optimized::split_dataframe::core::OptimizedDataFrame as SplitDataFrame;
+        
+        // SplitDataFrameのfrom_parquetを呼び出す
+        let split_df = SplitDataFrame::from_parquet(path)?;
+        
+        // StandardDataFrameに変換（互換性のため）
+        let mut df = Self::new();
+        
+        // 列データをコピー
+        for name in split_df.column_names() {
+            let column_result = split_df.column(name);
+            if let Ok(column_view) = column_result {
+                let column = column_view.column;
+                // 以下は元のコードと同じ
+                df.add_column(name.to_string(), column.clone())?;
+            }
+        }
+        
+        // インデックスがあれば設定
+        if let Some(index) = split_df.get_index() {
+            df.index = Some(index.clone());
+        }
+        
+        Ok(df)
     }
 
     /// 標準のDataFrameからOptimizedDataFrameを作成する

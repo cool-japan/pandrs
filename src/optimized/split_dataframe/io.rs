@@ -1,9 +1,15 @@
 //! OptimizedDataFrameの入出力関連機能
 
-use std::collections::HashMap;
-use std::fs::File;
-use std::io::{BufReader, BufWriter};
 use std::path::Path;
+use std::fs::File;
+use std::io::{self, BufReader, BufWriter, Read, Write};
+use std::collections::HashMap;
+
+use super::core::OptimizedDataFrame;
+use crate::column::{Column, ColumnTrait, ColumnType, Int64Column, Float64Column, StringColumn, BooleanColumn};
+use crate::error::{Error, Result};
+use crate::index::{DataFrameIndex, Index, IndexTrait};
+
 use std::sync::Arc;
 
 use calamine::{open_workbook, Reader, Xlsx};
@@ -19,9 +25,7 @@ use parquet::basic::Compression;
 use parquet::file::properties::WriterProperties;
 use simple_excel_writer::{Workbook, Sheet};
 
-use super::core::OptimizedDataFrame;
-use crate::column::{Column, Int64Column, Float64Column, StringColumn, BooleanColumn};
-use crate::error::{Error, Result};
+// 以下は8〜10行目で既にインポート済み
 
 /// JSON出力形式
 pub enum JsonOrient {

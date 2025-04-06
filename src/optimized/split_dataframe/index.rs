@@ -57,6 +57,29 @@ impl OptimizedDataFrame {
     ///
     /// # Returns
     /// * `Result<()>` - 成功した場合はOk、失敗した場合はエラー
+    
+    /// 文字列インデックスを設定する（既存のインデックスオブジェクトから）
+    ///
+    /// # Arguments
+    /// * `index` - 設定するインデックス
+    ///
+    /// # Returns
+    /// * `Result<()>` - 成功した場合はOk、失敗した場合はエラー
+    pub fn set_index_from_simple_index(&mut self, index: crate::index::Index<String>) -> Result<()> {
+        // インデックス長チェック
+        if !self.column_names.is_empty() && index.len() != self.row_count {
+            return Err(Error::Consistency(format!(
+                "新しいインデックスの長さ ({}) がDataFrameの行数 ({}) と一致しません",
+                index.len(),
+                self.row_count
+            )));
+        }
+        
+        // インデックスを設定
+        self.index = Some(DataFrameIndex::<String>::from_simple(index));
+        
+        Ok(())
+    }
     pub fn set_index_from_column(&mut self, column_name: &str, drop: bool) -> Result<()> {
         // 列の存在確認
         let col_idx = self.column_indices.get(column_name)
