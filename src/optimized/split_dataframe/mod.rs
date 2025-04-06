@@ -21,6 +21,9 @@ pub mod group;
 // インデックス操作
 pub mod index;
 
+// 行操作
+pub mod row_ops;
+
 // ColumnView実装
 pub mod column_view;
 
