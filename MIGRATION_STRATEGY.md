@@ -2,20 +2,36 @@
 
 PandRSプロジェクトでは、コードベースの肥大化に対処し、より保守性の高い構造に改善するためのリファクタリングを行います。特に`OptimizedDataFrame`クラスは約2600行と非常に大きくなっているため、モジュール分割と責務の明確化が必要です。
 
+## 実装進捗
+
+### 完了した移行
+
+1. **入出力機能** (2024-04-06)
+   - CSV、Parquet、Excel関連の操作を`split_dataframe/io.rs`へ移行
+   - dataframe.rsのサイズを2694行から2644行に削減 (-1.9%)
+   - すべてのIO関連テストが正常に動作
+
+2. **グループ化操作** (2024-04-06)
+   - `par_groupby`機能を`split_dataframe/group.rs`へ移行
+   - dataframe.rsのサイズを2644行から2501行に削減 (-5.4%)
+   - すべてのグループ化関連テストが正常に動作
+
+**現在の削減率**: 元のサイズ2694行 → 現在2501行 (約7.2%削減)
+
 ## リファクタリング方針
 
 ### 1. モジュール分割によるコード整理
 
-現在の`dataframe.rs`（約2600行）を以下の方針でリファクタリングします：
+現在の`dataframe.rs`（約2500行）を以下の方針でリファクタリングします：
 
 1. **機能ごとの分離**: 機能ごとに分割された`split_dataframe/`ディレクトリの実装を活用
    - 列操作: `column_ops.rs`
    - データ操作: `data_ops.rs`
    - インデックス操作: `index.rs`
-   - 入出力: `io.rs`
+   - 入出力: `io.rs` ✅
    - 結合操作: `join.rs`
    - 統計処理: `stats.rs`
-   - グループ化: `group.rs`
+   - グループ化: `group.rs` ✅
    - 列ビュー: `column_view.rs`
    - コア機能: `core.rs`
 
@@ -36,14 +52,14 @@ PandRSプロジェクトでは、コードベースの肥大化に対処し、�
    - 構造体定義と基本コンストラクタは`dataframe.rs`に残す
    - 基本的なアクセサメソッドも`dataframe.rs`に残す
 
-2. **機能ブロックごとの移行**:
-   - 入出力機能（CSV、JSON、Parquet、Excel、SQL）→ `split_dataframe/io.rs`
-   - 列操作（追加、削除、名前変更）→ `split_dataframe/column_ops.rs`
-   - インデックス操作 → `split_dataframe/index.rs`
-   - 結合操作 → `split_dataframe/join.rs`
-   - データ変換 → `split_dataframe/data_ops.rs`
-   - グループ化と集計 → `split_dataframe/group.rs`
-   - 統計処理 → `split_dataframe/stats.rs`
+2. **次の移行予定**:
+   - ✅ 入出力機能（CSV、JSON、Parquet、Excel、SQL）→ `split_dataframe/io.rs`
+   - ✅ グループ化と集計 → `split_dataframe/group.rs`
+   - 次の候補:
+     - 結合操作 → `split_dataframe/join.rs`
+     - データ変換 → `split_dataframe/data_ops.rs`
+     - 列操作（追加、削除、名前変更）→ `split_dataframe/column_ops.rs`
+     - インデックス操作 → `split_dataframe/index.rs`
 
 3. **移行プロセス**:
    - 各機能を`split_dataframe/`の対応するファイルに実装
