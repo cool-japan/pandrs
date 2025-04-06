@@ -619,6 +619,144 @@ impl OptimizedDataFrame {
         Ok(())
     }
     
+    /// 先頭n行を取得
+    pub fn head(&self, n: usize) -> Result<Self> {
+        // split_dataframe/row_ops.rsの実装を利用
+        use crate::optimized::split_dataframe::core::OptimizedDataFrame as SplitDataFrame;
+        
+        // SplitDataFrameに変換
+        let mut split_df = SplitDataFrame::new();
+        
+        // 列データをコピー
+        for name in &self.column_names {
+            if let Ok(column_view) = self.column(name) {
+                let column = column_view.column;
+                split_df.add_column(name.clone(), column.clone())?;
+            }
+        }
+        
+        // インデックスがあれば設定
+        if let Some(ref index) = self.index {
+            // DataFrameIndexからIndex<String>を取り出す
+            if let crate::index::DataFrameIndex::Simple(simple_index) = index {
+                split_df.set_index_from_simple_index(simple_index.clone())?;
+            }
+        }
+        
+        // SplitDataFrameのheadを呼び出す
+        let split_result = split_df.head_rows(n)?;
+        
+        // 結果をOptimizedDataFrameに変換
+        let mut result = Self::new();
+        
+        // 列データをコピー
+        for name in split_result.column_names() {
+            if let Ok(column_view) = split_result.column(name) {
+                let column = column_view.column;
+                result.add_column(name.to_string(), column.clone())?;
+            }
+        }
+        
+        // インデックスを設定
+        if let Some(index) = split_result.get_index() {
+            result.index = Some(index.clone());
+        }
+        
+        Ok(result)
+    }
+    
+    /// 末尾n行を取得
+    pub fn tail(&self, n: usize) -> Result<Self> {
+        // split_dataframe/row_ops.rsの実装を利用
+        use crate::optimized::split_dataframe::core::OptimizedDataFrame as SplitDataFrame;
+        
+        // SplitDataFrameに変換
+        let mut split_df = SplitDataFrame::new();
+        
+        // 列データをコピー
+        for name in &self.column_names {
+            if let Ok(column_view) = self.column(name) {
+                let column = column_view.column;
+                split_df.add_column(name.clone(), column.clone())?;
+            }
+        }
+        
+        // インデックスがあれば設定
+        if let Some(ref index) = self.index {
+            // DataFrameIndexからIndex<String>を取り出す
+            if let crate::index::DataFrameIndex::Simple(simple_index) = index {
+                split_df.set_index_from_simple_index(simple_index.clone())?;
+            }
+        }
+        
+        // SplitDataFrameのtailを呼び出す
+        let split_result = split_df.tail_rows(n)?;
+        
+        // 結果をOptimizedDataFrameに変換
+        let mut result = Self::new();
+        
+        // 列データをコピー
+        for name in split_result.column_names() {
+            if let Ok(column_view) = split_result.column(name) {
+                let column = column_view.column;
+                result.add_column(name.to_string(), column.clone())?;
+            }
+        }
+        
+        // インデックスを設定
+        if let Some(index) = split_result.get_index() {
+            result.index = Some(index.clone());
+        }
+        
+        Ok(result)
+    }
+    
+    /// サンプリングして行を取得
+    pub fn sample(&self, n: usize, replace: bool, seed: Option<u64>) -> Result<Self> {
+        // split_dataframe/row_ops.rsの実装を利用
+        use crate::optimized::split_dataframe::core::OptimizedDataFrame as SplitDataFrame;
+        
+        // SplitDataFrameに変換
+        let mut split_df = SplitDataFrame::new();
+        
+        // 列データをコピー
+        for name in &self.column_names {
+            if let Ok(column_view) = self.column(name) {
+                let column = column_view.column;
+                split_df.add_column(name.clone(), column.clone())?;
+            }
+        }
+        
+        // インデックスがあれば設定
+        if let Some(ref index) = self.index {
+            // DataFrameIndexからIndex<String>を取り出す
+            if let crate::index::DataFrameIndex::Simple(simple_index) = index {
+                split_df.set_index_from_simple_index(simple_index.clone())?;
+            }
+        }
+        
+        // SplitDataFrameのsampleを呼び出す
+        let split_result = split_df.sample_rows(n, replace, seed)?;
+        
+        // 結果をOptimizedDataFrameに変換
+        let mut result = Self::new();
+        
+        // 列データをコピー
+        for name in split_result.column_names() {
+            if let Ok(column_view) = split_result.column(name) {
+                let column = column_view.column;
+                result.add_column(name.to_string(), column.clone())?;
+            }
+        }
+        
+        // インデックスを設定
+        if let Some(index) = split_result.get_index() {
+            result.index = Some(index.clone());
+        }
+        
+        Ok(result)
+    }
+    
     /// インデックスを列として追加
     pub fn reset_index(&mut self, name: &str, drop_index: bool) -> Result<()> {
         // split_dataframe/index.rsの実装を利用
@@ -865,127 +1003,48 @@ impl OptimizedDataFrame {
     
     /// フィルタリング（新しいDataFrameとして）
     pub fn filter(&self, condition_column: &str) -> Result<Self> {
-        // 条件列の取得
-        let column_idx = self.column_indices.get(condition_column)
-            .ok_or_else(|| Error::ColumnNotFound(condition_column.to_string()))?;
+        // split_dataframe/row_ops.rsの実装を利用
+        use crate::optimized::split_dataframe::core::OptimizedDataFrame as SplitDataFrame;
         
-        let condition = &self.columns[*column_idx];
+        // SplitDataFrameに変換
+        let mut split_df = SplitDataFrame::new();
         
-        // 条件列がブール型であることを確認
-        if let Column::Boolean(bool_col) = condition {
-            // trueの行のインデックスを収集
-            let mut indices = Vec::new();
-            for i in 0..bool_col.len() {
-                if let Ok(Some(true)) = bool_col.get(i) {
-                    indices.push(i);
-                }
+        // 列データをコピー
+        for name in &self.column_names {
+            if let Ok(column_view) = self.column(name) {
+                let column = column_view.column;
+                split_df.add_column(name.clone(), column.clone())?;
             }
-            
-            // 新しいDataFrameを作成
-            let mut result = Self::new();
-            
-            // 各列をフィルタリング
-            for (i, name) in self.column_names.iter().enumerate() {
-                let column = &self.columns[i];
-                
-                let filtered_column = match column {
-                    Column::Int64(col) => {
-                        let mut filtered_data = Vec::with_capacity(indices.len());
-                        for &idx in &indices {
-                            if let Ok(Some(val)) = col.get(idx) {
-                                filtered_data.push(val);
-                            } else {
-                                filtered_data.push(0); // デフォルト値
-                            }
-                        }
-                        Column::Int64(Int64Column::new(filtered_data))
-                    },
-                    Column::Float64(col) => {
-                        let mut filtered_data = Vec::with_capacity(indices.len());
-                        for &idx in &indices {
-                            if let Ok(Some(val)) = col.get(idx) {
-                                filtered_data.push(val);
-                            } else {
-                                filtered_data.push(0.0); // デフォルト値
-                            }
-                        }
-                        Column::Float64(crate::column::Float64Column::new(filtered_data))
-                    },
-                    Column::String(col) => {
-                        let mut filtered_data = Vec::with_capacity(indices.len());
-                        for &idx in &indices {
-                            if let Ok(Some(val)) = col.get(idx) {
-                                filtered_data.push(val.to_string());
-                            } else {
-                                filtered_data.push(String::new()); // デフォルト値
-                            }
-                        }
-                        Column::String(crate::column::StringColumn::new(filtered_data))
-                    },
-                    Column::Boolean(col) => {
-                        let mut filtered_data = Vec::with_capacity(indices.len());
-                        for &idx in &indices {
-                            if let Ok(Some(val)) = col.get(idx) {
-                                filtered_data.push(val);
-                            } else {
-                                filtered_data.push(false); // デフォルト値
-                            }
-                        }
-                        Column::Boolean(crate::column::BooleanColumn::new(filtered_data))
-                    },
-                };
-                
-                result.add_column(name.clone(), filtered_column)?;
-            }
-            
-            // 新しいインデックスの作成
-            if let Some(ref idx) = self.index {
-                let mut new_index_values = Vec::with_capacity(indices.len());
-                let mut new_index_map = HashMap::new();
-                
-                for (new_idx, &old_idx) in indices.iter().enumerate() {
-                    if old_idx < idx.len() {
-                        // インデックス値を取得する代替方法
-                        if let DataFrameIndex::Simple(ref simple_idx) = idx {
-                            if old_idx < simple_idx.len() {
-                                let value = simple_idx.get_value(old_idx).map(|s| s.to_string()).unwrap_or_else(|| old_idx.to_string());
-                                new_index_values.push(value.clone());
-                                new_index_map.insert(value, new_idx);
-                            } else {
-                                let value = old_idx.to_string();
-                                new_index_values.push(value.clone());
-                                new_index_map.insert(value, new_idx);
-                            }
-                        } else {
-                            let value = old_idx.to_string();
-                            new_index_values.push(value.clone());
-                            new_index_map.insert(value, new_idx);
-                        }
-                    } else {
-                        let value = old_idx.to_string();
-                        new_index_values.push(value.clone());
-                        new_index_map.insert(value, new_idx);
-                    }
-                }
-                
-                // 新しいインデックスを作成
-                let name_opt = match idx {
-                    DataFrameIndex::Simple(ref simple_idx) => simple_idx.name().map(|s| s.to_string()),
-                    DataFrameIndex::Multi(ref multi_idx) => multi_idx.names().first().cloned().flatten(),
-                };
-                
-                let new_idx = Index::with_name(new_index_values, name_opt)?;
-                result.index = Some(DataFrameIndex::from_simple(new_idx));
-            }
-            
-            Ok(result)
-        } else {
-            Err(Error::ColumnTypeMismatch {
-                name: condition_column.to_string(),
-                expected: ColumnType::Boolean,
-                found: condition.column_type(),
-            })
         }
+        
+        // インデックスがあれば設定
+        if let Some(ref index) = self.index {
+            // DataFrameIndexからIndex<String>を取り出す
+            if let crate::index::DataFrameIndex::Simple(simple_index) = index {
+                split_df.set_index_from_simple_index(simple_index.clone())?;
+            }
+        }
+        
+        // SplitDataFrameのfilterを呼び出す
+        let split_result = split_df.filter_rows(condition_column)?;
+        
+        // 結果をOptimizedDataFrameに変換
+        let mut result = Self::new();
+        
+        // 列データをコピー
+        for name in split_result.column_names() {
+            if let Ok(column_view) = split_result.column(name) {
+                let column = column_view.column;
+                result.add_column(name.to_string(), column.clone())?;
+            }
+        }
+        
+        // インデックスを設定
+        if let Some(index) = split_result.get_index() {
+            result.index = Some(index.clone());
+        }
+        
+        Ok(result)
     }
     
     /// マッピング関数を適用（並列処理対応）
