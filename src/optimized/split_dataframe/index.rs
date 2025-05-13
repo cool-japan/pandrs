@@ -80,6 +80,29 @@ impl OptimizedDataFrame {
         
         Ok(())
     }
+    
+    /// Set multi-index (from existing multi-index object)
+    ///
+    /// # Arguments
+    /// * `index` - Multi-index to set
+    ///
+    /// # Returns
+    /// * `Result<()>` - Ok if successful, error otherwise
+    pub fn set_index_from_multi_index(&mut self, index: crate::index::MultiIndex<String>) -> Result<()> {
+        // Check index length
+        if !self.column_names.is_empty() && index.len() != self.row_count {
+            return Err(Error::Consistency(format!(
+                "New multi-index length ({}) does not match DataFrame row count ({})",
+                index.len(),
+                self.row_count
+            )));
+        }
+        
+        // Set index
+        self.index = Some(DataFrameIndex::<String>::from_multi(index));
+        
+        Ok(())
+    }
     pub fn set_index_from_column(&mut self, column_name: &str, drop: bool) -> Result<()> {
         // Check if column exists
         let col_idx = self.column_indices.get(column_name)
