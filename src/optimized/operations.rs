@@ -11,6 +11,18 @@ pub enum AggregateOp {
     Max,
     /// Count
     Count,
+    /// Standard deviation
+    Std,
+    /// Variance
+    Var,
+    /// Median
+    Median,
+    /// First
+    First,
+    /// Last
+    Last,
+    /// Custom (requires custom function)
+    Custom,
 }
 
 /// Enumeration representing join types

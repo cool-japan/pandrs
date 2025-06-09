@@ -1,459 +1,503 @@
-//! SIMD-accelerated JIT functions
+//! # SIMD JIT Operations Module
 //!
-//! This module provides SIMD (Single Instruction, Multiple Data) vectorization
-//! for JIT-compiled functions, allowing for improved performance on modern CPUs.
+//! This module provides SIMD (Single Instruction, Multiple Data) optimized operations
+//! for high-performance vectorized computations.
 
-use std::sync::Arc;
-use std::marker::PhantomData;
+use super::config::SIMDConfig;
 
-use super::jit_core::{JitCompilable, GenericJitCompilable, JitResult};
-use super::types::{JitType, JitNumeric, TypedVector, NumericValue};
-
-/// Trait for types that support SIMD operations
-pub trait SimdType: JitType {
-    /// SIMD vector type for this scalar
-    type SimdVector;
+/// SIMD-optimized sum for f64 values
+pub fn simd_sum_f64(data: &[f64]) -> f64 {
+    #[cfg(target_arch = "x86_64")]
+    {
+        if is_x86_feature_detected!("avx2") {
+            return unsafe { simd_sum_f64_avx2(data) };
+        } else if is_x86_feature_detected!("sse2") {
+            return unsafe { simd_sum_f64_sse2(data) };
+        }
+    }
     
-    /// Number of elements in a SIMD vector
-    fn simd_lanes() -> usize;
-    
-    /// Load a SIMD vector from a slice
-    fn simd_load(slice: &[Self]) -> Self::SimdVector;
-    
-    /// Store a SIMD vector to a mutable slice
-    fn simd_store(vec: Self::SimdVector, slice: &mut [Self]);
-    
-    /// Add two SIMD vectors
-    fn simd_add(a: Self::SimdVector, b: Self::SimdVector) -> Self::SimdVector;
-    
-    /// Subtract two SIMD vectors
-    fn simd_sub(a: Self::SimdVector, b: Self::SimdVector) -> Self::SimdVector;
-    
-    /// Multiply two SIMD vectors
-    fn simd_mul(a: Self::SimdVector, b: Self::SimdVector) -> Self::SimdVector;
-    
-    /// Divide two SIMD vectors
-    fn simd_div(a: Self::SimdVector, b: Self::SimdVector) -> Self::SimdVector;
-    
-    /// Square root of a SIMD vector
-    fn simd_sqrt(a: Self::SimdVector) -> Self::SimdVector;
-    
-    /// Create a SIMD vector with all lanes set to the same value
-    fn simd_splat(value: Self) -> Self::SimdVector;
-    
-    /// Horizontal sum of a SIMD vector (sum of all lanes)
-    fn simd_horizontal_sum(a: Self::SimdVector) -> Self;
+    // Fallback to standard implementation
+    data.iter().sum()
 }
 
-// We'll implement SimdType for f32 and f64 using the std::simd module when available,
-// and falling back to a sequential implementation otherwise.
-// In a real implementation, you'd use crates like `packed_simd` or `simdeez`.
+/// SIMD-optimized mean for f64 values
+pub fn simd_mean_f64(data: &[f64]) -> f64 {
+    if data.is_empty() {
+        return 0.0;
+    }
+    simd_sum_f64(data) / data.len() as f64
+}
 
-// Placeholder for SIMD vector types
-#[derive(Clone, Copy)]
-pub struct SimdF32x4([f32; 4]);
-#[derive(Clone, Copy)]
-pub struct SimdF64x2([f64; 2]);
+/// SIMD-optimized minimum for f64 values
+pub fn simd_min_f64(data: &[f64]) -> f64 {
+    #[cfg(target_arch = "x86_64")]
+    {
+        if is_x86_feature_detected!("avx2") {
+            return unsafe { simd_min_f64_avx2(data) };
+        } else if is_x86_feature_detected!("sse2") {
+            return unsafe { simd_min_f64_sse2(data) };
+        }
+    }
+    
+    // Fallback
+    data.iter().copied().fold(f64::INFINITY, f64::min)
+}
 
-impl SimdType for f32 {
-    type SimdVector = SimdF32x4;
-    
-    fn simd_lanes() -> usize {
-        4
-    }
-    
-    fn simd_load(slice: &[Self]) -> Self::SimdVector {
-        let mut result = [0.0; 4];
-        for i in 0..4.min(slice.len()) {
-            result[i] = slice[i];
-        }
-        SimdF32x4(result)
-    }
-    
-    fn simd_store(vec: Self::SimdVector, slice: &mut [Self]) {
-        for i in 0..4.min(slice.len()) {
-            slice[i] = vec.0[i];
+/// SIMD-optimized maximum for f64 values
+pub fn simd_max_f64(data: &[f64]) -> f64 {
+    #[cfg(target_arch = "x86_64")]
+    {
+        if is_x86_feature_detected!("avx2") {
+            return unsafe { simd_max_f64_avx2(data) };
+        } else if is_x86_feature_detected!("sse2") {
+            return unsafe { simd_max_f64_sse2(data) };
         }
     }
     
-    fn simd_add(a: Self::SimdVector, b: Self::SimdVector) -> Self::SimdVector {
-        let mut result = [0.0; 4];
-        for i in 0..4 {
-            result[i] = a.0[i] + b.0[i];
+    // Fallback
+    data.iter().copied().fold(f64::NEG_INFINITY, f64::max)
+}
+
+/// SIMD-optimized sum for i64 values
+pub fn simd_sum_i64(data: &[i64]) -> i64 {
+    #[cfg(target_arch = "x86_64")]
+    {
+        if is_x86_feature_detected!("avx2") {
+            return unsafe { simd_sum_i64_avx2(data) };
+        } else if is_x86_feature_detected!("sse2") {
+            return unsafe { simd_sum_i64_sse2(data) };
         }
-        SimdF32x4(result)
     }
     
-    fn simd_sub(a: Self::SimdVector, b: Self::SimdVector) -> Self::SimdVector {
-        let mut result = [0.0; 4];
-        for i in 0..4 {
-            result[i] = a.0[i] - b.0[i];
+    // Fallback
+    data.iter().sum()
+}
+
+/// SIMD-optimized mean for i64 values
+pub fn simd_mean_i64(data: &[i64]) -> i64 {
+    if data.is_empty() {
+        return 0;
+    }
+    simd_sum_i64(data) / data.len() as i64
+}
+
+/// SIMD-optimized minimum for i64 values
+pub fn simd_min_i64(data: &[i64]) -> i64 {
+    #[cfg(target_arch = "x86_64")]
+    {
+        if is_x86_feature_detected!("avx2") {
+            return unsafe { simd_min_i64_avx2(data) };
+        } else if is_x86_feature_detected!("sse2") {
+            return unsafe { simd_min_i64_sse2(data) };
         }
-        SimdF32x4(result)
     }
     
-    fn simd_mul(a: Self::SimdVector, b: Self::SimdVector) -> Self::SimdVector {
-        let mut result = [0.0; 4];
-        for i in 0..4 {
-            result[i] = a.0[i] * b.0[i];
+    // Fallback
+    data.iter().copied().min().unwrap_or(i64::MAX)
+}
+
+/// SIMD-optimized maximum for i64 values
+pub fn simd_max_i64(data: &[i64]) -> i64 {
+    #[cfg(target_arch = "x86_64")]
+    {
+        if is_x86_feature_detected!("avx2") {
+            return unsafe { simd_max_i64_avx2(data) };
+        } else if is_x86_feature_detected!("sse2") {
+            return unsafe { simd_max_i64_sse2(data) };
         }
-        SimdF32x4(result)
     }
     
-    fn simd_div(a: Self::SimdVector, b: Self::SimdVector) -> Self::SimdVector {
-        let mut result = [0.0; 4];
-        for i in 0..4 {
-            result[i] = a.0[i] / b.0[i];
-        }
-        SimdF32x4(result)
+    // Fallback
+    data.iter().copied().max().unwrap_or(i64::MIN)
+}
+
+// AVX2 implementations for f64
+#[cfg(target_arch = "x86_64")]
+unsafe fn simd_sum_f64_avx2(data: &[f64]) -> f64 {
+    use std::arch::x86_64::*;
+    
+    let mut sum = _mm256_setzero_pd();
+    let chunks = data.chunks_exact(4);
+    let remainder = chunks.remainder();
+    
+    for chunk in chunks {
+        let vec = _mm256_loadu_pd(chunk.as_ptr());
+        sum = _mm256_add_pd(sum, vec);
     }
     
-    fn simd_sqrt(a: Self::SimdVector) -> Self::SimdVector {
-        let mut result = [0.0; 4];
-        for i in 0..4 {
-            result[i] = a.0[i].sqrt();
-        }
-        SimdF32x4(result)
+    // Extract and sum the components
+    let mut result = [0.0; 4];
+    _mm256_storeu_pd(result.as_mut_ptr(), sum);
+    let mut total = result[0] + result[1] + result[2] + result[3];
+    
+    // Handle remainder
+    for &value in remainder {
+        total += value;
     }
     
-    fn simd_splat(value: Self) -> Self::SimdVector {
-        SimdF32x4([value; 4])
+    total
+}
+
+#[cfg(target_arch = "x86_64")]
+unsafe fn simd_min_f64_avx2(data: &[f64]) -> f64 {
+    use std::arch::x86_64::*;
+    
+    if data.is_empty() {
+        return f64::INFINITY;
     }
     
-    fn simd_horizontal_sum(a: Self::SimdVector) -> Self {
-        a.0.iter().sum()
+    let mut min_vec = _mm256_set1_pd(f64::INFINITY);
+    let chunks = data.chunks_exact(4);
+    let remainder = chunks.remainder();
+    
+    for chunk in chunks {
+        let vec = _mm256_loadu_pd(chunk.as_ptr());
+        min_vec = _mm256_min_pd(min_vec, vec);
+    }
+    
+    // Extract and find minimum
+    let mut result = [0.0; 4];
+    _mm256_storeu_pd(result.as_mut_ptr(), min_vec);
+    let mut min_val = result[0].min(result[1]).min(result[2]).min(result[3]);
+    
+    // Handle remainder
+    for &value in remainder {
+        min_val = min_val.min(value);
+    }
+    
+    min_val
+}
+
+#[cfg(target_arch = "x86_64")]
+unsafe fn simd_max_f64_avx2(data: &[f64]) -> f64 {
+    use std::arch::x86_64::*;
+    
+    if data.is_empty() {
+        return f64::NEG_INFINITY;
+    }
+    
+    let mut max_vec = _mm256_set1_pd(f64::NEG_INFINITY);
+    let chunks = data.chunks_exact(4);
+    let remainder = chunks.remainder();
+    
+    for chunk in chunks {
+        let vec = _mm256_loadu_pd(chunk.as_ptr());
+        max_vec = _mm256_max_pd(max_vec, vec);
+    }
+    
+    // Extract and find maximum
+    let mut result = [0.0; 4];
+    _mm256_storeu_pd(result.as_mut_ptr(), max_vec);
+    let mut max_val = result[0].max(result[1]).max(result[2]).max(result[3]);
+    
+    // Handle remainder
+    for &value in remainder {
+        max_val = max_val.max(value);
+    }
+    
+    max_val
+}
+
+// SSE2 implementations for f64
+#[cfg(target_arch = "x86_64")]
+unsafe fn simd_sum_f64_sse2(data: &[f64]) -> f64 {
+    use std::arch::x86_64::*;
+    
+    let mut sum = _mm_setzero_pd();
+    let chunks = data.chunks_exact(2);
+    let remainder = chunks.remainder();
+    
+    for chunk in chunks {
+        let vec = _mm_loadu_pd(chunk.as_ptr());
+        sum = _mm_add_pd(sum, vec);
+    }
+    
+    // Extract and sum the components
+    let mut result = [0.0; 2];
+    _mm_storeu_pd(result.as_mut_ptr(), sum);
+    let mut total = result[0] + result[1];
+    
+    // Handle remainder
+    for &value in remainder {
+        total += value;
+    }
+    
+    total
+}
+
+#[cfg(target_arch = "x86_64")]
+unsafe fn simd_min_f64_sse2(data: &[f64]) -> f64 {
+    use std::arch::x86_64::*;
+    
+    if data.is_empty() {
+        return f64::INFINITY;
+    }
+    
+    let mut min_vec = _mm_set1_pd(f64::INFINITY);
+    let chunks = data.chunks_exact(2);
+    let remainder = chunks.remainder();
+    
+    for chunk in chunks {
+        let vec = _mm_loadu_pd(chunk.as_ptr());
+        min_vec = _mm_min_pd(min_vec, vec);
+    }
+    
+    // Extract and find minimum
+    let mut result = [0.0; 2];
+    _mm_storeu_pd(result.as_mut_ptr(), min_vec);
+    let mut min_val = result[0].min(result[1]);
+    
+    // Handle remainder
+    for &value in remainder {
+        min_val = min_val.min(value);
+    }
+    
+    min_val
+}
+
+#[cfg(target_arch = "x86_64")]
+unsafe fn simd_max_f64_sse2(data: &[f64]) -> f64 {
+    use std::arch::x86_64::*;
+    
+    if data.is_empty() {
+        return f64::NEG_INFINITY;
+    }
+    
+    let mut max_vec = _mm_set1_pd(f64::NEG_INFINITY);
+    let chunks = data.chunks_exact(2);
+    let remainder = chunks.remainder();
+    
+    for chunk in chunks {
+        let vec = _mm_loadu_pd(chunk.as_ptr());
+        max_vec = _mm_max_pd(max_vec, vec);
+    }
+    
+    // Extract and find maximum
+    let mut result = [0.0; 2];
+    _mm_storeu_pd(result.as_mut_ptr(), max_vec);
+    let mut max_val = result[0].max(result[1]);
+    
+    // Handle remainder
+    for &value in remainder {
+        max_val = max_val.max(value);
+    }
+    
+    max_val
+}
+
+// AVX2 implementations for i64
+#[cfg(target_arch = "x86_64")]
+unsafe fn simd_sum_i64_avx2(data: &[i64]) -> i64 {
+    use std::arch::x86_64::*;
+    
+    let mut sum = _mm256_setzero_si256();
+    let chunks = data.chunks_exact(4);
+    let remainder = chunks.remainder();
+    
+    for chunk in chunks {
+        let vec = _mm256_loadu_si256(chunk.as_ptr() as *const __m256i);
+        sum = _mm256_add_epi64(sum, vec);
+    }
+    
+    // Extract and sum the components
+    let mut result = [0i64; 4];
+    _mm256_storeu_si256(result.as_mut_ptr() as *mut __m256i, sum);
+    let mut total = result[0] + result[1] + result[2] + result[3];
+    
+    // Handle remainder
+    for &value in remainder {
+        total += value;
+    }
+    
+    total
+}
+
+#[cfg(target_arch = "x86_64")]
+unsafe fn simd_min_i64_avx2(data: &[i64]) -> i64 {
+    if data.is_empty() {
+        return i64::MAX;
+    }
+    
+    // AVX2 doesn't have min_epi64, so we'll use a simple fallback for now
+    data.iter().copied().min().unwrap_or(i64::MAX)
+}
+
+#[cfg(target_arch = "x86_64")]
+unsafe fn simd_max_i64_avx2(data: &[i64]) -> i64 {
+    if data.is_empty() {
+        return i64::MIN;
+    }
+    
+    // AVX2 doesn't have max_epi64, so we'll use a simple fallback for now
+    data.iter().copied().max().unwrap_or(i64::MIN)
+}
+
+// SSE2 implementations for i64
+#[cfg(target_arch = "x86_64")]
+unsafe fn simd_sum_i64_sse2(data: &[i64]) -> i64 {
+    use std::arch::x86_64::*;
+    
+    let mut sum = _mm_setzero_si128();
+    let chunks = data.chunks_exact(2);
+    let remainder = chunks.remainder();
+    
+    for chunk in chunks {
+        let vec = _mm_loadu_si128(chunk.as_ptr() as *const __m128i);
+        sum = _mm_add_epi64(sum, vec);
+    }
+    
+    // Extract and sum the components
+    let mut result = [0i64; 2];
+    _mm_storeu_si128(result.as_mut_ptr() as *mut __m128i, sum);
+    let mut total = result[0] + result[1];
+    
+    // Handle remainder
+    for &value in remainder {
+        total += value;
+    }
+    
+    total
+}
+
+#[cfg(target_arch = "x86_64")]
+unsafe fn simd_min_i64_sse2(data: &[i64]) -> i64 {
+    if data.is_empty() {
+        return i64::MAX;
+    }
+    
+    // SSE2 doesn't have min_epi64, so we'll use a simple fallback
+    data.iter().copied().min().unwrap_or(i64::MAX)
+}
+
+#[cfg(target_arch = "x86_64")]
+unsafe fn simd_max_i64_sse2(data: &[i64]) -> i64 {
+    if data.is_empty() {
+        return i64::MIN;
+    }
+    
+    // SSE2 doesn't have max_epi64, so we'll use a simple fallback
+    data.iter().copied().max().unwrap_or(i64::MIN)
+}
+
+/// Check if SIMD operations are available on this platform
+pub fn simd_available() -> bool {
+    #[cfg(target_arch = "x86_64")]
+    {
+        is_x86_feature_detected!("sse2")
+    }
+    #[cfg(not(target_arch = "x86_64"))]
+    {
+        false
     }
 }
 
-impl SimdType for f64 {
-    type SimdVector = SimdF64x2;
-    
-    fn simd_lanes() -> usize {
-        2
+/// Check if AVX2 is available
+pub fn avx2_available() -> bool {
+    #[cfg(target_arch = "x86_64")]
+    {
+        is_x86_feature_detected!("avx2")
     }
-    
-    fn simd_load(slice: &[Self]) -> Self::SimdVector {
-        let mut result = [0.0; 2];
-        for i in 0..2.min(slice.len()) {
-            result[i] = slice[i];
-        }
-        SimdF64x2(result)
-    }
-    
-    fn simd_store(vec: Self::SimdVector, slice: &mut [Self]) {
-        for i in 0..2.min(slice.len()) {
-            slice[i] = vec.0[i];
-        }
-    }
-    
-    fn simd_add(a: Self::SimdVector, b: Self::SimdVector) -> Self::SimdVector {
-        let mut result = [0.0; 2];
-        for i in 0..2 {
-            result[i] = a.0[i] + b.0[i];
-        }
-        SimdF64x2(result)
-    }
-    
-    fn simd_sub(a: Self::SimdVector, b: Self::SimdVector) -> Self::SimdVector {
-        let mut result = [0.0; 2];
-        for i in 0..2 {
-            result[i] = a.0[i] - b.0[i];
-        }
-        SimdF64x2(result)
-    }
-    
-    fn simd_mul(a: Self::SimdVector, b: Self::SimdVector) -> Self::SimdVector {
-        let mut result = [0.0; 2];
-        for i in 0..2 {
-            result[i] = a.0[i] * b.0[i];
-        }
-        SimdF64x2(result)
-    }
-    
-    fn simd_div(a: Self::SimdVector, b: Self::SimdVector) -> Self::SimdVector {
-        let mut result = [0.0; 2];
-        for i in 0..2 {
-            result[i] = a.0[i] / b.0[i];
-        }
-        SimdF64x2(result)
-    }
-    
-    fn simd_sqrt(a: Self::SimdVector) -> Self::SimdVector {
-        let mut result = [0.0; 2];
-        for i in 0..2 {
-            result[i] = a.0[i].sqrt();
-        }
-        SimdF64x2(result)
-    }
-    
-    fn simd_splat(value: Self) -> Self::SimdVector {
-        SimdF64x2([value; 2])
-    }
-    
-    fn simd_horizontal_sum(a: Self::SimdVector) -> Self {
-        a.0.iter().sum()
+    #[cfg(not(target_arch = "x86_64"))]
+    {
+        false
     }
 }
 
-/// A JIT function that uses SIMD instructions for improved performance
-#[derive(Clone)]
-pub struct SimdJitFunction<T, F>
-where
-    T: SimdType,
-    F: Fn(Vec<T>) -> T + Send + Sync,
-{
-    /// Function name
-    name: String,
-    /// Native (scalar) implementation for fallback
-    native_fn: Arc<F>,
-    /// SIMD implementation
-    simd_fn: Arc<dyn Fn(&[T]) -> T + Send + Sync>,
-    /// Phantom data for type parameter
-    _marker: PhantomData<T>,
-}
-
-impl<T, F> SimdJitFunction<T, F>
-where
-    T: SimdType + 'static,
-    F: Fn(Vec<T>) -> T + Send + Sync + 'static,
-{
-    /// Create a new SIMD JIT function
-    pub fn new(name: impl Into<String>, native_fn: F, simd_fn: impl Fn(&[T]) -> T + Send + Sync + 'static) -> Self {
-        Self {
-            name: name.into(),
-            native_fn: Arc::new(native_fn),
-            simd_fn: Arc::new(simd_fn),
-            _marker: PhantomData,
+/// Get SIMD capabilities as a string
+pub fn simd_capabilities() -> String {
+    let mut caps = Vec::new();
+    
+    #[cfg(target_arch = "x86_64")]
+    {
+        if is_x86_feature_detected!("avx2") {
+            caps.push("AVX2");
+        }
+        if is_x86_feature_detected!("sse4.2") {
+            caps.push("SSE4.2");
+        }
+        if is_x86_feature_detected!("sse4.1") {
+            caps.push("SSE4.1");
+        }
+        if is_x86_feature_detected!("ssse3") {
+            caps.push("SSSE3");
+        }
+        if is_x86_feature_detected!("sse3") {
+            caps.push("SSE3");
+        }
+        if is_x86_feature_detected!("sse2") {
+            caps.push("SSE2");
+        }
+        if is_x86_feature_detected!("sse") {
+            caps.push("SSE");
         }
     }
     
-    /// Create a new SIMD JIT function with an auto-vectorized implementation
-    pub fn auto_vectorize(name: impl Into<String>, native_fn: F) -> Self {
-        let name_str = name.into();
-        let native_arc = Arc::new(native_fn);
-        
-        // Create a reference to native_fn for the closure
-        let native_ref = native_arc.clone();
-        
-        // Auto-vectorized function just calls the native implementation for now
-        // In a real implementation, this would use SIMD intrinsics
-        let simd_fn = move |values: &[T]| -> T {
-            native_ref(values.to_vec())
-        };
-        
-        Self {
-            name: name_str,
-            native_fn: native_arc,
-            simd_fn: Arc::new(simd_fn),
-            _marker: PhantomData,
-        }
-    }
-    
-    #[cfg(feature = "jit")]
-    /// Compile with JIT (placeholder for now)
-    pub fn with_jit(self) -> JitResult<Self> {
-        // In a real implementation, this would compile the SIMD function
-        Ok(self)
+    if caps.is_empty() {
+        "None".to_string()
+    } else {
+        caps.join(", ")
     }
 }
 
-impl<T, F> JitCompilable<Vec<T>, T> for SimdJitFunction<T, F>
-where
-    T: SimdType,
-    F: Fn(Vec<T>) -> T + Send + Sync,
-{
-    fn execute(&self, args: Vec<T>) -> T {
-        // Use SIMD implementation if possible
-        if !args.is_empty() {
-            (self.simd_fn)(&args)
-        } else {
-            // Fall back to native implementation for empty input
-            (self.native_fn)(args)
-        }
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_simd_sum_f64() {
+        let data = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
+        let expected = 36.0;
+        let result = simd_sum_f64(&data);
+        assert!((result - expected).abs() < 1e-10);
     }
-}
 
-// Creation functions for common SIMD operations
+    #[test]
+    fn test_simd_mean_f64() {
+        let data = vec![1.0, 2.0, 3.0, 4.0, 5.0];
+        let expected = 3.0;
+        let result = simd_mean_f64(&data);
+        assert!((result - expected).abs() < 1e-10);
+    }
 
-/// Create a SIMD-accelerated sum function for f32 values
-pub fn simd_sum_f32() -> impl JitCompilable<Vec<f32>, f32> {
-    // Native implementation
-    let native_fn = |values: Vec<f32>| -> f32 {
-        values.iter().sum()
-    };
-    
-    // SIMD implementation
-    let simd_fn = |values: &[f32]| -> f32 {
-        if values.is_empty() {
-            return 0.0;
-        }
+    #[test]
+    fn test_simd_min_max_f64() {
+        let data = vec![3.0, 1.0, 4.0, 1.0, 5.0, 9.0, 2.0];
         
-        let lanes = f32::simd_lanes();
-        let chunks = values.len() / lanes;
-        let remainder = values.len() % lanes;
+        let min_result = simd_min_f64(&data);
+        let max_result = simd_max_f64(&data);
         
-        let mut sum_vec = f32::simd_splat(0.0);
-        
-        // Process full SIMD vectors
-        for i in 0..chunks {
-            let slice = &values[i * lanes..(i + 1) * lanes];
-            let vec = f32::simd_load(slice);
-            sum_vec = f32::simd_add(sum_vec, vec);
-        }
-        
-        // Extract SIMD vector sum
-        let mut sum = f32::simd_horizontal_sum(sum_vec);
-        
-        // Process remaining elements
-        if remainder > 0 {
-            for i in (chunks * lanes)..values.len() {
-                sum += values[i];
-            }
-        }
-        
-        sum
-    };
-    
-    SimdJitFunction::new("simd_sum_f32", native_fn, simd_fn)
-}
+        assert_eq!(min_result, 1.0);
+        assert_eq!(max_result, 9.0);
+    }
 
-/// Create a SIMD-accelerated sum function for f64 values
-pub fn simd_sum_f64() -> impl JitCompilable<Vec<f64>, f64> {
-    // Native implementation
-    let native_fn = |values: Vec<f64>| -> f64 {
-        values.iter().sum()
-    };
-    
-    // SIMD implementation
-    let simd_fn = |values: &[f64]| -> f64 {
-        if values.is_empty() {
-            return 0.0;
-        }
-        
-        let lanes = f64::simd_lanes();
-        let chunks = values.len() / lanes;
-        let remainder = values.len() % lanes;
-        
-        let mut sum_vec = f64::simd_splat(0.0);
-        
-        // Process full SIMD vectors
-        for i in 0..chunks {
-            let slice = &values[i * lanes..(i + 1) * lanes];
-            let vec = f64::simd_load(slice);
-            sum_vec = f64::simd_add(sum_vec, vec);
-        }
-        
-        // Extract SIMD vector sum
-        let mut sum = f64::simd_horizontal_sum(sum_vec);
-        
-        // Process remaining elements
-        if remainder > 0 {
-            for i in (chunks * lanes)..values.len() {
-                sum += values[i];
-            }
-        }
-        
-        sum
-    };
-    
-    SimdJitFunction::new("simd_sum_f64", native_fn, simd_fn)
-}
+    #[test]
+    fn test_simd_sum_i64() {
+        let data = vec![1i64, 2, 3, 4, 5, 6, 7, 8];
+        let expected = 36i64;
+        let result = simd_sum_i64(&data);
+        assert_eq!(result, expected);
+    }
 
-/// Create a SIMD-accelerated mean function for f32 values
-pub fn simd_mean_f32() -> impl JitCompilable<Vec<f32>, f32> {
-    // Native implementation
-    let native_fn = |values: Vec<f32>| -> f32 {
-        if values.is_empty() {
-            return 0.0;
-        }
-        values.iter().sum::<f32>() / values.len() as f32
-    };
-    
-    // SIMD implementation
-    let simd_fn = |values: &[f32]| -> f32 {
-        if values.is_empty() {
-            return 0.0;
-        }
-        
-        let lanes = f32::simd_lanes();
-        let chunks = values.len() / lanes;
-        let remainder = values.len() % lanes;
-        
-        let mut sum_vec = f32::simd_splat(0.0);
-        
-        // Process full SIMD vectors
-        for i in 0..chunks {
-            let slice = &values[i * lanes..(i + 1) * lanes];
-            let vec = f32::simd_load(slice);
-            sum_vec = f32::simd_add(sum_vec, vec);
-        }
-        
-        // Extract SIMD vector sum
-        let mut sum = f32::simd_horizontal_sum(sum_vec);
-        
-        // Process remaining elements
-        if remainder > 0 {
-            for i in (chunks * lanes)..values.len() {
-                sum += values[i];
-            }
-        }
-        
-        sum / values.len() as f32
-    };
-    
-    SimdJitFunction::new("simd_mean_f32", native_fn, simd_fn)
-}
+    #[test]
+    fn test_simd_capabilities() {
+        let caps = simd_capabilities();
+        println!("SIMD capabilities: {}", caps);
+        assert!(!caps.is_empty());
+    }
 
-/// Create a SIMD-accelerated mean function for f64 values
-pub fn simd_mean_f64() -> impl JitCompilable<Vec<f64>, f64> {
-    // Native implementation
-    let native_fn = |values: Vec<f64>| -> f64 {
-        if values.is_empty() {
-            return 0.0;
-        }
-        values.iter().sum::<f64>() / values.len() as f64
-    };
-    
-    // SIMD implementation
-    let simd_fn = |values: &[f64]| -> f64 {
-        if values.is_empty() {
-            return 0.0;
-        }
+    #[test]
+    fn test_empty_arrays() {
+        let empty_f64: Vec<f64> = vec![];
+        let empty_i64: Vec<i64> = vec![];
         
-        let lanes = f64::simd_lanes();
-        let chunks = values.len() / lanes;
-        let remainder = values.len() % lanes;
+        assert_eq!(simd_sum_f64(&empty_f64), 0.0);
+        assert_eq!(simd_mean_f64(&empty_f64), 0.0);
+        assert_eq!(simd_min_f64(&empty_f64), f64::INFINITY);
+        assert_eq!(simd_max_f64(&empty_f64), f64::NEG_INFINITY);
         
-        let mut sum_vec = f64::simd_splat(0.0);
-        
-        // Process full SIMD vectors
-        for i in 0..chunks {
-            let slice = &values[i * lanes..(i + 1) * lanes];
-            let vec = f64::simd_load(slice);
-            sum_vec = f64::simd_add(sum_vec, vec);
-        }
-        
-        // Extract SIMD vector sum
-        let mut sum = f64::simd_horizontal_sum(sum_vec);
-        
-        // Process remaining elements
-        if remainder > 0 {
-            for i in (chunks * lanes)..values.len() {
-                sum += values[i];
-            }
-        }
-        
-        sum / values.len() as f64
-    };
-    
-    SimdJitFunction::new("simd_mean_f64", native_fn, simd_fn)
-}
-
-/// Auto-vectorize an arbitrary function
-pub fn auto_vectorize<T, F>(name: impl Into<String>, f: F) -> SimdJitFunction<T, F>
-where
-    T: SimdType + 'static,
-    F: Fn(Vec<T>) -> T + Send + Sync + 'static,
-{
-    SimdJitFunction::auto_vectorize(name, f)
+        assert_eq!(simd_sum_i64(&empty_i64), 0);
+        assert_eq!(simd_mean_i64(&empty_i64), 0);
+        assert_eq!(simd_min_i64(&empty_i64), i64::MAX);
+        assert_eq!(simd_max_i64(&empty_i64), i64::MIN);
+    }
 }

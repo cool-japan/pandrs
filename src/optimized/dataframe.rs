@@ -44,6 +44,7 @@ pub struct ColumnView {
     column: Column,
 }
 
+
 impl Debug for OptimizedDataFrame {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // Maximum number of rows to display
@@ -2349,4 +2350,88 @@ impl OptimizedDataFrame {
 
         Ok(result)
     }
+
+    // TODO: Add proper group_by methods that integrate with split_dataframe implementation
+    // This requires API harmonization between main and split DataFrame implementations
+
+    /// Get string column data
+    ///
+    /// # Arguments
+    /// * `name` - Column name
+    ///
+    /// # Returns
+    /// * `Result<Vec<String>>` - String data
+    pub fn get_string_column(&self, name: &str) -> Result<Vec<String>> {
+        let column_view = self.column(name)?;
+        match &column_view.column {
+            Column::String(col) => {
+                let mut result = Vec::new();
+                for i in 0..col.len() {
+                    if let Ok(Some(value)) = col.get(i) {
+                        result.push(value.to_string());
+                    } else {
+                        result.push(String::new()); // Default for NULL values
+                    }
+                }
+                Ok(result)
+            },
+            _ => Err(Error::InvalidValue(format!("Column '{}' is not a string column", name))),
+        }
+    }
+
+    /// Get float column data
+    ///
+    /// # Arguments
+    /// * `name` - Column name
+    ///
+    /// # Returns
+    /// * `Result<Vec<f64>>` - Float data
+    pub fn get_float_column(&self, name: &str) -> Result<Vec<f64>> {
+        let column_view = self.column(name)?;
+        match &column_view.column {
+            Column::Float64(col) => {
+                let mut result = Vec::new();
+                for i in 0..col.len() {
+                    if let Ok(Some(value)) = col.get(i) {
+                        result.push(value);
+                    } else {
+                        result.push(0.0); // Default for NULL values
+                    }
+                }
+                Ok(result)
+            },
+            _ => Err(Error::InvalidValue(format!("Column '{}' is not a float column", name))),
+        }
+    }
+
+    /// Get integer column data
+    ///
+    /// # Arguments
+    /// * `name` - Column name
+    ///
+    /// # Returns
+    /// * `Result<Vec<Option<i64>>>` - Integer data with nulls
+    pub fn get_int_column(&self, name: &str) -> Result<Vec<Option<i64>>> {
+        let column_view = self.column(name)?;
+        match &column_view.column {
+            Column::Int64(col) => {
+                let mut result = Vec::new();
+                for i in 0..col.len() {
+                    if let Ok(value) = col.get(i) {
+                        result.push(value);
+                    } else {
+                        result.push(None);
+                    }
+                }
+                Ok(result)
+            },
+            _ => Err(Error::InvalidValue(format!("Column '{}' is not an integer column", name))),
+        }
+    }
+
+    /// Get the number of rows (alias for row_count)
+    pub fn len(&self) -> usize {
+        self.row_count
+    }
+
 }

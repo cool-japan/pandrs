@@ -7,6 +7,7 @@ use rayon::prelude::*;
 
 use super::core::OptimizedDataFrame;
 use crate::column::{Column, ColumnType, Float64Column, Int64Column, StringColumn, BooleanColumn, ColumnTrait};
+use crate::column::string_pool::StringPool;
 use crate::error::{Error, Result};
 use crate::index::{DataFrameIndex, MultiIndex, StringMultiIndex};
 
@@ -792,7 +793,7 @@ impl<'a> GroupBy<'a> {
         const PARALLEL_THRESHOLD: usize = 8;
         
         if self.groups.len() < PARALLEL_THRESHOLD {
-            return self.filter(filter_fn);
+            return self.filter(move |df| filter_fn(df));
         }
         
         // Create group keys and indices lists
@@ -837,9 +838,8 @@ impl<'a> GroupBy<'a> {
     {
         let transform_fn = Arc::new(transform_fn);
         
-        // Create an empty DataFrame to hold the result
-        let mut result = OptimizedDataFrame::new();
-        let mut first_transform = true;
+        // Collect all transformed DataFrames first
+        let mut transformed_dfs = Vec::new();
         
         // Apply transformation to each group
         for (_, row_indices) in &self.groups {
@@ -848,83 +848,97 @@ impl<'a> GroupBy<'a> {
             
             // Apply the transformation function
             let transformed = transform_fn(&group_df)?;
+            transformed_dfs.push(transformed);
+        }
+        
+        // If no groups, return empty DataFrame
+        if transformed_dfs.is_empty() {
+            return Ok(OptimizedDataFrame::new());
+        }
+        
+        // Use the first transformed DataFrame as template for column structure
+        let template = &transformed_dfs[0];
+        let mut result = OptimizedDataFrame::new();
+        
+        // Collect data for each column
+        for (col_idx, template_col) in template.columns.iter().enumerate() {
+            let col_name = &template.column_names[col_idx];
             
-            // If this is the first group, set up the result columns
-            if first_transform {
-                // Initialize the result with the transformed DataFrame's structure
-                for (col_idx, col) in transformed.columns.iter().enumerate() {
-                    let col_name = &transformed.column_names[col_idx];
-                    result.add_column(col_name.clone(), col.clone())?;
-                    // Clear the data since we just want the structure
-                    match result.columns.last_mut().unwrap() {
-                        Column::Int64(c) => c.data.clear(),
-                        Column::Float64(c) => c.data.clear(),
-                        Column::String(c) => { c.indices.clear(); c.string_pool.clear(); },
-                        Column::Boolean(c) => c.data.clear(),
+            match template_col {
+                Column::Int64(_) => {
+                    let mut all_data = Vec::new();
+                    for df in &transformed_dfs {
+                        if let Some(Column::Int64(col)) = df.columns.get(col_idx) {
+                            for i in 0..col.len() {
+                                all_data.push(col.get(i).unwrap_or(None));
+                            }
+                        }
                     }
-                }
-                first_transform = false;
-            }
-            
-            // Append transformed data to result
-            for (col_idx, col) in transformed.columns.iter().enumerate() {
-                let result_col = &mut result.columns[col_idx];
-                
-                match (result_col, col) {
-                    (Column::Int64(result_int), Column::Int64(src_int)) => {
-                        for i in 0..src_int.len() {
-                            if let Ok(Some(val)) = src_int.get(i) {
-                                result_int.data.push(Some(val));
-                            } else {
-                                result_int.data.push(None);
+                    let values: Vec<i64> = all_data.iter().filter_map(|&x| x).collect();
+                    let nulls: Vec<bool> = all_data.iter().map(|x| x.is_none()).collect();
+                    
+                    if nulls.iter().any(|&is_null| is_null) {
+                        result.add_column(col_name.clone(), Column::Int64(Int64Column::with_nulls(values, nulls)))?;
+                    } else {
+                        result.add_column(col_name.clone(), Column::Int64(Int64Column::new(values)))?;
+                    }
+                },
+                Column::Float64(_) => {
+                    let mut all_data = Vec::new();
+                    for df in &transformed_dfs {
+                        if let Some(Column::Float64(col)) = df.columns.get(col_idx) {
+                            for i in 0..col.len() {
+                                all_data.push(col.get(i).unwrap_or(None));
                             }
                         }
-                    },
-                    (Column::Float64(result_float), Column::Float64(src_float)) => {
-                        for i in 0..src_float.len() {
-                            if let Ok(Some(val)) = src_float.get(i) {
-                                result_float.data.push(Some(val));
-                            } else {
-                                result_float.data.push(None);
+                    }
+                    let values: Vec<f64> = all_data.iter().filter_map(|&x| x).collect();
+                    let nulls: Vec<bool> = all_data.iter().map(|x| x.is_none()).collect();
+                    
+                    if nulls.iter().any(|&is_null| is_null) {
+                        result.add_column(col_name.clone(), Column::Float64(Float64Column::with_nulls(values, nulls)))?;
+                    } else {
+                        result.add_column(col_name.clone(), Column::Float64(Float64Column::new(values)))?;
+                    }
+                },
+                Column::String(_) => {
+                    let mut all_data = Vec::new();
+                    for df in &transformed_dfs {
+                        if let Some(Column::String(col)) = df.columns.get(col_idx) {
+                            for i in 0..col.len() {
+                                all_data.push(col.get(i).unwrap_or(None));
                             }
                         }
-                    },
-                    (Column::String(result_str), Column::String(src_str)) => {
-                        for i in 0..src_str.len() {
-                            if let Ok(Some(val)) = src_str.get(i) {
-                                let str_idx = result_str.string_pool.get_or_insert(&val);
-                                result_str.indices.push(Some(str_idx));
-                            } else {
-                                result_str.indices.push(None);
+                    }
+                    let values: Vec<String> = all_data.iter().filter_map(|x| x.as_ref()).map(|s| s.to_string()).collect();
+                    let nulls: Vec<bool> = all_data.iter().map(|x| x.is_none()).collect();
+                    
+                    if nulls.iter().any(|&is_null| is_null) {
+                        result.add_column(col_name.clone(), Column::String(StringColumn::with_nulls(values, nulls)))?;
+                    } else {
+                        result.add_column(col_name.clone(), Column::String(StringColumn::new(values)))?;
+                    }
+                },
+                Column::Boolean(_) => {
+                    let mut all_data = Vec::new();
+                    for df in &transformed_dfs {
+                        if let Some(Column::Boolean(col)) = df.columns.get(col_idx) {
+                            for i in 0..col.len() {
+                                all_data.push(col.get(i).unwrap_or(None));
                             }
                         }
-                    },
-                    (Column::Boolean(result_bool), Column::Boolean(src_bool)) => {
-                        for i in 0..src_bool.len() {
-                            if let Ok(Some(val)) = src_bool.get(i) {
-                                result_bool.data.push(Some(val));
-                            } else {
-                                result_bool.data.push(None);
-                            }
-                        }
-                    },
-                    _ => {
-                        return Err(Error::OperationFailed(format!(
-                            "Column type mismatch during transform operation: {:?} vs {:?}",
-                            result_col.column_type(), col.column_type()
-                        )));
+                    }
+                    let values: Vec<bool> = all_data.iter().filter_map(|&x| x).collect();
+                    let nulls: Vec<bool> = all_data.iter().map(|x| x.is_none()).collect();
+                    
+                    if nulls.iter().any(|&is_null| is_null) {
+                        result.add_column(col_name.clone(), Column::Boolean(BooleanColumn::with_nulls(values, nulls)))?;
+                    } else {
+                        result.add_column(col_name.clone(), Column::Boolean(BooleanColumn::new(values)))?;
                     }
                 }
             }
         }
-        
-        // Update row count
-        result.row_count = result.columns.first().map_or(0, |col| match col {
-            Column::Int64(c) => c.data.len(),
-            Column::Float64(c) => c.data.len(),
-            Column::String(c) => c.indices.len(),
-            Column::Boolean(c) => c.data.len(),
-        });
         
         Ok(result)
     }
@@ -946,7 +960,7 @@ impl<'a> GroupBy<'a> {
         const PARALLEL_THRESHOLD: usize = 8;
         
         if self.groups.len() < PARALLEL_THRESHOLD {
-            return self.transform(transform_fn);
+            return self.transform(move |df| transform_fn(df));
         }
         
         // Create group indices lists
@@ -963,157 +977,106 @@ impl<'a> GroupBy<'a> {
         let first_group_df = self.df.filter_by_indices(&row_indices_list[0])?;
         let first_transformed = transform_fn(&first_group_df)?;
         
-        // Create empty result columns based on the first transformed result
-        let column_names: Vec<String> = first_transformed.column_names.clone();
-        let column_types: Vec<ColumnType> = first_transformed.columns
-            .iter()
-            .map(|col| col.column_type())
+        // Process all groups in parallel to get transformed results
+        let results: Result<Vec<OptimizedDataFrame>> = row_indices_list
+            .into_par_iter()
+            .map(|row_indices| {
+                let group_df = self.df.filter_by_indices(&row_indices)?;
+                transform_fn(&group_df)
+            })
             .collect();
+            
+        let mut all_transformed = results?;
+        all_transformed.insert(0, first_transformed);
         
-        // Create mutex-protected result columns
-        let mut result_cols: Vec<Mutex<Column>> = Vec::with_capacity(column_names.len());
-        
-        for (idx, col_type) in column_types.iter().enumerate() {
-            let empty_col = match col_type {
-                ColumnType::Int64 => Column::Int64(Int64Column::new(vec![])),
-                ColumnType::Float64 => Column::Float64(Float64Column::new(vec![])),
-                ColumnType::String => Column::String(StringColumn::new(vec![])),
-                ColumnType::Boolean => Column::Boolean(BooleanColumn::new(vec![])),
-            };
-            result_cols.push(Mutex::new(empty_col));
+        // If no transformed DataFrames, return empty
+        if all_transformed.is_empty() {
+            return Ok(OptimizedDataFrame::new());
         }
         
-        // Process groups in parallel
-        // Skip the first group since we already processed it
-        row_indices_list.into_par_iter().enumerate().for_each(|(group_idx, row_indices)| {
-            // Skip first group (already processed)
-            if group_idx == 0 {
-                // Add first transformed results to result columns
-                for (col_idx, src_col) in first_transformed.columns.iter().enumerate() {
-                    let mut result_col = result_cols[col_idx].lock().unwrap();
-                    
-                    match (&mut *result_col, src_col) {
-                        (Column::Int64(result_int), Column::Int64(src_int)) => {
-                            for i in 0..src_int.len() {
-                                if let Ok(Some(val)) = src_int.get(i) {
-                                    result_int.data.push(Some(val));
-                                } else {
-                                    result_int.data.push(None);
-                                }
-                            }
-                        },
-                        (Column::Float64(result_float), Column::Float64(src_float)) => {
-                            for i in 0..src_float.len() {
-                                if let Ok(Some(val)) = src_float.get(i) {
-                                    result_float.data.push(Some(val));
-                                } else {
-                                    result_float.data.push(None);
-                                }
-                            }
-                        },
-                        (Column::String(result_str), Column::String(src_str)) => {
-                            for i in 0..src_str.len() {
-                                if let Ok(Some(val)) = src_str.get(i) {
-                                    let str_idx = result_str.string_pool.get_or_insert(&val);
-                                    result_str.indices.push(Some(str_idx));
-                                } else {
-                                    result_str.indices.push(None);
-                                }
-                            }
-                        },
-                        (Column::Boolean(result_bool), Column::Boolean(src_bool)) => {
-                            for i in 0..src_bool.len() {
-                                if let Ok(Some(val)) = src_bool.get(i) {
-                                    result_bool.data.push(Some(val));
-                                } else {
-                                    result_bool.data.push(None);
-                                }
-                            }
-                        },
-                        _ => {
-                            // Type mismatch - should not happen if structure is consistent
-                            eprintln!("Column type mismatch during transform operation");
-                        }
-                    }
-                }
-                return;
-            }
-            
-            // Create a DataFrame for this group
-            if let Ok(group_df) = self.df.filter_by_indices(&row_indices) {
-                // Apply the transformation function
-                if let Ok(transformed) = transform_fn(&group_df) {
-                    // Add transformed results to the result columns
-                    for (col_idx, src_col) in transformed.columns.iter().enumerate() {
-                        if col_idx < result_cols.len() {
-                            let mut result_col = result_cols[col_idx].lock().unwrap();
-                            
-                            match (&mut *result_col, src_col) {
-                                (Column::Int64(result_int), Column::Int64(src_int)) => {
-                                    for i in 0..src_int.len() {
-                                        if let Ok(Some(val)) = src_int.get(i) {
-                                            result_int.data.push(Some(val));
-                                        } else {
-                                            result_int.data.push(None);
-                                        }
-                                    }
-                                },
-                                (Column::Float64(result_float), Column::Float64(src_float)) => {
-                                    for i in 0..src_float.len() {
-                                        if let Ok(Some(val)) = src_float.get(i) {
-                                            result_float.data.push(Some(val));
-                                        } else {
-                                            result_float.data.push(None);
-                                        }
-                                    }
-                                },
-                                (Column::String(result_str), Column::String(src_str)) => {
-                                    for i in 0..src_str.len() {
-                                        if let Ok(Some(val)) = src_str.get(i) {
-                                            let str_idx = result_str.string_pool.get_or_insert(&val);
-                                            result_str.indices.push(Some(str_idx));
-                                        } else {
-                                            result_str.indices.push(None);
-                                        }
-                                    }
-                                },
-                                (Column::Boolean(result_bool), Column::Boolean(src_bool)) => {
-                                    for i in 0..src_bool.len() {
-                                        if let Ok(Some(val)) = src_bool.get(i) {
-                                            result_bool.data.push(Some(val));
-                                        } else {
-                                            result_bool.data.push(None);
-                                        }
-                                    }
-                                },
-                                _ => {
-                                    // Type mismatch - should not happen if structure is consistent
-                                    eprintln!("Column type mismatch during parallel transform operation");
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        });
-        
-        // Create result DataFrame using collected columns
+        // Use the first DataFrame as template
+        let template = &all_transformed[0];
         let mut result = OptimizedDataFrame::new();
         
-        // Add columns to the result DataFrame
-        for (idx, name) in column_names.iter().enumerate() {
-            // Take the mutex-protected column
-            let col = result_cols[idx].lock().unwrap().clone();
-            result.add_column(name.clone(), col)?;
+        // Collect data for each column
+        for (col_idx, template_col) in template.columns.iter().enumerate() {
+            let col_name = &template.column_names[col_idx];
+            
+            match template_col {
+                Column::Int64(_) => {
+                    let mut all_data = Vec::new();
+                    for df in &all_transformed {
+                        if let Some(Column::Int64(col)) = df.columns.get(col_idx) {
+                            for i in 0..col.len() {
+                                all_data.push(col.get(i).unwrap_or(None));
+                            }
+                        }
+                    }
+                    let values: Vec<i64> = all_data.iter().filter_map(|&x| x).collect();
+                    let nulls: Vec<bool> = all_data.iter().map(|x| x.is_none()).collect();
+                    
+                    if nulls.iter().any(|&is_null| is_null) {
+                        result.add_column(col_name.clone(), Column::Int64(Int64Column::with_nulls(values, nulls)))?;
+                    } else {
+                        result.add_column(col_name.clone(), Column::Int64(Int64Column::new(values)))?;
+                    }
+                },
+                Column::Float64(_) => {
+                    let mut all_data = Vec::new();
+                    for df in &all_transformed {
+                        if let Some(Column::Float64(col)) = df.columns.get(col_idx) {
+                            for i in 0..col.len() {
+                                all_data.push(col.get(i).unwrap_or(None));
+                            }
+                        }
+                    }
+                    let values: Vec<f64> = all_data.iter().filter_map(|&x| x).collect();
+                    let nulls: Vec<bool> = all_data.iter().map(|x| x.is_none()).collect();
+                    
+                    if nulls.iter().any(|&is_null| is_null) {
+                        result.add_column(col_name.clone(), Column::Float64(Float64Column::with_nulls(values, nulls)))?;
+                    } else {
+                        result.add_column(col_name.clone(), Column::Float64(Float64Column::new(values)))?;
+                    }
+                },
+                Column::String(_) => {
+                    let mut all_data = Vec::new();
+                    for df in &all_transformed {
+                        if let Some(Column::String(col)) = df.columns.get(col_idx) {
+                            for i in 0..col.len() {
+                                all_data.push(col.get(i).unwrap_or(None));
+                            }
+                        }
+                    }
+                    let values: Vec<String> = all_data.iter().filter_map(|x| x.as_ref()).map(|s| s.to_string()).collect();
+                    let nulls: Vec<bool> = all_data.iter().map(|x| x.is_none()).collect();
+                    
+                    if nulls.iter().any(|&is_null| is_null) {
+                        result.add_column(col_name.clone(), Column::String(StringColumn::with_nulls(values, nulls)))?;
+                    } else {
+                        result.add_column(col_name.clone(), Column::String(StringColumn::new(values)))?;
+                    }
+                },
+                Column::Boolean(_) => {
+                    let mut all_data = Vec::new();
+                    for df in &all_transformed {
+                        if let Some(Column::Boolean(col)) = df.columns.get(col_idx) {
+                            for i in 0..col.len() {
+                                all_data.push(col.get(i).unwrap_or(None));
+                            }
+                        }
+                    }
+                    let values: Vec<bool> = all_data.iter().filter_map(|&x| x).collect();
+                    let nulls: Vec<bool> = all_data.iter().map(|x| x.is_none()).collect();
+                    
+                    if nulls.iter().any(|&is_null| is_null) {
+                        result.add_column(col_name.clone(), Column::Boolean(BooleanColumn::with_nulls(values, nulls)))?;
+                    } else {
+                        result.add_column(col_name.clone(), Column::Boolean(BooleanColumn::new(values)))?;
+                    }
+                }
+            }
         }
-        
-        // Update row count
-        result.row_count = result.columns.first().map_or(0, |col| match col {
-            Column::Int64(c) => c.data.len(),
-            Column::Float64(c) => c.data.len(),
-            Column::String(c) => c.indices.len(),
-            Column::Boolean(c) => c.data.len(),
-        });
         
         Ok(result)
     }

@@ -187,6 +187,13 @@ impl From<std::io::Error> for Error {
     }
 }
 
+// Add support for JIT errors
+impl From<crate::optimized::jit::JitError> for Error {
+    fn from(err: crate::optimized::jit::JitError) -> Self {
+        Error::InvalidOperation(err.to_string())
+    }
+}
+
 // Helper function to generate std::io::Error from String error messages
 pub fn io_error<T: AsRef<str>>(msg: T) -> std::io::Error {
     std::io::Error::new(std::io::ErrorKind::Other, msg.as_ref())

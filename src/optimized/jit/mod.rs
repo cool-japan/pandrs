@@ -1,90 +1,57 @@
-//! JIT compilation support for performance-critical operations
-//! 
-//! This module provides Numba-like Just-In-Time compilation functionality for Rust,
-//! allowing for efficient execution of data processing operations.
+//! # Just-In-Time (JIT) Compilation Module
 //!
-//! The JIT system supports multiple numeric types (f64, f32, i64, i32) and provides
-//! type-specific JIT functions for specialized performance with type safety.
-//!
-//! For maximum performance, SIMD (Single Instruction, Multiple Data) vectorization
-//! is supported on compatible platforms, automatically utilizing CPU vector instructions.
-//!
-//! Additional performance is available through parallel execution on multi-core systems
-//! using Rayon for multi-threading, with configurable chunk sizes and thread counts.
-//! 
-//! # Overview
-//! 
-//! The JIT compilation system in pandrs allows for:
-//! 
-//! - Accelerating performance-critical operations
-//! - Creating custom aggregation functions that can be JIT-compiled
-//! - Applying JIT functions to GroupBy operations
-//! - Providing a fallback to native implementation when JIT is disabled
-//! 
-//! # Example
-//! 
-//! ```
-//! use pandrs::optimized::jit::{jit, GroupByJitExt};
-//! 
-//! // Create a dataframe
-//! let mut df = OptimizedDataFrame::new();
-//! // ... add data ...
-//! 
-//! // Group by a column
-//! let grouped = df.group_by(&["category"])?;
-//! 
-//! // Use a built-in JIT-compiled aggregation
-//! let result1 = grouped.sum_jit("value", "sum_value")?;
-//! 
-//! // Create a custom JIT-compiled function
-//! let weighted_mean = jit("weighted_mean", |values: Vec<f64>| -> f64 {
-//!     if values.is_empty() {
-//!         return 0.0;
-//!     }
-//!     
-//!     let mut weighted_sum = 0.0;
-//!     let mut weight_sum = 0.0;
-//!     
-//!     for (i, val) in values.iter().enumerate() {
-//!         let weight = (i + 1) as f64;
-//!         weighted_sum += val * weight;
-//!         weight_sum += weight;
-//!     }
-//!     
-//!     weighted_sum / weight_sum
-//! });
-//! 
-//! // Use the custom JIT function
-//! let result2 = grouped.aggregate_jit("value", weighted_mean, "weighted_mean")?;
-//! ```
+//! This module provides high-performance JIT compilation capabilities for DataFrame operations,
+//! including SIMD vectorization, parallel processing, and optimized aggregations.
 
-// Re-export important types and functions
-pub mod jit_core;
-pub mod array_ops;
-pub mod groupby_jit;
-pub mod types;
-pub mod generic;
-pub mod simd;
+pub mod config;
+pub mod core;
 pub mod parallel;
+pub mod simd;
+pub mod groupby;
 
-// Core JIT functionality
-pub use jit_core::{JitCompilable, GenericJitCompilable, JitFunction, jit, JitError, JitResult};
+pub use config::{ParallelConfig, SIMDConfig, JITConfig};
+pub use core::{JitCompilable, jit_f64, jit_i64, jit_string};
+pub use parallel::{
+    parallel_sum_f64, parallel_mean_f64, parallel_mean_f64_value, parallel_std_f64, parallel_var_f64,
+    parallel_min_f64, parallel_max_f64, parallel_median_f64, parallel_custom
+};
+pub use simd::{
+    simd_sum_f64, simd_mean_f64, simd_min_f64, simd_max_f64,
+    simd_sum_i64, simd_mean_i64, simd_min_i64, simd_max_i64
+};
+pub use groupby::{GroupByJitExt, JitAggregation};
 
-// Type system
-pub use types::{JitType, JitNumeric, TypedVector, NumericValue};
+/// Re-export commonly used types
+pub use rayon::prelude::*;
 
-// Generic JIT functions
-pub use generic::{jit_f64, jit_f32, jit_i64, jit_i32, GenericJitFunction};
+#[cfg(target_arch = "x86_64")]
+pub use std::arch::x86_64::*;
 
-// SIMD vectorization
-pub use simd::{SimdType, SimdJitFunction, simd_sum_f32, simd_sum_f64, simd_mean_f32, simd_mean_f64, auto_vectorize};
+/// JIT compilation error types
+#[derive(Debug, Clone)]
+pub enum JitError {
+    /// Compilation failed
+    CompilationFailed(String),
+    /// Runtime execution failed
+    ExecutionFailed(String),
+    /// Unsupported operation
+    UnsupportedOperation(String),
+    /// Invalid configuration
+    InvalidConfig(String),
+}
 
-// Parallel execution
-pub use parallel::{ParallelConfig, ParallelJitFunction, parallel_sum_f64, parallel_mean_f64, 
-                     parallel_std_f64, parallel_min_f64, parallel_max_f64, parallel_custom};
+impl std::fmt::Display for JitError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            JitError::CompilationFailed(msg) => write!(f, "JIT compilation failed: {}", msg),
+            JitError::ExecutionFailed(msg) => write!(f, "JIT execution failed: {}", msg),
+            JitError::UnsupportedOperation(msg) => write!(f, "Unsupported JIT operation: {}", msg),
+            JitError::InvalidConfig(msg) => write!(f, "Invalid JIT configuration: {}", msg),
+        }
+    }
+}
 
-// Pre-built JIT operations
-pub use array_ops;
+impl std::error::Error for JitError {}
 
-// GroupBy extension
-pub use groupby_jit::GroupByJitExt;
+/// JIT Result type
+pub type JitResult<T> = std::result::Result<T, JitError>;

@@ -6,9 +6,10 @@ use rayon::prelude::*;
 use crate::column::{Column, ColumnTrait};
 use crate::error::{Error, Result};
 use crate::optimized::split_dataframe::core::OptimizedDataFrame;
+use crate::optimized::jit::{parallel_sum_f64, parallel_mean_f64_value, parallel_min_f64, parallel_max_f64, ParallelConfig};
 
 impl OptimizedDataFrame {
-    /// Calculate sum of a column
+    /// Calculate sum of a column using JIT-optimized operations
     ///
     /// # Arguments
     /// * `column_name` - Name of column to sum
@@ -23,16 +24,31 @@ impl OptimizedDataFrame {
         
         match column {
             Column::Int64(col) => {
-                let sum = (0..col.len())
+                let values: Vec<f64> = (0..col.len())
                     .filter_map(|i| col.get(i).ok().flatten())
-                    .sum::<i64>() as f64;
-                Ok(sum)
+                    .map(|v| v as f64)
+                    .collect();
+                
+                if values.is_empty() {
+                    return Ok(0.0);
+                }
+                
+                // Use JIT-optimized parallel sum for better performance
+                let sum_func = parallel_sum_f64(None);
+                Ok(sum_func.execute(&values))
             },
             Column::Float64(col) => {
-                let sum = (0..col.len())
+                let values: Vec<f64> = (0..col.len())
                     .filter_map(|i| col.get(i).ok().flatten())
-                    .sum::<f64>();
-                Ok(sum)
+                    .collect();
+                
+                if values.is_empty() {
+                    return Ok(0.0);
+                }
+                
+                // Use JIT-optimized parallel sum for better performance
+                let sum_func = parallel_sum_f64(None);
+                Ok(sum_func.execute(&values))
             },
             _ => Err(Error::Type(format!(
                 "Column '{}' is not a numeric type", column_name
@@ -40,7 +56,7 @@ impl OptimizedDataFrame {
         }
     }
     
-    /// Calculate mean of a column
+    /// Calculate mean of a column using JIT-optimized operations
     ///
     /// # Arguments
     /// * `column_name` - Name of column to average
@@ -55,16 +71,17 @@ impl OptimizedDataFrame {
         
         match column {
             Column::Int64(col) => {
-                let values: Vec<i64> = (0..col.len())
+                let values: Vec<f64> = (0..col.len())
                     .filter_map(|i| col.get(i).ok().flatten())
+                    .map(|v| v as f64)
                     .collect();
                 
                 if values.is_empty() {
                     return Err(Error::Empty(format!("Column '{}' is empty", column_name)));
                 }
                 
-                let sum: i64 = values.iter().sum();
-                Ok(sum as f64 / values.len() as f64)
+                // Use JIT-optimized parallel mean for better performance  
+                Ok(parallel_mean_f64_value(&values, None))
             },
             Column::Float64(col) => {
                 let values: Vec<f64> = (0..col.len())
@@ -75,8 +92,8 @@ impl OptimizedDataFrame {
                     return Err(Error::Empty(format!("Column '{}' is empty", column_name)));
                 }
                 
-                let sum: f64 = values.iter().sum();
-                Ok(sum / values.len() as f64)
+                // Use JIT-optimized parallel mean for better performance  
+                Ok(parallel_mean_f64_value(&values, None))
             },
             _ => Err(Error::Type(format!(
                 "Column '{}' is not a numeric type", column_name
@@ -84,7 +101,7 @@ impl OptimizedDataFrame {
         }
     }
     
-    /// Calculate maximum value of a column
+    /// Calculate maximum value of a column using JIT-optimized operations
     ///
     /// # Arguments
     /// * `column_name` - Name of column to find maximum
@@ -99,25 +116,31 @@ impl OptimizedDataFrame {
         
         match column {
             Column::Int64(col) => {
-                let max = (0..col.len())
+                let values: Vec<f64> = (0..col.len())
                     .filter_map(|i| col.get(i).ok().flatten())
-                    .max();
+                    .map(|v| v as f64)
+                    .collect();
                     
-                match max {
-                    Some(val) => Ok(val as f64),
-                    None => Err(Error::Empty(format!("Column '{}' is empty", column_name))),
+                if values.is_empty() {
+                    return Err(Error::Empty(format!("Column '{}' is empty", column_name)));
                 }
+                
+                // Use JIT-optimized parallel max for better performance
+                let max_func = parallel_max_f64(None);
+                Ok(max_func.execute(&values))
             },
             Column::Float64(col) => {
-                let max = (0..col.len())
+                let values: Vec<f64> = (0..col.len())
                     .filter_map(|i| col.get(i).ok().flatten())
-                    .fold(f64::NEG_INFINITY, |a, b| a.max(b));
+                    .collect();
                     
-                if max.is_infinite() {
-                    Err(Error::Empty(format!("Column '{}' is empty", column_name)))
-                } else {
-                    Ok(max)
+                if values.is_empty() {
+                    return Err(Error::Empty(format!("Column '{}' is empty", column_name)));
                 }
+                
+                // Use JIT-optimized parallel max for better performance
+                let max_func = parallel_max_f64(None);
+                Ok(max_func.execute(&values))
             },
             _ => Err(Error::Type(format!(
                 "Column '{}' is not a numeric type", column_name
@@ -125,7 +148,7 @@ impl OptimizedDataFrame {
         }
     }
     
-    /// Calculate minimum value of a column
+    /// Calculate minimum value of a column using JIT-optimized operations
     ///
     /// # Arguments
     /// * `column_name` - Name of column to find minimum
@@ -140,25 +163,31 @@ impl OptimizedDataFrame {
         
         match column {
             Column::Int64(col) => {
-                let min = (0..col.len())
+                let values: Vec<f64> = (0..col.len())
                     .filter_map(|i| col.get(i).ok().flatten())
-                    .min();
+                    .map(|v| v as f64)
+                    .collect();
                     
-                match min {
-                    Some(val) => Ok(val as f64),
-                    None => Err(Error::Empty(format!("Column '{}' is empty", column_name))),
+                if values.is_empty() {
+                    return Err(Error::Empty(format!("Column '{}' is empty", column_name)));
                 }
+                
+                // Use JIT-optimized parallel min for better performance
+                let min_func = parallel_min_f64(None);
+                Ok(min_func.execute(&values))
             },
             Column::Float64(col) => {
-                let min = (0..col.len())
+                let values: Vec<f64> = (0..col.len())
                     .filter_map(|i| col.get(i).ok().flatten())
-                    .fold(f64::INFINITY, |a, b| a.min(b));
+                    .collect();
                     
-                if min.is_infinite() {
-                    Err(Error::Empty(format!("Column '{}' is empty", column_name)))
-                } else {
-                    Ok(min)
+                if values.is_empty() {
+                    return Err(Error::Empty(format!("Column '{}' is empty", column_name)));
                 }
+                
+                // Use JIT-optimized parallel min for better performance
+                let min_func = parallel_min_f64(None);
+                Ok(min_func.execute(&values))
             },
             _ => Err(Error::Type(format!(
                 "Column '{}' is not a numeric type", column_name
@@ -253,5 +282,187 @@ impl OptimizedDataFrame {
         }
         
         self.aggregate(&numeric_columns, operation)
+    }
+    
+    /// Calculate sum of a column with custom JIT configuration
+    ///
+    /// # Arguments
+    /// * `column_name` - Name of column to sum
+    /// * `config` - Parallel configuration for JIT optimization
+    ///
+    /// # Returns
+    /// * `Result<f64>` - Sum value
+    pub fn sum_with_config(&self, column_name: &str, config: Option<ParallelConfig>) -> Result<f64> {
+        let column_idx = self.column_indices.get(column_name)
+            .ok_or_else(|| Error::ColumnNotFound(column_name.to_string()))?;
+        
+        let column = &self.columns[*column_idx];
+        
+        match column {
+            Column::Int64(col) => {
+                let values: Vec<f64> = (0..col.len())
+                    .filter_map(|i| col.get(i).ok().flatten())
+                    .map(|v| v as f64)
+                    .collect();
+                
+                if values.is_empty() {
+                    return Ok(0.0);
+                }
+                
+                let sum_func = parallel_sum_f64(config);
+                Ok(sum_func.execute(&values))
+            },
+            Column::Float64(col) => {
+                let values: Vec<f64> = (0..col.len())
+                    .filter_map(|i| col.get(i).ok().flatten())
+                    .collect();
+                
+                if values.is_empty() {
+                    return Ok(0.0);
+                }
+                
+                let sum_func = parallel_sum_f64(config);
+                Ok(sum_func.execute(&values))
+            },
+            _ => Err(Error::Type(format!(
+                "Column '{}' is not a numeric type", column_name
+            ))),
+        }
+    }
+    
+    /// Calculate mean of a column with custom JIT configuration
+    ///
+    /// # Arguments
+    /// * `column_name` - Name of column to average
+    /// * `config` - Parallel configuration for JIT optimization
+    ///
+    /// # Returns
+    /// * `Result<f64>` - Mean value
+    pub fn mean_with_config(&self, column_name: &str, config: Option<ParallelConfig>) -> Result<f64> {
+        let column_idx = self.column_indices.get(column_name)
+            .ok_or_else(|| Error::ColumnNotFound(column_name.to_string()))?;
+        
+        let column = &self.columns[*column_idx];
+        
+        match column {
+            Column::Int64(col) => {
+                let values: Vec<f64> = (0..col.len())
+                    .filter_map(|i| col.get(i).ok().flatten())
+                    .map(|v| v as f64)
+                    .collect();
+                
+                if values.is_empty() {
+                    return Err(Error::Empty(format!("Column '{}' is empty", column_name)));
+                }
+                
+                Ok(parallel_mean_f64_value(&values, config))
+            },
+            Column::Float64(col) => {
+                let values: Vec<f64> = (0..col.len())
+                    .filter_map(|i| col.get(i).ok().flatten())
+                    .collect();
+                
+                if values.is_empty() {
+                    return Err(Error::Empty(format!("Column '{}' is empty", column_name)));
+                }
+                
+                Ok(parallel_mean_f64_value(&values, config))
+            },
+            _ => Err(Error::Type(format!(
+                "Column '{}' is not a numeric type", column_name
+            ))),
+        }
+    }
+    
+    /// Calculate max of a column with custom JIT configuration
+    ///
+    /// # Arguments
+    /// * `column_name` - Name of column to find maximum
+    /// * `config` - Parallel configuration for JIT optimization
+    ///
+    /// # Returns
+    /// * `Result<f64>` - Maximum value
+    pub fn max_with_config(&self, column_name: &str, config: Option<ParallelConfig>) -> Result<f64> {
+        let column_idx = self.column_indices.get(column_name)
+            .ok_or_else(|| Error::ColumnNotFound(column_name.to_string()))?;
+        
+        let column = &self.columns[*column_idx];
+        
+        match column {
+            Column::Int64(col) => {
+                let values: Vec<f64> = (0..col.len())
+                    .filter_map(|i| col.get(i).ok().flatten())
+                    .map(|v| v as f64)
+                    .collect();
+                
+                if values.is_empty() {
+                    return Err(Error::Empty(format!("Column '{}' is empty", column_name)));
+                }
+                
+                let max_func = parallel_max_f64(config);
+                Ok(max_func.execute(&values))
+            },
+            Column::Float64(col) => {
+                let values: Vec<f64> = (0..col.len())
+                    .filter_map(|i| col.get(i).ok().flatten())
+                    .collect();
+                
+                if values.is_empty() {
+                    return Err(Error::Empty(format!("Column '{}' is empty", column_name)));
+                }
+                
+                let max_func = parallel_max_f64(config);
+                Ok(max_func.execute(&values))
+            },
+            _ => Err(Error::Type(format!(
+                "Column '{}' is not a numeric type", column_name
+            ))),
+        }
+    }
+    
+    /// Calculate min of a column with custom JIT configuration  
+    ///
+    /// # Arguments
+    /// * `column_name` - Name of column to find minimum
+    /// * `config` - Parallel configuration for JIT optimization
+    ///
+    /// # Returns
+    /// * `Result<f64>` - Minimum value
+    pub fn min_with_config(&self, column_name: &str, config: Option<ParallelConfig>) -> Result<f64> {
+        let column_idx = self.column_indices.get(column_name)
+            .ok_or_else(|| Error::ColumnNotFound(column_name.to_string()))?;
+        
+        let column = &self.columns[*column_idx];
+        
+        match column {
+            Column::Int64(col) => {
+                let values: Vec<f64> = (0..col.len())
+                    .filter_map(|i| col.get(i).ok().flatten())
+                    .map(|v| v as f64)
+                    .collect();
+                
+                if values.is_empty() {
+                    return Err(Error::Empty(format!("Column '{}' is empty", column_name)));
+                }
+                
+                let min_func = parallel_min_f64(config);
+                Ok(min_func.execute(&values))
+            },
+            Column::Float64(col) => {
+                let values: Vec<f64> = (0..col.len())
+                    .filter_map(|i| col.get(i).ok().flatten())
+                    .collect();
+                
+                if values.is_empty() {
+                    return Err(Error::Empty(format!("Column '{}' is empty", column_name)));
+                }
+                
+                let min_func = parallel_min_f64(config);
+                Ok(min_func.execute(&values))
+            },
+            _ => Err(Error::Type(format!(
+                "Column '{}' is not a numeric type", column_name
+            ))),
+        }
     }
 }
