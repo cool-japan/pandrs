@@ -1,3 +1,4 @@
-// Re-export from legacy module for now
-#[deprecated(since = "0.1.0-alpha.2", note = "Use crate::storage::string_pool instead")]
-pub use crate::column::string_pool::StringPool;
+// Reorganized string pool implementation for storage module
+
+// Re-export the string pool implementation for the new organization
+pub use crate::column::string_pool::{StringPool, GlobalStringPool, GLOBAL_STRING_POOL};

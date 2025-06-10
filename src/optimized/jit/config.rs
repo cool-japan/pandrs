@@ -235,24 +235,17 @@ impl JITConfig {
 }
 
 /// Global JIT configuration
-static mut GLOBAL_JIT_CONFIG: Option<JITConfig> = None;
-static INIT: std::sync::Once = std::sync::Once::new();
+static GLOBAL_JIT_CONFIG: std::sync::OnceLock<JITConfig> = std::sync::OnceLock::new();
 
 /// Get the global JIT configuration
 pub fn get_global_config() -> &'static JITConfig {
-    unsafe {
-        INIT.call_once(|| {
-            GLOBAL_JIT_CONFIG = Some(JITConfig::default());
-        });
-        GLOBAL_JIT_CONFIG.as_ref().unwrap()
-    }
+    GLOBAL_JIT_CONFIG.get_or_init(|| JITConfig::default())
 }
 
 /// Set the global JIT configuration
-pub fn set_global_config(config: JITConfig) {
-    unsafe {
-        GLOBAL_JIT_CONFIG = Some(config);
-    }
+/// Note: This will only work if called before the first get_global_config() call
+pub fn set_global_config(config: JITConfig) -> Result<(), JITConfig> {
+    GLOBAL_JIT_CONFIG.set(config)
 }
 
 #[cfg(test)]

@@ -92,7 +92,7 @@ Add the following to your Cargo.toml:
 
 ```toml
 [dependencies]
-pandrs = "0.1.0-alpha.2"
+pandrs = "0.1.0-alpha.3"
 ```
 
 For GPU acceleration, add the CUDA feature flag:

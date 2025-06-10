@@ -28,6 +28,12 @@ pub struct ColumnView {
     pub(crate) column: Column,
 }
 
+impl Display for OptimizedDataFrame {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        <Self as Debug>::fmt(self, f)
+    }
+}
+
 impl Debug for OptimizedDataFrame {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // Maximum display rows
@@ -179,5 +185,63 @@ impl OptimizedDataFrame {
     /// Check if specified column exists
     pub fn contains_column(&self, name: &str) -> bool {
         self.column_indices.contains_key(name)
+    }
+
+    /// Optimize string columns using global string pool
+    pub fn optimize_strings(&mut self) -> Result<()> {
+        use crate::column::string_pool::GLOBAL_STRING_POOL;
+        
+        for (_i, column) in self.columns.iter_mut().enumerate() {
+            if let Column::String(string_col) = column {
+                // Get all string values
+                let values: Vec<String> = (0..string_col.len())
+                    .filter_map(|idx| string_col.get(idx).ok().flatten().map(|s| s.to_string()))
+                    .collect();
+                
+                // Add to global string pool
+                for s in &values {
+                    GLOBAL_STRING_POOL.get_or_insert(s);
+                }
+                
+                // Create optimized column with pooled strings
+                *string_col = crate::column::StringColumn::new_with_global_pool(values);
+            }
+        }
+        
+        Ok(())
+    }
+    
+    /// Get memory usage statistics
+    pub fn memory_usage(&self) -> std::collections::HashMap<String, usize> {
+        let mut usage = std::collections::HashMap::new();
+        
+        // Calculate column memory usage
+        for (name, &idx) in &self.column_indices {
+            let column_size = match &self.columns[idx] {
+                Column::Int64(col) => col.len() * std::mem::size_of::<Option<i64>>(),
+                Column::Float64(col) => col.len() * std::mem::size_of::<Option<f64>>(),
+                Column::String(col) => {
+                    // Estimate string memory usage
+                    let mut size = col.len() * std::mem::size_of::<Option<String>>();
+                    for i in 0..col.len() {
+                        if let Ok(Some(s)) = col.get(i) {
+                            size += s.len();
+                        }
+                    }
+                    size
+                },
+                Column::Boolean(col) => col.len() * std::mem::size_of::<Option<bool>>(),
+            };
+            usage.insert(name.clone(), column_size);
+        }
+        
+        // Add metadata overhead
+        usage.insert("metadata".to_string(), 
+            std::mem::size_of::<Self>() + 
+            self.column_names.capacity() * std::mem::size_of::<String>() +
+            self.column_indices.capacity() * std::mem::size_of::<(String, usize)>()
+        );
+        
+        usage
     }
 }

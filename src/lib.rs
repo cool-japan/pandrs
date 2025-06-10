@@ -102,11 +102,10 @@ pub use compute::parallel::ParallelUtils as ComputeParallelUtils;
 pub use compute::lazy::LazyFrame as ComputeLazyFrame;
 
 // Storage-related exports (new organization)
-// These will be uncommented once the modules are fully implemented
-// pub use storage::string_pool::StringPool as StorageStringPool;
-// pub use storage::column_store::ColumnStore;
-// pub use storage::disk::DiskStorage;
-// pub use storage::memory_mapped::MemoryMappedFile;
+pub use storage::string_pool::StringPool as StorageStringPool;
+pub use storage::column_store::ColumnStore;
+pub use storage::disk::DiskStorage;
+pub use storage::memory_mapped::MemoryMappedFile;
 
 // GPU acceleration (when enabled)
 #[cfg(feature = "cuda")]

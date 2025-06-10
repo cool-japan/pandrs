@@ -12,6 +12,7 @@ pub mod clustering;
 pub mod dimension;
 pub mod anomaly;
 pub mod pipeline;
+pub mod pipeline_extended;
 
 // GPU-accelerated ML functionality (conditionally compiled)
 #[cfg(feature = "cuda")]
@@ -82,6 +83,20 @@ pub use pipeline::{
     Pipeline,
     PipelineStage,
     PipelineTransformer,
+};
+
+pub use pipeline_extended::{
+    AdvancedPipeline,
+    AdvancedPipelineStage,
+    PipelineContext,
+    FeatureEngineeringStage,
+    FeatureOperation,
+    BinningStrategy,
+    WindowOperation,
+    PipelineExecutionSummary,
+    StageMetadata,
+    ColumnSchema,
+    StageExecution,
 };
 
 // Re-export model functionality

@@ -1,5 +1,4 @@
 use pandrs::error::Result;
-use pandrs::optimized::split_dataframe::group::AggregateOp;
 use pandrs::optimized::OptimizedDataFrame;
 
 fn main() -> Result<()> {
@@ -26,137 +25,53 @@ fn main() -> Result<()> {
 
     // Display original DataFrame
     println!("\nOriginal DataFrame:");
-    println!("{}", df);
+    println!("{:?}", df);
 
-    // Group by single column (without multi-index)
-    println!("\n=== Group by 'category' (without multi-index) ===");
-    let grouped_by_category = df.group_by(["category"])?.aggregate(vec![
-        (
-            "value".to_string(),
-            AggregateOp::Sum,
-            "value_sum".to_string(),
-        ),
-        (
-            "score".to_string(),
-            AggregateOp::Mean,
-            "score_mean".to_string(),
-        ),
-    ])?;
+    // Group by single column
+    println!("\n=== Group by 'category' ===");
+    let grouped_by_category = df.par_groupby(&["category"])?;
 
     println!("\nResult of groupby with single column:");
-    println!("{}", grouped_by_category);
-
-    // Group by multiple columns with multi-index
-    println!("\n=== Group by 'category' and 'region' with multi-index ===");
-    let grouped_with_multi_index = df
-        .group_by_with_options(["category", "region"], true)?
-        .aggregate(vec![
-            (
-                "value".to_string(),
-                AggregateOp::Sum,
-                "value_sum".to_string(),
-            ),
-            (
-                "score".to_string(),
-                AggregateOp::Mean,
-                "score_mean".to_string(),
-            ),
-        ])?;
-
-    println!("\nResult of groupby with multi-index:");
-    println!("{}", grouped_with_multi_index);
-
-    // Demonstrate parallel operation with multi-index
-    println!("\n=== Parallel group by with multi-index ===");
-    let parallel_grouped = df
-        .group_by_with_options(["category", "region"], true)?
-        .par_aggregate(vec![
-            (
-                "value".to_string(),
-                AggregateOp::Sum,
-                "value_sum".to_string(),
-            ),
-            (
-                "score".to_string(),
-                AggregateOp::Mean,
-                "score_mean".to_string(),
-            ),
-            (
-                "value".to_string(),
-                AggregateOp::Max,
-                "value_max".to_string(),
-            ),
-            (
-                "score".to_string(),
-                AggregateOp::Min,
-                "score_min".to_string(),
-            ),
-        ])?;
-
-    println!("\nResult of parallel groupby with multi-index:");
-    println!("{}", parallel_grouped);
-
-    // Custom aggregation with multi-index
-    println!("\n=== Custom aggregation with multi-index ===");
-
-    // Define a custom coefficient of variation function
-    let cv = |values: &[f64]| -> f64 {
-        if values.is_empty() {
-            return 0.0;
+    for (key, group_df) in &grouped_by_category {
+        println!("Group: {}", key);
+        println!("  Rows: {}", group_df.row_count());
+        
+        // Calculate some simple statistics for each group
+        if let (Ok(value_col), Ok(score_col)) = (
+            group_df.get_int_column("value"),
+            group_df.get_float_column("score")
+        ) {
+            let value_sum: i64 = value_col.iter().filter_map(|v| *v).sum();
+            let score_avg: f64 = score_col.iter().sum::<f64>() / score_col.len() as f64;
+            println!("  Value sum: {}, Score avg: {:.2}", value_sum, score_avg);
         }
+    }
 
-        let sum: f64 = values.iter().sum();
-        let count = values.len() as f64;
-        let mean = sum / count;
+    // Group by multiple columns  
+    println!("\n=== Group by 'category' and 'region' ===");
+    let grouped_with_multi = df.par_groupby(&["category", "region"])?;
 
-        if mean == 0.0 {
-            return 0.0; // Avoid division by zero
-        }
+    println!("\nResult of multi-column groupby:");
+    for (key, group_df) in &grouped_with_multi {
+        println!("Group: {}", key);
+        println!("  Rows: {}", group_df.row_count());
+    }
 
-        let variance = values.iter().map(|&x| (x - mean).powi(2)).sum::<f64>() / count;
+    println!("\nTotal groups: {}", grouped_with_multi.len());
 
-        let std_dev = variance.sqrt();
+    // Show group filtering example
+    println!("\n=== Filtered groups (groups with more than 1 row) ===");
+    let large_groups: Vec<_> = grouped_with_multi
+        .iter()
+        .filter(|(_, group)| group.row_count() > 1)
+        .collect();
 
-        // Coefficient of variation = (std_dev / mean) * 100
-        (std_dev / mean) * 100.0
-    };
+    println!("Large groups found: {}", large_groups.len());
+    for (key, group_df) in large_groups {
+        println!("Group: {} has {} rows", key, group_df.row_count());
+    }
 
-    let custom_result = df
-        .group_by_with_options(["category", "region"], true)?
-        .custom("score", "score_cv", cv)?;
-
-    println!("\nResult of custom aggregation with multi-index:");
-    println!("{}", custom_result);
-
-    // Parallel custom aggregation with multi-index
-    println!("\n=== Parallel custom aggregation with multi-index ===");
-
-    let par_custom_result = df
-        .group_by_with_options(["category", "region"], true)?
-        .par_custom("score", "score_cv", cv)?;
-
-    println!("\nResult of parallel custom aggregation with multi-index:");
-    println!("{}", par_custom_result);
-
-    // Compare with multiple columns without multi-index
-    println!("\n=== Group by multiple columns without multi-index ===");
-    let grouped_flat = df
-        .group_by_with_options(["category", "region"], false)?
-        .aggregate(vec![
-            (
-                "value".to_string(),
-                AggregateOp::Sum,
-                "value_sum".to_string(),
-            ),
-            (
-                "score".to_string(),
-                AggregateOp::Mean,
-                "score_mean".to_string(),
-            ),
-        ])?;
-
-    println!("\nResult of groupby with multiple columns (flat index):");
-    println!("{}", grouped_flat);
+    println!("\nExample completed successfully!");
 
     Ok(())
 }
