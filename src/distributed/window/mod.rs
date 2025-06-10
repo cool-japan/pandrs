@@ -15,5 +15,5 @@ pub use self::core::{WindowFrame, WindowFrameBoundary, WindowFrameType, WindowFu
 // Re-export operations
 pub use self::operations::WindowFunctionExt;
 
-// Re-export functions module
-pub use self::functions;
+// Re-export functions from functions module
+pub use self::functions::*;

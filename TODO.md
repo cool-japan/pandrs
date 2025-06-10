@@ -198,6 +198,21 @@ This file tracks implementation status of features for the PandRS library, a Dat
     - Decision: Defer Ballista cluster integration (not production-ready)
     - Current DataFusion implementation satisfies most distributed processing needs
 
+## Version 0.1.0-alpha.4 Release (June 2025)
+
+### Planned Features for Alpha.4
+- Complete DataFusion distributed processing implementation
+- Implement missing DataFrame operations (set_name, rename_columns)
+- Enhanced Parquet and SQL support with real implementations
+- Performance optimizations and benchmarking improvements
+- Fix remaining unimplemented functions
+- Comprehensive test coverage improvements
+- Documentation updates and examples
+
+### Development Status
+- Version updated to 0.1.0-alpha.4
+- Ready for feature implementation
+
 ## Version 0.1.0-alpha.3 Release (June 2025)
 
 ### Release Preparation Completed ✅

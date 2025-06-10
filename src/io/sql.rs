@@ -165,8 +165,7 @@ pub fn write_to_sql<P: AsRef<Path>>(
                     .map_err(|e| Error::IoError(format!("Failed to drop table: {}", e)))?;
 
                 // Create new table
-                // Temporarily commented out for DOC tests
-                // create_table_from_df(&conn, df, table_name)?;
+                create_table_from_df(&conn, df, table_name)?;
             }
             "append" => {
                 // Table already exists, proceed to append data
@@ -180,8 +179,7 @@ pub fn write_to_sql<P: AsRef<Path>>(
         }
     } else {
         // Create new table if it doesn't exist
-        // Temporarily commented out for DOC tests
-        // create_table_from_df(&conn, df, table_name)?;
+        create_table_from_df(&conn, df, table_name)?;
     }
 
     // Insert data
@@ -212,9 +210,56 @@ pub fn write_to_sql<P: AsRef<Path>>(
             for col_name in column_names.iter() {
                 // Get column value as string
                 if let Ok(column) = df.column(col_name) {
-                    // Simplified as ColumnView doesn't have get method
-                    let value = row_idx.to_string();
+                    // Extract actual data from the column based on its type
+                    let value = match column.column_type() {
+                        crate::column::ColumnType::Int64 => {
+                            if let Some(int_col) = column.as_int64() {
+                                match int_col.get(row_idx) {
+                                    Ok(Some(val)) => val.to_string(),
+                                    Ok(None) => "NULL".to_string(),
+                                    Err(_) => "NULL".to_string(),
+                                }
+                            } else {
+                                "NULL".to_string()
+                            }
+                        }
+                        crate::column::ColumnType::Float64 => {
+                            if let Some(float_col) = column.as_float64() {
+                                match float_col.get(row_idx) {
+                                    Ok(Some(val)) => val.to_string(),
+                                    Ok(None) => "NULL".to_string(),
+                                    Err(_) => "NULL".to_string(),
+                                }
+                            } else {
+                                "NULL".to_string()
+                            }
+                        }
+                        crate::column::ColumnType::Boolean => {
+                            if let Some(bool_col) = column.as_boolean() {
+                                match bool_col.get(row_idx) {
+                                    Ok(Some(val)) => if val { "1".to_string() } else { "0".to_string() },
+                                    Ok(None) => "NULL".to_string(),
+                                    Err(_) => "NULL".to_string(),
+                                }
+                            } else {
+                                "NULL".to_string()
+                            }
+                        }
+                        crate::column::ColumnType::String => {
+                            if let Some(str_col) = column.as_string() {
+                                match str_col.get(row_idx) {
+                                    Ok(Some(val)) => val.to_string(),
+                                    Ok(None) => "NULL".to_string(),
+                                    Err(_) => "NULL".to_string(),
+                                }
+                            } else {
+                                "NULL".to_string()
+                            }
+                        }
+                    };
                     row_values.push(value);
+                } else {
+                    row_values.push("NULL".to_string());
                 }
             }
 
@@ -236,15 +281,20 @@ pub fn write_to_sql<P: AsRef<Path>>(
     Ok(())
 }
 
-/// Internal helper function to create a new table from a DataFrame
-fn create_table_from_df(conn: &Connection, df: &DataFrame, table_name: &str) -> Result<()> {
+/// Internal helper function to create a new table from an OptimizedDataFrame
+fn create_table_from_df(conn: &Connection, df: &OptimizedDataFrame, table_name: &str) -> Result<()> {
     // Create list of column names and types
     let mut columns = Vec::new();
 
     for col_name in df.column_names() {
-        // Get each column as string series and determine data type
-        if let Some(series) = df.get_column(col_name) {
-            let sql_type = series_to_sql_type(&series)?;
+        // Get each column and determine data type
+        if let Ok(column) = df.column(col_name) {
+            let sql_type = match column.column_type() {
+                crate::column::ColumnType::Int64 => "INTEGER",
+                crate::column::ColumnType::Float64 => "REAL",
+                crate::column::ColumnType::Boolean => "INTEGER", // SQLite stores booleans as integers
+                crate::column::ColumnType::String => "TEXT",
+            };
             columns.push(format!("{} {}", col_name, sql_type));
         }
     }
@@ -277,11 +327,31 @@ fn series_to_sql_type(series: &Series<String>) -> Result<String> {
 
 /// Get value from SQL row
 fn get_row_value(row: &Row, idx: usize) -> Result<String> {
-    let value: Option<String> = row
-        .get::<_, Option<String>>(idx)
-        .map_err(|e| Error::IoError(format!("Failed to retrieve row data: {}", e)))?;
-
-    Ok(value.unwrap_or_else(|| "NULL".to_string()))
+    // Try to get as different types since SQLite is dynamic
+    if let Ok(value) = row.get::<_, Option<String>>(idx) {
+        Ok(value.unwrap_or_else(|| "NULL".to_string()))
+    } else if let Ok(value) = row.get::<_, Option<i64>>(idx) {
+        Ok(value.map(|v| v.to_string()).unwrap_or_else(|| "NULL".to_string()))
+    } else if let Ok(value) = row.get::<_, Option<f64>>(idx) {
+        Ok(value.map(|v| v.to_string()).unwrap_or_else(|| "NULL".to_string()))
+    } else if let Ok(value) = row.get::<_, Option<bool>>(idx) {
+        Ok(value.map(|v| v.to_string()).unwrap_or_else(|| "NULL".to_string()))
+    } else {
+        // Fallback: try to get as raw value and convert to string
+        match row.get_ref(idx) {
+            Ok(value_ref) => {
+                use rusqlite::types::ValueRef;
+                match value_ref {
+                    ValueRef::Null => Ok("NULL".to_string()),
+                    ValueRef::Integer(i) => Ok(i.to_string()),
+                    ValueRef::Real(r) => Ok(r.to_string()),
+                    ValueRef::Text(t) => Ok(String::from_utf8_lossy(t).to_string()),
+                    ValueRef::Blob(_) => Ok("BLOB".to_string()),
+                }
+            }
+            Err(e) => Err(Error::IoError(format!("Failed to retrieve row data: {}", e))),
+        }
+    }
 }
 
 /// Infer data type from vector of strings and create a series

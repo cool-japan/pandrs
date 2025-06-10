@@ -125,12 +125,19 @@ impl PyDataFrame {
             column_map.insert(self.inner.column_names()[i].clone(), col.clone());
         }
         
-        // TODO: Implement rename_columns when DataFrame supports it
-        // match self.inner.rename_columns(&column_map) {
-        //     Ok(_) => Ok(()),
-        //     Err(e) => Err(PyValueError::new_err(format!("Failed to set columns: {}", e))),
-        // }
-        Ok(())
+        // Use set_column_names to update all column names
+        match self.inner.set_column_names(columns) {
+            Ok(_) => Ok(()),
+            Err(e) => Err(PyValueError::new_err(format!("Failed to set columns: {}", e))),
+        }
+    }
+
+    /// Rename columns using a dictionary mapping old names to new names
+    fn rename_columns(&mut self, columns: HashMap<String, String>) -> PyResult<()> {
+        match self.inner.rename_columns(&columns) {
+            Ok(_) => Ok(()),
+            Err(e) => Err(PyValueError::new_err(format!("Failed to rename columns: {}", e))),
+        }
     }
     
     /// Get a single column as Series
@@ -330,9 +337,8 @@ impl PySeries {
     }
     
     #[setter]
-    fn set_name(&mut self, _name: String) {
-        // TODO: Implement set_name functionality when Series supports it
-        // self.inner.set_name(name);
+    fn set_name(&mut self, name: String) {
+        self.inner.set_name(name);
     }
 }
 
@@ -398,8 +404,7 @@ impl PyNASeries {
     }
     
     #[setter]
-    fn set_name(&mut self, _name: String) {
-        // TODO: Implement set_name functionality when Series supports it
-        // self.inner.set_name(name);
+    fn set_name(&mut self, name: String) {
+        self.inner.set_name(name);
     }
 }

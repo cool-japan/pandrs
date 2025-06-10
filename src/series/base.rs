@@ -61,6 +61,17 @@ where
         self.name.as_ref()
     }
 
+    /// Set the name of the Series
+    pub fn set_name(&mut self, name: String) {
+        self.name = Some(name);
+    }
+
+    /// Create a new Series with the specified name
+    pub fn with_name(mut self, name: String) -> Self {
+        self.name = Some(name);
+        self
+    }
+
     /// Convert to f64 values
     pub fn as_f64(&self) -> Result<Vec<f64>>
     where
@@ -71,6 +82,17 @@ where
             result.push((*value).into());
         }
         Ok(result)
+    }
+
+    /// Convert to string series
+    pub fn to_string_series(&self) -> Result<Series<String>>
+    where
+        T: std::fmt::Display,
+    {
+        let string_values: Vec<String> = self.values.iter()
+            .map(|v| v.to_string())
+            .collect();
+        Series::new(string_values, self.name.clone())
     }
 }
 

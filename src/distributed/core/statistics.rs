@@ -10,7 +10,7 @@ use crate::error::Result;
 #[cfg(feature = "distributed")]
 use arrow::array::{self, Array, PrimitiveArray, StringArray};
 #[cfg(feature = "distributed")]
-use arrow::compute::{self, max, min, min_max};
+use arrow::compute::{self, max, min};
 #[cfg(feature = "distributed")]
 use arrow::datatypes::{DataType, Field, Schema, SchemaRef};
 

@@ -288,42 +288,129 @@ pub fn write_parquet(
         .column_names()
         .iter()
         .filter_map(|col_name| {
-            // Get each column as a string series
+            // Get each column
             let col_view = match df.column(col_name) {
                 Ok(s) => s,
                 Err(_) => return None,
             };
 
-            // Determine column type
-            let series_type = match col_view.column_type() {
-                crate::column::ColumnType::Int64 => "i64",
-                crate::column::ColumnType::Float64 => "f64",
-                crate::column::ColumnType::Boolean => "bool",
-                crate::column::ColumnType::String => "string",
-            };
-
-            // Dummy implementation for DOC test
-            #[allow(unused_variables)]
-            match series_type {
-                "i64" | "Int64" => {
-                    // Dummy implementation for DOC test
-                    let values = vec![0i64; df.row_count()];
-                    Some(Arc::new(Int64Array::from(values)) as ArrayRef)
+            // Extract actual data from the column based on its type
+            match col_view.column_type() {
+                crate::column::ColumnType::Int64 => {
+                    if let Some(int_col) = col_view.as_int64() {
+                        let mut values = Vec::with_capacity(df.row_count());
+                        let mut validity = Vec::with_capacity(df.row_count());
+                        
+                        for i in 0..df.row_count() {
+                            match int_col.get(i) {
+                                Ok(Some(val)) => {
+                                    values.push(val);
+                                    validity.push(true);
+                                }
+                                Ok(None) => {
+                                    values.push(0); // Default value for null
+                                    validity.push(false);
+                                }
+                                Err(_) => {
+                                    values.push(0);
+                                    validity.push(false);
+                                }
+                            }
+                        }
+                        
+                        let array = Int64Array::new(values.into(), Some(validity.into()));
+                        Some(Arc::new(array) as ArrayRef)
+                    } else {
+                        None
+                    }
                 }
-                "f64" | "Float64" => {
-                    // Dummy implementation for DOC test
-                    let values = vec![0.0f64; df.row_count()];
-                    Some(Arc::new(Float64Array::from(values)) as ArrayRef)
+                crate::column::ColumnType::Float64 => {
+                    if let Some(float_col) = col_view.as_float64() {
+                        let mut values = Vec::with_capacity(df.row_count());
+                        let mut validity = Vec::with_capacity(df.row_count());
+                        
+                        for i in 0..df.row_count() {
+                            match float_col.get(i) {
+                                Ok(Some(val)) => {
+                                    values.push(val);
+                                    validity.push(true);
+                                }
+                                Ok(None) => {
+                                    values.push(0.0); // Default value for null
+                                    validity.push(false);
+                                }
+                                Err(_) => {
+                                    values.push(0.0);
+                                    validity.push(false);
+                                }
+                            }
+                        }
+                        
+                        let array = Float64Array::new(values.into(), Some(validity.into()));
+                        Some(Arc::new(array) as ArrayRef)
+                    } else {
+                        None
+                    }
                 }
-                "bool" | "Boolean" => {
-                    // Dummy implementation for DOC test
-                    let values = vec![false; df.row_count()];
-                    Some(Arc::new(BooleanArray::from(values)) as ArrayRef)
+                crate::column::ColumnType::Boolean => {
+                    if let Some(bool_col) = col_view.as_boolean() {
+                        let mut values = Vec::with_capacity(df.row_count());
+                        let mut validity = Vec::with_capacity(df.row_count());
+                        
+                        for i in 0..df.row_count() {
+                            match bool_col.get(i) {
+                                Ok(Some(val)) => {
+                                    values.push(val);
+                                    validity.push(true);
+                                }
+                                Ok(None) => {
+                                    values.push(false); // Default value for null
+                                    validity.push(false);
+                                }
+                                Err(_) => {
+                                    values.push(false);
+                                    validity.push(false);
+                                }
+                            }
+                        }
+                        
+                        let array = BooleanArray::new(values.into(), Some(validity.into()));
+                        Some(Arc::new(array) as ArrayRef)
+                    } else {
+                        None
+                    }
                 }
-                _ => {
-                    // Dummy implementation for DOC test
-                    let values = vec!["".to_string(); df.row_count()];
-                    Some(Arc::new(StringArray::from(values)) as ArrayRef)
+                crate::column::ColumnType::String => {
+                    if let Some(str_col) = col_view.as_string() {
+                        let mut values = Vec::with_capacity(df.row_count());
+                        let mut validity = Vec::with_capacity(df.row_count());
+                        
+                        for i in 0..df.row_count() {
+                            match str_col.get(i) {
+                                Ok(Some(val)) => {
+                                    values.push(val.to_string());
+                                    validity.push(true);
+                                }
+                                Ok(None) => {
+                                    values.push(String::new()); // Default value for null
+                                    validity.push(false);
+                                }
+                                Err(_) => {
+                                    values.push(String::new());
+                                    validity.push(false);
+                                }
+                            }
+                        }
+                        
+                        // Convert to iterator with nulls properly handled
+                        let string_values: Vec<Option<&str>> = values.iter().zip(validity.iter())
+                            .map(|(s, &is_valid)| if is_valid { Some(s.as_str()) } else { None })
+                            .collect();
+                        let array = StringArray::from(string_values);
+                        Some(Arc::new(array) as ArrayRef)
+                    } else {
+                        None
+                    }
                 }
             }
         })

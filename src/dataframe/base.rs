@@ -143,6 +143,74 @@ impl DataFrame {
         self.column_order.clone()
     }
 
+    /// Rename columns in the DataFrame using a mapping
+    pub fn rename_columns(&mut self, column_map: &HashMap<String, String>) -> Result<()> {
+        // First, validate that all old column names exist
+        for old_name in column_map.keys() {
+            if !self.contains_column(old_name) {
+                return Err(Error::ColumnNotFound(old_name.clone()));
+            }
+        }
+
+        // Check for duplicate new names
+        let mut new_names_set = std::collections::HashSet::new();
+        for new_name in column_map.values() {
+            if !new_names_set.insert(new_name) {
+                return Err(Error::DuplicateColumnName(new_name.clone()));
+            }
+        }
+
+        // Check that new names don't conflict with existing column names (except those being renamed)
+        for new_name in column_map.values() {
+            if self.contains_column(new_name) && !column_map.contains_key(new_name) {
+                return Err(Error::DuplicateColumnName(new_name.clone()));
+            }
+        }
+
+        // Apply the renaming
+        for (old_name, new_name) in column_map {
+            // Update the column_order vector
+            if let Some(pos) = self.column_order.iter().position(|x| x == old_name) {
+                self.column_order[pos] = new_name.clone();
+            }
+
+            // Move the column data to the new key
+            if let Some(column_data) = self.columns.remove(old_name) {
+                self.columns.insert(new_name.clone(), column_data);
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Set all column names in the DataFrame
+    pub fn set_column_names(&mut self, names: Vec<String>) -> Result<()> {
+        // Check that the number of names matches the number of columns
+        if names.len() != self.column_order.len() {
+            return Err(Error::InconsistentRowCount {
+                expected: self.column_order.len(),
+                found: names.len(),
+            });
+        }
+
+        // Check for duplicate names
+        let mut names_set = std::collections::HashSet::new();
+        for name in &names {
+            if !names_set.insert(name) {
+                return Err(Error::DuplicateColumnName(name.clone()));
+            }
+        }
+
+        // Create a mapping from old names to new names
+        let mut column_map = HashMap::new();
+        for (old_name, new_name) in self.column_order.iter().zip(names.iter()) {
+            column_map.insert(old_name.clone(), new_name.clone());
+        }
+
+        // Apply the renaming using the existing rename_columns method
+        self.rename_columns(&column_map)
+    }
+
     /// Get a column from the DataFrame with generic type
     pub fn get_column<T: 'static + Debug + Clone + Send + Sync>(
         &self,

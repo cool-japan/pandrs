@@ -444,6 +444,78 @@ impl OptimizedDataFrame {
         Ok(())
     }
 
+    /// Rename columns in the DataFrame using a mapping
+    pub fn rename_columns(&mut self, column_map: &HashMap<String, String>) -> Result<()> {
+        // First, validate that all old column names exist
+        for old_name in column_map.keys() {
+            if !self.column_indices.contains_key(old_name) {
+                return Err(Error::ColumnNotFound(old_name.clone()));
+            }
+        }
+
+        // Check for duplicate new names
+        let mut new_names_set = std::collections::HashSet::new();
+        for new_name in column_map.values() {
+            if !new_names_set.insert(new_name) {
+                return Err(Error::DuplicateColumnName(new_name.clone()));
+            }
+        }
+
+        // Check that new names don't conflict with existing column names (except those being renamed)
+        for new_name in column_map.values() {
+            if self.column_indices.contains_key(new_name) && !column_map.contains_key(new_name) {
+                return Err(Error::DuplicateColumnName(new_name.clone()));
+            }
+        }
+
+        // Apply the renaming
+        for (old_name, new_name) in column_map {
+            // Get the column index
+            if let Some(&column_idx) = self.column_indices.get(old_name) {
+                // Update column_indices HashMap
+                self.column_indices.remove(old_name);
+                self.column_indices.insert(new_name.clone(), column_idx);
+
+                // Update column_names vector
+                if let Some(pos) = self.column_names.iter().position(|x| x == old_name) {
+                    self.column_names[pos] = new_name.clone();
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Set all column names in the DataFrame
+    pub fn set_column_names(&mut self, names: Vec<String>) -> Result<()> {
+        // Check that the number of names matches the number of columns
+        if names.len() != self.column_names.len() {
+            return Err(Error::InconsistentRowCount {
+                expected: self.column_names.len(),
+                found: names.len(),
+            });
+        }
+
+        // Check for duplicate names
+        let mut names_set = std::collections::HashSet::new();
+        for name in &names {
+            if !names_set.insert(name) {
+                return Err(Error::DuplicateColumnName(name.clone()));
+            }
+        }
+
+        // Clear the existing column_indices and rebuild it with new names
+        self.column_indices.clear();
+        
+        // Update column_names and rebuild column_indices
+        for (i, new_name) in names.into_iter().enumerate() {
+            self.column_indices.insert(new_name.clone(), i);
+            self.column_names[i] = new_name;
+        }
+
+        Ok(())
+    }
+
     /// Get the value at the specified row and column
     pub fn get_value(&self, row_idx: usize, column_name: &str) -> Result<Option<String>> {
         // Using implementation from split_dataframe/column_ops.rs

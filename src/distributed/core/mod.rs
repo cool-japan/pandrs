@@ -14,26 +14,26 @@ use crate::error::{Error, Result};
 
 // Re-export types from subdirectories
 #[cfg(feature = "distributed")]
-pub use self::config::DistributedConfig;
+pub use self::config::{DistributedConfig, ExecutorType};
 #[cfg(feature = "distributed")]
 pub use self::context::DistributedContext;
 #[cfg(feature = "distributed")]
 pub use self::dataframe::DistributedDataFrame;
 #[cfg(feature = "distributed")]
-pub use self::partition::{Partition, PartitionStrategy};
+pub use self::partition::{Partition, PartitionSet, PartitionStrategy};
 #[cfg(feature = "distributed")]
 pub use self::statistics::{ColumnStatistics, ColumnValue, TableStatistics};
 
 #[cfg(feature = "distributed")]
-mod config;
+pub mod config;
 #[cfg(feature = "distributed")]
-mod context;
+pub mod context;
 #[cfg(feature = "distributed")]
-mod dataframe;
+pub mod dataframe;
 #[cfg(feature = "distributed")]
-mod partition;
+pub mod partition;
 #[cfg(feature = "distributed")]
-mod statistics;
+pub mod statistics;
 
 /// Trait for converting a local DataFrame to a distributed DataFrame
 #[cfg(feature = "distributed")]

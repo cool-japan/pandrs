@@ -50,16 +50,160 @@ impl LinearRegression {
         self
     }
 
-    /// Get the R² coefficient of determination
-    pub fn r_squared(&self) -> Option<f64> {
-        None // Placeholder - would calculate R² from model and data
+    /// Get the R² coefficient of determination (requires training data)
+    pub fn r_squared(&self, data: &DataFrame, target_column: &str) -> Result<f64> {
+        if self.coefficients.is_none() {
+            return Err(Error::InvalidValue("Model not fitted".into()));
+        }
+
+        // Get actual target values
+        let target_col = data.get_column::<f64>(target_column)?;
+        let y_actual = target_col.as_f64()?;
+
+        // Get predictions
+        let y_pred = self.predict(data)?;
+
+        if y_actual.len() != y_pred.len() {
+            return Err(Error::DimensionMismatch(
+                "Actual and predicted values have different lengths".into(),
+            ));
+        }
+
+        // Calculate R² = 1 - (SS_res / SS_tot)
+        let y_mean = y_actual.iter().sum::<f64>() / y_actual.len() as f64;
+
+        let ss_tot: f64 = y_actual.iter()
+            .map(|&y| (y - y_mean).powi(2))
+            .sum();
+
+        let ss_res: f64 = y_actual.iter().zip(y_pred.iter())
+            .map(|(&actual, &pred)| (actual - pred).powi(2))
+            .sum();
+
+        if ss_tot == 0.0 {
+            return Ok(1.0); // Perfect fit when variance is 0
+        }
+
+        Ok(1.0 - ss_res / ss_tot)
+    }
+
+    // Matrix operation helper functions
+    fn matrix_multiply_transpose(a: &[Vec<f64>], b: &[Vec<f64>]) -> Vec<Vec<f64>> {
+        let n = a.len();
+        let m = b.len();
+        let mut result = vec![vec![0.0; m]; n];
+
+        for i in 0..n {
+            for j in 0..m {
+                let mut sum = 0.0;
+                for k in 0..a[i].len() {
+                    sum += a[i][k] * b[j][k];
+                }
+                result[i][j] = sum;
+            }
+        }
+
+        result
+    }
+
+    fn vec_multiply_transpose(a: &[Vec<f64>], y: &[f64]) -> Vec<f64> {
+        let n = a.len();
+        let mut result = vec![0.0; n];
+
+        for i in 0..n {
+            let mut sum = 0.0;
+            for k in 0..y.len() {
+                sum += a[i][k] * y[k];
+            }
+            result[i] = sum;
+        }
+
+        result
+    }
+
+    fn matrix_inverse(matrix: &[Vec<f64>]) -> Result<Vec<Vec<f64>>> {
+        let n = matrix.len();
+
+        if n == 0 {
+            return Err(Error::InvalidOperation("Matrix is empty".into()));
+        }
+
+        for row in matrix {
+            if row.len() != n {
+                return Err(Error::DimensionMismatch("Matrix must be square".into()));
+            }
+        }
+
+        // Create augmented matrix [A|I]
+        let mut augmented = Vec::with_capacity(n);
+        for i in 0..n {
+            let mut row = Vec::with_capacity(2 * n);
+            row.extend_from_slice(&matrix[i]);
+
+            // Identity matrix part
+            for j in 0..n {
+                row.push(if i == j { 1.0 } else { 0.0 });
+            }
+
+            augmented.push(row);
+        }
+
+        // Gauss-Jordan elimination
+        for i in 0..n {
+            // Pivot selection
+            let mut max_row = i;
+            let mut max_val = augmented[i][i].abs();
+
+            for j in i + 1..n {
+                let abs_val = augmented[j][i].abs();
+                if abs_val > max_val {
+                    max_row = j;
+                    max_val = abs_val;
+                }
+            }
+
+            if max_val < 1e-10 {
+                return Err(Error::Computation(
+                    "Matrix is singular (inverse does not exist)".into(),
+                ));
+            }
+
+            // Swap rows
+            if max_row != i {
+                augmented.swap(i, max_row);
+            }
+
+            // Make pivot element 1
+            let pivot = augmented[i][i];
+            for j in 0..2 * n {
+                augmented[i][j] /= pivot;
+            }
+
+            // Eliminate other rows
+            for j in 0..n {
+                if j != i {
+                    let factor = augmented[j][i];
+                    for k in 0..2 * n {
+                        augmented[j][k] -= factor * augmented[i][k];
+                    }
+                }
+            }
+        }
+
+        // Extract result (right half is inverse matrix)
+        let mut inverse = vec![vec![0.0; n]; n];
+        for i in 0..n {
+            for j in 0..n {
+                inverse[i][j] = augmented[i][j + n];
+            }
+        }
+
+        Ok(inverse)
     }
 }
 
 impl SupervisedModel for LinearRegression {
     fn fit(&mut self, train_data: &DataFrame, target_column: &str) -> Result<()> {
-        let start_time = Instant::now();
-
         // Validate input data
         if !train_data.has_column(target_column) {
             return Err(Error::InvalidValue(format!(
@@ -72,31 +216,99 @@ impl SupervisedModel for LinearRegression {
         let mut feature_names: Vec<String> = Vec::new();
         for name in train_data.column_names() {
             if name != target_column {
-                if let Ok(col) = train_data.get_column::<f64>(&name) {
+                // Try to get as numeric column
+                if train_data.get_column::<f64>(&name).is_ok() {
                     feature_names.push(name.clone());
                 }
             }
         }
 
+        if feature_names.is_empty() {
+            return Err(Error::InvalidValue(
+                "No numeric feature columns found".into(),
+            ));
+        }
+
         // Store feature names for later use
         self.feature_names = Some(feature_names.clone());
 
-        // Placeholder for actual linear regression implementation
-        // In a real implementation, this would:
-        // 1. Extract features X and target y
-        // 2. Normalize features if self.normalize is true
-        // 3. Add a column of 1s if self.fit_intercept is true
-        // 4. Compute coefficients using the normal equation: β = (X'X)⁻¹X'y
+        // Extract target variable
+        let target_col = train_data.get_column::<f64>(target_column)?;
+        let y_values = target_col.as_f64()?;
+        let n = y_values.len();
 
-        // For now, just set placeholder coefficients
+        if n == 0 {
+            return Err(Error::InvalidValue("No data to train on".into()));
+        }
+
+        // Build feature matrix X
+        let mut x_matrix: Vec<Vec<f64>> = Vec::new();
+
+        // Add intercept column if needed
+        if self.fit_intercept {
+            x_matrix.push(vec![1.0; n]);
+        }
+
+        // Add feature columns
+        for feature_name in &feature_names {
+            let feature_col = train_data.get_column::<f64>(feature_name)?;
+            let feature_values = feature_col.as_f64()?;
+            
+            if feature_values.len() != n {
+                return Err(Error::DimensionMismatch(format!(
+                    "Feature column '{}' has different length than target",
+                    feature_name
+                )));
+            }
+
+            x_matrix.push(feature_values.to_vec());
+        }
+
+        // Normalize features if requested
+        if self.normalize {
+            for i in if self.fit_intercept { 1 } else { 0 }..x_matrix.len() {
+                let mean = x_matrix[i].iter().sum::<f64>() / n as f64;
+                let variance = x_matrix[i].iter()
+                    .map(|&x| (x - mean).powi(2))
+                    .sum::<f64>() / n as f64;
+                let std_dev = variance.sqrt();
+                
+                if std_dev > 1e-10 {
+                    for j in 0..n {
+                        x_matrix[i][j] = (x_matrix[i][j] - mean) / std_dev;
+                    }
+                }
+            }
+        }
+
+        // Solve normal equation: β = (X'X)⁻¹X'y
+        let xt_x = Self::matrix_multiply_transpose(&x_matrix, &x_matrix);
+        let xt_x_inv = Self::matrix_inverse(&xt_x)?;
+        let xt_y = Self::vec_multiply_transpose(&x_matrix, &y_values);
+
+        // Calculate coefficients
+        let mut beta_coefs = vec![0.0; x_matrix.len()];
+        for i in 0..beta_coefs.len() {
+            for j in 0..xt_y.len() {
+                beta_coefs[i] += xt_x_inv[i][j] * xt_y[j];
+            }
+        }
+
+        // Store results
         let mut coefficients = HashMap::new();
-        for name in &feature_names {
-            coefficients.insert(name.clone(), 1.0);
+        let start_idx = if self.fit_intercept { 1 } else { 0 };
+        
+        if self.fit_intercept {
+            self.intercept = Some(beta_coefs[0]);
+        } else {
+            self.intercept = None;
+        }
+
+        for (i, feature_name) in feature_names.iter().enumerate() {
+            coefficients.insert(feature_name.clone(), beta_coefs[start_idx + i]);
         }
 
         self.coefficients = Some(coefficients);
-        self.intercept = if self.fit_intercept { Some(0.0) } else { None };
-
         Ok(())
     }
 
@@ -118,15 +330,40 @@ impl SupervisedModel for LinearRegression {
             }
         }
 
-        // Placeholder for actual prediction implementation
-        // In a real implementation, this would:
-        // 1. Extract features X
-        // 2. Normalize features if self.normalize was true during fitting
-        // 3. Compute predictions as X·β + intercept
-
-        // For now, just return a vector of 0s
+        // Get number of samples
         let n_samples = data.nrows();
-        let predictions = vec![0.0; n_samples];
+        if n_samples == 0 {
+            return Ok(Vec::new());
+        }
+
+        // Extract feature data
+        let mut predictions = vec![0.0; n_samples];
+
+        // Add intercept if fitted with intercept
+        if let Some(intercept) = self.intercept {
+            for i in 0..n_samples {
+                predictions[i] += intercept;
+            }
+        }
+
+        // Add contribution from each feature
+        for feature_name in feature_names {
+            let feature_col = data.get_column::<f64>(feature_name)?;
+            let feature_values = feature_col.as_f64()?;
+            
+            if feature_values.len() != n_samples {
+                return Err(Error::DimensionMismatch(format!(
+                    "Feature column '{}' has different length than expected",
+                    feature_name
+                )));
+            }
+
+            if let Some(&coef) = coefficients.get(feature_name) {
+                for i in 0..n_samples {
+                    predictions[i] += coef * feature_values[i];
+                }
+            }
+        }
 
         Ok(predictions)
     }
@@ -197,8 +434,16 @@ impl ModelEvaluator for LinearRegression {
             .sum::<f64>()
             / n_samples as f64;
 
-        // Placeholder for R² calculation
-        let r2 = 0.8; // Would be calculated properly in a real implementation
+        // Calculate R² = 1 - (SS_res / SS_tot)
+        let y_mean = target_values.iter().sum::<f64>() / n_samples as f64;
+        let ss_tot: f64 = target_values.iter()
+            .map(|&y| (y - y_mean).powi(2))
+            .sum();
+        let ss_res: f64 = predictions.iter().zip(target_values.iter())
+            .map(|(&pred, &actual)| (actual - pred).powi(2))
+            .sum();
+        
+        let r2 = if ss_tot == 0.0 { 1.0 } else { 1.0 - ss_res / ss_tot };
 
         let prediction_time = start_time.elapsed().as_secs_f64();
 

@@ -54,7 +54,7 @@ impl ExecutionEngine for BallistaEngine {
 
     fn create_context(&self, config: &DistributedConfig) -> Result<Box<dyn ExecutionContext>> {
         if !self.initialized {
-            return Err(Error::InvalidState("Engine not initialized".to_string()));
+            return Err(Error::InvalidValue("Engine not initialized".to_string()));
         }
 
         let ctx = BallistaContext::new(config);

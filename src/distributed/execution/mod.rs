@@ -2,9 +2,9 @@
 //!
 //! This module defines the interface for distributed execution engines.
 
-// Re-export backward compatibility module
-pub mod backward_compat;
-pub use backward_compat::*;
+// Re-export backward compatibility module (temporarily disabled)
+// pub mod backward_compat;
+// pub use backward_compat::*;
 
 use std::sync::Arc;
 
@@ -134,8 +134,8 @@ pub enum Operation {
     /// LIMIT operation - Limit number of rows
     Limit(usize),
 
-    /// WINDOW operation - Apply window functions
-    Window(Vec<crate::distributed::window::WindowFunction>),
+    /// WINDOW operation - Apply window functions (temporarily disabled)
+    // Window(Vec<crate::distributed::window::WindowFunction>),
 
     /// PROJECTION operation - Add computed columns
     Project(Vec<(String, String)>),
@@ -389,5 +389,25 @@ impl ExecutionMetrics {
         for (name, value) in &other.custom_metrics {
             self.custom_metrics.insert(name.clone(), value.clone());
         }
+    }
+
+    /// Adds execution time to the current metrics
+    pub fn add_execution_time(&mut self, time_ms: u64) {
+        self.execution_time_ms += time_ms;
+    }
+
+    /// Adds rows processed to the current metrics
+    pub fn add_rows_processed(&mut self, rows: usize) {
+        self.rows_processed += rows;
+    }
+
+    /// Adds partitions processed to the current metrics
+    pub fn add_partitions_processed(&mut self, partitions: usize) {
+        self.partitions_processed += partitions;
+    }
+
+    /// Adds bytes processed to the current metrics
+    pub fn add_bytes_processed(&mut self, bytes: usize) {
+        self.bytes_processed += bytes;
     }
 }

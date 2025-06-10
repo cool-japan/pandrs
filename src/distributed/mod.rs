@@ -15,47 +15,47 @@ pub mod core;
 #[cfg(feature = "distributed")]
 pub mod execution;
 
-// Expression module for query expressions
-#[cfg(feature = "distributed")]
-pub mod expr;
+// Expression module for query expressions (temporarily disabled)
+// #[cfg(feature = "distributed")]
+// pub mod expr;
 
 // Engines module for different execution engines
 #[cfg(feature = "distributed")]
 pub mod engines;
 
-// API module for high-level functionality
-#[cfg(feature = "distributed")]
-pub mod api;
+// API module for high-level functionality (temporarily disabled)
+// #[cfg(feature = "distributed")]
+// pub mod api;
 
-// Schema validator module
-#[cfg(feature = "distributed")]
-mod schema_validator;
+// Schema validator module (temporarily disabled)
+// #[cfg(feature = "distributed")]
+// mod schema_validator;
 
-// Window operations for time series
-#[cfg(feature = "distributed")]
-pub mod window;
+// Window operations for time series (temporarily disabled)
+// #[cfg(feature = "distributed")]
+// pub mod window;
 
-// Explain functionality
-#[cfg(feature = "distributed")]
-mod explain;
+// Explain functionality (temporarily disabled)
+// #[cfg(feature = "distributed")]
+// mod explain;
 
-// Fault tolerance functionality
-#[cfg(feature = "distributed")]
-mod fault_tolerance;
+// Fault tolerance functionality (temporarily disabled)
+// #[cfg(feature = "distributed")]
+// mod fault_tolerance;
 
-// Backward compatibility module
-#[cfg(feature = "distributed")]
-mod backward_compat;
+// Backward compatibility module (temporarily disabled for compilation)
+// #[cfg(feature = "distributed")]
+// mod backward_compat;
 
-// Re-exports for backward compatibility
-#[allow(deprecated)]
-#[cfg(feature = "distributed")]
-pub use backward_compat::*;
+// Re-exports for backward compatibility (temporarily disabled)
+// #[allow(deprecated)]
+// #[cfg(feature = "distributed")]
+// pub use backward_compat::*;
 
-// Re-exports for expr backward compatibility
-#[allow(deprecated)]
-#[cfg(feature = "distributed")]
-pub use expr::backward_compat;
+// Re-exports for expr backward compatibility (temporarily disabled)
+// #[allow(deprecated)]
+// #[cfg(feature = "distributed")]
+// pub use expr::backward_compat as expr_backward_compat;
 
 // Re-exports from core
 #[cfg(feature = "distributed")]
@@ -68,34 +68,34 @@ pub use execution::{
     ExecutionResult, JoinType, Operation, SortExpr,
 };
 
-// Re-exports from expr
-#[cfg(feature = "distributed")]
-pub use expr::{
-    BinaryOperator, ColumnProjection, Expr, ExprDataType, Literal, ProjectionExt, UdfDefinition,
-    UnaryOperator,
-};
+// Re-exports from expr (temporarily disabled)
+// #[cfg(feature = "distributed")]
+// pub use expr::{
+//     BinaryOperator, ColumnProjection, Expr, ExprDataType, Literal, ProjectionExt, UdfDefinition,
+//     UnaryOperator,
+// };
 
-#[cfg(feature = "distributed")]
-pub use expr::{ColumnMeta, ExprSchema, ExprValidator, InferredType};
+// #[cfg(feature = "distributed")]
+// pub use expr::{ColumnMeta, ExprSchema, ExprValidator, InferredType};
 
-// Re-exports from window
-#[cfg(feature = "distributed")]
-pub use window::{
-    functions as window_functions, WindowFrame, WindowFrameBoundary, WindowFrameType,
-    WindowFunction, WindowFunctionExt,
-};
+// Re-exports from window (temporarily disabled)
+// #[cfg(feature = "distributed")]
+// pub use window::{
+//     functions as window_functions, WindowFrame, WindowFrameBoundary, WindowFrameType,
+//     WindowFunction, WindowFunctionExt,
+// };
 
-// Re-exports from schema_validator
-#[cfg(feature = "distributed")]
-pub use schema_validator::SchemaValidator;
+// Re-exports from schema_validator (temporarily disabled)
+// #[cfg(feature = "distributed")]
+// pub use schema_validator::SchemaValidator;
 
-// Re-exports from explain
-#[cfg(feature = "distributed")]
-pub use explain::{explain_plan, ExplainFormat, ExplainOptions, PlanNode};
+// Re-exports from explain (temporarily disabled)
+// #[cfg(feature = "distributed")]
+// pub use explain::{explain_plan, ExplainFormat, ExplainOptions, PlanNode};
 
-// Re-exports from fault_tolerance
-#[cfg(feature = "distributed")]
-pub use fault_tolerance::{
-    CheckpointManager, ExecutionCheckpoint, FailureInfo, FailureType, FaultToleranceHandler,
-    FaultTolerantContext, RecoveryAction, RecoveryStrategy, RetryPolicy,
-};
+// Re-exports from fault_tolerance (temporarily disabled)
+// #[cfg(feature = "distributed")]
+// pub use fault_tolerance::{
+//     CheckpointManager, ExecutionCheckpoint, FailureInfo, FailureType, FaultToleranceHandler,
+//     FaultTolerantContext, RecoveryAction, RecoveryStrategy, RetryPolicy,
+// };

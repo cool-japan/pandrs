@@ -19,9 +19,6 @@ use std::sync::Arc;
 
 use csv::{ReaderBuilder, Writer};
 
-#[cfg(feature = "sql")]
-use rusqlite::{params, Connection};
-
 #[cfg(feature = "excel")]
 use calamine::{open_workbook, Reader, Xlsx};
 

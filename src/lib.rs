@@ -143,8 +143,8 @@ pub use temporal::gpu::SeriesTimeGpuExt;
 pub use distributed::core::{DistributedConfig, DistributedDataFrame, ToDistributed};
 #[cfg(feature = "distributed")]
 pub use distributed::execution::{ExecutionContext, ExecutionEngine, ExecutionPlan};
-#[cfg(feature = "distributed")]
-pub use distributed::expr::{Expr as DistributedExpr, ExprDataType, UdfDefinition};
+// #[cfg(feature = "distributed")]
+// pub use distributed::expr::{Expr as DistributedExpr, ExprDataType, UdfDefinition}; // Temporarily disabled
 
 // Export version info
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
