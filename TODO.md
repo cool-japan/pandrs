@@ -198,7 +198,7 @@ This file tracks implementation status of features for the PandRS library, a Dat
     - Decision: Defer Ballista cluster integration (not production-ready)
     - Current DataFusion implementation satisfies most distributed processing needs
 
-## Version 0.1.0-alpha.3 Release (July 2025)
+## Version 0.1.0-alpha.3 Release (June 2025)
 
 ### Release Preparation Completed ✅
 - Updated version numbers in Cargo.toml files (main and Python bindings)

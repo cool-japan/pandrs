@@ -30,7 +30,7 @@ This directory contains comprehensive documentation for the PandRS project, orga
 ### For New Contributors
 1. Start with [PANDRS_ROADMAP.md](planning/PANDRS_ROADMAP.md) for project overview
 2. Review [MODULE_REORGANIZATION_PLAN.md](architecture/MODULE_REORGANIZATION_PLAN.md) for codebase structure
-3. Check [TODO.md](development/TODO.md) for current development priorities
+3. Check [TODO.md](../TODO.md) for current development priorities
 
 ### For Performance Optimization
 - [PERFORMANCE_PLAN.md](planning/PERFORMANCE_PLAN.md) - Optimization strategies
@@ -54,4 +54,4 @@ All documentation follows these principles:
 
 ---
 
-*Last Updated: July 2025 (0.1.0-alpha.3)*
+*Last Updated: June 2025 (0.1.0-alpha.3)*
