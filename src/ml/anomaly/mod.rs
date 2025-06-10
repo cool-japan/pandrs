@@ -3,11 +3,11 @@
 //! This module provides implementations of anomaly detection algorithms
 //! for identifying outliers and unusual patterns in data.
 
+use crate::core::error::{Error, Result};
 use crate::dataframe::DataFrame;
-use crate::core::error::{Result, Error};
-use crate::ml::models::UnsupervisedModel;
 use crate::ml::models::ModelEvaluator;
 use crate::ml::models::ModelMetrics;
+use crate::ml::models::UnsupervisedModel;
 use std::collections::{HashMap, HashSet};
 
 /// Isolation Forest for anomaly detection
@@ -51,7 +51,7 @@ impl IsolationForest {
     pub fn anomaly_scores(&self) -> &[f64] {
         match &self.scores {
             Some(scores) => scores,
-            None => &[] // Return empty slice if no scores available
+            None => &[], // Return empty slice if no scores available
         }
     }
 
@@ -61,77 +61,77 @@ impl IsolationForest {
         // In a real implementation, we would return actual labels
         &[]
     }
-    
+
     /// Set number of trees in the forest
     pub fn n_estimators(mut self, n_estimators: usize) -> Self {
         self.n_estimators = n_estimators;
         self
     }
-    
+
     /// Set maximum number of samples to draw for each tree
     pub fn max_samples(mut self, max_samples: usize) -> Self {
         self.max_samples = Some(max_samples);
         self
     }
-    
+
     /// Set maximum depth of the trees
     pub fn max_depth(mut self, max_depth: usize) -> Self {
         self.max_depth = Some(max_depth);
         self
     }
-    
+
     /// Set contamination (expected proportion of outliers)
     pub fn contamination(mut self, contamination: f64) -> Self {
         self.contamination = contamination;
         self
     }
-    
+
     /// Set random seed for reproducibility
     pub fn random_seed(mut self, seed: u64) -> Self {
         self.random_seed = Some(seed);
         self
     }
-    
+
     /// Specify feature columns to use
     pub fn with_columns(mut self, columns: Vec<String>) -> Self {
         self.feature_columns = Some(columns);
         self
     }
-    
+
     /// Predict anomaly scores for new data
     pub fn predict(&self, data: &DataFrame) -> Result<Vec<f64>> {
         // Placeholder implementation
         // In a real implementation, this would use the trained model to predict anomaly scores
         let n_samples = data.row_count();
         let mut scores = vec![1.0; n_samples]; // Default: all normal points
-        
+
         // Mark random 10% as anomalies for demonstration
         use rand::Rng;
         let mut rng = rand::rng();
-        
+
         for _ in 0..((n_samples as f64 * 0.1) as usize) {
             let idx = rng.random_range(0..n_samples);
             scores[idx] = -1.0; // Anomaly
         }
-        
+
         Ok(scores)
     }
-    
+
     /// Get decision function values (anomaly scores)
     pub fn decision_function(&self, data: &DataFrame) -> Result<Vec<f64>> {
         // Placeholder implementation
         // In a real implementation, this would return the raw anomaly scores
         let n_samples = data.row_count();
         let mut scores = Vec::with_capacity(n_samples);
-        
+
         use rand::Rng;
         let mut rng = rand::rng();
-        
+
         for _ in 0..n_samples {
             // Random scores between -1 and 1, where lower = more anomalous
             scores.push(rng.random_range(-1.0..1.0));
         }
-        
+
         Ok(scores)
     }
 }
@@ -142,35 +142,35 @@ impl UnsupervisedModel for IsolationForest {
         // In a real implementation, this would build the isolation forest model
         let n_samples = data.row_count();
         let mut scores = Vec::with_capacity(n_samples);
-        
+
         use rand::Rng;
         let mut rng = rand::rng();
-        
+
         for _ in 0..n_samples {
             // Random scores between -1 and 1, where lower = more anomalous
             scores.push(rng.random_range(-1.0..1.0));
         }
-        
+
         self.scores = Some(scores);
-        
+
         // Store feature columns if not already specified
         if self.feature_columns.is_none() {
             self.feature_columns = Some(data.column_names().into());
         }
-        
+
         Ok(())
     }
-    
+
     fn transform(&self, data: &DataFrame) -> Result<DataFrame> {
         // Transform adds an anomaly score column to the data
         let scores = self.decision_function(data)?;
         let mut result = data.clone();
-        
+
         result.add_column(
             "anomaly_score".to_string(),
             crate::series::Series::new(scores, Some("anomaly_score".to_string()))?,
         )?;
-        
+
         Ok(result)
     }
 }
@@ -182,9 +182,16 @@ impl ModelEvaluator for IsolationForest {
         metrics.add_metric("anomaly_ratio", self.contamination);
         Ok(metrics)
     }
-    
-    fn cross_validate(&self, _data: &DataFrame, _target: &str, _folds: usize) -> Result<Vec<ModelMetrics>> {
-        Err(Error::InvalidOperation("Cross-validation is not applicable for anomaly detection".into()))
+
+    fn cross_validate(
+        &self,
+        _data: &DataFrame,
+        _target: &str,
+        _folds: usize,
+    ) -> Result<Vec<ModelMetrics>> {
+        Err(Error::InvalidOperation(
+            "Cross-validation is not applicable for anomaly detection".into(),
+        ))
     }
 }
 
@@ -223,7 +230,7 @@ impl LocalOutlierFactor {
     pub fn anomaly_scores(&self) -> &[f64] {
         match &self.scores {
             Some(scores) => scores,
-            None => &[] // Return empty slice if no scores available
+            None => &[], // Return empty slice if no scores available
         }
     }
 
@@ -232,19 +239,19 @@ impl LocalOutlierFactor {
         // This is a stub implementation for backward compatibility
         &[]
     }
-    
+
     /// Set contamination (expected proportion of outliers)
     pub fn contamination(mut self, contamination: f64) -> Self {
         self.contamination = contamination;
         self
     }
-    
+
     /// Set algorithm for nearest neighbors search
     pub fn algorithm(mut self, algorithm: &str) -> Self {
         self.algorithm = algorithm.to_string();
         self
     }
-    
+
     /// Specify feature columns to use
     pub fn with_columns(mut self, columns: Vec<String>) -> Self {
         self.feature_columns = Some(columns);
@@ -258,10 +265,12 @@ impl UnsupervisedModel for LocalOutlierFactor {
         self.feature_columns = Some(data.column_names().into());
         Ok(())
     }
-    
+
     fn transform(&self, _data: &DataFrame) -> Result<DataFrame> {
         // LOF is typically used in "novelty" mode for transform
-        Err(Error::InvalidOperation("LocalOutlierFactor does not support transform in current implementation".into()))
+        Err(Error::InvalidOperation(
+            "LocalOutlierFactor does not support transform in current implementation".into(),
+        ))
     }
 }
 
@@ -271,9 +280,16 @@ impl ModelEvaluator for LocalOutlierFactor {
         metrics.add_metric("anomaly_ratio", self.contamination);
         Ok(metrics)
     }
-    
-    fn cross_validate(&self, _data: &DataFrame, _target: &str, _folds: usize) -> Result<Vec<ModelMetrics>> {
-        Err(Error::InvalidOperation("Cross-validation is not applicable for anomaly detection".into()))
+
+    fn cross_validate(
+        &self,
+        _data: &DataFrame,
+        _target: &str,
+        _folds: usize,
+    ) -> Result<Vec<ModelMetrics>> {
+        Err(Error::InvalidOperation(
+            "Cross-validation is not applicable for anomaly detection".into(),
+        ))
     }
 }
 
@@ -311,7 +327,7 @@ impl OneClassSVM {
     pub fn anomaly_scores(&self) -> &[f64] {
         match &self.scores {
             Some(scores) => scores,
-            None => &[] // Return empty slice if no scores available
+            None => &[], // Return empty slice if no scores available
         }
     }
 
@@ -320,25 +336,25 @@ impl OneClassSVM {
         // This is a stub implementation for backward compatibility
         &[]
     }
-    
+
     /// Set kernel type
     pub fn kernel(mut self, kernel: &str) -> Self {
         self.kernel = kernel.to_string();
         self
     }
-    
+
     /// Set regularization parameter nu
     pub fn nu(mut self, nu: f64) -> Self {
         self.nu = nu;
         self
     }
-    
+
     /// Set kernel coefficient gamma
     pub fn gamma(mut self, gamma: f64) -> Self {
         self.gamma = Some(gamma);
         self
     }
-    
+
     /// Specify feature columns to use
     pub fn with_columns(mut self, columns: Vec<String>) -> Self {
         self.feature_columns = Some(columns);
@@ -352,26 +368,26 @@ impl UnsupervisedModel for OneClassSVM {
         self.feature_columns = Some(data.column_names().into());
         Ok(())
     }
-    
+
     fn transform(&self, data: &DataFrame) -> Result<DataFrame> {
         // Transform adds an anomaly score column to the data
         let n_samples = data.row_count();
-        
+
         // Placeholder implementation for scoring
         use rand::Rng;
         let mut rng = rand::rng();
-        
+
         let scores: Vec<f64> = (0..n_samples)
             .map(|_| rng.random_range(-1.0..1.0))
             .collect();
-        
+
         let mut result = data.clone();
-        
+
         result.add_column(
             "anomaly_score".to_string(),
             crate::series::Series::new(scores, Some("anomaly_score".to_string()))?,
         )?;
-        
+
         Ok(result)
     }
 }
@@ -382,9 +398,16 @@ impl ModelEvaluator for OneClassSVM {
         metrics.add_metric("anomaly_ratio", self.nu);
         Ok(metrics)
     }
-    
-    fn cross_validate(&self, _data: &DataFrame, _target: &str, _folds: usize) -> Result<Vec<ModelMetrics>> {
-        Err(Error::InvalidOperation("Cross-validation is not applicable for anomaly detection".into()))
+
+    fn cross_validate(
+        &self,
+        _data: &DataFrame,
+        _target: &str,
+        _folds: usize,
+    ) -> Result<Vec<ModelMetrics>> {
+        Err(Error::InvalidOperation(
+            "Cross-validation is not applicable for anomaly detection".into(),
+        ))
     }
 }
 

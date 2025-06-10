@@ -120,14 +120,14 @@ impl Default for PlotSettings {
             show_legend: true,
             show_grid: true,
             color_palette: vec![
-                (0, 123, 255),    // Blue
-                (255, 99, 71),    // Red
-                (46, 204, 113),   // Green
-                (255, 193, 7),    // Yellow
-                (142, 68, 173),   // Purple
-                (52, 152, 219),   // Cyan
-                (243, 156, 18),   // Orange
-                (211, 84, 0),     // Brown
+                (0, 123, 255),  // Blue
+                (255, 99, 71),  // Red
+                (46, 204, 113), // Green
+                (255, 193, 7),  // Yellow
+                (142, 68, 173), // Purple
+                (52, 152, 219), // Cyan
+                (243, 156, 18), // Orange
+                (211, 84, 0),   // Brown
             ],
         }
     }

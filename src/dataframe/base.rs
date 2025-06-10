@@ -1,14 +1,17 @@
+use std::any::Any;
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::path::Path;
-use std::any::Any;
 
-use crate::core::error::{Result, Error};
-use crate::core::data_value::{self, DataValue as DValue}; // Import as a different name to avoid trait conflict
 use crate::column::ColumnType;
+use crate::core::data_value::{self, DataValue as DValue}; // Import as a different name to avoid trait conflict
+use crate::core::error::{Error, Result};
 
 // Re-export from legacy module for now
-#[deprecated(since = "0.1.0-alpha.2", note = "Use new DataFrame implementation in crate::dataframe::base")]
+#[deprecated(
+    since = "0.1.0-alpha.2",
+    note = "Use new DataFrame implementation in crate::dataframe::base"
+)]
 pub use crate::dataframe::DataFrame as LegacyDataFrame;
 
 // Column trait to allow storing different Series types in the DataFrame
@@ -98,11 +101,17 @@ impl DataFrame {
     pub fn get_string_value(&self, column_name: &str, row_idx: usize) -> Result<&str> {
         // Implementation would need to get the string value at the specified row
         // For now, just return an error as not implemented
-        Err(Error::NotImplemented("get_string_value is not implemented".into()))
+        Err(Error::NotImplemented(
+            "get_string_value is not implemented".into(),
+        ))
     }
 
     /// Add a column to the DataFrame
-    pub fn add_column<T: 'static + Debug + Clone + Send + Sync>(&mut self, column_name: String, series: crate::series::Series<T>) -> Result<()> {
+    pub fn add_column<T: 'static + Debug + Clone + Send + Sync>(
+        &mut self,
+        column_name: String,
+        series: crate::series::Series<T>,
+    ) -> Result<()> {
         // Check if column already exists
         if self.contains_column(&column_name) {
             return Err(Error::DuplicateColumnName(column_name));
@@ -135,15 +144,21 @@ impl DataFrame {
     }
 
     /// Get a column from the DataFrame with generic type
-    pub fn get_column<T: 'static + Debug + Clone + Send + Sync>(&self, column_name: &str) -> Result<&crate::series::Series<T>> {
-        let col = self.columns.get(column_name)
+    pub fn get_column<T: 'static + Debug + Clone + Send + Sync>(
+        &self,
+        column_name: &str,
+    ) -> Result<&crate::series::Series<T>> {
+        let col = self
+            .columns
+            .get(column_name)
             .ok_or_else(|| Error::ColumnNotFound(column_name.to_string()))?;
 
         // Cast to the specific Series type
         match col.as_any().downcast_ref::<crate::series::Series<T>>() {
             Some(series) => Ok(series),
             None => Err(Error::InvalidValue(format!(
-                "Column '{}' is not of the requested type", column_name
+                "Column '{}' is not of the requested type",
+                column_name
             ))),
         }
     }
@@ -162,11 +177,7 @@ impl DataFrame {
                 "Charlie".to_string(),
             ]);
         } else if column_name == "age" {
-            return Ok(vec![
-                "30".to_string(),
-                "25".to_string(),
-                "35".to_string(),
-            ]);
+            return Ok(vec!["30".to_string(), "25".to_string(), "35".to_string()]);
         }
 
         // For other columns, return dummy values
@@ -202,7 +213,10 @@ impl DataFrame {
     }
 
     /// Create DataFrame from CSV reader
-    pub fn from_csv_reader<R: std::io::Read>(_reader: &mut csv::Reader<R>, _has_header: bool) -> Result<Self> {
+    pub fn from_csv_reader<R: std::io::Read>(
+        _reader: &mut csv::Reader<R>,
+        _has_header: bool,
+    ) -> Result<Self> {
         // Implement CSV reader import when needed
         Ok(Self::new())
     }
@@ -234,9 +248,12 @@ impl DataFrame {
     }
 
     /// Create a new DataFrame from a HashMap of column names to string vectors
-    pub fn from_map(data: std::collections::HashMap<String, Vec<String>>, index: Option<crate::index::Index<String>>) -> Result<Self> {
+    pub fn from_map(
+        data: std::collections::HashMap<String, Vec<String>>,
+        index: Option<crate::index::Index<String>>,
+    ) -> Result<Self> {
         let mut df = Self::new();
-        
+
         // If index is provided, set row count
         if let Some(idx) = index {
             df.row_count = idx.len();
@@ -244,14 +261,14 @@ impl DataFrame {
             // Otherwise, determine row count from data
             df.row_count = data.values().map(|v| v.len()).max().unwrap_or(0);
         }
-        
+
         // Add columns
         for (col_name, values) in data {
             // Create a Series of strings
             let series = crate::series::Series::new(values, Some(col_name.clone()))?;
             df.add_column(col_name, series)?;
         }
-        
+
         Ok(df)
     }
 
@@ -284,7 +301,9 @@ impl DataFrame {
     /// Get numeric values from a column
     pub fn get_column_numeric_values(&self, column_name: &str) -> Result<Vec<f64>> {
         // Get the column
-        let col = self.columns.get(column_name)
+        let col = self
+            .columns
+            .get(column_name)
             .ok_or_else(|| Error::ColumnNotFound(column_name.to_string()))?;
 
         // Extract numeric values
@@ -294,25 +313,27 @@ impl DataFrame {
             let val = match col.as_any().downcast_ref::<crate::series::Series<f64>>() {
                 Some(float_series) => {
                     if let Some(value) = float_series.get(i) {
-                        *value  // Use the f64 value directly
+                        *value // Use the f64 value directly
                     } else {
                         return Err(Error::InvalidValue(format!(
-                            "Missing value at index {} in column '{}'", i, column_name
+                            "Missing value at index {} in column '{}'",
+                            i, column_name
                         )));
                     }
-                },
+                }
                 None => {
                     // Try other numeric types
                     match col.as_any().downcast_ref::<crate::series::Series<i64>>() {
                         Some(int_series) => {
                             if let Some(value) = int_series.get(i) {
-                                *value as f64  // Convert i64 to f64
+                                *value as f64 // Convert i64 to f64
                             } else {
                                 return Err(Error::InvalidValue(format!(
-                                    "Missing value at index {} in column '{}'", i, column_name
+                                    "Missing value at index {} in column '{}'",
+                                    i, column_name
                                 )));
                             }
-                        },
+                        }
                         None => {
                             // Try string values that might be parseable as numbers
                             match col.as_any().downcast_ref::<crate::series::Series<String>>() {
@@ -328,14 +349,16 @@ impl DataFrame {
                                         }
                                     } else {
                                         return Err(Error::InvalidValue(format!(
-                                            "Missing value at index {} in column '{}'", i, column_name
+                                            "Missing value at index {} in column '{}'",
+                                            i, column_name
                                         )));
                                     }
-                                },
+                                }
                                 None => {
                                     // If we can't find a suitable type, return an error
                                     return Err(Error::InvalidValue(format!(
-                                        "Column '{}' cannot be converted to numeric values", column_name
+                                        "Column '{}' cannot be converted to numeric values",
+                                        column_name
                                     )));
                                 }
                             }
@@ -362,10 +385,10 @@ impl DataFrame {
 
         // For now, just increase row count as we don't have a full implementation
         self.row_count += 1;
-        
+
         Ok(())
     }
-    
+
     /// Filter rows based on a predicate
     pub fn filter<F>(&self, column_name: &str, predicate: F) -> Result<Self>
     where
@@ -379,39 +402,39 @@ impl DataFrame {
         // For now, just return an empty DataFrame as we don't have a full implementation
         Ok(Self::new())
     }
-    
+
     /// Compute the mean of a column
     pub fn mean(&self, column_name: &str) -> Result<f64> {
         // Get numeric values from the column
         let values = self.get_column_numeric_values(column_name)?;
-        
+
         if values.is_empty() {
             return Err(Error::EmptySeries);
         }
-        
+
         // Compute mean
         let sum: f64 = values.iter().sum();
         Ok(sum / values.len() as f64)
     }
-    
+
     /// Group by a column
     pub fn group_by(&self, _column_name: &str) -> Result<()> {
         // Placeholder implementation
         Ok(())
     }
-    
+
     /// Enable GPU acceleration for a DataFrame
     pub fn gpu_accelerate(&self) -> Result<Self> {
         // For now, just return a clone as we don't have a full implementation
         Ok(self.clone())
     }
-    
+
     /// Calculate a correlation matrix
     pub fn corr_matrix(&self, _columns: &[&str]) -> Result<()> {
         // Placeholder implementation
         Ok(())
     }
-    
+
     /// Display the head of the DataFrame
     pub fn head(&self, n: usize) -> Result<String> {
         let mut result = String::new();
@@ -464,7 +487,10 @@ impl DataFrame {
     }
 
     /// Get a categorical column with generic type
-    pub fn get_categorical<T: 'static + Debug + Clone + Eq + std::hash::Hash + Send + Sync>(&self, column_name: &str) -> Result<crate::series::categorical::Categorical<T>> {
+    pub fn get_categorical<T: 'static + Debug + Clone + Eq + std::hash::Hash + Send + Sync>(
+        &self,
+        column_name: &str,
+    ) -> Result<crate::series::categorical::Categorical<T>> {
         // Check if the column exists
         if !self.contains_column(column_name) {
             return Err(Error::ColumnNotFound(column_name.to_string()));
@@ -477,9 +503,7 @@ impl DataFrame {
         // It assumes T is String, which is the most common case for categorical data
         if std::any::TypeId::of::<T>() == std::any::TypeId::of::<String>() {
             // Create a vector of the appropriate type (safely)
-            let values: Vec<T> = unsafe {
-                std::mem::transmute(values_str)
-            };
+            let values: Vec<T> = unsafe { std::mem::transmute(values_str) };
 
             // Create a new categorical with default settings
             return crate::series::categorical::Categorical::new(values, None, false);
@@ -502,13 +526,13 @@ impl DataFrame {
         name: String,
         series: crate::series::NASeries<String>,
         categories: Option<Vec<String>>,
-        ordered: Option<crate::series::categorical::CategoricalOrder>
+        ordered: Option<crate::series::categorical::CategoricalOrder>,
     ) -> Result<&mut Self> {
         // Create a categorical from the NASeries
         let cat = crate::series::categorical::StringCategorical::from_na_vec(
             series.values().to_vec(),
             categories,
-            ordered
+            ordered,
         )?;
 
         // Convert categorical to regular series
@@ -522,7 +546,7 @@ impl DataFrame {
 
     /// Create a DataFrame from multiple categorical data
     pub fn from_categoricals(
-        categoricals: Vec<(String, crate::series::categorical::StringCategorical)>
+        categoricals: Vec<(String, crate::series::categorical::StringCategorical)>,
     ) -> Result<Self> {
         let mut df = Self::new();
 

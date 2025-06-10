@@ -4,34 +4,34 @@
 //! including configuration, DataFrame, and conversion traits.
 
 #[cfg(feature = "distributed")]
-use std::sync::{Arc, Mutex};
-#[cfg(feature = "distributed")]
 use std::collections::HashMap;
+#[cfg(feature = "distributed")]
+use std::sync::{Arc, Mutex};
 
-use crate::error::{Result, Error};
 #[cfg(feature = "distributed")]
 use crate::dataframe::DataFrame;
+use crate::error::{Error, Result};
 
 // Re-export types from subdirectories
 #[cfg(feature = "distributed")]
 pub use self::config::DistributedConfig;
 #[cfg(feature = "distributed")]
+pub use self::context::DistributedContext;
+#[cfg(feature = "distributed")]
 pub use self::dataframe::DistributedDataFrame;
 #[cfg(feature = "distributed")]
 pub use self::partition::{Partition, PartitionStrategy};
 #[cfg(feature = "distributed")]
-pub use self::context::DistributedContext;
-#[cfg(feature = "distributed")]
-pub use self::statistics::{TableStatistics, ColumnStatistics, ColumnValue};
+pub use self::statistics::{ColumnStatistics, ColumnValue, TableStatistics};
 
 #[cfg(feature = "distributed")]
 mod config;
 #[cfg(feature = "distributed")]
+mod context;
+#[cfg(feature = "distributed")]
 mod dataframe;
 #[cfg(feature = "distributed")]
 mod partition;
-#[cfg(feature = "distributed")]
-mod context;
 #[cfg(feature = "distributed")]
 mod statistics;
 
@@ -39,17 +39,17 @@ mod statistics;
 #[cfg(feature = "distributed")]
 pub trait ToDistributed {
     /// Converts a local DataFrame to a distributed DataFrame
-    /// 
+    ///
     /// # Arguments
-    /// 
+    ///
     /// * `config` - Configuration for the distributed processing
-    /// 
+    ///
     /// # Returns
-    /// 
+    ///
     /// A `DistributedDataFrame` that can be used for distributed processing
-    /// 
+    ///
     /// # Errors
-    /// 
+    ///
     /// Returns an error if the conversion fails
     fn to_distributed(&self, config: DistributedConfig) -> Result<DistributedDataFrame>;
 }
@@ -85,7 +85,8 @@ pub trait ToDistributed {
     /// Returns an error indicating that the distributed feature is not enabled
     fn to_distributed(&self, _: DistributedConfig) -> Result<DistributedDataFrame> {
         Err(Error::FeatureNotAvailable(
-            "Distributed processing is not enabled. Recompile with the 'distributed' feature flag.".to_string()
+            "Distributed processing is not enabled. Recompile with the 'distributed' feature flag."
+                .to_string(),
         ))
     }
 }

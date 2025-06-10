@@ -3,8 +3,8 @@
 //! This module provides core types and structures for fault tolerance in
 //! distributed processing.
 
+use crate::error::{Error, Result};
 use std::time::{Duration, Instant};
-use crate::error::{Result, Error};
 
 /// Retry policy for failed operations
 #[derive(Debug, Clone, Copy)]
@@ -39,7 +39,7 @@ impl RetryPolicy {
             delay_ms: 1000,
         }
     }
-    
+
     /// Creates a default exponential backoff retry policy
     pub fn default_exponential() -> Self {
         Self::Exponential {
@@ -49,7 +49,7 @@ impl RetryPolicy {
             backoff_factor: 2.0,
         }
     }
-    
+
     /// Gets the maximum number of retries
     pub fn max_retries(&self) -> usize {
         match self {
@@ -58,16 +58,21 @@ impl RetryPolicy {
             Self::Exponential { max_retries, .. } => *max_retries,
         }
     }
-    
+
     /// Gets the delay for a specific retry attempt
     pub fn delay_for_attempt(&self, attempt: usize) -> Duration {
         match self {
             Self::None => Duration::from_millis(0),
             Self::Fixed { delay_ms, .. } => Duration::from_millis(*delay_ms),
-            Self::Exponential { initial_delay_ms, max_delay_ms, backoff_factor, .. } => {
+            Self::Exponential {
+                initial_delay_ms,
+                max_delay_ms,
+                backoff_factor,
+                ..
+            } => {
                 let delay = (*initial_delay_ms as f64 * backoff_factor.powi(attempt as i32)) as u64;
                 Duration::from_millis(delay.min(*max_delay_ms))
-            },
+            }
         }
     }
 }
@@ -97,7 +102,7 @@ impl FailureType {
             Self::Memory | Self::Data | Self::Unknown => false,
         }
     }
-    
+
     /// Gets a failure type from an error
     pub fn from_error(error: &Error) -> Self {
         match error {
@@ -139,18 +144,18 @@ impl FailureInfo {
             retry_attempts: 0,
         }
     }
-    
+
     /// Sets the node ID
     pub fn with_node_id(mut self, node_id: impl Into<String>) -> Self {
         self.node_id = Some(node_id.into());
         self
     }
-    
+
     /// Marks the failure as recovered
     pub fn mark_recovered(&mut self) {
         self.recovered = true;
     }
-    
+
     /// Increments the retry attempts
     pub fn increment_retry(&mut self) {
         self.retry_attempts += 1;

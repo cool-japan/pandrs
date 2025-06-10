@@ -6,16 +6,16 @@
 //! - Chunked processing for large datasets
 //! - Spill-to-disk operations when memory limits are reached
 
+use memmap2::{Mmap, MmapMut, MmapOptions};
+use std::collections::HashMap;
 use std::fs::{File, OpenOptions};
-use std::io::{self, Read, Write, Seek, SeekFrom, BufRead};
+use std::io::{self, BufRead, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use std::collections::HashMap;
 use tempfile::tempdir;
-use memmap2::{Mmap, MmapOptions, MmapMut};
 
-use crate::error::{Result, PandRSError, Error};
 use crate::dataframe::DataFrame;
+use crate::error::{Error, PandRSError, Result};
 use crate::optimized::dataframe::OptimizedDataFrame;
 
 /// Configuration for disk-based processing
@@ -115,20 +115,20 @@ impl ChunkedDataFrame {
     pub fn new<P: AsRef<Path>>(path: P, config: Option<DiskConfig>) -> Result<Self> {
         let config = config.unwrap_or_default();
         let source_path = path.as_ref().to_path_buf();
-        
+
         // Ensure the file exists
         if !source_path.exists() {
             return Err(Error::IoError(format!("File not found: {:?}", source_path)));
         }
-        
+
         // Create temporary directory
         let temp_dir = match &config.temp_dir {
             Some(dir) => tempdir_in(dir)?,
             None => tempdir()?,
         };
-        
+
         let memory_tracker = MemoryTracker::new(config.memory_limit);
-        
+
         Ok(ChunkedDataFrame {
             source_path,
             config,
@@ -139,81 +139,83 @@ impl ChunkedDataFrame {
             memory_tracker,
         })
     }
-    
+
     /// Load the next chunk of data
     pub fn next_chunk(&mut self) -> Result<Option<&DataFrame>> {
         // Calculate total chunks if not already calculated
         if self.total_chunks.is_none() {
             self.calculate_total_chunks()?;
         }
-        
+
         // Check if we've reached the end
         if let Some(total) = self.total_chunks {
             if self.chunk_index >= total {
                 return Ok(None);
             }
         }
-        
+
         // Load the chunk
         if self.config.use_memory_mapping {
             self.load_chunk_mmap()?;
         } else {
             self.load_chunk_standard()?;
         }
-        
+
         self.chunk_index += 1;
         Ok(self.current_chunk.as_ref())
     }
-    
+
     /// Calculate the total number of chunks in the dataset
     fn calculate_total_chunks(&mut self) -> Result<()> {
         // This is a rough estimate based on file size and chunk size
         let file = File::open(&self.source_path)?;
         let metadata = file.metadata()?;
         let file_size = metadata.len() as usize;
-        
+
         // Estimate bytes per row (assuming CSV for now)
         let sample_size = file_size.min(1024 * 1024); // Read at most 1MB for estimation
         let mut buffer = vec![0; sample_size];
         let mut file = File::open(&self.source_path)?;
         let bytes_read = file.read(&mut buffer)?;
         buffer.truncate(bytes_read);
-        
+
         // Count newlines to estimate rows in the sample
         let newlines = buffer.iter().filter(|&&b| b == b'\n').count();
         if newlines == 0 {
-            return Err(Error::Consistency("Could not determine row count in file".into()));
+            return Err(Error::Consistency(
+                "Could not determine row count in file".into(),
+            ));
         }
-        
+
         let bytes_per_row = sample_size / newlines;
         let estimated_rows = file_size / bytes_per_row;
-        
+
         // Calculate total chunks
         let total_chunks = (estimated_rows + self.config.chunk_size - 1) / self.config.chunk_size;
         self.total_chunks = Some(total_chunks);
-        
+
         Ok(())
     }
-    
+
     /// Load a chunk using memory mapping
     fn load_chunk_mmap(&mut self) -> Result<()> {
         let file = File::open(&self.source_path)?;
         let mmap = unsafe { MmapOptions::new().map(&file)? };
-        
+
         // Find the start and end positions for this chunk
         let (start_pos, end_pos) = self.find_chunk_boundaries(&mmap)?;
-        
+
         // Extract chunk data
         let chunk_data = if end_pos > start_pos {
             &mmap[start_pos..end_pos]
         } else {
             &[]
         };
-        
+
         // Parse the chunk data (assuming CSV for now)
         let mut reader = csv::Reader::from_reader(chunk_data);
         let df = DataFrame::from_csv_reader(&mut reader, true)?;
-        
+
         // Track memory usage
         let estimated_memory = estimate_dataframe_memory(&df);
         if !self.memory_tracker.allocate(estimated_memory) {
@@ -224,40 +226,40 @@ impl ChunkedDataFrame {
                 self.memory_tracker.allocate(estimated_memory);
             }
         }
-        
+
         self.current_chunk = Some(df);
         Ok(())
     }
-    
+
     /// Load a chunk using standard file I/O
     fn load_chunk_standard(&mut self) -> Result<()> {
         let file = File::open(&self.source_path)?;
         let mut reader = io::BufReader::new(file);
-        
+
         // Skip to the start of this chunk
         self.skip_to_chunk(&mut reader)?;
-        
+
         // Read the appropriate number of lines
         let mut lines = Vec::new();
         let mut line_count = 0;
         let mut line = String::new();
-        
+
         while line_count < self.config.chunk_size {
             line.clear();
             let bytes = reader.read_line(&mut line)?;
             if bytes == 0 {
                 break; // End of file
             }
-            
+
             lines.push(line.clone());
             line_count += 1;
         }
-        
+
         // Parse the chunk data (assuming CSV for now)
         let csv_data = lines.join("");
         let mut csv_reader = csv::Reader::from_reader(csv_data.as_bytes());
         let df = DataFrame::from_csv_reader(&mut csv_reader, true)?;
-        
+
         // Track memory usage
         let estimated_memory = estimate_dataframe_memory(&df);
         if !self.memory_tracker.allocate(estimated_memory) {
@@ -268,15 +270,15 @@ impl ChunkedDataFrame {
                 self.memory_tracker.allocate(estimated_memory);
             }
         }
-        
+
         self.current_chunk = Some(df);
         Ok(())
     }
-    
+
     /// Find the start and end positions of the current chunk in the memory-mapped file
     fn find_chunk_boundaries(&self, mmap: &Mmap) -> Result<(usize, usize)> {
         let file_size = mmap.len();
-        
+
         // Skip header line for first chunk
         let start_offset = if self.chunk_index == 0 {
             // Find the first newline
@@ -284,12 +286,12 @@ impl ChunkedDataFrame {
         } else {
             0
         };
-        
+
         // Find the position to start from based on chunk index
         let mut start_pos = start_offset;
         let mut lines_skipped = 0;
         let lines_to_skip = self.chunk_index * self.config.chunk_size;
-        
+
         for i in start_offset..file_size {
             if mmap[i] == b'\n' {
                 lines_skipped += 1;
@@ -299,11 +301,11 @@ impl ChunkedDataFrame {
                 }
             }
         }
-        
+
         // Find the end position for this chunk
         let mut end_pos = start_pos;
         let mut lines_read = 0;
-        
+
         for i in start_pos..file_size {
             if mmap[i] == b'\n' {
                 lines_read += 1;
@@ -313,61 +315,66 @@ impl ChunkedDataFrame {
                 }
             }
         }
-        
+
         Ok((start_pos, end_pos))
     }
-    
+
     /// Skip to the start of the current chunk using a reader
     fn skip_to_chunk<R: Read + BufRead>(&self, reader: &mut R) -> Result<()> {
         let mut line = String::new();
-        
+
         // Skip header for first chunk
         if self.chunk_index == 0 {
             reader.read_line(&mut line)?;
         }
-        
+
         // Skip lines to get to the current chunk
         for _ in 0..(self.chunk_index * self.config.chunk_size) {
             line.clear();
             let bytes = reader.read_line(&mut line)?;
             if bytes == 0 {
-                return Err(Error::IndexOutOfBoundsStr("Chunk index exceeds file size".into()));
+                return Err(Error::IndexOutOfBoundsStr(
+                    "Chunk index exceeds file size".into(),
+                ));
             }
         }
-        
+
         Ok(())
     }
-    
+
     /// Spill a DataFrame to disk to free up memory
     fn spill_to_disk(&mut self, df: DataFrame) -> Result<()> {
         // Create a temp file in the temp directory
-        let file_path = self.temp_dir.path().join(format!("chunk_{}.csv", self.chunk_index));
-        
+        let file_path = self
+            .temp_dir
+            .path()
+            .join(format!("chunk_{}.csv", self.chunk_index));
+
         // Save DataFrame to the temp file
         df.to_csv(&file_path)?;
-        
+
         // Free memory
         let estimated_memory = estimate_dataframe_memory(&df);
         self.memory_tracker.deallocate(estimated_memory);
-        
+
         Ok(())
     }
-    
+
     /// Process the entire dataset with a function that operates on chunks
     pub fn process_with<F, T>(&mut self, mut func: F) -> Result<Vec<T>>
     where
         F: FnMut(&DataFrame) -> Result<T>,
     {
         let mut results = Vec::new();
-        
+
         while let Some(chunk) = self.next_chunk()? {
             let result = func(chunk)?;
             results.push(result);
         }
-        
+
         Ok(results)
     }
-    
+
     /// Apply a parallel operation to each chunk and combine the results
     pub fn parallel_process<F, T, C>(&mut self, chunk_func: F, combiner: C) -> Result<T>
     where
@@ -376,38 +383,42 @@ impl ChunkedDataFrame {
         C: FnOnce(Vec<T>) -> Result<T>,
     {
         use rayon::prelude::*;
-        
+
         // First load all chunks and spill to disk if needed
         let mut chunk_paths = Vec::new();
-        
+
         while let Some(_) = self.next_chunk()? {
             // If we're using in-memory processing and the chunk hasn't been spilled,
             // spill it now so we can process in parallel
             if let Some(chunk) = self.current_chunk.take() {
-                let file_path = self.temp_dir.path().join(format!("chunk_{}.csv", self.chunk_index - 1));
+                let file_path = self
+                    .temp_dir
+                    .path()
+                    .join(format!("chunk_{}.csv", self.chunk_index - 1));
                 chunk.to_csv(&file_path)?;
                 chunk_paths.push(file_path);
-                
+
                 // Free memory
                 let estimated_memory = estimate_dataframe_memory(&chunk);
                 self.memory_tracker.deallocate(estimated_memory);
             }
         }
-        
+
         // Process chunks in parallel
-        let results: Vec<Result<T>> = chunk_paths.par_iter()
+        let results: Vec<Result<T>> = chunk_paths
+            .par_iter()
             .map(|path| {
                 let df = DataFrame::from_csv(path, true)?;
                 chunk_func(&df)
             })
             .collect();
-        
+
         // Check for errors
         let mut unwrapped_results = Vec::new();
         for result in results {
             unwrapped_results.push(result?);
         }
-        
+
         // Combine results
         combiner(unwrapped_results)
     }
@@ -417,20 +428,18 @@ impl ChunkedDataFrame {
 fn estimate_dataframe_memory(df: &DataFrame) -> usize {
     let row_count = df.row_count();
     let col_count = df.column_count();
-    
+
     // Rough estimate: 8 bytes per numeric cell, 24 bytes per string cell on average
     // Add overhead for data structures
     let avg_bytes_per_cell = 16;
     let base_overhead = 1000;
-    
+
     base_overhead + (row_count * col_count * avg_bytes_per_cell)
 }
 
 /// Create a temporary directory inside another directory
 fn tempdir_in<P: AsRef<Path>>(dir: P) -> io::Result<tempfile::TempDir> {
-    tempfile::Builder::new()
-        .prefix("pandrs_")
-        .tempdir_in(dir)
+    tempfile::Builder::new().prefix("pandrs_").tempdir_in(dir)
 }
 
 /// DiskBasedDataFrame provides an interface similar to DataFrame but uses disk storage
@@ -455,33 +464,34 @@ impl DiskBasedDataFrame {
     pub fn new<P: AsRef<Path>>(path: P, config: Option<DiskConfig>) -> Result<Self> {
         let config = config.unwrap_or_default();
         let source_path = path.as_ref().to_path_buf();
-        
+
         // Ensure the file exists
         if !source_path.exists() {
             return Err(Error::IoError(format!("File not found: {:?}", source_path)));
         }
-        
+
         // Create temporary directory
         let temp_dir = match &config.temp_dir {
             Some(dir) => tempdir_in(dir)?,
             None => tempdir()?,
         };
-        
+
         // Read just the header to get schema information
         let file = File::open(&source_path)?;
         let mut reader = csv::Reader::from_reader(io::BufReader::new(file));
         let headers = reader.headers()?.clone();
-        
+
         // Create a sample DataFrame with the schema
         let mut schema = DataFrame::new();
         for header in headers.iter() {
-            schema.add_column(header.to_string(), crate::series::Series::new(
-                Vec::<String>::new(), Some(header.to_string())
-            )?)?;
+            schema.add_column(
+                header.to_string(),
+                crate::series::Series::new(Vec::<String>::new(), Some(header.to_string()))?,
+            )?;
         }
-        
+
         let memory_tracker = Arc::new(Mutex::new(MemoryTracker::new(config.memory_limit)));
-        
+
         // Set up memory mapping if enabled
         let mmap = if config.use_memory_mapping {
             let file = File::open(&source_path)?;
@@ -489,7 +499,7 @@ impl DiskBasedDataFrame {
         } else {
             None
         };
-        
+
         Ok(DiskBasedDataFrame {
             source_path,
             config,
@@ -499,17 +509,17 @@ impl DiskBasedDataFrame {
             memory_tracker,
         })
     }
-    
+
     /// Get the schema (column structure) of the DataFrame
     pub fn schema(&self) -> &DataFrame {
         &self.schema
     }
-    
+
     /// Get a chunked view of this DataFrame for efficient processing
     pub fn chunked(&self) -> Result<ChunkedDataFrame> {
         ChunkedDataFrame::new(&self.source_path, Some(self.config.clone()))
     }
-    
+
     /// Apply a function to the entire DataFrame by processing it in chunks
     pub fn apply<F, T>(&self, function: F) -> Result<T>
     where
@@ -517,18 +527,18 @@ impl DiskBasedDataFrame {
         T: Send + 'static,
     {
         let mut chunked = self.chunked()?;
-        
+
         // Define a combiner function that keeps only the last result
         // This is for operations that don't need to combine results
         let results = chunked.process_with(function)?;
-        
+
         if results.is_empty() {
             return Err(Error::EmptyDataFrame("No data to process".into()));
         }
-        
+
         Ok(results.into_iter().last().unwrap())
     }
-    
+
     /// Apply an aggregation function that combines results from all chunks
     pub fn aggregate<F, C, T>(&self, chunk_func: F, combiner: C) -> Result<T>
     where
@@ -544,20 +554,34 @@ impl DiskBasedDataFrame {
 /// Operations available on both in-memory and disk-based DataFrames
 pub trait DataFrameOperations {
     /// Apply a filter to the DataFrame
-    fn filter(&self, condition: impl Fn(&str, usize) -> bool + Send + Sync) -> Result<Vec<HashMap<String, String>>>;
+    fn filter(
+        &self,
+        condition: impl Fn(&str, usize) -> bool + Send + Sync,
+    ) -> Result<Vec<HashMap<String, String>>>;
 
     /// Select specific columns
     fn select(&self, columns: &[&str]) -> Result<Vec<HashMap<String, String>>>;
 
     /// Apply a transformation to each value
-    fn transform(&self, transformation: impl Fn(&str, &str, usize) -> Result<String> + Send + Sync) -> Result<Vec<HashMap<String, String>>>;
+    fn transform(
+        &self,
+        transformation: impl Fn(&str, &str, usize) -> Result<String> + Send + Sync,
+    ) -> Result<Vec<HashMap<String, String>>>;
 
     /// Group by a column and aggregate
-    fn group_by(&self, group_column: &str, agg_column: &str, agg_func: impl Fn(Vec<String>) -> Result<String> + Send + Sync) -> Result<HashMap<String, Vec<String>>>;
+    fn group_by(
+        &self,
+        group_column: &str,
+        agg_column: &str,
+        agg_func: impl Fn(Vec<String>) -> Result<String> + Send + Sync,
+    ) -> Result<HashMap<String, Vec<String>>>;
 }
 
 impl DataFrameOperations for DiskBasedDataFrame {
-    fn filter(&self, condition: impl Fn(&str, usize) -> bool + Send + Sync) -> Result<Vec<HashMap<String, String>>> {
+    fn filter(
+        &self,
+        condition: impl Fn(&str, usize) -> bool + Send + Sync,
+    ) -> Result<Vec<HashMap<String, String>>> {
         self.aggregate(
             // Process each chunk
             |chunk| {
@@ -596,10 +620,10 @@ impl DataFrameOperations for DiskBasedDataFrame {
                 }
 
                 Ok(combined_rows)
-            }
+            },
         )
     }
-    
+
     fn select(&self, columns: &[&str]) -> Result<Vec<HashMap<String, String>>> {
         // Validate that all columns exist in the schema
         for &col in columns {
@@ -635,11 +659,14 @@ impl DataFrameOperations for DiskBasedDataFrame {
                 }
 
                 Ok(combined_rows)
-            }
+            },
         )
     }
-    
-    fn transform(&self, transformation: impl Fn(&str, &str, usize) -> Result<String> + Send + Sync) -> Result<Vec<HashMap<String, String>>> {
+
+    fn transform(
+        &self,
+        transformation: impl Fn(&str, &str, usize) -> Result<String> + Send + Sync,
+    ) -> Result<Vec<HashMap<String, String>>> {
         self.aggregate(
             // Process each chunk
             |chunk| {
@@ -668,33 +695,45 @@ impl DataFrameOperations for DiskBasedDataFrame {
                 }
 
                 Ok(combined_rows)
-            }
+            },
         )
     }
-    
-    fn group_by(&self, group_column: &str, agg_column: &str, agg_func: impl Fn(Vec<String>) -> Result<String> + Send + Sync) -> Result<HashMap<String, Vec<String>>> {
+
+    fn group_by(
+        &self,
+        group_column: &str,
+        agg_column: &str,
+        agg_func: impl Fn(Vec<String>) -> Result<String> + Send + Sync,
+    ) -> Result<HashMap<String, Vec<String>>> {
         if !self.schema.contains_column(group_column) {
-            return Err(Error::Column(format!("Group column '{}' does not exist", group_column)));
+            return Err(Error::Column(format!(
+                "Group column '{}' does not exist",
+                group_column
+            )));
         }
 
         if !self.schema.contains_column(agg_column) {
-            return Err(Error::Column(format!("Aggregation column '{}' does not exist", agg_column)));
+            return Err(Error::Column(format!(
+                "Aggregation column '{}' does not exist",
+                agg_column
+            )));
         }
-        
+
         self.aggregate(
             // Process each chunk
             |chunk| {
                 let mut grouped_data: HashMap<String, Vec<String>> = HashMap::new();
-                
+
                 for row_idx in 0..chunk.row_count() {
                     let group_value = chunk.get_string_value(group_column, row_idx)?;
                     let agg_value = chunk.get_string_value(agg_column, row_idx)?;
-                    
-                    grouped_data.entry(group_value.to_string())
+
+                    grouped_data
+                        .entry(group_value.to_string())
                         .or_insert_with(Vec::new)
                         .push(agg_value.to_string());
                 }
-                
+
                 Ok(grouped_data)
             },
             // Combine results by merging the HashMaps
@@ -703,7 +742,8 @@ impl DataFrameOperations for DiskBasedDataFrame {
 
                 for chunk_map in chunk_maps {
                     for (key, values) in chunk_map {
-                        result_map.entry(key)
+                        result_map
+                            .entry(key)
                             .or_insert_with(Vec::new)
                             .extend(values);
                     }
@@ -711,7 +751,7 @@ impl DataFrameOperations for DiskBasedDataFrame {
 
                 // Return the result map directly
                 Ok(result_map)
-            }
+            },
         )
     }
 }
@@ -730,7 +770,7 @@ impl DiskBasedOptimizedDataFrame {
             inner: DiskBasedDataFrame::new(path, config)?,
         })
     }
-    
+
     /// Convert to an in-memory OptimizedDataFrame
     pub fn to_optimized_dataframe(&self) -> Result<OptimizedDataFrame> {
         self.inner.aggregate(
@@ -741,18 +781,18 @@ impl DiskBasedOptimizedDataFrame {
                 if chunk_results.is_empty() {
                     return Ok(OptimizedDataFrame::new());
                 }
-                
+
                 let mut result = chunk_results[0].clone();
-                
+
                 for chunk in chunk_results.iter().skip(1) {
                     result = result.concat_rows(chunk)?;
                 }
-                
+
                 Ok(result)
-            }
+            },
         )
     }
-    
+
     /// Apply an aggregation function to the entire dataset
     pub fn aggregate<F, C, T>(&self, chunk_func: F, combiner: C) -> Result<T>
     where
@@ -766,7 +806,7 @@ impl DiskBasedOptimizedDataFrame {
                 let opt_chunk = OptimizedDataFrame::from_dataframe(chunk)?;
                 chunk_func(&opt_chunk)
             },
-            combiner
+            combiner,
         )
     }
 }

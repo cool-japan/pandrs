@@ -9,6 +9,8 @@ use rand::Rng;
 use std::error::Error;
 use std::time::{Duration, Instant};
 
+use pandrs::optimized::jit::JitCompilable;
+
 fn main() -> Result<(), Box<dyn Error>> {
     println!("Parallel JIT Execution Example");
     println!("==============================");
@@ -75,13 +77,13 @@ fn benchmark_standard_jit(data: &[f64]) -> (f64, Duration) {
     println!("Running standard JIT benchmark...");
 
     // Create standard JIT function for sum
-    let sum_fn = jit_f64("standard_sum", |values: Vec<f64>| -> f64 {
+    let sum_fn = jit_f64("standard_sum", |values: &[f64]| -> f64 {
         values.iter().sum()
     });
 
     // Measure execution time
     let start = Instant::now();
-    let result = sum_fn.execute(data.to_vec());
+    let result = sum_fn.execute(data);
     let duration = start.elapsed();
 
     (result, duration)
@@ -93,12 +95,9 @@ fn benchmark_simd_jit(data: &[f64]) -> (f64, Duration) {
 
     println!("Running SIMD JIT benchmark...");
 
-    // Create SIMD JIT function for sum
-    let simd_sum = simd_sum_f64();
-
-    // Measure execution time
+    // Use SIMD function directly
     let start = Instant::now();
-    let result = simd_sum.execute(data.to_vec());
+    let result = simd_sum_f64(data);
     let duration = start.elapsed();
 
     (result, duration)
@@ -115,7 +114,7 @@ fn benchmark_parallel_jit(data: &[f64]) -> (f64, Duration) {
 
     // Measure execution time
     let start = Instant::now();
-    let result = parallel_sum.execute(data.to_vec());
+    let result = parallel_sum.execute(data);
     let duration = start.elapsed();
 
     (result, duration)
@@ -133,7 +132,7 @@ fn benchmark_other_operations(data: &[f64]) {
     println!("\nMean Operation:");
 
     // Standard mean
-    let mean_fn = jit_f64("standard_mean", |values: Vec<f64>| -> f64 {
+    let mean_fn = jit_f64("standard_mean", |values: &[f64]| -> f64 {
         if values.is_empty() {
             return 0.0;
         }
@@ -141,7 +140,7 @@ fn benchmark_other_operations(data: &[f64]) {
     });
 
     let start = Instant::now();
-    let result = mean_fn.execute(data.to_vec());
+    let result = mean_fn.execute(data);
     let std_time = start.elapsed();
 
     println!("  Standard mean: {:.6}", result);
@@ -151,10 +150,10 @@ fn benchmark_other_operations(data: &[f64]) {
     let parallel_mean = parallel_mean_f64(None);
 
     let start = Instant::now();
-    let result = parallel_mean.execute(data.to_vec());
+    let result = parallel_mean.execute(data);
     let par_time = start.elapsed();
 
-    println!("  Parallel mean: {:.6}", result);
+    println!("  Parallel mean: {:.6}", result.0);
     println!("  Parallel time: {:?}", par_time);
     println!(
         "  Speedup:       {:.2}x",
@@ -165,7 +164,7 @@ fn benchmark_other_operations(data: &[f64]) {
     println!("\nStandard Deviation Operation:");
 
     // Standard std
-    let std_fn = jit_f64("standard_std", |values: Vec<f64>| -> f64 {
+    let std_fn = jit_f64("standard_std", |values: &[f64]| -> f64 {
         if values.len() <= 1 {
             return 0.0;
         }
@@ -178,7 +177,7 @@ fn benchmark_other_operations(data: &[f64]) {
     });
 
     let start = Instant::now();
-    let result = std_fn.execute(data.to_vec());
+    let result = std_fn.execute(data);
     let std_time = start.elapsed();
 
     println!("  Standard std: {:.6}", result);
@@ -188,10 +187,10 @@ fn benchmark_other_operations(data: &[f64]) {
     let parallel_std = parallel_std_f64(None);
 
     let start = Instant::now();
-    let result = parallel_std.execute(data.to_vec());
+    let result = parallel_std.execute(data);
     let par_time = start.elapsed();
 
-    println!("  Parallel std: {:.6}", result);
+    println!("  Parallel std: {:.6}", result.0);
     println!("  Parallel time: {:?}", par_time);
     println!(
         "  Speedup:       {:.2}x",
@@ -205,14 +204,14 @@ fn benchmark_other_operations(data: &[f64]) {
     let parallel_min = parallel_min_f64(None);
 
     let start = Instant::now();
-    let min_result = parallel_min.execute(data.to_vec());
+    let min_result = parallel_min.execute(data);
     let min_time = start.elapsed();
 
     // Parallel max
     let parallel_max = parallel_max_f64(None);
 
     let start = Instant::now();
-    let max_result = parallel_max.execute(data.to_vec());
+    let max_result = parallel_max.execute(data);
     let max_time = start.elapsed();
 
     println!(
@@ -232,19 +231,22 @@ fn benchmark_custom_parallel(data: &[f64]) {
     println!("\nCustom Parallel Function:");
 
     // Custom function to compute sum of squares
-    let squared_sum = |values: Vec<f64>| -> f64 { values.iter().map(|x| x * x).sum() };
+    let squared_sum = |values: &[f64]| -> f64 { values.iter().map(|x| x * x).sum() };
 
-    // Create a parallel version with map and reduce functions
-    let map_fn = |chunk: &[f64]| -> f64 { chunk.iter().map(|x| x * x).sum() };
-
+    // Create a parallel version with the same function for map
     let reduce_fn = |results: Vec<f64>| -> f64 { results.iter().sum() };
 
-    let parallel_squared_sum =
-        parallel_custom("parallel_squared_sum", squared_sum, map_fn, reduce_fn, None);
+    let parallel_squared_sum = parallel_custom(
+        "parallel_squared_sum",
+        squared_sum.clone(),
+        squared_sum,
+        reduce_fn,
+        None,
+    );
 
     // Benchmark
     let start = Instant::now();
-    let result = parallel_squared_sum.execute(data.to_vec());
+    let result = parallel_squared_sum.execute(data);
     let duration = start.elapsed();
 
     println!("  Result: {:.6}", result);
@@ -265,7 +267,7 @@ fn benchmark_parallel_config_tuning(data: &[f64]) {
         let parallel_sum = parallel_sum_f64(Some(config));
 
         let start = Instant::now();
-        let result = parallel_sum.execute(data.to_vec());
+        let _result = parallel_sum.execute(data);
         let duration = start.elapsed();
 
         println!("  Chunk size {:8}: {:?}", chunk_size, duration);
@@ -289,7 +291,7 @@ fn benchmark_parallel_config_tuning(data: &[f64]) {
         let parallel_sum = parallel_sum_f64(Some(config));
 
         let start = Instant::now();
-        let result = parallel_sum.execute(data.to_vec());
+        let _result = parallel_sum.execute(data);
         let duration = start.elapsed();
 
         println!("  Threads {:8}: {:?}", threads, duration);

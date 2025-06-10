@@ -8,23 +8,23 @@ use crate::dataframe::base::DataFrame;
 pub trait SerializeExt {
     /// Save DataFrame to a CSV file
     fn to_csv<P: AsRef<Path>>(&self, path: P) -> Result<()>;
-    
+
     /// Load DataFrame from a CSV file
     fn from_csv<P: AsRef<Path>>(path: P, has_header: bool) -> Result<Self>
     where
         Self: Sized;
-    
+
     /// Convert DataFrame to JSON string
     fn to_json(&self) -> Result<String>;
-    
+
     /// Create DataFrame from JSON string
     fn from_json(json: &str) -> Result<Self>
     where
         Self: Sized;
-    
+
     /// Save DataFrame to a Parquet file
     fn to_parquet<P: AsRef<Path>>(&self, path: P) -> Result<()>;
-    
+
     /// Load DataFrame from a Parquet file
     fn from_parquet<P: AsRef<Path>>(path: P) -> Result<Self>
     where
@@ -63,26 +63,30 @@ impl SerializeExt for DataFrame {
         df.add_column("age".to_string(), ages)?;
 
         // Verify columns were added
-        println!("DataFrame created with {} columns: {:?}", df.column_names().len(), df.column_names());
+        println!(
+            "DataFrame created with {} columns: {:?}",
+            df.column_names().len(),
+            df.column_names()
+        );
 
         Ok(df)
     }
-    
+
     fn to_json(&self) -> Result<String> {
         // This would be implemented later
         Ok("{}".to_string())
     }
-    
+
     fn from_json(json: &str) -> Result<Self> {
         // This would be implemented later
         Ok(DataFrame::new())
     }
-    
+
     fn to_parquet<P: AsRef<Path>>(&self, path: P) -> Result<()> {
         // This would be implemented later
         Ok(())
     }
-    
+
     fn from_parquet<P: AsRef<Path>>(path: P) -> Result<Self> {
         // This would be implemented later
         Ok(DataFrame::new())

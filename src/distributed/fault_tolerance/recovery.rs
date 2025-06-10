@@ -2,13 +2,13 @@
 //!
 //! This module provides mechanisms for recovering from failures in distributed processing.
 
-use std::time::Duration;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
+use std::time::Duration;
 
-use crate::error::{Result, Error};
+use super::core::{FailureInfo, FailureType, RecoveryStrategy, RetryPolicy};
 use crate::distributed::execution::{ExecutionPlan, ExecutionResult};
-use super::core::{RetryPolicy, FailureType, FailureInfo, RecoveryStrategy};
+use crate::error::{Error, Result};
 
 /// Action to take for recovery
 #[derive(Debug, Clone)]
@@ -68,48 +68,51 @@ impl FaultToleranceHandler {
             partition_recovery: Arc::new(RwLock::new(HashMap::new())),
         }
     }
-    
+
     /// Creates a new fault tolerance handler with default settings
     pub fn default() -> Self {
-        Self::new(RetryPolicy::default_exponential(), RecoveryStrategy::RetryFailedPartitions)
+        Self::new(
+            RetryPolicy::default_exponential(),
+            RecoveryStrategy::RetryFailedPartitions,
+        )
     }
-    
+
     /// Executes an operation with fault tolerance
     pub fn execute_with_retry<F, T>(&self, operation: F) -> Result<T>
     where
         F: Fn() -> Result<T>,
     {
         let mut attempt = 0;
-        
+
         loop {
             match operation() {
                 Ok(result) => return Ok(result),
                 Err(error) => {
                     let failure_type = FailureType::from_error(&error);
-                    
+
                     // Record the failure
                     let mut failure = FailureInfo::new(failure_type.clone(), error.to_string());
-                    
+
                     if let Ok(mut failures) = self.recent_failures.write() {
                         failures.push(failure.clone());
                     }
-                    
+
                     // Check if we should retry
                     if !failure_type.is_retriable() || attempt >= self.retry_policy.max_retries() {
                         return Err(error);
                     }
-                    
+
                     // Increment attempt and wait before retrying
                     attempt += 1;
                     failure.increment_retry();
-                    
+
                     // Sleep for the appropriate delay
                     std::thread::sleep(self.retry_policy.delay_for_attempt(attempt));
                 }
             }
         }
     }
-    
+
     /// Handles a failure during execution
     pub fn handle_failure(
         &self,
@@ -117,93 +120,90 @@ impl FaultToleranceHandler {
         error: &Error,
     ) -> Result<Option<RecoveryAction>> {
         let failure_type = FailureType::from_error(error);
-        
+
         if !failure_type.is_retriable() {
-            return Err(Error::DistributedProcessing(
-                format!("Non-retriable error: {}", error)
-            ));
+            return Err(Error::DistributedProcessing(format!(
+                "Non-retriable error: {}",
+                error
+            )));
         }
-        
+
         // Record the failure
         let mut failure = FailureInfo::new(failure_type, error.to_string());
-        
+
         if let Ok(mut failures) = self.recent_failures.write() {
             failures.push(failure.clone());
         }
-        
+
         // Determine recovery action based on strategy
         let action = match self.recovery_strategy {
-            RecoveryStrategy::RetryQuery => {
-                Some(RecoveryAction::RetryQuery {
-                    plan: plan.clone(),
-                    delay: self.retry_policy.delay_for_attempt(0),
-                })
-            },
+            RecoveryStrategy::RetryQuery => Some(RecoveryAction::RetryQuery {
+                plan: plan.clone(),
+                delay: self.retry_policy.delay_for_attempt(0),
+            }),
             RecoveryStrategy::RetryFailedPartitions => {
                 Some(RecoveryAction::RetryFailedPartitions {
                     plan: plan.clone(),
                     partition_ids: vec![], // Would come from actual failure details
                     delay: self.retry_policy.delay_for_attempt(0),
                 })
-            },
+            }
             RecoveryStrategy::Reroute => {
                 Some(RecoveryAction::Reroute {
                     plan: plan.clone(),
                     excluded_nodes: vec![], // Would come from node health tracking
                 })
-            },
+            }
             RecoveryStrategy::LocalFallback => {
-                Some(RecoveryAction::LocalFallback {
-                    plan: plan.clone(),
-                })
-            },
+                Some(RecoveryAction::LocalFallback { plan: plan.clone() })
+            }
         };
-        
+
         Ok(action)
     }
-    
+
     /// Gets recent failures
     pub fn recent_failures(&self) -> Result<Vec<FailureInfo>> {
         match self.recent_failures.read() {
             Ok(failures) => Ok(failures.clone()),
             Err(_) => Err(Error::DistributedProcessing(
-                "Failed to read recent failures".to_string()
+                "Failed to read recent failures".to_string(),
             )),
         }
     }
-    
+
     /// Gets node health
     pub fn node_health(&self) -> Result<HashMap<String, bool>> {
         match self.node_health.read() {
             Ok(health) => Ok(health.clone()),
             Err(_) => Err(Error::DistributedProcessing(
-                "Failed to read node health".to_string()
+                "Failed to read node health".to_string(),
             )),
         }
     }
-    
+
     /// Updates the health status of a node
     pub fn update_node_health(&self, node_id: impl Into<String>, healthy: bool) -> Result<()> {
         match self.node_health.write() {
             Ok(mut health) => {
                 health.insert(node_id.into(), healthy);
                 Ok(())
-            },
+            }
             Err(_) => Err(Error::DistributedProcessing(
-                "Failed to update node health".to_string()
+                "Failed to update node health".to_string(),
             )),
         }
     }
-    
+
     /// Clears all recorded failures
     pub fn clear_failures(&self) -> Result<()> {
         match self.recent_failures.write() {
             Ok(mut failures) => {
                 failures.clear();
                 Ok(())
-            },
+            }
             Err(_) => Err(Error::DistributedProcessing(
-                "Failed to clear failures".to_string()
+                "Failed to clear failures".to_string(),
             )),
         }
     }
@@ -225,7 +225,7 @@ impl<E> FaultTolerantExecutor<E> {
             fault_handler: Arc::new(fault_handler),
         }
     }
-    
+
     /// Gets the fault tolerance handler
     pub fn fault_handler(&self) -> Arc<FaultToleranceHandler> {
         self.fault_handler.clone()
@@ -240,10 +240,7 @@ pub trait FaultTolerantContext {
         plan: &ExecutionPlan,
         fault_handler: &FaultToleranceHandler,
     ) -> Result<ExecutionResult>;
-    
+
     /// Recovers from a failure
-    fn recover_from_failure(
-        &self,
-        action: RecoveryAction,
-    ) -> Result<ExecutionResult>;
+    fn recover_from_failure(&self, action: RecoveryAction) -> Result<ExecutionResult>;
 }

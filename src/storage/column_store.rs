@@ -1,5 +1,5 @@
-use std::sync::Arc;
 use crate::core::error::{Error, Result};
+use std::sync::Arc;
 
 /// A column-oriented storage engine for data
 pub struct ColumnStore {

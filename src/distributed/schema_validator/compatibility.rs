@@ -10,15 +10,15 @@ pub fn are_join_compatible(left_type: &ExprDataType, right_type: &ExprDataType) 
     match (left_type, right_type) {
         // Same types are always compatible
         (a, b) if a == b => true,
-        
+
         // Integer and Float are compatible
-        (ExprDataType::Integer, ExprDataType::Float) |
-        (ExprDataType::Float, ExprDataType::Integer) => true,
-        
+        (ExprDataType::Integer, ExprDataType::Float)
+        | (ExprDataType::Float, ExprDataType::Integer) => true,
+
         // Date and Timestamp are compatible
-        (ExprDataType::Date, ExprDataType::Timestamp) |
-        (ExprDataType::Timestamp, ExprDataType::Date) => true,
-        
+        (ExprDataType::Date, ExprDataType::Timestamp)
+        | (ExprDataType::Timestamp, ExprDataType::Date) => true,
+
         // Other combinations are not compatible
         _ => false,
     }

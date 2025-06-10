@@ -7,7 +7,7 @@ fn main() -> Result<()> {
     println!("=========================================");
 
     // Create a dataset for demonstration
-    let mut df = create_dataset(10_000)?;
+    let df = create_dataset(10_000)?;
 
     println!("Created dataset with {} rows", df.row_count());
 
@@ -15,17 +15,17 @@ fn main() -> Result<()> {
     let start = Instant::now();
     let grouped = df.par_groupby(&["category"])?;
     let duration = start.elapsed();
-    
+
     println!("Group by category took: {:?}", duration);
     println!("Number of groups: {}", grouped.len());
 
     // Display information about each group
     println!("\n1. Group Information");
     println!("-------------------");
-    
+
     for (key, group_df) in &grouped {
         println!("Group '{}': {} rows", key, group_df.row_count());
-        
+
         // Calculate some statistics using the new aggregate methods
         if let Ok(sum) = group_df.sum("value") {
             println!("  Sum of values: {:.2}", sum);
@@ -44,7 +44,7 @@ fn main() -> Result<()> {
     // Demonstrate different aggregation operations
     println!("\n2. Aggregation Operations");
     println!("------------------------");
-    
+
     benchmark_operation("Sum operation", || {
         for (_, group_df) in &grouped {
             let _ = group_df.sum("value");
@@ -97,15 +97,15 @@ where
     F: FnMut() -> Result<()>,
 {
     println!("\nBenchmarking: {}", name);
-    
+
     // Warm up
     let _ = op()?;
-    
+
     let start = Instant::now();
     op()?;
     let duration = start.elapsed();
-    
+
     println!("  Time: {:?}", duration);
-    
+
     Ok(())
 }

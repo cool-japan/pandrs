@@ -73,17 +73,17 @@ pub trait TransformExt {
     fn melt(&self, options: &MeltOptions) -> Result<Self>
     where
         Self: Sized;
-    
+
     /// Stack DataFrame (columns to rows)
     fn stack(&self, options: &StackOptions) -> Result<Self>
     where
         Self: Sized;
-    
+
     /// Unstack DataFrame (rows to columns)
     fn unstack(&self, options: &UnstackOptions) -> Result<Self>
     where
         Self: Sized;
-    
+
     /// Aggregate values based on conditions (combination of pivot and filtering)
     fn conditional_aggregate<F, G>(
         &self,
@@ -96,7 +96,7 @@ pub trait TransformExt {
         Self: Sized,
         F: Fn(&HashMap<String, String>) -> bool,
         G: Fn(&[String]) -> String;
-    
+
     /// Concatenate multiple DataFrames along rows
     fn concat(dfs: &[&Self], ignore_index: bool) -> Result<Self>
     where
@@ -119,8 +119,14 @@ impl TransformExt for DataFrame {
         }
 
         // Add variable and value columns
-        let var_name = options.var_name.clone().unwrap_or_else(|| "variable".to_string());
-        let value_name = options.value_name.clone().unwrap_or_else(|| "value".to_string());
+        let var_name = options
+            .var_name
+            .clone()
+            .unwrap_or_else(|| "variable".to_string());
+        let value_name = options
+            .value_name
+            .clone()
+            .unwrap_or_else(|| "value".to_string());
 
         // Create dummy columns
         let var_values = vec!["dummy".to_string(); self.row_count()];
@@ -131,15 +137,21 @@ impl TransformExt for DataFrame {
 
         Ok(result)
     }
-    
+
     fn stack(&self, options: &StackOptions) -> Result<Self> {
         // Simple implementation to prevent recursion
         // Similar to melt, but with different semantics
         let mut result = DataFrame::new();
 
         // Add dummy data
-        let var_name = options.var_name.clone().unwrap_or_else(|| "variable".to_string());
-        let value_name = options.value_name.clone().unwrap_or_else(|| "value".to_string());
+        let var_name = options
+            .var_name
+            .clone()
+            .unwrap_or_else(|| "variable".to_string());
+        let value_name = options
+            .value_name
+            .clone()
+            .unwrap_or_else(|| "value".to_string());
 
         // Create dummy columns
         let id_values = vec!["dummy".to_string(); self.row_count()];
@@ -152,7 +164,7 @@ impl TransformExt for DataFrame {
 
         Ok(result)
     }
-    
+
     fn unstack(&self, options: &UnstackOptions) -> Result<Self> {
         // Simple implementation to prevent recursion
         let mut result = DataFrame::new();
@@ -168,7 +180,7 @@ impl TransformExt for DataFrame {
 
         Ok(result)
     }
-    
+
     fn conditional_aggregate<F, G>(
         &self,
         group_by: &str,
@@ -184,11 +196,18 @@ impl TransformExt for DataFrame {
         let mut result = DataFrame::new();
 
         // Create dummy data
-        let cat_values = vec!["Food".to_string(), "Electronics".to_string(), "Clothing".to_string()];
+        let cat_values = vec![
+            "Food".to_string(),
+            "Electronics".to_string(),
+            "Clothing".to_string(),
+        ];
         let agg_values = vec!["1000".to_string(), "1500".to_string(), "1200".to_string()];
 
         result.add_column("category".to_string(), Series::new(cat_values, None)?)?;
-        result.add_column(format!("{}_agg", agg_column), Series::new(agg_values, None)?)?;
+        result.add_column(
+            format!("{}_agg", agg_column),
+            Series::new(agg_values, None)?,
+        )?;
 
         Ok(result)
     }
@@ -198,8 +217,18 @@ impl TransformExt for DataFrame {
         let mut result = DataFrame::new();
 
         // Create dummy data
-        let id_values = vec!["1".to_string(), "2".to_string(), "3".to_string(), "4".to_string()];
-        let value_values = vec!["a".to_string(), "b".to_string(), "c".to_string(), "d".to_string()];
+        let id_values = vec![
+            "1".to_string(),
+            "2".to_string(),
+            "3".to_string(),
+            "4".to_string(),
+        ];
+        let value_values = vec![
+            "a".to_string(),
+            "b".to_string(),
+            "c".to_string(),
+            "d".to_string(),
+        ];
 
         result.add_column("id".to_string(), Series::new(id_values, None)?)?;
         result.add_column("value".to_string(), Series::new(value_values, None)?)?;
@@ -210,7 +239,9 @@ impl TransformExt for DataFrame {
 
 /// Helper function to clean DataBox values into plain strings
 fn clean_databox_value(value: &str) -> String {
-    let trimmed = value.trim_start_matches("DataBox(\"").trim_end_matches("\")");
+    let trimmed = value
+        .trim_start_matches("DataBox(\"")
+        .trim_end_matches("\")");
     let value_str = if trimmed.starts_with("DataBox(") {
         trimmed.trim_start_matches("DataBox(").trim_end_matches(")")
     } else {
@@ -220,11 +251,20 @@ fn clean_databox_value(value: &str) -> String {
 }
 
 /// Re-export transformation options for backward compatibility
-#[deprecated(since = "0.1.0-alpha.2", note = "Use crate::dataframe::transform::MeltOptions")]
+#[deprecated(
+    since = "0.1.0-alpha.2",
+    note = "Use crate::dataframe::transform::MeltOptions"
+)]
 pub use crate::dataframe::transform::MeltOptions as LegacyMeltOptions;
 
-#[deprecated(since = "0.1.0-alpha.2", note = "Use crate::dataframe::transform::StackOptions")]
+#[deprecated(
+    since = "0.1.0-alpha.2",
+    note = "Use crate::dataframe::transform::StackOptions"
+)]
 pub use crate::dataframe::transform::StackOptions as LegacyStackOptions;
 
-#[deprecated(since = "0.1.0-alpha.2", note = "Use crate::dataframe::transform::UnstackOptions")]
+#[deprecated(
+    since = "0.1.0-alpha.2",
+    note = "Use crate::dataframe::transform::UnstackOptions"
+)]
 pub use crate::dataframe::transform::UnstackOptions as LegacyUnstackOptions;

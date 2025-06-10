@@ -109,8 +109,8 @@ impl PyOptimizedDataFrame {
     #[getter]
     fn column_names(&self, py: Python<'_>) -> PyResult<PyObject> {
         let cols = self.inner.column_names();
-        let python_list = PyList::new_bound(py, cols);
-        Ok(python_list.to_object(py))
+        let python_list = PyList::new(py, cols)?;
+        Ok(python_list.into())
     }
 
     /// Get the shape of the DataFrame (rows, columns)
@@ -220,14 +220,14 @@ impl PyOptimizedDataFrame {
                         values.push(false);
                     }
                 }
-                let py_list = PyList::new_bound(py, &values);
+                let py_list = PyList::new(py, &values)?;
                 dict.set_item(name, py_list)?;
             }
         }
         
         // Create pandas DataFrame
         let pd_df_obj = pd_df.call1((dict,))?;
-        Ok(pd_df_obj.to_object(py))
+        Ok(pd_df_obj.into())
     }
     
     /// Create an optimized DataFrame from a pandas DataFrame

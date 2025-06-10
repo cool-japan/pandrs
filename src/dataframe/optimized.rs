@@ -23,11 +23,17 @@ impl Default for OptimizedDataFrame {
 }
 
 // Re-export from legacy module for backward compatibility
-#[deprecated(since = "0.1.0-alpha.2", note = "Use crate::dataframe::optimized::OptimizedDataFrame")]
+#[deprecated(
+    since = "0.1.0-alpha.2",
+    note = "Use crate::dataframe::optimized::OptimizedDataFrame"
+)]
 pub use crate::optimized::OptimizedDataFrame as LegacyOptimizedDataFrame;
 
 #[deprecated(since = "0.1.0-alpha.2", note = "Use crate::compute::lazy::LazyFrame")]
 pub use crate::optimized::LazyFrame;
 
-#[deprecated(since = "0.1.0-alpha.2", note = "Use crate::dataframe::optimized::AggregateOp")]
+#[deprecated(
+    since = "0.1.0-alpha.2",
+    note = "Use crate::dataframe::optimized::AggregateOp"
+)]
 pub use crate::optimized::AggregateOp;

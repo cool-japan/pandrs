@@ -5,8 +5,7 @@
 
 // Re-export all types from the new modules
 pub use crate::distributed::window::{
-    WindowFrameBoundary, WindowFrameType, WindowFrame, WindowFunction, WindowFunctionExt,
-    functions,
+    functions, WindowFrame, WindowFrameBoundary, WindowFrameType, WindowFunction, WindowFunctionExt,
 };
 
 // The following is just to ensure documentation clarity in case someone is using

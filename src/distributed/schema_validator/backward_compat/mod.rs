@@ -4,9 +4,7 @@
 //! previous organization of the schema_validator.rs file.
 
 // Re-export all types from the new modules
-pub use crate::distributed::schema_validator::{
-    SchemaValidator, are_join_compatible
-};
+pub use crate::distributed::schema_validator::{are_join_compatible, SchemaValidator};
 
 // The following is just to ensure documentation clarity in case someone is using
 // the old path, but implementation is delegated to the new modules

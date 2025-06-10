@@ -5,11 +5,11 @@
 //! inferential statistics, hypothesis testing, and regression analysis.
 
 // Feature modules
+pub mod categorical;
 pub mod descriptive;
 pub mod inference;
 pub mod regression;
 pub mod sampling;
-pub mod categorical;
 
 // GPU-accelerated statistical functions (conditionally compiled)
 #[cfg(feature = "cuda")]
@@ -17,7 +17,7 @@ pub mod gpu;
 
 // Re-export public types and functions
 use crate::dataframe::DataFrame;
-use crate::error::{Result, Error, PandRSError};
+use crate::error::{Error, PandRSError, Result};
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::hash::Hash;
@@ -261,11 +261,7 @@ pub fn linear_regression(
 /// // Get a 10% random sample
 /// let sampled_df = stats::sample(&df, 0.1, true).unwrap();
 /// ```
-pub fn sample(
-    df: &DataFrame,
-    fraction: f64,
-    replace: bool,
-) -> Result<DataFrame> {
+pub fn sample(df: &DataFrame, fraction: f64, replace: bool) -> Result<DataFrame> {
     sampling::sample_impl(df, fraction, replace)
 }
 
@@ -283,10 +279,7 @@ pub fn sample(
 /// // 1000 bootstrap samples
 /// let bootstrap_samples = stats::bootstrap(&data, 1000).unwrap();
 /// ```
-pub fn bootstrap<T: AsRef<[f64]>>(
-    data: T,
-    n_samples: usize,
-) -> Result<Vec<Vec<f64>>> {
+pub fn bootstrap<T: AsRef<[f64]>>(data: T, n_samples: usize) -> Result<Vec<Vec<f64>>> {
     sampling::bootstrap_impl(data.as_ref(), n_samples)
 }
 
@@ -312,19 +305,17 @@ pub fn bootstrap<T: AsRef<[f64]>>(
 /// println!("p-value: {}", result.p_value);
 /// println!("Significant difference: {}", result.significant);
 /// ```
-pub fn anova<T: AsRef<[f64]>>(
-    groups: &HashMap<&str, T>,
-    alpha: f64,
-) -> Result<AnovaResult> {
+pub fn anova<T: AsRef<[f64]>>(groups: &HashMap<&str, T>, alpha: f64) -> Result<AnovaResult> {
     if groups.len() < 2 {
-        return Err(Error::InsufficientData("At least 2 groups are needed for ANOVA".into()));
+        return Err(Error::InsufficientData(
+            "At least 2 groups are needed for ANOVA".into(),
+        ));
     }
-    
+
     // Delegate implementation to inference module
-    let groups_converted: HashMap<&str, &[f64]> = groups.iter()
-        .map(|(k, v)| (*k, v.as_ref()))
-        .collect();
-    
+    let groups_converted: HashMap<&str, &[f64]> =
+        groups.iter().map(|(k, v)| (*k, v.as_ref())).collect();
+
     inference::anova_impl(&groups_converted, alpha)
 }
 
@@ -376,10 +367,7 @@ pub fn mann_whitney_u<T: AsRef<[f64]>, U: AsRef<[f64]>>(
 /// println!("p-value: {}", result.p_value);
 /// println!("Significant difference: {}", result.significant);
 /// ```
-pub fn chi_square_test(
-    observed: &[Vec<f64>],
-    alpha: f64,
-) -> Result<ChiSquareResult> {
+pub fn chi_square_test(observed: &[Vec<f64>], alpha: f64) -> Result<ChiSquareResult> {
     inference::chi_square_test_impl(observed, alpha)
 }
 
@@ -451,11 +439,7 @@ pub fn chi_square_independence(
 /// let v = stats::cramers_v_from_df(&df, "category1", "category2").unwrap();
 /// println!("Cramer's V: {}", v);
 /// ```
-pub fn cramers_v_from_df(
-    df: &DataFrame,
-    col1: &str,
-    col2: &str,
-) -> Result<f64> {
+pub fn cramers_v_from_df(df: &DataFrame, col1: &str, col2: &str) -> Result<f64> {
     categorical::dataframe_cramers_v(df, col1, col2)
 }
 
@@ -500,11 +484,7 @@ pub fn categorical_anova_from_df(
 /// let nmi = stats::normalized_mutual_info(&df, "category1", "category2").unwrap();
 /// println!("Normalized Mutual Information: {}", nmi);
 /// ```
-pub fn normalized_mutual_info(
-    df: &DataFrame,
-    col1: &str,
-    col2: &str,
-) -> Result<f64> {
+pub fn normalized_mutual_info(df: &DataFrame, col1: &str, col2: &str) -> Result<f64> {
     categorical::dataframe_normalized_mutual_information(df, col1, col2)
 }
 
@@ -534,18 +514,13 @@ pub use sampling::stratified_sample_impl as stratified_sample;
 // pub use sampling::weighted_sample;
 // pub use sampling::bootstrap_standard_error;
 
-pub use categorical::mode;
 pub use categorical::entropy;
 pub use categorical::frequency_distribution;
+pub use categorical::mode;
 
 // Re-export GPU-accelerated functions when CUDA is enabled
 #[cfg(feature = "cuda")]
 pub use gpu::{
-    describe_gpu,
-    correlation_matrix as gpu_correlation_matrix,
-    covariance_matrix as gpu_covariance_matrix,
-    pca,
-    linear_regression as gpu_linear_regression,
-    feature_importance,
-    kmeans,
+    correlation_matrix as gpu_correlation_matrix, covariance_matrix as gpu_covariance_matrix,
+    describe_gpu, feature_importance, kmeans, linear_regression as gpu_linear_regression, pca,
 };

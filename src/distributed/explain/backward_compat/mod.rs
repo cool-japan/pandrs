@@ -4,9 +4,7 @@
 //! previous organization of the explain.rs file.
 
 // Re-export all types from the new modules
-pub use crate::distributed::explain::{
-    ExplainOptions, ExplainFormat, PlanNode, explain_plan
-};
+pub use crate::distributed::explain::{explain_plan, ExplainFormat, ExplainOptions, PlanNode};
 
 // The following is just to ensure documentation clarity in case someone is using
 // the old path, but implementation is delegated to the new modules

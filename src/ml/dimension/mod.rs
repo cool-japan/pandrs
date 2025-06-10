@@ -3,10 +3,10 @@
 //! This module provides implementations of dimensionality reduction techniques,
 //! such as Principal Component Analysis (PCA) and t-SNE.
 
+use crate::core::error::{Error, Result};
 use crate::dataframe::DataFrame;
-use crate::core::error::{Result, Error};
-use crate::optimized::OptimizedDataFrame;
 use crate::ml::models::UnsupervisedModel;
+use crate::optimized::OptimizedDataFrame;
 use std::collections::HashMap;
 
 /// Principal Component Analysis (PCA) implementation
@@ -45,12 +45,12 @@ impl PCA {
             std_values: None,
         }
     }
-    
+
     /// Get total explained variance ratio
     pub fn total_explained_variance(&self) -> Option<f64> {
-        self.explained_variance_ratio.as_ref().map(|ratios| {
-            ratios.iter().sum()
-        })
+        self.explained_variance_ratio
+            .as_ref()
+            .map(|ratios| ratios.iter().sum())
     }
 }
 
@@ -64,60 +64,72 @@ impl UnsupervisedModel for PCA {
         // 4. Perform eigendecomposition
         // 5. Sort eigenvalues and corresponding eigenvectors
         // 6. Select top n_components
-        
+
         // For now, just set some placeholders
         let n_features = data.ncols();
         self.mean_values = Some(vec![0.0; n_features]);
-        
+
         if self.standardize {
             self.std_values = Some(vec![1.0; n_features]);
         }
-        
+
         self.components = Some(vec![vec![0.0; n_features]; self.n_components]);
-        self.explained_variance_ratio = Some(vec![1.0 / self.n_components as f64; self.n_components]);
-        
+        self.explained_variance_ratio =
+            Some(vec![1.0 / self.n_components as f64; self.n_components]);
+
         Ok(())
     }
-    
+
     fn transform(&self, data: &DataFrame) -> Result<DataFrame> {
         // Placeholder for a real implementation
         // In a complete implementation, this would:
         // 1. Center and scale the data (if needed)
         // 2. Project data onto principal components
-        
+
         // For now, just return a copy of the original data with reduced columns
         let mut result = DataFrame::new();
-        
+
         // Add only the first n_components columns
         for i in 0..self.n_components.min(data.ncols()) {
             let col_name_str = format!("Column_{}", i);
             let col_name = data.column_name(i).unwrap_or(&col_name_str);
             let col: &crate::series::Series<String> = data.get_column(col_name)?;
-            result.add_column(format!("PC_{}", i+1), col.clone())?;
+            result.add_column(format!("PC_{}", i + 1), col.clone())?;
         }
-        
+
         Ok(result)
     }
 }
 
 impl crate::ml::models::ModelEvaluator for PCA {
-    fn evaluate(&self, test_data: &DataFrame, _test_target: &str) -> Result<crate::ml::models::ModelMetrics> {
+    fn evaluate(
+        &self,
+        test_data: &DataFrame,
+        _test_target: &str,
+    ) -> Result<crate::ml::models::ModelMetrics> {
         // For PCA, evaluation metrics could include reconstruction error
         let mut metrics = crate::ml::models::ModelMetrics::new();
-        
+
         // Placeholder for reconstruction error calculation
         metrics.add_metric("reconstruction_error", 0.0);
-        
+
         if let Some(ratio) = self.total_explained_variance() {
             metrics.add_metric("explained_variance_ratio", ratio);
         }
-        
+
         Ok(metrics)
     }
-    
-    fn cross_validate(&self, _data: &DataFrame, _target: &str, _folds: usize) -> Result<Vec<crate::ml::models::ModelMetrics>> {
+
+    fn cross_validate(
+        &self,
+        _data: &DataFrame,
+        _target: &str,
+        _folds: usize,
+    ) -> Result<Vec<crate::ml::models::ModelMetrics>> {
         // PCA doesn't typically use cross-validation in the same way as supervised models
-        Err(Error::InvalidOperation("Cross-validation is not applicable for PCA".into()))
+        Err(Error::InvalidOperation(
+            "Cross-validation is not applicable for PCA".into(),
+        ))
     }
 }
 
@@ -165,7 +177,7 @@ impl TSNE {
             embedding: None,
         }
     }
-    
+
     /// Create a new t-SNE instance with custom parameters
     pub fn with_params(
         n_components: usize,
@@ -193,40 +205,40 @@ impl UnsupervisedModel for TSNE {
         // 1. Compute pairwise affinities in high-dimensional space
         // 2. Initialize low-dimensional embedding
         // 3. Optimize embedding to minimize KL divergence
-        
+
         // For now, just set some placeholders
         let n_samples = data.nrows();
         self.embedding = Some(vec![vec![0.0; self.n_components]; n_samples]);
-        
+
         Ok(())
     }
-    
+
     fn transform(&self, data: &DataFrame) -> Result<DataFrame> {
         // t-SNE typically doesn't support transform on new data
         // since it doesn't learn a mapping function
-        Err(Error::InvalidOperation("t-SNE does not support transform on new data".into()))
+        Err(Error::InvalidOperation(
+            "t-SNE does not support transform on new data".into(),
+        ))
     }
-    
+
     fn fit_transform(&mut self, data: &DataFrame) -> Result<DataFrame> {
         self.fit(data)?;
-        
+
         // Create result DataFrame with embedding coordinates
         let n_samples = data.nrows();
         let mut result = DataFrame::new();
-        
+
         // Use the embedding to create result columns
         if let Some(embedding) = &self.embedding {
             for c in 0..self.n_components {
-                let column_data: Vec<f64> = (0..n_samples)
-                    .map(|i| embedding[i][c])
-                    .collect();
-                
+                let column_data: Vec<f64> = (0..n_samples).map(|i| embedding[i][c]).collect();
+
                 result.add_column(
-                    format!("Component_{}", c+1),
-                    crate::series::Series::new(column_data, Some(format!("Component_{}", c+1)))?,
+                    format!("Component_{}", c + 1),
+                    crate::series::Series::new(column_data, Some(format!("Component_{}", c + 1)))?,
                 )?;
             }
-            
+
             Ok(result)
         } else {
             Err(Error::InvalidValue("t-SNE embedding not computed".into()))
@@ -235,19 +247,30 @@ impl UnsupervisedModel for TSNE {
 }
 
 impl crate::ml::models::ModelEvaluator for TSNE {
-    fn evaluate(&self, _test_data: &DataFrame, _test_target: &str) -> Result<crate::ml::models::ModelMetrics> {
+    fn evaluate(
+        &self,
+        _test_data: &DataFrame,
+        _test_target: &str,
+    ) -> Result<crate::ml::models::ModelMetrics> {
         // t-SNE evaluation could include KL divergence
         let mut metrics = crate::ml::models::ModelMetrics::new();
-        
+
         // Placeholder for KL divergence calculation
         metrics.add_metric("kl_divergence", 0.0);
-        
+
         Ok(metrics)
     }
-    
-    fn cross_validate(&self, _data: &DataFrame, _target: &str, _folds: usize) -> Result<Vec<crate::ml::models::ModelMetrics>> {
+
+    fn cross_validate(
+        &self,
+        _data: &DataFrame,
+        _target: &str,
+        _folds: usize,
+    ) -> Result<Vec<crate::ml::models::ModelMetrics>> {
         // t-SNE doesn't typically use cross-validation
-        Err(Error::InvalidOperation("Cross-validation is not applicable for t-SNE".into()))
+        Err(Error::InvalidOperation(
+            "Cross-validation is not applicable for t-SNE".into(),
+        ))
     }
 }
 

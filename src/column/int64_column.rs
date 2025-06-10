@@ -1,5 +1,5 @@
-use std::sync::Arc;
 use std::any::Any;
+use std::sync::Arc;
 
 use crate::column::common::{Column, ColumnTrait, ColumnType};
 use crate::error::{Error, Result};
@@ -21,7 +21,7 @@ impl Int64Column {
             name: None,
         }
     }
-    
+
     /// Create an Int64Column with a name
     pub fn with_name(data: Vec<i64>, name: impl Into<String>) -> Self {
         Self {
@@ -30,7 +30,7 @@ impl Int64Column {
             name: Some(name.into()),
         }
     }
-    
+
     /// Create an Int64Column with NULL values
     pub fn with_nulls(data: Vec<i64>, nulls: Vec<bool>) -> Self {
         let null_mask = if nulls.iter().any(|&is_null| is_null) {
@@ -38,24 +38,24 @@ impl Int64Column {
         } else {
             None
         };
-        
+
         Self {
             data: data.into(),
             null_mask,
             name: None,
         }
     }
-    
+
     /// Set the name
     pub fn set_name(&mut self, name: impl Into<String>) {
         self.name = Some(name.into());
     }
-    
+
     /// Get the name
     pub fn get_name(&self) -> Option<&str> {
         self.name.as_deref()
     }
-    
+
     /// Get data at the specified index
     pub fn get(&self, index: usize) -> Result<Option<i64>> {
         if index >= self.data.len() {
@@ -64,7 +64,7 @@ impl Int64Column {
                 size: self.data.len(),
             });
         }
-        
+
         // Check for NULL value
         if let Some(ref mask) = self.null_mask {
             let byte_idx = index / 8;
@@ -73,21 +73,21 @@ impl Int64Column {
                 return Ok(None);
             }
         }
-        
+
         Ok(Some(self.data[index]))
     }
-    
+
     /// Calculate the sum of data (excluding NULL values)
     pub fn sum(&self) -> i64 {
         if self.data.is_empty() {
             return 0;
         }
-        
+
         match &self.null_mask {
             None => {
                 // Simple sum if there are no NULLs
                 self.data.iter().sum()
-            },
+            }
             Some(mask) => {
                 // Sum excluding NULL values
                 let mut sum = 0;
@@ -102,19 +102,19 @@ impl Int64Column {
             }
         }
     }
-    
+
     /// Calculate the mean (average) of data (excluding NULL values)
     pub fn mean(&self) -> Option<f64> {
         if self.data.is_empty() {
             return None;
         }
-        
+
         let (sum, count) = match &self.null_mask {
             None => {
                 // Case with no NULL values
                 let sum: i64 = self.data.iter().sum();
                 (sum, self.data.len())
-            },
+            }
             Some(mask) => {
                 // Calculate excluding NULL values
                 let mut sum = 0;
@@ -130,25 +130,25 @@ impl Int64Column {
                 (sum, count)
             }
         };
-        
+
         if count == 0 {
             None
         } else {
             Some(sum as f64 / count as f64)
         }
     }
-    
+
     /// Calculate the minimum value of data (excluding NULL values)
     pub fn min(&self) -> Option<i64> {
         if self.data.is_empty() {
             return None;
         }
-        
+
         match &self.null_mask {
             None => {
                 // Case with no NULL values
                 self.data.iter().copied().min()
-            },
+            }
             Some(mask) => {
                 // Calculate excluding NULL values
                 let mut min_val = None;
@@ -164,18 +164,18 @@ impl Int64Column {
             }
         }
     }
-    
+
     /// Calculate the maximum value of data (excluding NULL values)
     pub fn max(&self) -> Option<i64> {
         if self.data.is_empty() {
             return None;
         }
-        
+
         match &self.null_mask {
             None => {
                 // Case with no NULL values
                 self.data.iter().copied().max()
-            },
+            }
             Some(mask) => {
                 // Calculate excluding NULL values
                 let mut max_val = None;
@@ -191,30 +191,30 @@ impl Int64Column {
             }
         }
     }
-    
+
     /// Create a new column by applying a mapping function
-    pub fn map<F>(&self, f: F) -> Self 
+    pub fn map<F>(&self, f: F) -> Self
     where
-        F: Fn(i64) -> i64
+        F: Fn(i64) -> i64,
     {
         let mapped_data: Vec<i64> = self.data.iter().map(|&x| f(x)).collect();
-        
+
         Self {
             data: mapped_data.into(),
             null_mask: self.null_mask.clone(),
             name: self.name.clone(),
         }
     }
-    
+
     /// Create a new column based on filtering conditions
     pub fn filter<F>(&self, predicate: F) -> Self
     where
-        F: Fn(Option<i64>) -> bool
+        F: Fn(Option<i64>) -> bool,
     {
         let mut filtered_data = Vec::new();
         let mut filtered_nulls = Vec::new();
         let has_nulls = self.null_mask.is_some();
-        
+
         for i in 0..self.data.len() {
             let value = self.get(i).unwrap_or(None);
             if predicate(value) {
@@ -224,7 +224,7 @@ impl Int64Column {
                 }
             }
         }
-        
+
         if has_nulls {
             Self::with_nulls(filtered_data, filtered_nulls)
         } else {
@@ -237,15 +237,15 @@ impl ColumnTrait for Int64Column {
     fn len(&self) -> usize {
         self.data.len()
     }
-    
+
     fn column_type(&self) -> ColumnType {
         ColumnType::Int64
     }
-    
+
     fn name(&self) -> Option<&str> {
         self.name.as_deref()
     }
-    
+
     fn clone_column(&self) -> crate::core::column::Column {
         // Convert the legacy Column type to the core Column type
         let legacy_column = Column::Int64(self.clone());
@@ -253,7 +253,7 @@ impl ColumnTrait for Int64Column {
         // we would implement proper conversion between column types
         crate::core::column::Column::from_any(Box::new(legacy_column))
     }
-    
+
     fn as_any(&self) -> &dyn Any {
         self
     }

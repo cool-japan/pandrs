@@ -56,7 +56,10 @@ impl Temporal for DateTime<Utc> {
     fn from_str(s: &str) -> Result<Self> {
         match s.parse::<DateTime<Utc>>() {
             Ok(dt) => Ok(dt),
-            Err(e) => Err(PandRSError::Format(format!("Date-time parsing error: {}", e))),
+            Err(e) => Err(PandRSError::Format(format!(
+                "Date-time parsing error: {}",
+                e
+            ))),
         }
     }
 
@@ -85,7 +88,10 @@ impl Temporal for DateTime<Local> {
     fn from_str(s: &str) -> Result<Self> {
         match s.parse::<DateTime<Local>>() {
             Ok(dt) => Ok(dt),
-            Err(e) => Err(PandRSError::Format(format!("Date-time parsing error: {}", e))),
+            Err(e) => Err(PandRSError::Format(format!(
+                "Date-time parsing error: {}",
+                e
+            ))),
         }
     }
 
@@ -117,7 +123,10 @@ impl Temporal for NaiveDateTime {
             Ok(dt) => Ok(dt),
             Err(_) => match NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S") {
                 Ok(dt) => Ok(dt),
-                Err(e) => Err(PandRSError::Format(format!("Date-time parsing error: {}", e))),
+                Err(e) => Err(PandRSError::Format(format!(
+                    "Date-time parsing error: {}",
+                    e
+                ))),
             },
         }
     }
@@ -258,7 +267,7 @@ impl<T: Temporal> TimeSeries<T> {
     }
 
     /// Calculate moving average
-    /// 
+    ///
     /// Note: This function is maintained for compatibility,
     /// but the more feature-rich `rolling()` method is recommended.
     pub fn rolling_mean(&self, window: usize) -> Result<Self> {

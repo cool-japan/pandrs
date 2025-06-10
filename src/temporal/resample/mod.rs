@@ -2,9 +2,9 @@ use chrono::TimeZone;
 use std::collections::HashMap;
 
 use crate::error::Result;
+use crate::temporal::core::Temporal;
 use crate::temporal::core::TimeSeries;
 use crate::temporal::frequency::Frequency;
-use crate::temporal::core::Temporal;
 
 /// Structure representing resampling operations
 #[derive(Debug)]

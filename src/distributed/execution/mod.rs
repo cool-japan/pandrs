@@ -8,21 +8,21 @@ pub use backward_compat::*;
 
 use std::sync::Arc;
 
-use crate::error::Result;
-use crate::distributed::core::partition::{Partition, PartitionSet};
 use crate::distributed::core::config::DistributedConfig;
+use crate::distributed::core::partition::{Partition, PartitionSet};
+use crate::error::Result;
 
 /// Interface for distributed execution engines
 pub trait ExecutionEngine: Send + Sync {
     /// Initializes the execution engine
     fn initialize(&mut self, config: &DistributedConfig) -> Result<()>;
-    
+
     /// Checks if the engine is initialized
     fn is_initialized(&self) -> bool;
-    
+
     /// Creates a new execution context
     fn create_context(&self, config: &DistributedConfig) -> Result<Box<dyn ExecutionContext>>;
-    
+
     /// Clones the engine
     fn clone(&self) -> Box<dyn ExecutionEngine>;
 }
@@ -49,16 +49,16 @@ pub trait ExecutionContext: Send + Sync {
 
     /// Explains an execution plan
     fn explain_plan(&self, plan: &ExecutionPlan, with_statistics: bool) -> Result<String>;
-    
+
     /// Writes results to Parquet
     fn write_parquet(&mut self, result: &ExecutionResult, path: &str) -> Result<()>;
-    
+
     /// Writes results to CSV
     fn write_csv(&mut self, result: &ExecutionResult, path: &str) -> Result<()>;
-    
+
     /// Gets execution metrics
     fn metrics(&self) -> Result<ExecutionMetrics>;
-    
+
     /// Clones the context
     fn clone(&self) -> Box<dyn ExecutionContext>;
 }
@@ -80,24 +80,24 @@ impl ExecutionPlan {
             operations: Vec::new(),
         }
     }
-    
+
     /// Adds an operation to the plan
     pub fn add_operation(&mut self, operation: Operation) -> &mut Self {
         self.operations.push(operation);
         self
     }
-    
+
     /// Adds multiple operations to the plan
     pub fn add_operations(&mut self, operations: Vec<Operation>) -> &mut Self {
         self.operations.extend(operations);
         self
     }
-    
+
     /// Gets the input
     pub fn input(&self) -> &str {
         &self.input
     }
-    
+
     /// Gets the operations
     pub fn operations(&self) -> &Vec<Operation> {
         &self.operations
@@ -109,10 +109,10 @@ impl ExecutionPlan {
 pub enum Operation {
     /// SELECT operation - Select specific columns
     Select(Vec<String>),
-    
+
     /// FILTER operation - Filter rows based on a condition
     Filter(String),
-    
+
     /// JOIN operation - Join with another dataset
     Join {
         /// Right-side dataset
@@ -124,34 +124,34 @@ pub enum Operation {
         /// Right join keys
         right_keys: Vec<String>,
     },
-    
+
     /// AGGREGATE operation - Group by keys and apply aggregations
     Aggregate(Vec<String>, Vec<AggregateExpr>),
-    
+
     /// ORDER BY operation - Sort data
     OrderBy(Vec<SortExpr>),
-    
+
     /// LIMIT operation - Limit number of rows
     Limit(usize),
-    
+
     /// WINDOW operation - Apply window functions
     Window(Vec<crate::distributed::window::WindowFunction>),
-    
+
     /// PROJECTION operation - Add computed columns
     Project(Vec<(String, String)>),
-    
+
     /// DISTINCT operation - Remove duplicate rows
     Distinct,
-    
+
     /// UNION operation - Combine with another dataset
     Union(String),
-    
+
     /// INTERSECT operation - Get rows present in both datasets
     Intersect(String),
-    
+
     /// EXCEPT operation - Get rows in this dataset but not in another
     Except(String),
-    
+
     /// Custom operation (for extensibility)
     Custom {
         /// Operation name
@@ -222,37 +222,37 @@ impl ExecutionResult {
             metrics,
         }
     }
-    
+
     /// Gets the partitions
     pub fn partitions(&self) -> &PartitionSet {
         &self.partitions
     }
-    
+
     /// Gets the schema
     pub fn schema(&self) -> &arrow::datatypes::SchemaRef {
         &self.schema
     }
-    
+
     /// Gets the metrics
     pub fn metrics(&self) -> &ExecutionMetrics {
         &self.metrics
     }
-    
+
     /// Gets the row count
     pub fn row_count(&self) -> usize {
         self.partitions.total_rows()
     }
-    
+
     /// Collects all record batches
     pub fn collect(&self) -> Result<Vec<arrow::record_batch::RecordBatch>> {
         let mut batches = Vec::new();
-        
+
         for partition in self.partitions.partitions() {
             if let Some(batch) = partition.data() {
                 batches.push(batch.clone());
             }
         }
-        
+
         Ok(batches)
     }
 }
@@ -285,93 +285,96 @@ impl ExecutionMetrics {
     pub fn new() -> Self {
         Self::default()
     }
-    
+
     /// Sets the execution time
     pub fn with_execution_time(mut self, time_ms: u64) -> Self {
         self.execution_time_ms = time_ms;
         self
     }
-    
+
     /// Sets the rows processed
     pub fn with_rows_processed(mut self, rows: usize) -> Self {
         self.rows_processed = rows;
         self
     }
-    
+
     /// Sets the partitions processed
     pub fn with_partitions_processed(mut self, partitions: usize) -> Self {
         self.partitions_processed = partitions;
         self
     }
-    
+
     /// Sets the bytes processed
     pub fn with_bytes_processed(mut self, bytes: usize) -> Self {
         self.bytes_processed = bytes;
         self
     }
-    
+
     /// Sets the bytes output
     pub fn with_bytes_output(mut self, bytes: usize) -> Self {
         self.bytes_output = bytes;
         self
     }
-    
+
     /// Sets the query ID
     pub fn with_query_id(mut self, id: impl Into<String>) -> Self {
         self.query_id = Some(id.into());
         self
     }
-    
+
     /// Sets the input rows
     pub fn with_input_rows(mut self, rows: usize) -> Self {
         self.input_rows = rows;
         self
     }
-    
+
     /// Sets the output rows
     pub fn with_output_rows(mut self, rows: usize) -> Self {
         self.output_rows = rows;
         self
     }
-    
+
     /// Adds a custom metric
     pub fn with_custom_metric(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
         self.custom_metrics.insert(name.into(), value.into());
         self
     }
-    
+
     /// Gets a formatted summary of the metrics
     pub fn summary(&self) -> String {
         let mut result = String::new();
-        
+
         result.push_str(&format!("Execution time: {}ms\n", self.execution_time_ms));
         result.push_str(&format!("Rows processed: {}\n", self.rows_processed));
-        result.push_str(&format!("Partitions processed: {}\n", self.partitions_processed));
+        result.push_str(&format!(
+            "Partitions processed: {}\n",
+            self.partitions_processed
+        ));
         result.push_str(&format!("Bytes processed: {}\n", self.bytes_processed));
         result.push_str(&format!("Bytes output: {}\n", self.bytes_output));
-        
+
         if let Some(query_id) = &self.query_id {
             result.push_str(&format!("Query ID: {}\n", query_id));
         }
-        
+
         if self.input_rows > 0 {
             result.push_str(&format!("Input rows: {}\n", self.input_rows));
         }
-        
+
         if self.output_rows > 0 {
             result.push_str(&format!("Output rows: {}\n", self.output_rows));
         }
-        
+
         if !self.custom_metrics.is_empty() {
             result.push_str("Custom metrics:\n");
             for (name, value) in &self.custom_metrics {
                 result.push_str(&format!("  {}: {}\n", name, value));
             }
         }
-        
+
         result
     }
-    
+
     /// Merges with another set of metrics
     pub fn merge(&mut self, other: &Self) {
         self.execution_time_ms += other.execution_time_ms;
@@ -381,7 +384,7 @@ impl ExecutionMetrics {
         self.bytes_output += other.bytes_output;
         self.input_rows += other.input_rows;
         self.output_rows += other.output_rows;
-        
+
         // Merge custom metrics (just override for now)
         for (name, value) in &other.custom_metrics {
             self.custom_metrics.insert(name.clone(), value.clone());

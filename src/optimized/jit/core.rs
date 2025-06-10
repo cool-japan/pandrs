@@ -8,10 +8,10 @@ use super::{JitError, JitResult};
 pub trait JitCompilable<T> {
     /// The output type of the JIT function
     type Output;
-    
+
     /// Compile the function with JIT optimizations
     fn compile(&self) -> JitResult<Box<dyn Fn(&[T]) -> Self::Output + Send + Sync>>;
-    
+
     /// Execute the function (may use JIT or fallback)
     fn execute(&self, data: &[T]) -> Self::Output;
 }
@@ -36,7 +36,7 @@ impl<F> JitFunction<F> {
             use_jit: true,
         }
     }
-    
+
     /// Disable JIT compilation for this function
     pub fn without_jit(mut self) -> Self {
         self.use_jit = false;
@@ -74,18 +74,18 @@ where
     F: Fn(&[f64]) -> f64 + Send + Sync + Clone + 'static,
 {
     type Output = f64;
-    
+
     fn compile(&self) -> JitResult<Box<dyn Fn(&[f64]) -> f64 + Send + Sync>> {
         if !self.use_jit {
             let func = self.function.clone();
             return Ok(Box::new(move |data| func(data)));
         }
-        
+
         // Create optimized function directly
         let optimized_func = self.create_optimized_f64_function()?;
         Ok(optimized_func)
     }
-    
+
     fn execute(&self, data: &[f64]) -> f64 {
         if self.use_jit {
             match self.compile() {
@@ -104,18 +104,18 @@ where
     F: Fn(&[i64]) -> i64 + Send + Sync + Clone + 'static,
 {
     type Output = i64;
-    
+
     fn compile(&self) -> JitResult<Box<dyn Fn(&[i64]) -> i64 + Send + Sync>> {
         if !self.use_jit {
             let func = self.function.clone();
             return Ok(Box::new(move |data| func(data)));
         }
-        
+
         // Create optimized function directly
         let optimized_func = self.create_optimized_i64_function()?;
         Ok(optimized_func)
     }
-    
+
     fn execute(&self, data: &[i64]) -> i64 {
         if self.use_jit {
             match self.compile() {
@@ -134,13 +134,13 @@ where
     F: Fn(&[String]) -> String + Send + Sync + Clone + 'static,
 {
     type Output = String;
-    
+
     fn compile(&self) -> JitResult<Box<dyn Fn(&[String]) -> String + Send + Sync>> {
         // String operations don't benefit as much from JIT compilation
         let func = self.function.clone();
         Ok(Box::new(move |data| func(data)))
     }
-    
+
     fn execute(&self, data: &[String]) -> String {
         (self.function)(data)
     }
@@ -154,7 +154,7 @@ where
     fn create_optimized_f64_function(&self) -> JitResult<Box<dyn Fn(&[f64]) -> f64 + Send + Sync>> {
         let func = self.function.clone();
         let name = self.name.clone();
-        
+
         // Apply various optimizations based on function name/pattern
         if name.contains("sum") {
             Ok(Box::new(move |data: &[f64]| -> f64 {
@@ -162,17 +162,17 @@ where
                 if data.is_empty() {
                     return 0.0;
                 }
-                
+
                 let mut sum = 0.0;
                 let mut c = 0.0; // Compensation for lost low-order bits
-                
+
                 for &value in data {
                     let y = value - c;
                     let t = sum + y;
                     c = (t - sum) - y;
                     sum = t;
                 }
-                
+
                 sum
             }))
         } else if name.contains("mean") {
@@ -180,18 +180,18 @@ where
                 if data.is_empty() {
                     return 0.0;
                 }
-                
+
                 // Optimized mean calculation
                 let mut sum = 0.0;
                 let mut c = 0.0;
-                
+
                 for &value in data {
                     let y = value - c;
                     let t = sum + y;
                     c = (t - sum) - y;
                     sum = t;
                 }
-                
+
                 sum / data.len() as f64
             }))
         } else if name.contains("min") {
@@ -217,7 +217,7 @@ where
     fn create_optimized_i64_function(&self) -> JitResult<Box<dyn Fn(&[i64]) -> i64 + Send + Sync>> {
         let func = self.function.clone();
         let name = self.name.clone();
-        
+
         // Apply optimizations for integer operations
         if name.contains("sum") {
             Ok(Box::new(move |data: &[i64]| -> i64 {
@@ -255,7 +255,7 @@ mod tests {
     fn test_jit_f64_sum() {
         let sum_func = jit_f64("sum", |data: &[f64]| data.iter().sum());
         let data = vec![1.0, 2.0, 3.0, 4.0, 5.0];
-        
+
         let result = sum_func.execute(&data);
         assert_eq!(result, 15.0);
     }
@@ -263,10 +263,14 @@ mod tests {
     #[test]
     fn test_jit_i64_mean() {
         let mean_func = jit_i64("mean", |data: &[i64]| {
-            if data.is_empty() { 0 } else { data.iter().sum::<i64>() / data.len() as i64 }
+            if data.is_empty() {
+                0
+            } else {
+                data.iter().sum::<i64>() / data.len() as i64
+            }
         });
         let data = vec![1, 2, 3, 4, 5];
-        
+
         let result = mean_func.execute(&data);
         assert_eq!(result, 3);
     }
@@ -275,7 +279,7 @@ mod tests {
     fn test_jit_compilation() {
         let func = jit_f64("test_sum", |data: &[f64]| data.iter().sum());
         let compiled = func.compile().unwrap();
-        
+
         let data = vec![1.0, 2.0, 3.0];
         let result = compiled(&data);
         assert_eq!(result, 6.0);

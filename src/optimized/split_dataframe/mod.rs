@@ -53,7 +53,7 @@ pub mod stats;
 pub mod gpu;
 
 // Re-export
-pub use core::{OptimizedDataFrame, ColumnView};
+pub use core::{ColumnView, OptimizedDataFrame};
 
 // Re-export I/O types
 #[cfg(feature = "parquet")]
@@ -64,7 +64,7 @@ pub use serialize::JsonOrient;
 pub use join::JoinType;
 
 // Re-export grouping types
-pub use group::{GroupBy, AggregateOp};
+pub use group::{AggregateOp, GroupBy};
 
 // Re-export stats types
 pub use stats::{StatDescribe, StatResult};

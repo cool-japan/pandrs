@@ -3,18 +3,18 @@
 //! This module provides functionality for creating pipelines of data
 //! transformations and machine learning models.
 
+use crate::core::error::{Error, Result};
 use crate::dataframe::DataFrame;
-use crate::core::error::{Result, Error};
 use std::collections::HashMap;
 
 /// Trait for pipeline stages that transform DataFrames
 pub trait PipelineTransformer {
     /// Transform DataFrame according to this pipeline stage
     fn transform(&self, df: &DataFrame) -> Result<DataFrame>;
-    
+
     /// Fit this transformer to the data (if needed)
     fn fit(&mut self, df: &DataFrame) -> Result<()>;
-    
+
     /// Fit and transform in one step
     fn fit_transform(&mut self, df: &DataFrame) -> Result<DataFrame> {
         self.fit(df)?;
@@ -33,7 +33,7 @@ pub enum PipelineStage {
         _means: Option<HashMap<String, f64>>,
         _stds: Option<HashMap<String, f64>>,
     },
-    
+
     /// Min-max scaler
     MinMaxScaler {
         /// Columns to scale
@@ -44,7 +44,7 @@ pub enum PipelineStage {
         _min_values: Option<HashMap<String, f64>>,
         _max_values: Option<HashMap<String, f64>>,
     },
-    
+
     /// One-hot encoder
     OneHotEncoder {
         /// Columns to encode
@@ -56,7 +56,7 @@ pub enum PipelineStage {
         /// Internal storage for fit parameters
         _categories: Option<HashMap<String, Vec<String>>>,
     },
-    
+
     /// Imputer for missing values
     Imputer {
         /// Columns to impute
@@ -68,13 +68,12 @@ pub enum PipelineStage {
         /// Internal storage for fit parameters
         _fill_values: Option<HashMap<String, f64>>,
     },
-    
+
     /// Feature selector
     FeatureSelector {
         /// Columns to select
         columns: Vec<String>,
     },
-    
     // Custom transformer (commented out since we can't implement Debug for it)
     /*
     Custom {
@@ -90,47 +89,52 @@ impl PipelineTransformer for PipelineStage {
             PipelineStage::StandardScaler { .. } => {
                 // Placeholder implementation for StandardScaler
                 Ok(df.clone())
-            },
-            
+            }
+
             PipelineStage::MinMaxScaler { .. } => {
                 // Placeholder implementation for MinMaxScaler
                 Ok(df.clone())
-            },
-            
+            }
+
             PipelineStage::OneHotEncoder { .. } => {
                 // Placeholder implementation for OneHotEncoder
                 Ok(df.clone())
-            },
-            
+            }
+
             PipelineStage::Imputer { .. } => {
                 // Placeholder implementation for Imputer
                 Ok(df.clone())
-            },
-            
+            }
+
             PipelineStage::FeatureSelector { columns } => {
                 let mut result = DataFrame::new();
-                
+
                 for col_name in columns {
                     if !df.contains_column(col_name) {
-                        return Err(Error::InvalidValue(format!("Column '{}' not found", col_name)));
+                        return Err(Error::InvalidValue(format!(
+                            "Column '{}' not found",
+                            col_name
+                        )));
                     }
 
                     let col: &crate::series::Series<String> = df.get_column(col_name)?;
                     result.add_column(col_name.clone(), col.clone())?;
                 }
-                
+
                 Ok(result)
-            },
-            
-            // PipelineStage::Custom { transform_fn } => {
-            //     (transform_fn)(df)
-            // },
+            } // PipelineStage::Custom { transform_fn } => {
+              //     (transform_fn)(df)
+              // },
         }
     }
-    
+
     fn fit(&mut self, df: &DataFrame) -> Result<()> {
         match self {
-            PipelineStage::StandardScaler { columns, _means, _stds } => {
+            PipelineStage::StandardScaler {
+                columns,
+                _means,
+                _stds,
+            } => {
                 // Placeholder implementation for StandardScaler fit
                 let cols: Vec<String> = match columns {
                     Some(cols) => cols.clone(),
@@ -142,7 +146,10 @@ impl PipelineTransformer for PipelineStage {
 
                 for col_name in &cols {
                     if !df.contains_column(col_name) {
-                        return Err(Error::InvalidInput(format!("Column '{}' not found", col_name)));
+                        return Err(Error::InvalidInput(format!(
+                            "Column '{}' not found",
+                            col_name
+                        )));
                     }
 
                     let col: &crate::series::Series<String> = df.get_column(col_name)?;
@@ -152,13 +159,13 @@ impl PipelineTransformer for PipelineStage {
                     means.insert(col_name.clone(), 0.0);
                     stds.insert(col_name.clone(), 1.0);
                 }
-                
+
                 *_means = Some(means);
                 *_stds = Some(stds);
-                
+
                 Ok(())
-            },
-            
+            }
+
             // Placeholders for other stages
             PipelineStage::MinMaxScaler { .. } => Ok(()),
             PipelineStage::OneHotEncoder { .. } => Ok(()),
@@ -181,45 +188,45 @@ impl Pipeline {
     pub fn new() -> Self {
         Pipeline { stages: Vec::new() }
     }
-    
+
     /// Add a stage to the pipeline
     pub fn add_stage(&mut self, stage: PipelineStage) -> &mut Self {
         self.stages.push(stage);
         self
     }
-    
+
     /// Fit the pipeline to the data
     pub fn fit(&mut self, df: &DataFrame) -> Result<()> {
         let mut current_df = df.clone();
-        
+
         for stage in &mut self.stages {
             stage.fit(&current_df)?;
             current_df = stage.transform(&current_df)?;
         }
-        
+
         Ok(())
     }
-    
+
     /// Transform data using the fitted pipeline
     pub fn transform(&self, df: &DataFrame) -> Result<DataFrame> {
         let mut current_df = df.clone();
-        
+
         for stage in &self.stages {
             current_df = stage.transform(&current_df)?;
         }
-        
+
         Ok(current_df)
     }
-    
+
     /// Fit the pipeline and transform data in one step
     pub fn fit_transform(&mut self, df: &DataFrame) -> Result<DataFrame> {
         let mut current_df = df.clone();
-        
+
         for stage in &mut self.stages {
             stage.fit(&current_df)?;
             current_df = stage.transform(&current_df)?;
         }
-        
+
         Ok(current_df)
     }
 }

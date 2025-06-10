@@ -4,18 +4,21 @@
 //! using Apache Arrow Ballista for distributed execution.
 
 #[cfg(feature = "distributed")]
-use std::sync::{Arc, Mutex};
-#[cfg(feature = "distributed")]
 use std::collections::HashMap;
-
 #[cfg(feature = "distributed")]
-use crate::error::{Result, Error};
+use std::sync::{Arc, Mutex};
+
 #[cfg(feature = "distributed")]
 use crate::distributed::core::config::DistributedConfig;
 #[cfg(feature = "distributed")]
-use crate::distributed::execution::{ExecutionEngine, ExecutionContext, ExecutionPlan, ExecutionResult, ExecutionMetrics, Operation, JoinType, AggregateExpr, SortExpr};
-#[cfg(feature = "distributed")]
 use crate::distributed::core::partition::PartitionSet;
+#[cfg(feature = "distributed")]
+use crate::distributed::execution::{
+    AggregateExpr, ExecutionContext, ExecutionEngine, ExecutionMetrics, ExecutionPlan,
+    ExecutionResult, JoinType, Operation, SortExpr,
+};
+#[cfg(feature = "distributed")]
+use crate::error::{Error, Result};
 
 /// Ballista execution engine
 #[cfg(feature = "distributed")]
@@ -44,20 +47,20 @@ impl ExecutionEngine for BallistaEngine {
         self.config = Some(config.clone());
         Ok(())
     }
-    
+
     fn is_initialized(&self) -> bool {
         self.initialized
     }
-    
+
     fn create_context(&self, config: &DistributedConfig) -> Result<Box<dyn ExecutionContext>> {
         if !self.initialized {
             return Err(Error::InvalidState("Engine not initialized".to_string()));
         }
-        
+
         let ctx = BallistaContext::new(config);
         Ok(Box::new(ctx))
     }
-    
+
     fn clone(&self) -> Box<dyn ExecutionEngine> {
         Box::new(Self {
             initialized: self.initialized,
@@ -90,53 +93,71 @@ impl BallistaContext {
 impl ExecutionContext for BallistaContext {
     fn execute_plan(&mut self, plan: ExecutionPlan) -> Result<ExecutionResult> {
         // Implementation will be provided in a future PR
-        Err(Error::NotImplemented("Ballista execution not yet implemented".to_string()))
+        Err(Error::NotImplemented(
+            "Ballista execution not yet implemented".to_string(),
+        ))
     }
-    
+
     fn register_in_memory_table(&mut self, name: &str, partitions: PartitionSet) -> Result<()> {
         // Implementation will be provided in a future PR
-        Err(Error::NotImplemented("Ballista table registration not yet implemented".to_string()))
+        Err(Error::NotImplemented(
+            "Ballista table registration not yet implemented".to_string(),
+        ))
     }
-    
+
     fn register_csv(&mut self, name: &str, path: &str) -> Result<()> {
         // Implementation will be provided in a future PR
-        Err(Error::NotImplemented("Ballista CSV registration not yet implemented".to_string()))
+        Err(Error::NotImplemented(
+            "Ballista CSV registration not yet implemented".to_string(),
+        ))
     }
-    
+
     fn register_parquet(&mut self, name: &str, path: &str) -> Result<()> {
         // Implementation will be provided in a future PR
-        Err(Error::NotImplemented("Ballista Parquet registration not yet implemented".to_string()))
+        Err(Error::NotImplemented(
+            "Ballista Parquet registration not yet implemented".to_string(),
+        ))
     }
-    
+
     fn sql(&mut self, query: &str) -> Result<ExecutionResult> {
         // Implementation will be provided in a future PR
-        Err(Error::NotImplemented("Ballista SQL execution not yet implemented".to_string()))
+        Err(Error::NotImplemented(
+            "Ballista SQL execution not yet implemented".to_string(),
+        ))
     }
-    
+
     fn table_schema(&self, name: &str) -> Result<arrow::datatypes::SchemaRef> {
         // Implementation will be provided in a future PR
-        Err(Error::NotImplemented("Ballista schema retrieval not yet implemented".to_string()))
+        Err(Error::NotImplemented(
+            "Ballista schema retrieval not yet implemented".to_string(),
+        ))
     }
-    
+
     fn explain_plan(&self, plan: &ExecutionPlan, with_statistics: bool) -> Result<String> {
         // Implementation will be provided in a future PR
-        Err(Error::NotImplemented("Ballista plan explanation not yet implemented".to_string()))
+        Err(Error::NotImplemented(
+            "Ballista plan explanation not yet implemented".to_string(),
+        ))
     }
-    
+
     fn write_parquet(&mut self, result: &ExecutionResult, path: &str) -> Result<()> {
         // Implementation will be provided in a future PR
-        Err(Error::NotImplemented("Ballista Parquet writing not yet implemented".to_string()))
+        Err(Error::NotImplemented(
+            "Ballista Parquet writing not yet implemented".to_string(),
+        ))
     }
-    
+
     fn write_csv(&mut self, result: &ExecutionResult, path: &str) -> Result<()> {
         // Implementation will be provided in a future PR
-        Err(Error::NotImplemented("Ballista CSV writing not yet implemented".to_string()))
+        Err(Error::NotImplemented(
+            "Ballista CSV writing not yet implemented".to_string(),
+        ))
     }
-    
+
     fn metrics(&self) -> Result<ExecutionMetrics> {
         Ok(self.metrics.clone())
     }
-    
+
     fn clone(&self) -> Box<dyn ExecutionContext> {
         // Implementation will be provided in a future PR
         unimplemented!("Ballista context cloning not yet implemented");

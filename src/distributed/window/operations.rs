@@ -2,10 +2,10 @@
 //!
 //! This module provides operations for applying window functions to distributed DataFrames.
 
-use crate::error::Result;
-use crate::distributed::execution::{ExecutionPlan, Operation};
-use crate::distributed::dataframe::DistributedDataFrame;
 use super::core::WindowFunction;
+use crate::distributed::dataframe::DistributedDataFrame;
+use crate::distributed::execution::{ExecutionPlan, Operation};
+use crate::error::Result;
 
 /// Extension trait to add window function capabilities to DistributedDataFrame
 pub trait WindowFunctionExt {
@@ -17,9 +17,7 @@ impl WindowFunctionExt for DistributedDataFrame {
     fn window(&self, window_functions: &[WindowFunction]) -> Result<DistributedDataFrame> {
         // Create a Window operation with the window functions
         let window_functions = window_functions.to_vec();
-        let operation = Operation::Window {
-            window_functions,
-        };
+        let operation = Operation::Window { window_functions };
 
         if self.is_lazy() {
             let mut new_df = self.clone_empty();

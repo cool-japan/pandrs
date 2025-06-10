@@ -188,53 +188,55 @@ where
     pub fn size_as_df(&self) -> Result<DataFrame> {
         // Create a DataFrame for results
         let mut result = DataFrame::new();
-        
+
         // Create columns for group keys and values
         let mut keys = Vec::new();
         let mut sizes = Vec::new();
-        
+
         for (key, indices) in &self.groups {
-            keys.push(format!("{:?}", key));  // Convert key to string
-            sizes.push(indices.len().to_string());  // Convert size to string
+            keys.push(format!("{:?}", key)); // Convert key to string
+            sizes.push(indices.len().to_string()); // Convert size to string
         }
-        
+
         // Add group key column
         let key_column = Series::new(keys, Some("group_key".to_string()))?;
         result.add_column("group_key".to_string(), key_column)?;
-        
+
         // Add size column
         let size_column = Series::new(sizes, Some("size".to_string()))?;
         result.add_column("size".to_string(), size_column)?;
-        
+
         Ok(result)
     }
-    
+
     /// Simple aggregation function
     pub fn aggregate(&self, column_name: &str, func_name: &str) -> Result<DataFrame> {
         // Check if column exists
         if !self.source.contains_column(column_name) {
-            return Err(PandRSError::Column(
-                format!("Column '{}' not found", column_name)
-            ));
+            return Err(PandRSError::Column(format!(
+                "Column '{}' not found",
+                column_name
+            )));
         }
-        
+
         // Create DataFrame for results
         let mut result = DataFrame::new();
-        
+
         // Create group key and value columns
         let mut keys = Vec::new();
         let mut aggregated_values = Vec::new();
-        
+
         // Get column data - using a stub for now
         // In a real implementation we would get numeric values from the column
         let column_data: Vec<f64> = Vec::new();
-        
+
         for (key, indices) in &self.groups {
             // Add group key
             keys.push(format!("{:?}", key));
-            
+
             // Extract data for this group
-            let group_data: Vec<f64> = indices.iter()
+            let group_data: Vec<f64> = indices
+                .iter()
                 .filter_map(|&idx| {
                     if idx < column_data.len() {
                         Some(column_data[idx])
@@ -243,33 +245,41 @@ where
                     }
                 })
                 .collect();
-            
+
             // Apply aggregation function
             let result_value = if group_data.is_empty() {
                 "0.0".to_string()
             } else {
                 match func_name {
                     "sum" => group_data.iter().sum::<f64>().to_string(),
-                    "mean" => (group_data.iter().sum::<f64>() / group_data.len() as f64).to_string(),
-                    "min" => group_data.iter().fold(f64::INFINITY, |a, &b| a.min(b)).to_string(),
-                    "max" => group_data.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b)).to_string(),
+                    "mean" => {
+                        (group_data.iter().sum::<f64>() / group_data.len() as f64).to_string()
+                    }
+                    "min" => group_data
+                        .iter()
+                        .fold(f64::INFINITY, |a, &b| a.min(b))
+                        .to_string(),
+                    "max" => group_data
+                        .iter()
+                        .fold(f64::NEG_INFINITY, |a, &b| a.max(b))
+                        .to_string(),
                     "count" => group_data.len().to_string(),
-                    _ => "0.0".to_string()
+                    _ => "0.0".to_string(),
                 }
             };
-            
+
             aggregated_values.push(result_value);
         }
-        
+
         // Add group key column
         let key_column = Series::new(keys, Some("group_key".to_string()))?;
         result.add_column("group_key".to_string(), key_column)?;
-        
+
         // Add aggregation result column
         let result_column_name = format!("{}_{}", column_name, func_name);
         let value_column = Series::new(aggregated_values, Some(result_column_name.clone()))?;
         result.add_column(result_column_name, value_column)?;
-        
+
         Ok(result)
     }
 }

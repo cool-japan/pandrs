@@ -24,47 +24,39 @@ pub trait ApplyExt {
         Self: Sized,
         F: Fn(&Series<String>) -> R,
         R: Debug + Clone;
-    
+
     /// Apply a function to each element
     fn applymap<F, R>(&self, f: F) -> Result<Self>
     where
         Self: Sized,
         F: Fn(&str) -> R,
         R: Debug + Clone + ToString;
-    
+
     /// Replace values based on a condition
     fn mask<F>(&self, condition: F, other: &str) -> Result<Self>
     where
         Self: Sized,
         F: Fn(&str) -> bool;
-    
+
     /// Replace values based on a condition (inverse of mask)
     fn where_func<F>(&self, condition: F, other: &str) -> Result<Self>
     where
         Self: Sized,
         F: Fn(&str) -> bool;
-    
+
     /// Replace values with corresponding values
     fn replace(&self, replace_map: &HashMap<String, String>) -> Result<Self>
     where
         Self: Sized;
-    
+
     /// Detect duplicate rows
-    fn duplicated(
-        &self,
-        subset: Option<&[String]>,
-        keep: Option<&str>,
-    ) -> Result<Series<bool>>;
-    
+    fn duplicated(&self, subset: Option<&[String]>, keep: Option<&str>) -> Result<Series<bool>>;
+
     /// Drop duplicate rows
-    fn drop_duplicates(
-        &self,
-        subset: Option<&[String]>,
-        keep: Option<&str>,
-    ) -> Result<Self>
+    fn drop_duplicates(&self, subset: Option<&[String]>, keep: Option<&str>) -> Result<Self>
     where
         Self: Sized;
-    
+
     /// Apply a fixed-length window (rolling window) operation
     fn rolling(
         &self,
@@ -75,7 +67,7 @@ pub trait ApplyExt {
     ) -> Result<Self>
     where
         Self: Sized;
-    
+
     /// Apply an expanding window operation
     fn expanding(
         &self,
@@ -86,7 +78,7 @@ pub trait ApplyExt {
     ) -> Result<Self>
     where
         Self: Sized;
-    
+
     /// Apply an exponentially weighted window operation
     fn ewm(
         &self,
@@ -112,7 +104,7 @@ impl ApplyExt for DataFrame {
         let dummy_values = Vec::<R>::new();
         Series::new(dummy_values, result_name)
     }
-    
+
     fn applymap<F, R>(&self, f: F) -> Result<Self>
     where
         F: Fn(&str) -> R,
@@ -121,7 +113,7 @@ impl ApplyExt for DataFrame {
         // Simple implementation to prevent recursion
         Ok(DataFrame::new())
     }
-    
+
     fn mask<F>(&self, condition: F, other: &str) -> Result<Self>
     where
         F: Fn(&str) -> bool,
@@ -129,7 +121,7 @@ impl ApplyExt for DataFrame {
         // Simple implementation to prevent recursion
         Ok(DataFrame::new())
     }
-    
+
     fn where_func<F>(&self, condition: F, other: &str) -> Result<Self>
     where
         F: Fn(&str) -> bool,
@@ -137,31 +129,23 @@ impl ApplyExt for DataFrame {
         // Simple implementation to prevent recursion
         Ok(DataFrame::new())
     }
-    
+
     fn replace(&self, replace_map: &HashMap<String, String>) -> Result<Self> {
         // Simple implementation to prevent recursion
         Ok(DataFrame::new())
     }
-    
-    fn duplicated(
-        &self,
-        subset: Option<&[String]>,
-        keep: Option<&str>,
-    ) -> Result<Series<bool>> {
+
+    fn duplicated(&self, subset: Option<&[String]>, keep: Option<&str>) -> Result<Series<bool>> {
         // Simple implementation to prevent recursion
         let dummy_values = vec![false; self.row_count()];
         Series::new(dummy_values, Some("duplicated".to_string()))
     }
-    
-    fn drop_duplicates(
-        &self,
-        subset: Option<&[String]>,
-        keep: Option<&str>,
-    ) -> Result<Self> {
+
+    fn drop_duplicates(&self, subset: Option<&[String]>, keep: Option<&str>) -> Result<Self> {
         // Simple implementation to prevent recursion
         Ok(DataFrame::new())
     }
-    
+
     fn rolling(
         &self,
         window_size: usize,
@@ -172,7 +156,7 @@ impl ApplyExt for DataFrame {
         // Simple implementation to prevent recursion
         Ok(DataFrame::new())
     }
-    
+
     fn expanding(
         &self,
         min_periods: usize,
@@ -183,7 +167,7 @@ impl ApplyExt for DataFrame {
         // Simple implementation to prevent recursion
         Ok(DataFrame::new())
     }
-    
+
     fn ewm(
         &self,
         column_name: &str,

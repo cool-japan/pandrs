@@ -2,11 +2,11 @@
 //!
 //! This module provides deprecated re-exports of the old visualization API for backward compatibility.
 
-use std::path::Path;
-use crate::vis::config::{PlotConfig, PlotType, OutputFormat};
 use crate::error::Result;
-use crate::Series;
+use crate::vis::config::{OutputFormat, PlotConfig, PlotType};
 use crate::DataFrame;
+use crate::Series;
+use std::path::Path;
 
 // Re-export text-based plotting functionality for backward compatibility
 #[allow(deprecated)]
@@ -22,7 +22,7 @@ where
     T: Clone + Copy + Into<f32> + std::fmt::Debug,
 {
     /// Plot Series and save to file or display in terminal
-    /// 
+    ///
     /// Note: This implementation is kept for backward compatibility.
     /// New code should use the `plot_to`, `line_plot`, etc. methods instead.
     #[allow(deprecated)]
@@ -41,14 +41,11 @@ where
 // Implement backward-compatible DataFrame visualization methods
 impl DataFrame {
     /// Plot two columns as XY coordinates
-    /// 
+    ///
     /// Note: This implementation is kept for backward compatibility.
     /// New code should use the `scatter_xy` method instead.
     #[allow(deprecated)]
-    #[deprecated(
-        since = "0.1.0-alpha.2",
-        note = "Use `DataFrame.scatter_xy()` instead"
-    )]
+    #[deprecated(since = "0.1.0-alpha.2", note = "Use `DataFrame.scatter_xy()` instead")]
     pub fn plot_xy<P: AsRef<Path>>(
         &self,
         x_col: &str,
@@ -61,16 +58,16 @@ impl DataFrame {
         {
             let x_values = self.get_column_numeric_values(x_col)?;
             let y_values = self.get_column_numeric_values(y_col)?;
-            
+
             let x_f32: Vec<f32> = x_values.iter().map(|&v| v as f32).collect();
             let y_f32: Vec<f32> = y_values.iter().map(|&v| v as f32).collect();
-            
+
             plot_xy(&x_f32, &y_f32, path, config)
         }
     }
 
     /// Draw line graphs for multiple columns
-    /// 
+    ///
     /// Note: This implementation is kept for backward compatibility.
     /// New code should use the `multi_line_plot` method instead.
     #[allow(deprecated)]
@@ -91,16 +88,18 @@ impl DataFrame {
             if let Some(&first_col) = columns.first() {
                 let values = self.get_column_numeric_values(first_col)?;
                 let values_f32: Vec<f32> = values.iter().map(|&v| v as f32).collect();
-                
+
                 let indices: Vec<f32> = (0..self.row_count()).map(|i| i as f32).collect();
-                
+
                 let mut custom_config = config;
                 custom_config.title = format!("{} ({})", custom_config.title, first_col);
-                
+
                 return plot_xy(&indices, &values_f32, path, custom_config);
             }
         }
-        
-        Err(crate::error::PandRSError::Empty("No columns to plot".to_string()))
+
+        Err(crate::error::PandRSError::Empty(
+            "No columns to plot".to_string(),
+        ))
     }
 }

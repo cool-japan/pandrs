@@ -9,5 +9,5 @@ pub mod datafusion;
 pub mod ballista;
 
 // Re-export engine implementations
-pub use datafusion::DataFusionEngine;
 pub use ballista::BallistaEngine;
+pub use datafusion::DataFusionEngine;

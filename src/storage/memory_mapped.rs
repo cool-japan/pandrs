@@ -1,5 +1,5 @@
-use std::path::Path;
 use crate::core::error::{Error, Result};
+use std::path::Path;
 
 /// Memory-mapped file for efficient data access
 pub struct MemoryMappedFile {

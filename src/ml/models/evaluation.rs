@@ -4,8 +4,8 @@
 //! including cross-validation, learning curves, and validation curves.
 
 use crate::dataframe::DataFrame;
-use crate::error::{Result, Error};
-use crate::ml::models::{SupervisedModel, ModelEvaluator, ModelMetrics};
+use crate::error::{Error, Result};
+use crate::ml::models::{ModelEvaluator, ModelMetrics, SupervisedModel};
 use std::collections::HashMap;
 
 /// Perform cross-validation on a model
@@ -27,20 +27,25 @@ pub fn cross_val_score<T: SupervisedModel + Clone>(
     metric: &str,
 ) -> Result<Vec<f64>> {
     if folds < 2 {
-        return Err(Error::InvalidInput("Number of folds must be at least 2".into()));
+        return Err(Error::InvalidInput(
+            "Number of folds must be at least 2".into(),
+        ));
     }
-    
+
     let metrics = model.cross_validate(data, target, folds)?;
-    
+
     let mut scores = Vec::with_capacity(folds);
     for fold_metrics in metrics {
         if let Some(score) = fold_metrics.get_metric(metric) {
             scores.push(*score);
         } else {
-            return Err(Error::InvalidInput(format!("Metric '{}' not found in model evaluation", metric)));
+            return Err(Error::InvalidInput(format!(
+                "Metric '{}' not found in model evaluation",
+                metric
+            )));
         }
     }
-    
+
     Ok(scores)
 }
 
@@ -68,37 +73,41 @@ pub fn learning_curve<T: SupervisedModel + Clone>(
     cv: usize,
 ) -> Result<(Vec<usize>, Vec<f64>, Vec<f64>)> {
     if cv < 2 {
-        return Err(Error::InvalidInput("Number of CV folds must be at least 2".into()));
+        return Err(Error::InvalidInput(
+            "Number of CV folds must be at least 2".into(),
+        ));
     }
-    
+
     for &size in train_sizes {
         if size <= 0.0 || size > 1.0 {
-            return Err(Error::InvalidInput("Training sizes must be between 0 and 1".into()));
+            return Err(Error::InvalidInput(
+                "Training sizes must be between 0 and 1".into(),
+            ));
         }
     }
-    
+
     let n_samples = data.nrows();
-    
+
     let mut absolute_sizes = Vec::with_capacity(train_sizes.len());
     let mut train_scores = Vec::with_capacity(train_sizes.len());
     let mut test_scores = Vec::with_capacity(train_sizes.len());
-    
+
     // Placeholder implementation
     // In a real implementation, this would:
     // 1. For each training size:
     //    a. Subsample the data to the current size
     //    b. Perform cross-validation
     //    c. Record train and test scores
-    
+
     for &size_fraction in train_sizes {
         let absolute_size = (n_samples as f64 * size_fraction).round() as usize;
         absolute_sizes.push(absolute_size);
-        
+
         // Placeholder scores
         train_scores.push(0.9);
         test_scores.push(0.8);
     }
-    
+
     Ok((absolute_sizes, train_scores, test_scores))
 }
 
@@ -133,28 +142,32 @@ where
     P: Clone,
 {
     if cv < 2 {
-        return Err(Error::InvalidInput("Number of CV folds must be at least 2".into()));
+        return Err(Error::InvalidInput(
+            "Number of CV folds must be at least 2".into(),
+        ));
     }
-    
+
     if param_values.is_empty() {
-        return Err(Error::InvalidInput("Parameter values array cannot be empty".into()));
+        return Err(Error::InvalidInput(
+            "Parameter values array cannot be empty".into(),
+        ));
     }
-    
+
     let mut train_scores = Vec::with_capacity(param_values.len());
     let mut test_scores = Vec::with_capacity(param_values.len());
-    
+
     // Placeholder implementation
     // In a real implementation, this would:
     // 1. For each parameter value:
     //    a. Create a model with that parameter value
     //    b. Perform cross-validation
     //    c. Record train and test scores
-    
+
     for _ in param_values {
         // Placeholder scores
         train_scores.push(0.9);
         test_scores.push(0.8);
     }
-    
+
     Ok((param_values.to_vec(), train_scores, test_scores))
 }

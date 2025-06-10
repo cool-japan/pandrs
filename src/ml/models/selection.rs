@@ -4,8 +4,8 @@
 //! randomized search for hyperparameter optimization.
 
 use crate::dataframe::DataFrame;
-use crate::error::{Result, Error};
-use crate::ml::models::{SupervisedModel, ModelMetrics};
+use crate::error::{Error, Result};
+use crate::ml::models::{ModelMetrics, SupervisedModel};
 use std::collections::HashMap;
 use std::marker::PhantomData;
 
@@ -23,14 +23,14 @@ impl HyperparameterGrid {
             params: HashMap::new(),
         }
     }
-    
+
     /// Add a parameter with its possible values
     pub fn add_param<T: ToString>(&mut self, name: &str, values: Vec<T>) -> &mut Self {
         let string_values = values.into_iter().map(|v| v.to_string()).collect();
         self.params.insert(name.to_string(), string_values);
         self
     }
-    
+
     /// Get all parameter combinations
     ///
     /// # Returns
@@ -39,15 +39,15 @@ impl HyperparameterGrid {
         // Placeholder implementation
         // In a real implementation, this would generate a Cartesian product
         // of all parameter combinations
-        
+
         let mut combinations = Vec::new();
-        
+
         // If no parameters, return an empty combination
         if self.params.is_empty() {
             combinations.push(HashMap::new());
             return combinations;
         }
-        
+
         // For now, just return a single combination with the first value of each parameter
         let mut combination = HashMap::new();
         for (name, values) in &self.params {
@@ -55,7 +55,7 @@ impl HyperparameterGrid {
                 combination.insert(name.clone(), value.clone());
             }
         }
-        
+
         combinations.push(combination);
         combinations
     }
@@ -103,13 +103,13 @@ impl<T: SupervisedModel + Clone> GridSearchCV<T> {
             cv_results: None,
         }
     }
-    
+
     /// Set number of jobs (CPU cores) to use
     pub fn with_n_jobs(mut self, n_jobs: usize) -> Self {
         self.n_jobs = Some(n_jobs);
         self
     }
-    
+
     /// Fit the model and find the best parameters
     ///
     /// # Arguments
@@ -118,20 +118,27 @@ impl<T: SupervisedModel + Clone> GridSearchCV<T> {
     pub fn fit(&mut self, data: &DataFrame, target: &str) -> Result<()> {
         // Validate input data
         if !data.has_column(target) {
-            return Err(Error::InvalidValue(format!("Target column '{}' not found", target)));
+            return Err(Error::InvalidValue(format!(
+                "Target column '{}' not found",
+                target
+            )));
         }
-        
+
         if self.cv < 2 {
-            return Err(Error::InvalidInput("Number of CV folds must be at least 2".into()));
+            return Err(Error::InvalidInput(
+                "Number of CV folds must be at least 2".into(),
+            ));
         }
-        
+
         // Get all parameter combinations
         let param_combinations = self.param_grid.parameter_combinations();
-        
+
         if param_combinations.is_empty() {
-            return Err(Error::InvalidInput("No parameter combinations to search".into()));
+            return Err(Error::InvalidInput(
+                "No parameter combinations to search".into(),
+            ));
         }
-        
+
         // Placeholder for grid search implementation
         // In a real implementation, this would:
         // 1. For each parameter combination:
@@ -139,27 +146,27 @@ impl<T: SupervisedModel + Clone> GridSearchCV<T> {
         //    b. Perform cross-validation
         //    c. Record scores
         // 2. Find the best parameter combination
-        
+
         // For now, just use the first combination as the "best"
         let best_params = param_combinations[0].clone();
-        let best_score = 0.9;  // Placeholder score
-        
+        let best_score = 0.9; // Placeholder score
+
         self.best_params = Some(best_params);
         self.best_score = Some(best_score);
-        
+
         // Create a placeholder for CV results
         let cv_results = DataFrame::new();
         self.cv_results = Some(cv_results);
-        
+
         Ok(())
     }
-    
+
     /// Get the best estimator (model with optimal parameters)
     pub fn best_estimator(&self) -> Result<T> {
         if self.best_params.is_none() {
             return Err(Error::InvalidValue("Grid search not fitted".into()));
         }
-        
+
         // Placeholder - would create a model with the best parameters
         Ok(self.base_model.clone())
     }
@@ -220,19 +227,19 @@ impl<T: SupervisedModel + Clone> RandomizedSearchCV<T> {
             cv_results: None,
         }
     }
-    
+
     /// Set random seed for reproducibility
     pub fn with_random_seed(mut self, seed: u64) -> Self {
         self.random_seed = Some(seed);
         self
     }
-    
+
     /// Set number of jobs (CPU cores) to use
     pub fn with_n_jobs(mut self, n_jobs: usize) -> Self {
         self.n_jobs = Some(n_jobs);
         self
     }
-    
+
     /// Fit the model and find the best parameters
     ///
     /// # Arguments
@@ -241,27 +248,27 @@ impl<T: SupervisedModel + Clone> RandomizedSearchCV<T> {
     pub fn fit(&mut self, data: &DataFrame, target: &str) -> Result<()> {
         // Implementation would be similar to GridSearchCV::fit,
         // but with random sampling of parameter combinations
-        
+
         // Placeholder implementation
         let best_params = HashMap::new();
-        let best_score = 0.9;  // Placeholder score
-        
+        let best_score = 0.9; // Placeholder score
+
         self.best_params = Some(best_params);
         self.best_score = Some(best_score);
-        
+
         // Create a placeholder for CV results
         let cv_results = DataFrame::new();
         self.cv_results = Some(cv_results);
-        
+
         Ok(())
     }
-    
+
     /// Get the best estimator (model with optimal parameters)
     pub fn best_estimator(&self) -> Result<T> {
         if self.best_params.is_none() {
             return Err(Error::InvalidValue("Randomized search not fitted".into()));
         }
-        
+
         // Placeholder - would create a model with the best parameters
         Ok(self.base_model.clone())
     }

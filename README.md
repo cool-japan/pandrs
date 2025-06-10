@@ -95,25 +95,27 @@ Add the following to your Cargo.toml:
 pandrs = "0.1.0-alpha.3"
 ```
 
-For GPU acceleration, add the CUDA feature flag:
+For GPU acceleration, add the CUDA feature flag (requires CUDA toolkit installation):
 
 ```toml
 [dependencies]
-pandrs = { version = "0.1.0-alpha.2", features = ["cuda"] }
+pandrs = { version = "0.1.0-alpha.3", features = ["cuda"] }
 ```
+
+**Note**: The CUDA feature requires NVIDIA CUDA toolkit to be installed on your system.
 
 For distributed processing capabilities, add the distributed feature:
 
 ```toml
 [dependencies]
-pandrs = { version = "0.1.0-alpha.2", features = ["distributed"] }
+pandrs = { version = "0.1.0-alpha.3", features = ["distributed"] }
 ```
 
 Multiple features can be combined:
 
 ```toml
 [dependencies]
-pandrs = { version = "0.1.0-alpha.2", features = ["cuda", "distributed", "wasm"] }
+pandrs = { version = "0.1.0-alpha.3", features = ["cuda", "distributed", "wasm"] }
 ```
 
 ### Working with Missing Values (NA)
@@ -927,9 +929,40 @@ let multi_settings = PlotSettings {
 df.plotters_multi(&["temperature", "humidity"], "multi_series.png", multi_settings)?;
 ```
 
+## Testing
+
+Run the core library tests (no external dependencies):
+
+```bash
+cargo test --lib
+```
+
+Test core optimized features:
+
+```bash
+cargo test --features "test-core"
+```
+
+Test most features (excluding CUDA/WASM which require external tools):
+
+```bash
+cargo test --features "test-safe"
+```
+
+Test all features (requires CUDA toolkit and may have compilation issues):
+
+```bash
+cargo test --all-features
+```
+
+**Notes**: 
+- The `cuda` feature requires NVIDIA CUDA toolkit installation
+- The `visualization` feature currently has compilation issues and is excluded from safe testing
+- Use `test-core` for reliable testing without external dependencies
+
 ## Dependency Versions
 
-Latest dependency versions (May 2024):
+Latest dependency versions (January 2025):
 
 ```toml
 [dependencies]
@@ -937,28 +970,31 @@ num-traits = "0.2.19"        # Numeric trait support
 thiserror = "2.0.12"         # Error handling
 serde = { version = "1.0.219", features = ["derive"] }  # Serialization
 serde_json = "1.0.114"       # JSON processing
-chrono = "0.4.40"            # Date and time processing
-regex = "1.10.2"             # Regular expressions
+chrono = "0.4.38"            # Date and time processing (compatible with arrow ecosystem)
+regex = "1.11.1"             # Regular expressions  
 csv = "1.3.1"                # CSV processing
-rayon = "1.9.0"              # Parallel processing
+rayon = "1.10.0"             # Parallel processing
 lazy_static = "1.5.0"        # Lazy initialization
 rand = "0.9.0"               # Random number generation
 tempfile = "3.8.1"           # Temporary files
 textplots = "0.8.7"          # Text-based visualization
 plotters = "0.3.7"           # High-quality visualization
-chrono-tz = "0.10.3"         # Timezone processing
-parquet = "54.3.1"           # Parquet file support
-arrow = "54.3.1"             # Arrow format support
-crossbeam-channel = "0.5.8"  # For concurrent message passing
-memmap2 = "0.7.1"            # For memory-mapped files
+chrono-tz = "0.9.0"          # Timezone processing (compatible with chrono 0.4.38)
+parquet = "53.3.1"           # Parquet file support (compatible with arrow ecosystem)
+arrow = "53.3.1"             # Arrow format support (stable version)
+crossbeam-channel = "0.5.15" # For concurrent message passing
+memmap2 = "0.9.5"            # For memory-mapped files
 calamine = "0.23.1"          # For Excel reading
 simple_excel_writer = "0.2.0" # For Excel writing
 
 # Optional dependencies (feature-gated)
-# CUDA support
-cudarc = "0.10.0"            # CUDA bindings
+# CUDA support (requires CUDA toolkit installation)
+cudarc = "0.10.0"            # CUDA bindings (requires NVIDIA CUDA toolkit)
 half = "2.3.1"               # Half-precision floating point support
-ndarray-cuda = "0.2.0"       # CUDA support for ndarray
+ndarray = "0.15.6"           # N-dimensional arrays
+
+# Distributed processing
+datafusion = "30.0.0"        # DataFrame processing engine (compatible with arrow 53.x)
 
 # WebAssembly support
 wasm-bindgen = "0.2.91"      # WebAssembly bindings

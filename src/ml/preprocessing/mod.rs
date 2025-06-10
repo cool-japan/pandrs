@@ -5,8 +5,8 @@
 //! categorical variables, and handling missing values.
 
 use crate::dataframe::DataFrame;
+use crate::error::{Error, Result};
 use crate::series::Series;
-use crate::error::{Result, Error};
 use std::collections::{HashMap, HashSet};
 
 /// Standard scaler for normalizing features to zero mean and unit variance
@@ -29,28 +29,28 @@ impl StandardScaler {
             columns: None,
         }
     }
-    
+
     /// Specify columns to scale
     pub fn with_columns(mut self, columns: Vec<String>) -> Self {
         self.columns = Some(columns);
         self
     }
-    
+
     /// Fit the scaler to the data
     pub fn fit(&mut self, df: &DataFrame) -> Result<()> {
         let columns = match &self.columns {
             Some(cols) => cols.clone(),
             None => df.column_names().into_iter().collect(),
         };
-        
+
         let mut means = HashMap::new();
         let mut stds = HashMap::new();
-        
+
         for col_name in columns {
             if !df.has_column(&col_name) {
                 return Err(Error::ColumnNotFound(col_name.to_string()));
             }
-            
+
             let col = df.get_column::<f64>(&col_name)?;
 
             // Skip non-numeric columns
@@ -58,38 +58,40 @@ impl StandardScaler {
                 if numeric_data.is_empty() {
                     continue;
                 }
-                
+
                 // Calculate mean
                 let mean: f64 = numeric_data.iter().sum::<f64>() / numeric_data.len() as f64;
                 means.insert(col_name.to_string(), mean);
-                
+
                 // Calculate standard deviation
-                let variance: f64 = numeric_data.iter()
+                let variance: f64 = numeric_data
+                    .iter()
                     .map(|&x| (x - mean).powi(2))
-                    .sum::<f64>() / numeric_data.len() as f64;
-                
+                    .sum::<f64>()
+                    / numeric_data.len() as f64;
+
                 let std_dev = variance.sqrt();
                 stds.insert(col_name.to_string(), std_dev);
             }
         }
-        
+
         self.means = Some(means);
         self.stds = Some(stds);
-        
+
         Ok(())
     }
-    
+
     /// Transform data using the fitted scaler
     pub fn transform(&self, df: &DataFrame) -> Result<DataFrame> {
         if self.means.is_none() || self.stds.is_none() {
             return Err(Error::InvalidValue("StandardScaler not fitted".into()));
         }
-        
+
         let means = self.means.as_ref().unwrap();
         let stds = self.stds.as_ref().unwrap();
-        
+
         let mut result = DataFrame::new();
-        
+
         // Add all columns from original DataFrame
         for col_name in df.column_names() {
             let col = df.get_column::<f64>(&col_name)?;
@@ -98,14 +100,13 @@ impl StandardScaler {
             if means.contains_key(&col_name) && stds.contains_key(&col_name) {
                 let mean = means[&col_name];
                 let std_dev = stds[&col_name];
-                
+
                 if let Ok(numeric_data) = col.as_f64() {
                     // Avoid division by zero
                     if std_dev > 1e-10 {
-                        let scaled_data: Vec<f64> = numeric_data.iter()
-                            .map(|&x| (x - mean) / std_dev)
-                            .collect();
-                        
+                        let scaled_data: Vec<f64> =
+                            numeric_data.iter().map(|&x| (x - mean) / std_dev).collect();
+
                         result.add_column(
                             col_name.to_string(),
                             Series::new(scaled_data, Some(col_name.to_string()))?,
@@ -129,10 +130,10 @@ impl StandardScaler {
                 result.add_column(col_name.to_string(), col_clone)?;
             }
         }
-        
+
         Ok(result)
     }
-    
+
     /// Fit the scaler to the data and transform it in one step
     pub fn fit_transform(&mut self, df: &DataFrame) -> Result<DataFrame> {
         self.fit(df)?;
@@ -163,7 +164,7 @@ impl MinMaxScaler {
             feature_range: (0.0, 1.0),
         }
     }
-    
+
     /// Create a new MinMaxScaler with custom range
     pub fn new_with_range(min: f64, max: f64) -> Self {
         MinMaxScaler {
@@ -185,7 +186,7 @@ impl MinMaxScaler {
         self.columns = Some(columns);
         self
     }
-    
+
     // Implementation details omitted for brevity
     // Similar to StandardScaler, but scales to [min, max] range
 }
@@ -213,25 +214,25 @@ impl OneHotEncoder {
             prefix: None,
         }
     }
-    
+
     /// Specify columns to encode
     pub fn with_columns(mut self, columns: Vec<String>) -> Self {
         self.columns = Some(columns);
         self
     }
-    
+
     /// Set whether to drop the first category
     pub fn drop_first(mut self, drop_first: bool) -> Self {
         self.drop_first = drop_first;
         self
     }
-    
+
     /// Set prefix for new column names
     pub fn with_prefix(mut self, prefix: String) -> Self {
         self.prefix = Some(prefix);
         self
     }
-    
+
     // Implementation details omitted for brevity
     // Creates binary columns for each category in categorical columns
 }
@@ -259,25 +260,25 @@ impl PolynomialFeatures {
             columns: None,
         }
     }
-    
+
     /// Set whether to include bias term
     pub fn include_bias(mut self, include_bias: bool) -> Self {
         self.include_bias = include_bias;
         self
     }
-    
+
     /// Set whether to include interaction features only
     pub fn interaction_only(mut self, interaction_only: bool) -> Self {
         self.interaction_only = interaction_only;
         self
     }
-    
+
     /// Specify columns to use
     pub fn with_columns(mut self, columns: Vec<String>) -> Self {
         self.columns = Some(columns);
         self
     }
-    
+
     // Implementation details omitted for brevity
     // Generates polynomial and interaction features
 }
@@ -305,19 +306,19 @@ impl Binner {
             columns: None,
         }
     }
-    
+
     /// Set binning strategy
     pub fn with_strategy(mut self, strategy: &str) -> Self {
         self.strategy = strategy.to_string();
         self
     }
-    
+
     /// Specify columns to bin
     pub fn with_columns(mut self, columns: Vec<String>) -> Self {
         self.columns = Some(columns);
         self
     }
-    
+
     // Implementation details omitted for brevity
     // Bins continuous features into discrete bins
 }
@@ -355,19 +356,19 @@ impl Imputer {
             columns: None,
         }
     }
-    
+
     /// Set imputation strategy
     pub fn with_strategy(mut self, strategy: ImputeStrategy) -> Self {
         self.strategy = strategy;
         self
     }
-    
+
     /// Specify columns to impute
     pub fn with_columns(mut self, columns: Vec<String>) -> Self {
         self.columns = Some(columns);
         self
     }
-    
+
     // Implementation details omitted for brevity
     // Imputes missing values in the data
 }
@@ -384,23 +385,23 @@ impl FeatureSelector {
     pub fn new(columns: Vec<String>) -> Self {
         FeatureSelector { columns }
     }
-    
+
     /// Transform data by selecting features
     pub fn transform(&self, df: &DataFrame) -> Result<DataFrame> {
         let mut result = DataFrame::new();
-        
+
         for col_name in &self.columns {
             if !df.has_column(col_name) {
                 return Err(Error::ColumnNotFound(col_name.to_string()));
             }
-            
+
             // We need a specific type for the column, so let's use f64 as a placeholder
             let col = df.get_column::<f64>(col_name)?;
             // Clone the Series to own it before adding to the new DataFrame
             let new_series = col.clone();
             result.add_column(col_name.to_string(), new_series)?;
         }
-        
+
         Ok(result)
     }
 }

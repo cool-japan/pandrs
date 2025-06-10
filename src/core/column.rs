@@ -17,21 +17,21 @@ pub enum ColumnType {
 pub trait ColumnTrait: Debug + Send + Sync {
     /// Returns the length of the column
     fn len(&self) -> usize;
-    
+
     /// Returns whether the column is empty
     fn is_empty(&self) -> bool {
         self.len() == 0
     }
-    
+
     /// Returns the type of the column
     fn column_type(&self) -> ColumnType;
-    
+
     /// Returns the name of the column
     fn name(&self) -> Option<&str>;
-    
+
     /// Clones the column
     fn clone_column(&self) -> Column;
-    
+
     /// Retrieves the column as a type `Any`
     fn as_any(&self) -> &dyn Any;
 }
@@ -79,23 +79,20 @@ impl BitMask {
     pub fn new(length: usize) -> Self {
         let bytes_needed = (length + 7) / 8;
         let data = vec![0u8; bytes_needed].into();
-        
-        Self {
-            data,
-            len: length,
-        }
+
+        Self { data, len: length }
     }
-    
+
     /// Creates a bitmask with all bits set to 0
     pub fn zeros(length: usize) -> Self {
         Self::new(length)
     }
-    
+
     /// Creates a bitmask with all bits set to 1
     pub fn ones(length: usize) -> Self {
         let bytes_needed = (length + 7) / 8;
         let mut data = vec![0xFFu8; bytes_needed];
-        
+
         // Adjust the incomplete last byte
         let remaining_bits = length % 8;
         if remaining_bits != 0 {
@@ -104,19 +101,19 @@ impl BitMask {
                 *last = *last & last_byte_mask;
             }
         }
-        
+
         Self {
             data: data.into(),
             len: length,
         }
     }
-    
+
     /// Creates a bitmask from a vector of boolean values
     pub fn from_bools(bools: &[bool]) -> Self {
         let length = bools.len();
         let bytes_needed = (length + 7) / 8;
         let mut data = vec![0u8; bytes_needed];
-        
+
         for (i, &is_set) in bools.iter().enumerate() {
             if is_set {
                 let byte_idx = i / 8;
@@ -124,13 +121,13 @@ impl BitMask {
                 data[byte_idx] |= 1 << bit_idx;
             }
         }
-        
+
         Self {
             data: data.into(),
             len: length,
         }
     }
-    
+
     /// Checks if a bit is set
     pub fn get(&self, index: usize) -> Result<bool> {
         if index >= self.len {
@@ -139,19 +136,19 @@ impl BitMask {
                 size: self.len,
             });
         }
-        
+
         let byte_idx = index / 8;
         let bit_idx = index % 8;
         let byte = self.data[byte_idx];
-        
+
         Ok((byte & (1 << bit_idx)) != 0)
     }
-    
+
     /// Returns the length of the bitmask
     pub fn len(&self) -> usize {
         self.len
     }
-    
+
     /// Returns whether the bitmask is empty
     pub fn is_empty(&self) -> bool {
         self.len == 0
@@ -161,13 +158,13 @@ impl BitMask {
 /// Utility functions for column operations
 pub mod utils {
     use super::*;
-    
+
     /// Creates a bitmask from a vector of boolean values
     pub fn create_bitmask(nulls: &[bool]) -> Arc<[u8]> {
         let length = nulls.len();
         let bytes_needed = (length + 7) / 8;
         let mut data = vec![0u8; bytes_needed];
-        
+
         for (i, &is_null) in nulls.iter().enumerate() {
             if is_null {
                 let byte_idx = i / 8;
@@ -175,21 +172,21 @@ pub mod utils {
                 data[byte_idx] |= 1 << bit_idx;
             }
         }
-        
+
         data.into()
     }
-    
+
     /// Converts a bitmask to a vector of boolean values
     pub fn bitmask_to_bools(mask: &[u8], len: usize) -> Vec<bool> {
         let mut result = Vec::with_capacity(len);
-        
+
         for i in 0..len {
             let byte_idx = i / 8;
             let bit_idx = i % 8;
             let is_set = (mask[byte_idx] & (1 << bit_idx)) != 0;
             result.push(is_set);
         }
-        
+
         result
     }
 }
@@ -205,12 +202,12 @@ impl Column {
             Column::Boolean(col) => col.len(),
         }
     }
-    
+
     /// Returns whether the column is empty
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
-    
+
     /// Returns the type of the column
     pub fn column_type(&self) -> ColumnType {
         match self {
@@ -220,7 +217,7 @@ impl Column {
             Column::Boolean(_) => ColumnType::Boolean,
         }
     }
-    
+
     /// Returns the name of the column
     pub fn name(&self) -> Option<&str> {
         match self {
@@ -230,12 +227,12 @@ impl Column {
             Column::Boolean(col) => col.name.as_deref(),
         }
     }
-    
+
     /// Clones the column
     pub fn clone_column(&self) -> Self {
         self.clone()
     }
-    
+
     /// Casts to Int64Column
     pub fn as_int64(&self) -> Option<&crate::column::Int64Column> {
         match self {
@@ -243,7 +240,7 @@ impl Column {
             _ => None,
         }
     }
-    
+
     /// Casts to Float64Column
     pub fn as_float64(&self) -> Option<&crate::column::Float64Column> {
         match self {
@@ -251,7 +248,7 @@ impl Column {
             _ => None,
         }
     }
-    
+
     /// Casts to StringColumn
     pub fn as_string(&self) -> Option<&crate::column::StringColumn> {
         match self {
@@ -259,7 +256,7 @@ impl Column {
             _ => None,
         }
     }
-    
+
     /// Casts to BooleanColumn
     pub fn as_boolean(&self) -> Option<&crate::column::BooleanColumn> {
         match self {

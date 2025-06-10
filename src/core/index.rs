@@ -7,21 +7,21 @@ use crate::core::error::{Error, Result};
 pub trait IndexTrait: Debug + Clone + Send + Sync {
     /// Returns the length of the index
     fn len(&self) -> usize;
-    
+
     /// Returns whether the index is empty
     fn is_empty(&self) -> bool {
         self.len() == 0
     }
-    
+
     /// Returns the position of a value in the index
     fn get_position(&self, value: &str) -> Option<usize>;
-    
+
     /// Gets the value at a specified position
     fn get_value(&self, position: usize) -> Result<String>;
-    
+
     /// Gets all values in the index as a vector of strings
     fn get_values(&self) -> Vec<String>;
-    
+
     /// Clones the index
     fn clone_index(&self) -> Index;
 }
@@ -46,12 +46,12 @@ impl RangeIndex {
     pub fn new(start: usize, len: usize, name: Option<String>) -> Self {
         Self { start, len, name }
     }
-    
+
     /// Creates a range index from 0 to len-1
     pub fn from_len(len: usize) -> Self {
         Self::new(0, len, None)
     }
-    
+
     /// Returns the name of the index
     pub fn name(&self) -> Option<&str> {
         self.name.as_deref()
@@ -62,14 +62,14 @@ impl IndexTrait for RangeIndex {
     fn len(&self) -> usize {
         self.len
     }
-    
+
     fn get_position(&self, value: &str) -> Option<usize> {
         match value.parse::<usize>() {
             Ok(pos) if pos >= self.start && pos < self.start + self.len => Some(pos - self.start),
             _ => None,
         }
     }
-    
+
     fn get_value(&self, position: usize) -> Result<String> {
         if position < self.len {
             Ok((self.start + position).to_string())
@@ -80,11 +80,13 @@ impl IndexTrait for RangeIndex {
             })
         }
     }
-    
+
     fn get_values(&self) -> Vec<String> {
-        (self.start..self.start + self.len).map(|i| i.to_string()).collect()
+        (self.start..self.start + self.len)
+            .map(|i| i.to_string())
+            .collect()
     }
-    
+
     fn clone_index(&self) -> Index {
         Index::Range(self.clone())
     }
@@ -105,14 +107,14 @@ impl StringIndex {
         for (i, v) in values.iter().enumerate() {
             map.insert(v.clone(), i);
         }
-        
+
         Self {
             values: values.into(),
             map,
             name,
         }
     }
-    
+
     /// Returns the name of the index
     pub fn name(&self) -> Option<&str> {
         self.name.as_deref()
@@ -123,11 +125,11 @@ impl IndexTrait for StringIndex {
     fn len(&self) -> usize {
         self.values.len()
     }
-    
+
     fn get_position(&self, value: &str) -> Option<usize> {
         self.map.get(value).copied()
     }
-    
+
     fn get_value(&self, position: usize) -> Result<String> {
         if position < self.values.len() {
             Ok(self.values[position].clone())
@@ -138,11 +140,11 @@ impl IndexTrait for StringIndex {
             })
         }
     }
-    
+
     fn get_values(&self) -> Vec<String> {
         self.values.to_vec()
     }
-    
+
     fn clone_index(&self) -> Index {
         Index::String(self.clone())
     }
@@ -154,17 +156,17 @@ impl Index {
     pub fn range(start: usize, len: usize, name: Option<String>) -> Self {
         Index::Range(RangeIndex::new(start, len, name))
     }
-    
+
     /// Creates a range index from 0 to len-1
     pub fn from_len(len: usize) -> Self {
         Index::Range(RangeIndex::from_len(len))
     }
-    
+
     /// Creates a new string index
     pub fn string(values: Vec<String>, name: Option<String>) -> Self {
         Index::String(StringIndex::new(values, name))
     }
-    
+
     /// Returns the length of the index
     pub fn len(&self) -> usize {
         match self {
@@ -172,12 +174,12 @@ impl Index {
             Index::String(idx) => idx.len(),
         }
     }
-    
+
     /// Returns whether the index is empty
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
-    
+
     /// Returns the position of a value in the index
     pub fn get_position(&self, value: &str) -> Option<usize> {
         match self {
@@ -185,7 +187,7 @@ impl Index {
             Index::String(idx) => idx.get_position(value),
         }
     }
-    
+
     /// Gets the value at a specified position
     pub fn get_value(&self, position: usize) -> Result<String> {
         match self {
@@ -193,7 +195,7 @@ impl Index {
             Index::String(idx) => idx.get_value(position),
         }
     }
-    
+
     /// Gets all values in the index as a vector of strings
     pub fn get_values(&self) -> Vec<String> {
         match self {
@@ -201,7 +203,7 @@ impl Index {
             Index::String(idx) => idx.get_values(),
         }
     }
-    
+
     /// Returns the name of the index
     pub fn name(&self) -> Option<&str> {
         match self {

@@ -8,7 +8,10 @@ mod optimized_groupby_tests {
         let mut df = OptimizedDataFrame::new();
 
         // Add columns for grouping
-        let groups = vec!["A", "B", "A", "B", "A", "C", "B", "C", "C", "A"].iter().map(|s| s.to_string()).collect();
+        let groups = vec!["A", "B", "A", "B", "A", "C", "B", "C", "C", "A"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
         df.add_string_column("group", groups)?;
 
         // Numeric data for aggregation

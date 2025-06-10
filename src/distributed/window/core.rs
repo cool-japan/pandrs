@@ -74,23 +74,17 @@ impl WindowFrame {
             end,
         }
     }
-    
+
     /// Creates a rows-based window frame
-    pub fn rows(
-        start: WindowFrameBoundary,
-        end: WindowFrameBoundary,
-    ) -> Self {
+    pub fn rows(start: WindowFrameBoundary, end: WindowFrameBoundary) -> Self {
         Self::new(WindowFrameType::Rows, start, end)
     }
-    
+
     /// Creates a range-based window frame
-    pub fn range(
-        start: WindowFrameBoundary,
-        end: WindowFrameBoundary,
-    ) -> Self {
+    pub fn range(start: WindowFrameBoundary, end: WindowFrameBoundary) -> Self {
         Self::new(WindowFrameType::Range, start, end)
     }
-    
+
     /// Creates a frame for n preceding rows
     pub fn preceding(n: usize) -> Self {
         Self::rows(
@@ -98,7 +92,7 @@ impl WindowFrame {
             WindowFrameBoundary::CurrentRow,
         )
     }
-    
+
     /// Creates a frame for all preceding rows
     pub fn unbounded_preceding() -> Self {
         Self::rows(
@@ -106,7 +100,7 @@ impl WindowFrame {
             WindowFrameBoundary::CurrentRow,
         )
     }
-    
+
     /// Creates a frame for current row only
     pub fn current_row() -> Self {
         Self::rows(
@@ -114,7 +108,7 @@ impl WindowFrame {
             WindowFrameBoundary::CurrentRow,
         )
     }
-    
+
     /// Creates a frame that spans n preceding and m following rows
     pub fn surrounding(preceding: usize, following: usize) -> Self {
         Self::rows(
@@ -122,7 +116,7 @@ impl WindowFrame {
             WindowFrameBoundary::Following(following),
         )
     }
-    
+
     /// Creates a frame that spans the entire partition
     pub fn entire_partition() -> Self {
         Self::rows(
@@ -130,14 +124,12 @@ impl WindowFrame {
             WindowFrameBoundary::UnboundedFollowing,
         )
     }
-    
+
     /// Converts the window frame to SQL syntax
     pub fn to_sql(&self) -> String {
         format!(
             "{} BETWEEN {} AND {}",
-            self.frame_type,
-            self.start,
-            self.end
+            self.frame_type, self.start, self.end
         )
     }
 }
@@ -178,7 +170,7 @@ impl WindowFunction {
             frame,
         }
     }
-    
+
     /// Creates a window function with a single input column
     pub fn single_input(
         function: &str,
@@ -188,16 +180,9 @@ impl WindowFunction {
         order_by: &[(&str, bool)],
         frame: Option<WindowFrame>,
     ) -> Self {
-        Self::new(
-            function,
-            &[input],
-            output,
-            partition_by,
-            order_by,
-            frame,
-        )
+        Self::new(function, &[input], output, partition_by, order_by, frame)
     }
-    
+
     /// Converts the window function to an SQL expression
     pub fn to_sql(&self) -> String {
         let inputs = if self.inputs.is_empty() {
@@ -205,32 +190,32 @@ impl WindowFunction {
         } else {
             self.inputs.join(", ")
         };
-        
+
         let mut result = format!("{}({}) OVER (", self.function, inputs);
-        
+
         if !self.partition_by.is_empty() {
             result.push_str(&format!("PARTITION BY {} ", self.partition_by.join(", ")));
         }
-        
+
         if !self.order_by.is_empty() {
             result.push_str("ORDER BY ");
             let mut order_parts = Vec::new();
-            
+
             for (col, asc) in &self.order_by {
                 let direction = if *asc { "ASC" } else { "DESC" };
                 order_parts.push(format!("{} {}", col, direction));
             }
-            
+
             result.push_str(&order_parts.join(", "));
             result.push(' ');
         }
-        
+
         if let Some(frame) = &self.frame {
             result.push_str(&frame.to_sql());
         }
-        
+
         result.push_str(")");
-        
+
         format!("{} AS {}", result, self.output)
     }
 }

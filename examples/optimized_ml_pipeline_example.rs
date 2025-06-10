@@ -22,7 +22,7 @@ fn main() {
 }
 
 #[cfg(feature = "optimized")]
-fn main() -> Result<(), PandRSError> {
+fn main() -> Result<()> {
     println!("PandRS Machine Learning Features Example");
     println!("========================");
 
@@ -100,8 +100,8 @@ fn main() -> Result<(), PandRSError> {
 
 #[cfg(feature = "optimized")]
 // Create sample data
-fn create_sample_data() -> Result<DataFrame, PandRSError> {
-    let mut rng = rand::thread_rng();
+fn create_sample_data() -> Result<DataFrame> {
+    let mut rng = rand::rng();
 
     // Generate 10 rows of data
     let n = 10;

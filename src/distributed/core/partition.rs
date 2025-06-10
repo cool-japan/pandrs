@@ -75,10 +75,7 @@ pub struct ColumnStatistics {
 impl Partition {
     /// Creates a new partition
     #[cfg(feature = "distributed")]
-    pub fn new(
-        id: usize, 
-        data: arrow::record_batch::RecordBatch,
-    ) -> Self {
+    pub fn new(id: usize, data: arrow::record_batch::RecordBatch) -> Self {
         let metadata = PartitionMetadata::from_record_batch(&data);
         Self {
             id,
@@ -88,10 +85,7 @@ impl Partition {
     }
 
     /// Creates a new partition with just metadata (no data)
-    pub fn new_metadata_only(
-        id: usize,
-        metadata: PartitionMetadata,
-    ) -> Self {
+    pub fn new_metadata_only(id: usize, metadata: PartitionMetadata) -> Self {
         Self {
             id,
             #[cfg(feature = "distributed")]
@@ -196,10 +190,7 @@ pub struct PartitionSet {
 impl PartitionSet {
     /// Creates a new partition set
     #[cfg(feature = "distributed")]
-    pub fn new(
-        partitions: Vec<Arc<Partition>>,
-        schema: arrow::datatypes::SchemaRef,
-    ) -> Self {
+    pub fn new(partitions: Vec<Arc<Partition>>, schema: arrow::datatypes::SchemaRef) -> Self {
         Self {
             partitions,
             schema: Some(schema),
@@ -259,22 +250,22 @@ pub trait Partitioner {
 #[cfg(feature = "distributed")]
 fn estimate_batch_memory_usage(batch: &arrow::record_batch::RecordBatch) -> usize {
     let mut total_size = 0;
-    
+
     // Add size for each column
     for column in batch.columns() {
         // Get size of array data buffers
         for buffer in column.data().buffers() {
             total_size += buffer.len();
         }
-        
+
         // Add overhead for validity bitmap if there are nulls
         if column.null_count() > 0 {
             total_size += (batch.num_rows() + 7) / 8; // Bitmap size in bytes (rounded up)
         }
     }
-    
+
     // Add size for schema (rough estimate)
     total_size += 100 * batch.num_columns();
-    
+
     total_size
 }

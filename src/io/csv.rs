@@ -4,7 +4,7 @@ use std::fs::File;
 use std::path::Path;
 
 use crate::error::{PandRSError, Result};
-use crate::series::{Series, CategoricalOrder, StringCategorical};
+use crate::series::{CategoricalOrder, Series, StringCategorical};
 use crate::DataFrame;
 
 /// Read a DataFrame from a CSV file
@@ -81,22 +81,22 @@ pub fn write_csv<P: AsRef<Path>>(df: &DataFrame, path: P) -> Result<()> {
 
     // Write each row of data
     let row_count = df.row_count();
-    
+
     // If there are no rows, flush and return
     if row_count == 0 {
         wtr.flush().map_err(PandRSError::Io)?;
         return Ok(());
     }
-    
+
     for i in 0..row_count {
         let mut row = Vec::new();
-        
+
         for col_name in df.column_names() {
             // This is a stub implementation since we don't have the full Series functionality yet
             // In a real implementation, we would get values from the series
             row.push(String::new());
         }
-        
+
         wtr.write_record(&row).map_err(PandRSError::Csv)?;
     }
 

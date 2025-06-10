@@ -1,5 +1,5 @@
 #[cfg(feature = "optimized")]
-use pandrs::error::{Error, Result};
+use pandrs::error::Result;
 #[cfg(feature = "optimized")]
 use pandrs::{Column, Float64Column, LazyFrame, OptimizedDataFrame, StringColumn};
 

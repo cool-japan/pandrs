@@ -2,13 +2,13 @@
 //!
 //! This module provides checkpointing mechanisms for fault recovery in distributed processing.
 
-use std::time::Instant;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
-use crate::error::{Result, Error};
 use crate::distributed::execution::ExecutionPlan;
 use crate::distributed::partition::PartitionSet;
+use crate::error::{Error, Result};
 
 /// Checkpoint for fault recovery
 #[derive(Debug, Clone)]
@@ -33,13 +33,13 @@ impl ExecutionCheckpoint {
             checkpoint_time: Instant::now(),
         }
     }
-    
+
     /// Sets the partial result
     pub fn with_partial_result(mut self, partial_result: PartitionSet) -> Self {
         self.partial_result = Some(partial_result);
         self
     }
-    
+
     /// Adds a failed partition
     pub fn add_failed_partition(&mut self, partition_id: usize) {
         self.failed_partitions.push(partition_id);
@@ -59,32 +59,36 @@ impl CheckpointManager {
             checkpoints: Arc::new(Mutex::new(HashMap::new())),
         }
     }
-    
+
     /// Creates a checkpoint for an execution
-    pub fn create_checkpoint(&self, execution_id: impl Into<String>, plan: ExecutionPlan) -> Result<()> {
+    pub fn create_checkpoint(
+        &self,
+        execution_id: impl Into<String>,
+        plan: ExecutionPlan,
+    ) -> Result<()> {
         let checkpoint = ExecutionCheckpoint::new(plan);
-        
+
         match self.checkpoints.lock() {
             Ok(mut checkpoints) => {
                 checkpoints.insert(execution_id.into(), checkpoint);
                 Ok(())
-            },
+            }
             Err(_) => Err(Error::DistributedProcessing(
-                "Failed to create checkpoint".to_string()
+                "Failed to create checkpoint".to_string(),
             )),
         }
     }
-    
+
     /// Gets a checkpoint for an execution
     pub fn get_checkpoint(&self, execution_id: &str) -> Result<Option<ExecutionCheckpoint>> {
         match self.checkpoints.lock() {
             Ok(checkpoints) => Ok(checkpoints.get(execution_id).cloned()),
             Err(_) => Err(Error::DistributedProcessing(
-                "Failed to get checkpoint".to_string()
+                "Failed to get checkpoint".to_string(),
             )),
         }
     }
-    
+
     /// Updates a checkpoint for an execution
     pub fn update_checkpoint(
         &self,
@@ -98,33 +102,34 @@ impl CheckpointManager {
                     if let Some(result) = partial_result {
                         checkpoint.partial_result = Some(result);
                     }
-                    
+
                     if let Some(partitions) = failed_partitions {
                         checkpoint.failed_partitions = partitions;
                     }
-                    
+
                     Ok(())
                 } else {
-                    Err(Error::DistributedProcessing(
-                        format!("Checkpoint not found for execution ID: {}", execution_id)
-                    ))
+                    Err(Error::DistributedProcessing(format!(
+                        "Checkpoint not found for execution ID: {}",
+                        execution_id
+                    )))
                 }
-            },
+            }
             Err(_) => Err(Error::DistributedProcessing(
-                "Failed to update checkpoint".to_string()
+                "Failed to update checkpoint".to_string(),
             )),
         }
     }
-    
+
     /// Removes a checkpoint for an execution
     pub fn remove_checkpoint(&self, execution_id: &str) -> Result<()> {
         match self.checkpoints.lock() {
             Ok(mut checkpoints) => {
                 checkpoints.remove(execution_id);
                 Ok(())
-            },
+            }
             Err(_) => Err(Error::DistributedProcessing(
-                "Failed to remove checkpoint".to_string()
+                "Failed to remove checkpoint".to_string(),
             )),
         }
     }

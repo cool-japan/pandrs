@@ -2,8 +2,8 @@
 //!
 //! This module provides the core expression system for distributed processing.
 
+use serde::{Deserialize, Serialize};
 use std::fmt;
-use serde::{Serialize, Deserialize};
 
 use super::ExprDataType;
 
@@ -183,14 +183,12 @@ impl fmt::Display for Expr {
             Self::Literal(value) => write!(f, "{}", value),
             Self::BinaryOp { left, op, right } => {
                 write!(f, "({} {} {})", left, op, right)
-            },
-            Self::UnaryOp { op, expr } => {
-                match op {
-                    UnaryOperator::IsNull | UnaryOperator::IsNotNull => {
-                        write!(f, "({} {})", expr, op)
-                    },
-                    _ => write!(f, "{}({})", op, expr),
+            }
+            Self::UnaryOp { op, expr } => match op {
+                UnaryOperator::IsNull | UnaryOperator::IsNotNull => {
+                    write!(f, "({} {})", expr, op)
                 }
+                _ => write!(f, "{}({})", op, expr),
             },
             Self::Function { name, args } => {
                 write!(f, "{}(", name)?;
@@ -201,8 +199,11 @@ impl fmt::Display for Expr {
                     write!(f, "{}", arg)?;
                 }
                 write!(f, ")")
-            },
-            Self::Case { when_then, else_expr } => {
+            }
+            Self::Case {
+                when_then,
+                else_expr,
+            } => {
                 write!(f, "CASE")?;
                 for (when, then) in when_then {
                     write!(f, " WHEN {} THEN {}", when, then)?;
@@ -211,10 +212,10 @@ impl fmt::Display for Expr {
                     write!(f, " ELSE {}", else_expr)?;
                 }
                 write!(f, " END")
-            },
+            }
             Self::Cast { expr, data_type } => {
                 write!(f, "CAST({} AS {})", expr, data_type)
-            },
+            }
             Self::Coalesce { exprs } => {
                 write!(f, "COALESCE(")?;
                 for (i, expr) in exprs.iter().enumerate() {
@@ -224,7 +225,7 @@ impl fmt::Display for Expr {
                     write!(f, "{}", expr)?;
                 }
                 write!(f, ")")
-            },
+            }
         }
     }
 }
@@ -235,17 +236,17 @@ impl Expr {
     pub fn col(name: impl Into<String>) -> Self {
         Self::Column(name.into())
     }
-    
+
     /// Creates a literal value
     pub fn lit<T: Into<Literal>>(value: T) -> Self {
         Self::Literal(value.into())
     }
-    
+
     /// Creates a literal NULL value
     pub fn null() -> Self {
         Self::Literal(Literal::Null)
     }
-    
+
     /// Creates a function call
     pub fn call(name: impl Into<String>, args: Vec<Expr>) -> Self {
         Self::Function {
@@ -253,7 +254,7 @@ impl Expr {
             args,
         }
     }
-    
+
     /// Creates a binary operation
     pub fn binary(left: Expr, op: BinaryOperator, right: Expr) -> Self {
         Self::BinaryOp {
@@ -262,7 +263,7 @@ impl Expr {
             right: Box::new(right),
         }
     }
-    
+
     /// Creates a unary operation
     pub fn unary(op: UnaryOperator, expr: Expr) -> Self {
         Self::UnaryOp {
@@ -270,7 +271,7 @@ impl Expr {
             expr: Box::new(expr),
         }
     }
-    
+
     /// Creates a CASE expression
     pub fn case(when_then: Vec<(Expr, Expr)>, else_expr: Option<Expr>) -> Self {
         Self::Case {
@@ -278,7 +279,7 @@ impl Expr {
             else_expr: else_expr.map(Box::new),
         }
     }
-    
+
     /// Creates a CAST expression
     pub fn cast(expr: Expr, data_type: ExprDataType) -> Self {
         Self::Cast {
@@ -286,134 +287,132 @@ impl Expr {
             data_type,
         }
     }
-    
+
     /// Creates a COALESCE expression
     pub fn coalesce(exprs: Vec<Expr>) -> Self {
-        Self::Coalesce {
-            exprs,
-        }
+        Self::Coalesce { exprs }
     }
-    
+
     /// Adds two expressions
     pub fn add(self, other: Expr) -> Self {
         Self::binary(self, BinaryOperator::Add, other)
     }
-    
+
     /// Subtracts an expression from this one
     pub fn sub(self, other: Expr) -> Self {
         Self::binary(self, BinaryOperator::Subtract, other)
     }
-    
+
     /// Multiplies this expression by another
     pub fn mul(self, other: Expr) -> Self {
         Self::binary(self, BinaryOperator::Multiply, other)
     }
-    
+
     /// Divides this expression by another
     pub fn div(self, other: Expr) -> Self {
         Self::binary(self, BinaryOperator::Divide, other)
     }
-    
+
     /// Applies modulo operation
     pub fn modulo(self, other: Expr) -> Self {
         Self::binary(self, BinaryOperator::Modulo, other)
     }
-    
+
     /// Checks if this expression equals another
     pub fn eq(self, other: Expr) -> Self {
         Self::binary(self, BinaryOperator::Equal, other)
     }
-    
+
     /// Checks if this expression does not equal another
     pub fn neq(self, other: Expr) -> Self {
         Self::binary(self, BinaryOperator::NotEqual, other)
     }
-    
+
     /// Checks if this expression is less than another
     pub fn lt(self, other: Expr) -> Self {
         Self::binary(self, BinaryOperator::LessThan, other)
     }
-    
+
     /// Checks if this expression is less than or equal to another
     pub fn lte(self, other: Expr) -> Self {
         Self::binary(self, BinaryOperator::LessThanOrEqual, other)
     }
-    
+
     /// Checks if this expression is greater than another
     pub fn gt(self, other: Expr) -> Self {
         Self::binary(self, BinaryOperator::GreaterThan, other)
     }
-    
+
     /// Checks if this expression is greater than or equal to another
     pub fn gte(self, other: Expr) -> Self {
         Self::binary(self, BinaryOperator::GreaterThanOrEqual, other)
     }
-    
+
     /// Applies logical AND
     pub fn and(self, other: Expr) -> Self {
         Self::binary(self, BinaryOperator::And, other)
     }
-    
+
     /// Applies logical OR
     pub fn or(self, other: Expr) -> Self {
         Self::binary(self, BinaryOperator::Or, other)
     }
-    
+
     /// Applies LIKE pattern matching
     pub fn like(self, pattern: impl Into<String>) -> Self {
         Self::binary(self, BinaryOperator::Like, Self::lit(pattern.into()))
     }
-    
+
     /// Concatenates with another string expression
     pub fn concat(self, other: Expr) -> Self {
         Self::binary(self, BinaryOperator::Concat, other)
     }
-    
+
     /// Negates this expression
     pub fn negate(self) -> Self {
         Self::unary(UnaryOperator::Negate, self)
     }
-    
+
     /// Applies logical NOT
     pub fn not(self) -> Self {
         Self::unary(UnaryOperator::Not, self)
     }
-    
+
     /// Checks if this expression is NULL
     pub fn is_null(self) -> Self {
         Self::unary(UnaryOperator::IsNull, self)
     }
-    
+
     /// Checks if this expression is NOT NULL
     pub fn is_not_null(self) -> Self {
         Self::unary(UnaryOperator::IsNotNull, self)
     }
-    
+
     /// Casts this expression to boolean
     pub fn to_boolean(self) -> Self {
         Self::cast(self, ExprDataType::Boolean)
     }
-    
+
     /// Casts this expression to integer
     pub fn to_integer(self) -> Self {
         Self::cast(self, ExprDataType::Integer)
     }
-    
+
     /// Casts this expression to float
     pub fn to_float(self) -> Self {
         Self::cast(self, ExprDataType::Float)
     }
-    
+
     /// Casts this expression to string
     pub fn to_string(self) -> Self {
         Self::cast(self, ExprDataType::String)
     }
-    
+
     /// Casts this expression to date
     pub fn to_date(self) -> Self {
         Self::cast(self, ExprDataType::Date)
     }
-    
+
     /// Casts this expression to timestamp
     pub fn to_timestamp(self) -> Self {
         Self::cast(self, ExprDataType::Timestamp)

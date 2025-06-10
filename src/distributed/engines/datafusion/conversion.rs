@@ -3,15 +3,15 @@
 //! This module provides utilities for converting between PandRS and DataFusion data types.
 
 #[cfg(feature = "distributed")]
-use crate::error::{Result, Error};
-#[cfg(feature = "distributed")]
 use crate::dataframe::DataFrame;
+#[cfg(feature = "distributed")]
+use crate::error::{Error, Result};
 #[cfg(feature = "distributed")]
 use crate::na::NA;
 #[cfg(feature = "distributed")]
 use arrow::array::{
-    BooleanArray, Float64Array, Int64Array, StringArray, Array,
-    ArrayRef, NullArray, TimestampNanosecondArray,
+    Array, ArrayRef, BooleanArray, Float64Array, Int64Array, NullArray, StringArray,
+    TimestampNanosecondArray,
 };
 #[cfg(feature = "distributed")]
 use arrow::datatypes::{DataType, Field, Schema, TimeUnit};
@@ -27,7 +27,7 @@ pub fn dataframe_to_record_batches(
     // Create a schema based on DataFrame columns
     let columns = df.columns()?;
     let mut fields = Vec::with_capacity(columns.len());
-    
+
     for column in columns {
         let data_type = match column.data_type() {
             "boolean" => DataType::Boolean,
@@ -37,33 +37,33 @@ pub fn dataframe_to_record_batches(
             "timestamp" => DataType::Timestamp(TimeUnit::Nanosecond, None),
             _ => {
                 return Err(Error::InvalidInput(format!(
-                    "Unsupported data type for DataFusion: {}", 
+                    "Unsupported data type for DataFusion: {}",
                     column.data_type()
                 )));
             }
         };
-        
+
         fields.push(Field::new(
             column.name().unwrap_or("unnamed"),
             data_type,
             true, // nullable
         ));
     }
-    
+
     let schema = Arc::new(Schema::new(fields));
-    
+
     // Split the data into batches
     let row_count = df.row_count()?;
     let batch_count = (row_count + batch_size - 1) / batch_size;
     let mut batches = Vec::with_capacity(batch_count);
-    
+
     for batch_idx in 0..batch_count {
         let start_row = batch_idx * batch_size;
         let end_row = std::cmp::min(start_row + batch_size, row_count);
         let batch_row_count = end_row - start_row;
-        
+
         let mut batch_columns = Vec::with_capacity(columns.len());
-        
+
         for column in &columns {
             let array = match column.data_type() {
                 "boolean" => {
@@ -129,23 +129,20 @@ pub fn dataframe_to_record_batches(
                 }
                 _ => {
                     return Err(Error::InvalidInput(format!(
-                        "Unsupported data type for DataFusion: {}", 
+                        "Unsupported data type for DataFusion: {}",
                         column.data_type()
                     )));
                 }
             };
-            
+
             batch_columns.push(array);
         }
-        
-        let batch = arrow::record_batch::RecordBatch::try_new(
-            schema.clone(),
-            batch_columns,
-        )?;
-        
+
+        let batch = arrow::record_batch::RecordBatch::try_new(schema.clone(), batch_columns)?;
+
         batches.push(batch);
     }
-    
+
     Ok(batches)
 }
 
@@ -157,15 +154,15 @@ pub fn record_batches_to_dataframe(
     if batches.is_empty() {
         return Ok(DataFrame::new());
     }
-    
+
     let schema = batches[0].schema();
     let mut df = DataFrame::new();
-    
+
     // Process each column
     for (col_idx, field) in schema.fields().iter().enumerate() {
         let name = field.name();
         let data_type = field.data_type();
-        
+
         match data_type {
             DataType::Boolean => {
                 let values = extract_boolean_values(batches, col_idx)?;
@@ -189,13 +186,13 @@ pub fn record_batches_to_dataframe(
             }
             _ => {
                 return Err(Error::InvalidInput(format!(
-                    "Unsupported Arrow data type: {}", 
+                    "Unsupported Arrow data type: {}",
                     data_type
                 )));
             }
         }
     }
-    
+
     Ok(df)
 }
 
@@ -206,7 +203,7 @@ fn extract_boolean_values(
     col_idx: usize,
 ) -> Result<Vec<NA<f64>>> {
     let mut values = Vec::new();
-    
+
     for batch in batches {
         let array = batch.column(col_idx);
         if let Some(boolean_array) = array.as_any().downcast_ref::<BooleanArray>() {
@@ -224,7 +221,7 @@ fn extract_boolean_values(
             ));
         }
     }
-    
+
     Ok(values)
 }
 
@@ -235,7 +232,7 @@ fn extract_int64_values(
     col_idx: usize,
 ) -> Result<Vec<NA<f64>>> {
     let mut values = Vec::new();
-    
+
     for batch in batches {
         let array = batch.column(col_idx);
         if let Some(int_array) = array.as_any().downcast_ref::<Int64Array>() {
@@ -252,7 +249,7 @@ fn extract_int64_values(
             ));
         }
     }
-    
+
     Ok(values)
 }
 
@@ -263,7 +260,7 @@ fn extract_float64_values(
     col_idx: usize,
 ) -> Result<Vec<NA<f64>>> {
     let mut values = Vec::new();
-    
+
     for batch in batches {
         let array = batch.column(col_idx);
         if let Some(float_array) = array.as_any().downcast_ref::<Float64Array>() {
@@ -280,7 +277,7 @@ fn extract_float64_values(
             ));
         }
     }
-    
+
     Ok(values)
 }
 
@@ -291,7 +288,9 @@ fn extract_string_values(
     col_idx: usize,
 ) -> Result<Vec<NA<f64>>> {
     // Implementation will be provided in a future PR
-    Err(Error::NotImplemented("String extraction not yet implemented".to_string()))
+    Err(Error::NotImplemented(
+        "String extraction not yet implemented".to_string(),
+    ))
 }
 
 /// Extracts timestamp values from record batches
@@ -301,5 +300,7 @@ fn extract_timestamp_values(
     col_idx: usize,
 ) -> Result<Vec<NA<f64>>> {
     // Implementation will be provided in a future PR
-    Err(Error::NotImplemented("Timestamp extraction not yet implemented".to_string()))
+    Err(Error::NotImplemented(
+        "Timestamp extraction not yet implemented".to_string(),
+    ))
 }

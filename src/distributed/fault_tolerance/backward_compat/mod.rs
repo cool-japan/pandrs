@@ -5,9 +5,8 @@
 
 // Re-export all types from the new modules
 pub use crate::distributed::fault_tolerance::{
-    RetryPolicy, FailureType, FailureInfo, RecoveryStrategy,
-    RecoveryAction, FaultToleranceHandler, FaultTolerantExecutor,
-    FaultTolerantContext, ExecutionCheckpoint, CheckpointManager,
+    CheckpointManager, ExecutionCheckpoint, FailureInfo, FailureType, FaultToleranceHandler,
+    FaultTolerantContext, FaultTolerantExecutor, RecoveryAction, RecoveryStrategy, RetryPolicy,
 };
 
 // The following is just to ensure documentation clarity in case someone is using

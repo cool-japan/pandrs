@@ -2,14 +2,14 @@
 //!
 //! This module provides functionality for column projections and user-defined functions.
 
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use serde::{Serialize, Deserialize};
 
-use crate::error::Result;
-use super::{ExprDataType, schema::ExprSchema};
-use super::core::{Expr};
-use crate::distributed::execution::{ExecutionPlan, Operation};
+use super::core::Expr;
+use super::{schema::ExprSchema, ExprDataType};
 use crate::distributed::dataframe::DistributedDataFrame;
+use crate::distributed::execution::{ExecutionPlan, Operation};
+use crate::error::Result;
 
 /// A user-defined function definition
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -39,14 +39,14 @@ impl UdfDefinition {
             body: body.into(),
         }
     }
-    
+
     /// Converts the UDF definition to SQL CREATE FUNCTION statement
     pub fn to_sql(&self) -> String {
         let mut params = Vec::with_capacity(self.parameter_types.len());
         for (i, param_type) in self.parameter_types.iter().enumerate() {
             params.push(format!("param{} {}", i, param_type));
         }
-        
+
         format!(
             "CREATE FUNCTION {} ({}) RETURNS {} AS '{}'",
             self.name,
@@ -74,7 +74,7 @@ impl ColumnProjection {
             alias: alias.map(|a| a.into()),
         }
     }
-    
+
     /// Creates a column projection with alias
     pub fn with_alias(expr: Expr, alias: impl Into<String>) -> Self {
         Self {
@@ -82,7 +82,7 @@ impl ColumnProjection {
             alias: Some(alias.into()),
         }
     }
-    
+
     /// Creates a simple column projection without alias
     pub fn column(name: impl Into<String>) -> Self {
         Self {
@@ -90,7 +90,7 @@ impl ColumnProjection {
             alias: None,
         }
     }
-    
+
     /// Converts the column projection to SQL
     pub fn to_sql(&self) -> String {
         match &self.alias {
@@ -98,7 +98,7 @@ impl ColumnProjection {
             None => format!("{}", self.expr),
         }
     }
-    
+
     /// Gets the output name of this projection
     pub fn output_name(&self) -> String {
         match &self.alias {
@@ -107,8 +107,14 @@ impl ColumnProjection {
                 Expr::Column(name) => name.clone(),
                 _ => {
                     let expr_str = format!("{:?}", self.expr);
-                    format!("expr_{}", expr_str.chars().filter(|c| c.is_alphanumeric()).collect::<String>())
-                },
+                    format!(
+                        "expr_{}",
+                        expr_str
+                            .chars()
+                            .filter(|c| c.is_alphanumeric())
+                            .collect::<String>()
+                    )
+                }
             },
         }
     }
@@ -118,18 +124,22 @@ impl ColumnProjection {
 pub trait ProjectionExt {
     /// Selects expressions from the DataFrame
     fn select_expr(&self, projections: &[ColumnProjection]) -> Result<DistributedDataFrame>;
-    
+
     /// Creates a new calculated column
     fn with_column(&self, name: impl Into<String>, expr: Expr) -> Result<DistributedDataFrame>;
-    
+
     /// Filters the DataFrame using an expression
     fn filter_expr(&self, expr: Expr) -> Result<DistributedDataFrame>;
-    
+
     /// Creates user-defined functions
     fn create_udf(&self, udfs: &[UdfDefinition]) -> Result<DistributedDataFrame>;
-    
+
     /// Validates a set of projections against the schema
-    fn validate_projections(&self, projections: &[ColumnProjection], schema: &ExprSchema) -> Result<()>;
+    fn validate_projections(
+        &self,
+        projections: &[ColumnProjection],
+        schema: &ExprSchema,
+    ) -> Result<()>;
 }
 
 impl ProjectionExt for DistributedDataFrame {
@@ -137,10 +147,15 @@ impl ProjectionExt for DistributedDataFrame {
         // Create a custom operation for expressions
         let operation = Operation::Custom {
             name: "select_expr".to_string(),
-            params: [("projections".to_string(), serde_json::to_string(projections).unwrap_or_default())]
-                .iter().cloned().collect(),
+            params: [(
+                "projections".to_string(),
+                serde_json::to_string(projections).unwrap_or_default(),
+            )]
+            .iter()
+            .cloned()
+            .collect(),
         };
-        
+
         if self.is_lazy() {
             let mut new_df = self.clone_empty();
             new_df.add_pending_operation(operation, vec![self.id().to_string()]);
@@ -149,21 +164,26 @@ impl ProjectionExt for DistributedDataFrame {
             self.execute_operation(operation, vec![self.id().to_string()])
         }
     }
-    
+
     fn with_column(&self, name: impl Into<String>, expr: Expr) -> Result<DistributedDataFrame> {
         let name = name.into();
         let projection = ColumnProjection::with_alias(expr, name.clone());
-        
+
         // Create a custom operation for adding a column
         let operation = Operation::Custom {
             name: "with_column".to_string(),
             params: [
                 ("column_name".to_string(), name),
-                ("projection".to_string(), serde_json::to_string(&projection).unwrap_or_default()),
+                (
+                    "projection".to_string(),
+                    serde_json::to_string(&projection).unwrap_or_default(),
+                ),
             ]
-            .iter().cloned().collect(),
+            .iter()
+            .cloned()
+            .collect(),
         };
-        
+
         if self.is_lazy() {
             let mut new_df = self.clone_empty();
             new_df.add_pending_operation(operation, vec![self.id().to_string()]);
@@ -172,23 +192,28 @@ impl ProjectionExt for DistributedDataFrame {
             self.execute_operation(operation, vec![self.id().to_string()])
         }
     }
-    
+
     fn filter_expr(&self, expr: Expr) -> Result<DistributedDataFrame> {
         // Convert the expression to SQL
         let filter_sql = expr.to_string();
-        
+
         // Use the existing filter operation with the SQL expression
         self.filter(&filter_sql)
     }
-    
+
     fn create_udf(&self, udfs: &[UdfDefinition]) -> Result<DistributedDataFrame> {
         // Create a custom operation for UDFs
         let operation = Operation::Custom {
             name: "create_udf".to_string(),
-            params: [("udfs".to_string(), serde_json::to_string(udfs).unwrap_or_default())]
-                .iter().cloned().collect(),
+            params: [(
+                "udfs".to_string(),
+                serde_json::to_string(udfs).unwrap_or_default(),
+            )]
+            .iter()
+            .cloned()
+            .collect(),
         };
-        
+
         if self.is_lazy() {
             let mut new_df = self.clone_empty();
             new_df.add_pending_operation(operation, vec![self.id().to_string()]);
@@ -197,8 +222,12 @@ impl ProjectionExt for DistributedDataFrame {
             self.execute_operation(operation, vec![self.id().to_string()])
         }
     }
-    
-    fn validate_projections(&self, projections: &[ColumnProjection], schema: &ExprSchema) -> Result<()> {
+
+    fn validate_projections(
+        &self,
+        projections: &[ColumnProjection],
+        schema: &ExprSchema,
+    ) -> Result<()> {
         // Will be implemented later with schema validation
         Ok(())
     }

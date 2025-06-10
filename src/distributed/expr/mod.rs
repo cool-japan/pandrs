@@ -3,12 +3,12 @@
 //! This module provides support for complex expressions and user-defined functions
 //! for distributed DataFrames, enabling more complex transformations and calculations.
 
+use serde::{Deserialize, Serialize};
 use std::fmt;
-use serde::{Serialize, Deserialize};
 
 pub mod core;
-pub mod schema;
 pub mod projection;
+pub mod schema;
 pub mod validator;
 // Re-export backward compatibility module
 pub mod backward_compat;
@@ -45,7 +45,7 @@ impl fmt::Display for ExprDataType {
 }
 
 // Re-exports for backward compatibility
-pub use self::core::{Expr, Literal, BinaryOperator, UnaryOperator};
-pub use self::projection::{ColumnProjection, UdfDefinition, ProjectionExt};
-pub use self::schema::{ExprSchema, ColumnMeta};
+pub use self::core::{BinaryOperator, Expr, Literal, UnaryOperator};
+pub use self::projection::{ColumnProjection, ProjectionExt, UdfDefinition};
+pub use self::schema::{ColumnMeta, ExprSchema};
 pub use self::validator::{ExprValidator, InferredType};

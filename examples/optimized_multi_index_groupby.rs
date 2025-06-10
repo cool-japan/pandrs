@@ -35,11 +35,11 @@ fn main() -> Result<()> {
     for (key, group_df) in &grouped_by_category {
         println!("Group: {}", key);
         println!("  Rows: {}", group_df.row_count());
-        
+
         // Calculate some simple statistics for each group
         if let (Ok(value_col), Ok(score_col)) = (
             group_df.get_int_column("value"),
-            group_df.get_float_column("score")
+            group_df.get_float_column("score"),
         ) {
             let value_sum: i64 = value_col.iter().filter_map(|v| *v).sum();
             let score_avg: f64 = score_col.iter().sum::<f64>() / score_col.len() as f64;
@@ -47,7 +47,7 @@ fn main() -> Result<()> {
         }
     }
 
-    // Group by multiple columns  
+    // Group by multiple columns
     println!("\n=== Group by 'category' and 'region' ===");
     let grouped_with_multi = df.par_groupby(&["category", "region"])?;
 

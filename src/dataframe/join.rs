@@ -24,22 +24,22 @@ pub trait JoinExt {
     fn join(&self, other: &Self, on: &str, join_type: JoinType) -> Result<Self>
     where
         Self: Sized;
-    
+
     /// Perform inner join
     fn inner_join(&self, other: &Self, on: &str) -> Result<Self>
     where
         Self: Sized;
-    
+
     /// Perform left join
     fn left_join(&self, other: &Self, on: &str) -> Result<Self>
     where
         Self: Sized;
-    
+
     /// Perform right join
     fn right_join(&self, other: &Self, on: &str) -> Result<Self>
     where
         Self: Sized;
-    
+
     /// Perform outer join
     fn outer_join(&self, other: &Self, on: &str) -> Result<Self>
     where
@@ -78,7 +78,7 @@ impl JoinExt for DataFrame {
         // This would be replaced with a full implementation later
         let legacy_self = crate::dataframe::DataFrame::new();
         let legacy_other = crate::dataframe::DataFrame::new();
-        
+
         let _ = legacy_self.inner_join(&legacy_other, on)?;
 
         Ok(DataFrame::new())
@@ -90,7 +90,7 @@ impl JoinExt for DataFrame {
         // This would be replaced with a full implementation later
         let legacy_self = crate::dataframe::DataFrame::new();
         let legacy_other = crate::dataframe::DataFrame::new();
-        
+
         let _ = legacy_self.left_join(&legacy_other, on)?;
 
         Ok(DataFrame::new())
@@ -107,7 +107,7 @@ impl JoinExt for DataFrame {
         // This would be replaced with a full implementation later
         let legacy_self = crate::dataframe::DataFrame::new();
         let legacy_other = crate::dataframe::DataFrame::new();
-        
+
         let _ = legacy_self.outer_join(&legacy_other, on)?;
 
         Ok(DataFrame::new())

@@ -78,13 +78,12 @@ pub enum Error {
 
     #[error("Consistency error: {0}")]
     Consistency(String),
-    
+
     #[error("Length mismatch: expected {expected}, actual {actual}")]
     LengthMismatch { expected: usize, actual: usize },
-    
+
     // We already have IoError, CsvError, JsonError, etc. above
     // Removed duplicated error types
-    
     #[error("Cast error: {0}")]
     Cast(String),
 
@@ -125,10 +124,7 @@ pub enum Error {
     EmptySeries,
 
     #[error("Inconsistent array lengths: expected {expected}, found {found}")]
-    InconsistentArrayLengths {
-        expected: usize,
-        found: usize,
-    },
+    InconsistentArrayLengths { expected: usize, found: usize },
 
     // Distributed processing errors
     #[error("Distributed processing error: {0}")]
@@ -201,7 +197,9 @@ pub fn io_error<T: AsRef<str>>(msg: T) -> std::io::Error {
 
 // Conversion for Plotters errors
 #[cfg(feature = "plotters")]
-impl<E: std::error::Error + Send + Sync + 'static> From<plotters::drawing::DrawingAreaErrorKind<E>> for Error {
+impl<E: std::error::Error + Send + Sync + 'static> From<plotters::drawing::DrawingAreaErrorKind<E>>
+    for Error
+{
     fn from(err: plotters::drawing::DrawingAreaErrorKind<E>) -> Self {
         Error::Visualization(format!("Plot drawing error: {}", err))
     }

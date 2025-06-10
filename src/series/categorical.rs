@@ -1,13 +1,16 @@
+use std::collections::HashMap;
 use std::fmt::Debug;
 use std::hash::Hash;
-use std::collections::HashMap;
 
 use crate::core::error::Result;
-use crate::series::{Series, NASeries};
 use crate::na::NA;
+use crate::series::{NASeries, Series};
 
 // Re-export from legacy module for backward compatibility
-pub use crate::series::categorical::{Categorical as LegacyCategorical, CategoricalOrder as LegacyCategoricalOrder, StringCategorical as LegacyStringCategorical};
+pub use crate::series::categorical::{
+    Categorical as LegacyCategorical, CategoricalOrder as LegacyCategoricalOrder,
+    StringCategorical as LegacyStringCategorical,
+};
 
 /// Enumeration for categorical order
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -20,7 +23,10 @@ pub enum CategoricalOrder {
 
 /// Categorical data type
 #[derive(Debug, Clone)]
-pub struct Categorical<T> where T: Debug + Clone + Eq + Hash {
+pub struct Categorical<T>
+where
+    T: Debug + Clone + Eq + Hash,
+{
     // This is a stub implementation - we'll develop this further
     // Currently just forwarding to the legacy implementation
     _phantom: std::marker::PhantomData<T>,
@@ -30,7 +36,10 @@ pub struct Categorical<T> where T: Debug + Clone + Eq + Hash {
     ordered_flag: bool,
 }
 
-impl<T> Categorical<T> where T: Debug + Clone + Eq + Hash {
+impl<T> Categorical<T>
+where
+    T: Debug + Clone + Eq + Hash,
+{
     /// Create a new Categorical
     pub fn new(values: Vec<T>, categories: Option<Vec<T>>, ordered: bool) -> Result<Self> {
         // For our stub implementation, we'll just store the values and categories
@@ -51,17 +60,19 @@ impl<T> Categorical<T> where T: Debug + Clone + Eq + Hash {
     }
 
     /// Create from a vector with NA values
-    pub fn from_na_vec(values: Vec<NA<T>>, categories: Option<Vec<T>>, ordered: Option<CategoricalOrder>) -> Result<Self> {
+    pub fn from_na_vec(
+        values: Vec<NA<T>>,
+        categories: Option<Vec<T>>,
+        ordered: Option<CategoricalOrder>,
+    ) -> Result<Self> {
         // Extract non-NA values
-        let non_na_values: Vec<T> = values.iter()
-            .filter_map(|v| v.value().cloned())
-            .collect();
+        let non_na_values: Vec<T> = values.iter().filter_map(|v| v.value().cloned()).collect();
 
         // Create categorical with extracted values
         Self::new(
             non_na_values,
             categories,
-            ordered.map_or(false, |o| matches!(o, CategoricalOrder::Ordered))
+            ordered.map_or(false, |o| matches!(o, CategoricalOrder::Ordered)),
         )
     }
 
@@ -107,7 +118,7 @@ impl<T> Categorical<T> where T: Debug + Clone + Eq + Hash {
     /// Convert categorical to series
     pub fn to_series(&self, name: Option<String>) -> Result<Series<T>>
     where
-        T: 'static + Clone + Debug + Send + Sync
+        T: 'static + Clone + Debug + Send + Sync,
     {
         // Create a series with the values
         Series::new(self.values.clone(), name)
@@ -134,7 +145,8 @@ impl<T> Categorical<T> where T: Debug + Clone + Eq + Hash {
     /// Remove categories
     pub fn remove_categories(&mut self, categories_to_remove: &[T]) -> Result<()> {
         // Filter out the categories to remove
-        self.categories_list.retain(|cat| !categories_to_remove.contains(cat));
+        self.categories_list
+            .retain(|cat| !categories_to_remove.contains(cat));
         Ok(())
     }
 
@@ -160,7 +172,10 @@ impl<T> Categorical<T> where T: Debug + Clone + Eq + Hash {
     }
 
     /// Convert categorical data to a vector of NA values
-    pub fn to_na_vec(&self) -> Vec<NA<T>> where T: Clone {
+    pub fn to_na_vec(&self) -> Vec<NA<T>>
+    where
+        T: Clone,
+    {
         // For simplicity, just convert values to NA::Value
         // In a real implementation, would handle NA codes (-1)
         self.values.iter().map(|v| NA::Value(v.clone())).collect()
@@ -169,7 +184,7 @@ impl<T> Categorical<T> where T: Debug + Clone + Eq + Hash {
     /// Convert categorical data to an NASeries
     pub fn to_na_series(&self, name: Option<String>) -> Result<NASeries<T>>
     where
-        T: 'static + Clone + Debug + Send + Sync
+        T: 'static + Clone + Debug + Send + Sync,
     {
         // Create NASeries from values
         NASeries::new(self.to_na_vec(), name)
@@ -203,7 +218,11 @@ impl<T> Categorical<T> where T: Debug + Clone + Eq + Hash {
         }
 
         // Create a new categorical with the common categories
-        Self::new(self.values.clone(), Some(common_categories), self.ordered_flag)
+        Self::new(
+            self.values.clone(),
+            Some(common_categories),
+            self.ordered_flag,
+        )
     }
 
     /// Difference of two categoricals (self - other)
@@ -218,7 +237,11 @@ impl<T> Categorical<T> where T: Debug + Clone + Eq + Hash {
         }
 
         // Create a new categorical with the differnt categories
-        Self::new(self.values.clone(), Some(diff_categories), self.ordered_flag)
+        Self::new(
+            self.values.clone(),
+            Some(diff_categories),
+            self.ordered_flag,
+        )
     }
 }
 

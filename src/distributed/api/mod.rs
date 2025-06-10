@@ -3,14 +3,11 @@
 //! This module provides high-level functions and utilities for working with
 //! distributed data processing in PandRS.
 
-use crate::error::Result;
+use crate::dataframe::base::DataFrame;
 use crate::distributed::core::{
-    DistributedConfig,
-    DistributedContext,
-    DistributedDataFrame,
-    ToDistributed,
+    DistributedConfig, DistributedContext, DistributedDataFrame, ToDistributed,
 };
-use crate::dataframe::base::{DataFrame};
+use crate::error::Result;
 
 /// Creates a new distributed context with the default configuration
 pub fn create_default_context() -> Result<DistributedContext> {
@@ -40,10 +37,7 @@ pub fn read_csv(
 
 /// Reads a Parquet file into a distributed DataFrame
 #[cfg(feature = "parquet")]
-pub fn read_parquet(
-    path: &str,
-    context: &DistributedContext,
-) -> Result<DistributedDataFrame> {
+pub fn read_parquet(path: &str, context: &DistributedContext) -> Result<DistributedDataFrame> {
     context.read_parquet(path)
 }
 

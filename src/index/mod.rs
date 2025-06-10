@@ -24,7 +24,7 @@ where
 
     /// Mapping from values to positions
     map: HashMap<T, usize>,
-    
+
     /// Index name (optional)
     name: Option<String>,
 }
@@ -60,7 +60,7 @@ where
     pub fn new(values: Vec<T>) -> Result<Self> {
         Self::with_name(values, None)
     }
-    
+
     /// Creates a new index with a name
     ///
     /// # Arguments
@@ -136,17 +136,17 @@ where
     pub fn values(&self) -> &[T] {
         &self.values
     }
-    
+
     /// Get the index name
     pub fn name(&self) -> Option<&String> {
         self.name.as_ref()
     }
-    
+
     /// Set the index name
     pub fn set_name(&mut self, name: Option<String>) {
         self.name = name;
     }
-    
+
     /// Copy the index with a new name
     pub fn rename(&self, name: Option<String>) -> Self {
         let mut new_index = self.clone();
@@ -168,18 +168,18 @@ pub trait IndexTrait {
     }
 }
 
-impl<T> IndexTrait for Index<T> 
-where 
-    T: Debug + Clone + Eq + Hash + Display 
+impl<T> IndexTrait for Index<T>
+where
+    T: Debug + Clone + Eq + Hash + Display,
 {
     fn len(&self) -> usize {
         self.len()
     }
 }
 
-impl<T> IndexTrait for MultiIndex<T> 
-where 
-    T: Debug + Clone + Eq + Hash + Display 
+impl<T> IndexTrait for MultiIndex<T>
+where
+    T: Debug + Clone + Eq + Hash + Display,
 {
     fn len(&self) -> usize {
         self.len()
@@ -190,9 +190,9 @@ where
 ///
 /// An enum for uniformly handling both single-level indices and multi-level indices.
 #[derive(Debug, Clone)]
-pub enum DataFrameIndex<T> 
-where 
-    T: Debug + Clone + Eq + Hash + Display 
+pub enum DataFrameIndex<T>
+where
+    T: Debug + Clone + Eq + Hash + Display,
 {
     /// Single-level index
     Simple(Index<T>),
@@ -200,9 +200,9 @@ where
     Multi(MultiIndex<T>),
 }
 
-impl<T> IndexTrait for DataFrameIndex<T> 
-where 
-    T: Debug + Clone + Eq + Hash + Display 
+impl<T> IndexTrait for DataFrameIndex<T>
+where
+    T: Debug + Clone + Eq + Hash + Display,
 {
     fn len(&self) -> usize {
         match self {
@@ -212,9 +212,9 @@ where
     }
 }
 
-impl<T> DataFrameIndex<T> 
-where 
-    T: Debug + Clone + Eq + Hash + Display 
+impl<T> DataFrameIndex<T>
+where
+    T: Debug + Clone + Eq + Hash + Display,
 {
     /// Create from a simple index
     pub fn from_simple(index: Index<T>) -> Self {
@@ -255,23 +255,26 @@ pub type StringIndex = Index<String>;
 /// Extension methods for date/time conversion
 impl StringIndex {
     /// Convert index values to an array of date/time objects
-    /// 
+    ///
     /// If the index contains date strings, converts them to NaiveDate.
     /// If conversion fails, uses the current date.
     pub fn to_datetime_vec(&self) -> Result<Vec<NaiveDate>> {
         let mut result = Vec::with_capacity(self.len());
-        
+
         for value in &self.values {
             // Parse date format string
             match NaiveDate::parse_from_str(value, "%Y-%m-%d") {
                 Ok(date) => result.push(date),
                 Err(_) => {
                     // If date parsing fails, use the current date
-                    result.push(NaiveDate::parse_from_str("2023-01-01", "%Y-%m-%d").unwrap_or_else(|_| NaiveDate::now()));
+                    result.push(
+                        NaiveDate::parse_from_str("2023-01-01", "%Y-%m-%d")
+                            .unwrap_or_else(|_| NaiveDate::now()),
+                    );
                 }
             }
         }
-        
+
         Ok(result)
     }
 }
@@ -285,23 +288,25 @@ impl DataFrameIndex<String> {
             DataFrameIndex::Multi(_) => {
                 // For multi-index, use the first level
                 Err(PandRSError::NotImplemented(
-                    "Date/time conversion for multi-index is not currently supported".to_string()
+                    "Date/time conversion for multi-index is not currently supported".to_string(),
                 ))
             }
         }
     }
-    
+
     /// Get string values of the index
     pub fn string_values(&self) -> Option<Vec<String>> {
         match self {
-            DataFrameIndex::Simple(idx) => {
-                Some(idx.values().iter().map(|v| v.clone()).collect())
-            },
+            DataFrameIndex::Simple(idx) => Some(idx.values().iter().map(|v| v.clone()).collect()),
             DataFrameIndex::Multi(multi_idx) => {
                 // Return simplified string representation of multi-index
-                Some(multi_idx.tuples().iter()
-                    .map(|tuple| tuple.join(", "))
-                    .collect())
+                Some(
+                    multi_idx
+                        .tuples()
+                        .iter()
+                        .map(|tuple| tuple.join(", "))
+                        .collect(),
+                )
             }
         }
     }

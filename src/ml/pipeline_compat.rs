@@ -3,21 +3,21 @@
 //! This module provides backward compatibility for the old Pipeline API.
 //! It allows code that used the old Transformer trait to continue working.
 
-use crate::optimized::OptimizedDataFrame;
-use crate::error::{Result, Error};
-use crate::dataframe::DataFrame;
-use crate::ml::preprocessing::{StandardScaler, MinMaxScaler};
 use crate::column::ColumnTrait;
+use crate::dataframe::DataFrame;
+use crate::error::{Error, Result};
+use crate::ml::preprocessing::{MinMaxScaler, StandardScaler};
+use crate::optimized::OptimizedDataFrame;
 use std::collections::HashMap;
 
 /// Trait for data transformers (backward compatibility version)
 pub trait Transformer: std::fmt::Debug {
     /// Transform data
     fn transform(&self, df: &OptimizedDataFrame) -> Result<OptimizedDataFrame>;
-    
+
     /// Learn from data and then transform it
     fn fit_transform(&mut self, df: &OptimizedDataFrame) -> Result<OptimizedDataFrame>;
-    
+
     /// Learn from data
     fn fit(&mut self, df: &OptimizedDataFrame) -> Result<()>;
 }
@@ -83,8 +83,12 @@ impl Transformer for StandardScaler {
                 };
 
                 // Create a new column
-                let scaled_column = crate::column::Float64Column::with_name(scaled_values, col_name.to_string());
-                result.add_column(col_name.to_string(), crate::column::Column::Float64(scaled_column))?;
+                let scaled_column =
+                    crate::column::Float64Column::with_name(scaled_values, col_name.to_string());
+                result.add_column(
+                    col_name.to_string(),
+                    crate::column::Column::Float64(scaled_column),
+                )?;
             } else {
                 // Create a column copy
                 if let Some(float_values) = column_view.as_float64() {
@@ -121,7 +125,7 @@ impl Transformer for StandardScaler {
 
     fn fit_transform(&mut self, df: &OptimizedDataFrame) -> Result<OptimizedDataFrame> {
         // Instead of calling normal fit and transform, we'll implement directly
-        
+
         // First, fit
         let column_names: Vec<String> = match &self.columns {
             Some(cols) => cols.clone(),
@@ -160,9 +164,7 @@ impl Transformer for StandardScaler {
                 means.insert(col_name.clone(), mean);
 
                 // Calculate standard deviation
-                let var_sum: f64 = values.iter()
-                    .map(|&x| (x - mean).powi(2))
-                    .sum();
+                let var_sum: f64 = values.iter().map(|&x| (x - mean).powi(2)).sum();
                 let variance = var_sum / values.len() as f64;
                 let std_dev = variance.sqrt();
                 stds.insert(col_name.clone(), std_dev);
@@ -171,7 +173,7 @@ impl Transformer for StandardScaler {
 
         self.means = Some(means);
         self.stds = Some(stds);
-        
+
         // Then transform
         // Create a new OptimizedDataFrame to hold the result
         let mut result = OptimizedDataFrame::new();
@@ -226,8 +228,12 @@ impl Transformer for StandardScaler {
                 };
 
                 // Create a new column
-                let scaled_column = crate::column::Float64Column::with_name(scaled_values, col_name.to_string());
-                result.add_column(col_name.to_string(), crate::column::Column::Float64(scaled_column))?;
+                let scaled_column =
+                    crate::column::Float64Column::with_name(scaled_values, col_name.to_string());
+                result.add_column(
+                    col_name.to_string(),
+                    crate::column::Column::Float64(scaled_column),
+                )?;
             } else {
                 // Create a column copy
                 if let Some(float_values) = column_view.as_float64() {
@@ -301,9 +307,7 @@ impl Transformer for StandardScaler {
                 means.insert(col_name.clone(), mean);
 
                 // Calculate standard deviation
-                let var_sum: f64 = values.iter()
-                    .map(|&x| (x - mean).powi(2))
-                    .sum();
+                let var_sum: f64 = values.iter().map(|&x| (x - mean).powi(2)).sum();
                 let variance = var_sum / values.len() as f64;
                 let std_dev = variance.sqrt();
                 stds.insert(col_name.clone(), std_dev);
@@ -372,17 +376,24 @@ impl Transformer for MinMaxScaler {
 
                 // Scale the values
                 let scaled_values = if (max_val - min_val).abs() > 1e-10 {
-                    values.iter().map(|&x| {
-                        let scaled = (x - min_val) / (max_val - min_val);
-                        scaled * (feature_max - feature_min) + feature_min
-                    }).collect()
+                    values
+                        .iter()
+                        .map(|&x| {
+                            let scaled = (x - min_val) / (max_val - min_val);
+                            scaled * (feature_max - feature_min) + feature_min
+                        })
+                        .collect()
                 } else {
                     vec![feature_min; values.len()]
                 };
 
                 // Create a new column
-                let scaled_column = crate::column::Float64Column::with_name(scaled_values, col_name.to_string());
-                result.add_column(col_name.to_string(), crate::column::Column::Float64(scaled_column))?;
+                let scaled_column =
+                    crate::column::Float64Column::with_name(scaled_values, col_name.to_string());
+                result.add_column(
+                    col_name.to_string(),
+                    crate::column::Column::Float64(scaled_column),
+                )?;
             } else {
                 // Create a column copy
                 if let Some(float_values) = column_view.as_float64() {
@@ -419,7 +430,7 @@ impl Transformer for MinMaxScaler {
 
     fn fit_transform(&mut self, df: &OptimizedDataFrame) -> Result<OptimizedDataFrame> {
         // Instead of calling normal fit and transform, we'll implement directly
-        
+
         // First, fit
         let column_names: Vec<String> = match &self.columns {
             Some(cols) => cols.clone(),
@@ -453,8 +464,14 @@ impl Transformer for MinMaxScaler {
                 }
 
                 // Calculate min and max
-                let min_val = *values.iter().min_by(|a, b| a.partial_cmp(b).unwrap()).unwrap();
-                let max_val = *values.iter().max_by(|a, b| a.partial_cmp(b).unwrap()).unwrap();
+                let min_val = *values
+                    .iter()
+                    .min_by(|a, b| a.partial_cmp(b).unwrap())
+                    .unwrap();
+                let max_val = *values
+                    .iter()
+                    .max_by(|a, b| a.partial_cmp(b).unwrap())
+                    .unwrap();
 
                 min_values.insert(col_name.clone(), min_val);
                 max_values.insert(col_name.clone(), max_val);
@@ -463,7 +480,7 @@ impl Transformer for MinMaxScaler {
 
         self.min_values = Some(min_values);
         self.max_values = Some(max_values);
-        
+
         // Then transform
         // Create a new OptimizedDataFrame to hold the result
         let mut result = OptimizedDataFrame::new();
@@ -515,17 +532,24 @@ impl Transformer for MinMaxScaler {
 
                 // Scale the values
                 let scaled_values = if (max_val - min_val).abs() > 1e-10 {
-                    values.iter().map(|&x| {
-                        let scaled = (x - min_val) / (max_val - min_val);
-                        scaled * (feature_max - feature_min) + feature_min
-                    }).collect()
+                    values
+                        .iter()
+                        .map(|&x| {
+                            let scaled = (x - min_val) / (max_val - min_val);
+                            scaled * (feature_max - feature_min) + feature_min
+                        })
+                        .collect()
                 } else {
                     vec![feature_min; values.len()]
                 };
 
                 // Create a new column
-                let scaled_column = crate::column::Float64Column::with_name(scaled_values, col_name.to_string());
-                result.add_column(col_name.to_string(), crate::column::Column::Float64(scaled_column))?;
+                let scaled_column =
+                    crate::column::Float64Column::with_name(scaled_values, col_name.to_string());
+                result.add_column(
+                    col_name.to_string(),
+                    crate::column::Column::Float64(scaled_column),
+                )?;
             } else {
                 // Create a column copy
                 if let Some(float_values) = column_view.as_float64() {
@@ -594,8 +618,14 @@ impl Transformer for MinMaxScaler {
                 }
 
                 // Calculate min and max
-                let min_val = *values.iter().min_by(|a, b| a.partial_cmp(b).unwrap()).unwrap();
-                let max_val = *values.iter().max_by(|a, b| a.partial_cmp(b).unwrap()).unwrap();
+                let min_val = *values
+                    .iter()
+                    .min_by(|a, b| a.partial_cmp(b).unwrap())
+                    .unwrap();
+                let max_val = *values
+                    .iter()
+                    .max_by(|a, b| a.partial_cmp(b).unwrap())
+                    .unwrap();
 
                 min_values.insert(col_name.clone(), min_val);
                 max_values.insert(col_name.clone(), max_val);

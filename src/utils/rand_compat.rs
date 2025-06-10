@@ -1,8 +1,8 @@
 // Compatibility module for rand crate versions
 // Providing backward compatibility from rand 0.9.0 to previous versions
 
-use rand::Rng;
 use rand::distr::uniform::{SampleRange, SampleUniform};
+use rand::Rng;
 
 /// Compatibility wrapper for thread_rng
 ///

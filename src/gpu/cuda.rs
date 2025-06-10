@@ -3,21 +3,21 @@
 //! This module provides CUDA implementations of GPU operations used in the operations module.
 //! It's only compiled when the 'cuda' feature is enabled.
 
+use ndarray::{Array1, Array2};
 use std::ptr;
 use std::sync::Arc;
-use ndarray::{Array1, Array2};
 
-use crate::error::{Result, Error};
-use crate::gpu::{GpuManager, GpuError};
+use crate::error::{Error, Result};
 use crate::gpu::operations::{GpuMatrix, GpuVector};
+use crate::gpu::{GpuError, GpuManager};
 
 // Import CUDA-specific dependencies when the feature is enabled
 #[cfg(feature = "cuda")]
-use cudarc::driver::{CudaDevice, DevicePtr, DeviceSlice, DriverError};
-#[cfg(feature = "cuda")]
-use cudarc::cublas::{CublasContext, CublasHandle, CublasError, CublasOperation};
+use cudarc::cublas::{CublasContext, CublasError, CublasHandle, CublasOperation};
 #[cfg(feature = "cuda")]
 use cudarc::driver::CudaFunction;
+#[cfg(feature = "cuda")]
+use cudarc::driver::{CudaDevice, DevicePtr, DeviceSlice, DriverError};
 #[cfg(feature = "cuda")]
 use half::f16;
 
@@ -39,19 +39,34 @@ impl CudaContext {
         // Initialize CUDA device
         let device = match CudaDevice::new(device_id as usize) {
             Ok(device) => Arc::new(device),
-            Err(e) => return Err(Error::from(GpuError::DeviceError(format!("Failed to initialize CUDA device: {}", e)))),
+            Err(e) => {
+                return Err(Error::from(GpuError::DeviceError(format!(
+                    "Failed to initialize CUDA device: {}",
+                    e
+                ))))
+            }
         };
 
         // Initialize cuBLAS
         let cublas = match CublasContext::new(device.clone()) {
             Ok(cublas) => Arc::new(cublas),
-            Err(e) => return Err(Error::from(GpuError::DeviceError(format!("Failed to initialize cuBLAS: {}", e)))),
+            Err(e) => {
+                return Err(Error::from(GpuError::DeviceError(format!(
+                    "Failed to initialize cuBLAS: {}",
+                    e
+                ))))
+            }
         };
 
         // Check compute capability
         let props = match device.get_properties() {
             Ok(props) => props,
-            Err(e) => return Err(Error::from(GpuError::DeviceError(format!("Failed to get device properties: {}", e)))),
+            Err(e) => {
+                return Err(Error::from(GpuError::DeviceError(format!(
+                    "Failed to get device properties: {}",
+                    e
+                ))))
+            }
         };
 
         let supports_tensor_cores = props.major >= 7;
@@ -81,13 +96,21 @@ impl CudaContext {
     /// Load a CUDA kernel from PTX
     pub fn load_kernel(&self, name: &str, ptx: &str) -> Result<CudaFunction> {
         match self.device.load_ptx(ptx.into(), name, &[name]) {
-            Ok(()) => {},
-            Err(e) => return Err(Error::from(GpuError::DeviceError(format!("Failed to load PTX: {}", e)))),
+            Ok(()) => {}
+            Err(e) => {
+                return Err(Error::from(GpuError::DeviceError(format!(
+                    "Failed to load PTX: {}",
+                    e
+                ))))
+            }
         }
 
         match self.device.get_func(name, name) {
             Ok(func) => Ok(func),
-            Err(e) => Err(Error::from(GpuError::DeviceError(format!("Failed to get function: {}", e)))),
+            Err(e) => Err(Error::from(GpuError::DeviceError(format!(
+                "Failed to get function: {}",
+                e
+            )))),
         }
     }
 }
@@ -107,7 +130,8 @@ pub fn matrix_multiply(a: &GpuMatrix, b: &GpuMatrix, manager: &GpuManager) -> Re
     if a.data.shape()[1] != b.data.shape()[0] {
         return Err(Error::Dimension(format!(
             "Incompatible dimensions for matrix multiplication: {:?} and {:?}",
-            a.data.shape(), b.data.shape()
+            a.data.shape(),
+            b.data.shape()
         )));
     }
 
@@ -129,18 +153,33 @@ pub fn matrix_multiply(a: &GpuMatrix, b: &GpuMatrix, manager: &GpuManager) -> Re
         // Copy data to device
         let d_a = match device.htod_copy(a_data) {
             Ok(d_a) => d_a,
-            Err(e) => return Err(Error::from(GpuError::TransferError(format!("Failed to copy matrix A to device: {}", e)))),
+            Err(e) => {
+                return Err(Error::from(GpuError::TransferError(format!(
+                    "Failed to copy matrix A to device: {}",
+                    e
+                ))))
+            }
         };
 
         let d_b = match device.htod_copy(b_data) {
             Ok(d_b) => d_b,
-            Err(e) => return Err(Error::from(GpuError::TransferError(format!("Failed to copy matrix B to device: {}", e)))),
+            Err(e) => {
+                return Err(Error::from(GpuError::TransferError(format!(
+                    "Failed to copy matrix B to device: {}",
+                    e
+                ))))
+            }
         };
 
         // Allocate device memory for result
         let mut d_c = match device.alloc::<f64>((m * n) as usize) {
             Ok(d_c) => d_c,
-            Err(e) => return Err(Error::from(GpuError::DeviceError(format!("Failed to allocate device memory: {}", e)))),
+            Err(e) => {
+                return Err(Error::from(GpuError::DeviceError(format!(
+                    "Failed to allocate device memory: {}",
+                    e
+                ))))
+            }
         };
 
         // Set up parameters for GEMM
@@ -150,29 +189,39 @@ pub fn matrix_multiply(a: &GpuMatrix, b: &GpuMatrix, manager: &GpuManager) -> Re
         // Perform matrix multiplication
         // C = α * (A × B) + β * C
         match cublas.gemm(
-            CublasOperation::None,  // A is not transposed
-            CublasOperation::None,  // B is not transposed
-            n,                      // Number of columns in the resulting matrix C and in matrix B
-            m,                      // Number of rows in the resulting matrix C and in matrix A
-            k,                      // Number of columns in matrix A and rows in matrix B
-            &alpha,                 // Scaling factor for A * B
-            &d_b,                   // Input matrix B
-            n,                      // Leading dimension of B
-            &d_a,                   // Input matrix A
-            k,                      // Leading dimension of A
-            &beta,                  // Scaling factor for C
-            &mut d_c,               // Output matrix C
-            n,                      // Leading dimension of C
+            CublasOperation::None, // A is not transposed
+            CublasOperation::None, // B is not transposed
+            n,                     // Number of columns in the resulting matrix C and in matrix B
+            m,                     // Number of rows in the resulting matrix C and in matrix A
+            k,                     // Number of columns in matrix A and rows in matrix B
+            &alpha,                // Scaling factor for A * B
+            &d_b,                  // Input matrix B
+            n,                     // Leading dimension of B
+            &d_a,                  // Input matrix A
+            k,                     // Leading dimension of A
+            &beta,                 // Scaling factor for C
+            &mut d_c,              // Output matrix C
+            n,                     // Leading dimension of C
         ) {
-            Ok(()) => {},
-            Err(e) => return Err(Error::from(GpuError::KernelExecutionError(format!("cuBLAS gemm failed: {}", e)))),
+            Ok(()) => {}
+            Err(e) => {
+                return Err(Error::from(GpuError::KernelExecutionError(format!(
+                    "cuBLAS gemm failed: {}",
+                    e
+                ))))
+            }
         }
 
         // Copy result back to host
         let mut c_data = vec![0.0f64; (m * n) as usize];
         match device.dtoh_copy(&d_c, &mut c_data) {
-            Ok(()) => {},
-            Err(e) => return Err(Error::from(GpuError::TransferError(format!("Failed to copy result from device: {}", e)))),
+            Ok(()) => {}
+            Err(e) => {
+                return Err(Error::from(GpuError::TransferError(format!(
+                    "Failed to copy result from device: {}",
+                    e
+                ))))
+            }
         }
 
         // Reshape the flat vector to 2D array
@@ -182,7 +231,7 @@ pub fn matrix_multiply(a: &GpuMatrix, b: &GpuMatrix, manager: &GpuManager) -> Re
 
         Ok(GpuMatrix {
             data: result_data,
-            on_gpu: false,  // Data is now on CPU
+            on_gpu: false, // Data is now on CPU
         })
     }
 
@@ -203,7 +252,14 @@ pub fn matrix_multiply(a: &GpuMatrix, b: &GpuMatrix, manager: &GpuManager) -> Re
 
 /// Element-wise operation template for CUDA
 #[cfg(feature = "cuda")]
-fn elementwise_op<F>(a: &GpuMatrix, b: &GpuMatrix, manager: &GpuManager, op_name: &str, ptx_code: &str, op_type: &str) -> Result<GpuMatrix>
+fn elementwise_op<F>(
+    a: &GpuMatrix,
+    b: &GpuMatrix,
+    manager: &GpuManager,
+    op_name: &str,
+    ptx_code: &str,
+    op_type: &str,
+) -> Result<GpuMatrix>
 where
     F: Fn(f64, f64) -> f64,
 {
@@ -211,7 +267,9 @@ where
     if a.data.shape() != b.data.shape() {
         return Err(Error::Dimension(format!(
             "Incompatible dimensions for element-wise {}: {:?} and {:?}",
-            op_type, a.data.shape(), b.data.shape()
+            op_type,
+            a.data.shape(),
+            b.data.shape()
         )));
     }
 
@@ -232,18 +290,33 @@ where
     // Copy data to device
     let d_a = match device.htod_copy(a_data) {
         Ok(d_a) => d_a,
-        Err(e) => return Err(Error::from(GpuError::TransferError(format!("Failed to copy matrix A to device: {}", e)))),
+        Err(e) => {
+            return Err(Error::from(GpuError::TransferError(format!(
+                "Failed to copy matrix A to device: {}",
+                e
+            ))))
+        }
     };
 
     let d_b = match device.htod_copy(b_data) {
         Ok(d_b) => d_b,
-        Err(e) => return Err(Error::from(GpuError::TransferError(format!("Failed to copy matrix B to device: {}", e)))),
+        Err(e) => {
+            return Err(Error::from(GpuError::TransferError(format!(
+                "Failed to copy matrix B to device: {}",
+                e
+            ))))
+        }
     };
 
     // Allocate device memory for result
     let mut d_c = match device.alloc::<f64>(total_elements) {
         Ok(d_c) => d_c,
-        Err(e) => return Err(Error::from(GpuError::DeviceError(format!("Failed to allocate device memory: {}", e)))),
+        Err(e) => {
+            return Err(Error::from(GpuError::DeviceError(format!(
+                "Failed to allocate device memory: {}",
+                e
+            ))))
+        }
     };
 
     // Calculate grid and block dimensions
@@ -254,22 +327,37 @@ where
     match unsafe {
         kernel.launch(
             [grid_size as u32, 1, 1],  // Grid dimensions
-            [block_size as u32, 1, 1],  // Block dimensions
+            [block_size as u32, 1, 1], // Block dimensions
             0,                         // Shared memory size
-            device.stream(),          // CUDA stream
+            device.stream(),           // CUDA stream
             // Kernel arguments
-            (d_a.as_device_ptr(), d_b.as_device_ptr(), d_c.as_device_ptr(), total_elements as i32)
+            (
+                d_a.as_device_ptr(),
+                d_b.as_device_ptr(),
+                d_c.as_device_ptr(),
+                total_elements as i32,
+            ),
         )
     } {
-        Ok(()) => {},
-        Err(e) => return Err(Error::from(GpuError::KernelExecutionError(format!("Kernel execution failed: {}", e)))),
+        Ok(()) => {}
+        Err(e) => {
+            return Err(Error::from(GpuError::KernelExecutionError(format!(
+                "Kernel execution failed: {}",
+                e
+            ))))
+        }
     }
 
     // Copy result back to host
     let mut c_data = vec![0.0f64; total_elements];
     match device.dtoh_copy(&d_c, &mut c_data) {
-        Ok(()) => {},
-        Err(e) => return Err(Error::from(GpuError::TransferError(format!("Failed to copy result from device: {}", e)))),
+        Ok(()) => {}
+        Err(e) => {
+            return Err(Error::from(GpuError::TransferError(format!(
+                "Failed to copy result from device: {}",
+                e
+            ))))
+        }
     }
 
     // Reshape the flat vector to 2D array
@@ -278,7 +366,7 @@ where
 
     Ok(GpuMatrix {
         data: result_data,
-        on_gpu: false,  // Data is now on CPU
+        on_gpu: false, // Data is now on CPU
     })
 }
 
@@ -288,7 +376,8 @@ pub fn elementwise_add(a: &GpuMatrix, b: &GpuMatrix, manager: &GpuManager) -> Re
     if a.data.shape() != b.data.shape() {
         return Err(Error::Dimension(format!(
             "Incompatible dimensions for element-wise addition: {:?} and {:?}",
-            a.data.shape(), b.data.shape()
+            a.data.shape(),
+            b.data.shape()
         )));
     }
 
@@ -355,12 +444,17 @@ pub fn elementwise_add(a: &GpuMatrix, b: &GpuMatrix, manager: &GpuManager) -> Re
 }
 
 /// Element-wise subtraction of matrices using CUDA
-pub fn elementwise_subtract(a: &GpuMatrix, b: &GpuMatrix, manager: &GpuManager) -> Result<GpuMatrix> {
+pub fn elementwise_subtract(
+    a: &GpuMatrix,
+    b: &GpuMatrix,
+    manager: &GpuManager,
+) -> Result<GpuMatrix> {
     // Check if dimensions match
     if a.data.shape() != b.data.shape() {
         return Err(Error::Dimension(format!(
             "Incompatible dimensions for element-wise subtraction: {:?} and {:?}",
-            a.data.shape(), b.data.shape()
+            a.data.shape(),
+            b.data.shape()
         )));
     }
 
@@ -410,7 +504,14 @@ pub fn elementwise_subtract(a: &GpuMatrix, b: &GpuMatrix, manager: &GpuManager) 
         }
         "#;
 
-        return elementwise_op::<fn(f64, f64) -> f64>(a, b, manager, "subtract", PTX_SUB, "subtraction");
+        return elementwise_op::<fn(f64, f64) -> f64>(
+            a,
+            b,
+            manager,
+            "subtract",
+            PTX_SUB,
+            "subtraction",
+        );
     }
 
     #[cfg(not(feature = "cuda"))]
@@ -427,12 +528,17 @@ pub fn elementwise_subtract(a: &GpuMatrix, b: &GpuMatrix, manager: &GpuManager) 
 }
 
 /// Element-wise multiplication of matrices using CUDA
-pub fn elementwise_multiply(a: &GpuMatrix, b: &GpuMatrix, manager: &GpuManager) -> Result<GpuMatrix> {
+pub fn elementwise_multiply(
+    a: &GpuMatrix,
+    b: &GpuMatrix,
+    manager: &GpuManager,
+) -> Result<GpuMatrix> {
     // Check if dimensions match
     if a.data.shape() != b.data.shape() {
         return Err(Error::Dimension(format!(
             "Incompatible dimensions for element-wise multiplication: {:?} and {:?}",
-            a.data.shape(), b.data.shape()
+            a.data.shape(),
+            b.data.shape()
         )));
     }
 
@@ -482,7 +588,14 @@ pub fn elementwise_multiply(a: &GpuMatrix, b: &GpuMatrix, manager: &GpuManager) 
         }
         "#;
 
-        return elementwise_op::<fn(f64, f64) -> f64>(a, b, manager, "multiply", PTX_MUL, "multiplication");
+        return elementwise_op::<fn(f64, f64) -> f64>(
+            a,
+            b,
+            manager,
+            "multiply",
+            PTX_MUL,
+            "multiplication",
+        );
     }
 
     #[cfg(not(feature = "cuda"))]
@@ -504,7 +617,8 @@ pub fn elementwise_divide(a: &GpuMatrix, b: &GpuMatrix, manager: &GpuManager) ->
     if a.data.shape() != b.data.shape() {
         return Err(Error::Dimension(format!(
             "Incompatible dimensions for element-wise division: {:?} and {:?}",
-            a.data.shape(), b.data.shape()
+            a.data.shape(),
+            b.data.shape()
         )));
     }
 
@@ -600,35 +714,60 @@ pub fn matrix_sum(a: &GpuMatrix, manager: &GpuManager) -> Result<f64> {
         // Copy data to device
         let d_a = match device.htod_copy(a_data) {
             Ok(d_a) => d_a,
-            Err(e) => return Err(Error::from(GpuError::TransferError(format!("Failed to copy matrix to device: {}", e)))),
+            Err(e) => {
+                return Err(Error::from(GpuError::TransferError(format!(
+                    "Failed to copy matrix to device: {}",
+                    e
+                ))))
+            }
         };
 
         // Create a vector of ones for reduction
         let ones = vec![1.0f64; total_elements];
         let d_ones = match device.htod_copy(&ones) {
             Ok(d_ones) => d_ones,
-            Err(e) => return Err(Error::from(GpuError::TransferError(format!("Failed to copy ones vector to device: {}", e)))),
+            Err(e) => {
+                return Err(Error::from(GpuError::TransferError(format!(
+                    "Failed to copy ones vector to device: {}",
+                    e
+                ))))
+            }
         };
 
         // Allocate device memory for result
         let mut d_sum = match device.alloc::<f64>(1) {
             Ok(d_sum) => d_sum,
-            Err(e) => return Err(Error::from(GpuError::DeviceError(format!("Failed to allocate device memory: {}", e)))),
+            Err(e) => {
+                return Err(Error::from(GpuError::DeviceError(format!(
+                    "Failed to allocate device memory: {}",
+                    e
+                ))))
+            }
         };
 
         // Compute dot product: sum = A • ones
         let incx = 1;
         let incy = 1;
         match cublas.dot(total_elements as i32, &d_a, incx, &d_ones, incy, &mut d_sum) {
-            Ok(()) => {},
-            Err(e) => return Err(Error::from(GpuError::KernelExecutionError(format!("cuBLAS dot failed: {}", e)))),
+            Ok(()) => {}
+            Err(e) => {
+                return Err(Error::from(GpuError::KernelExecutionError(format!(
+                    "cuBLAS dot failed: {}",
+                    e
+                ))))
+            }
         }
 
         // Copy result back to host
         let mut sum = vec![0.0f64; 1];
         match device.dtoh_copy(&d_sum, &mut sum) {
-            Ok(()) => {},
-            Err(e) => return Err(Error::from(GpuError::TransferError(format!("Failed to copy result from device: {}", e)))),
+            Ok(()) => {}
+            Err(e) => {
+                return Err(Error::from(GpuError::TransferError(format!(
+                    "Failed to copy result from device: {}",
+                    e
+                ))))
+            }
         }
 
         Ok(sum[0])
@@ -703,7 +842,8 @@ pub fn vector_dot_product(a: &GpuVector, b: &GpuVector, manager: &GpuManager) ->
     if a.data.len() != b.data.len() {
         return Err(Error::Dimension(format!(
             "Incompatible dimensions for dot product: {} and {}",
-            a.data.len(), b.data.len()
+            a.data.len(),
+            b.data.len()
         )));
     }
 
@@ -723,33 +863,58 @@ pub fn vector_dot_product(a: &GpuVector, b: &GpuVector, manager: &GpuManager) ->
         // Copy data to device
         let d_a = match device.htod_copy(a_data) {
             Ok(d_a) => d_a,
-            Err(e) => return Err(Error::from(GpuError::TransferError(format!("Failed to copy vector A to device: {}", e)))),
+            Err(e) => {
+                return Err(Error::from(GpuError::TransferError(format!(
+                    "Failed to copy vector A to device: {}",
+                    e
+                ))))
+            }
         };
 
         let d_b = match device.htod_copy(b_data) {
             Ok(d_b) => d_b,
-            Err(e) => return Err(Error::from(GpuError::TransferError(format!("Failed to copy vector B to device: {}", e)))),
+            Err(e) => {
+                return Err(Error::from(GpuError::TransferError(format!(
+                    "Failed to copy vector B to device: {}",
+                    e
+                ))))
+            }
         };
 
         // Allocate device memory for result
         let mut d_result = match device.alloc::<f64>(1) {
             Ok(d_result) => d_result,
-            Err(e) => return Err(Error::from(GpuError::DeviceError(format!("Failed to allocate device memory: {}", e)))),
+            Err(e) => {
+                return Err(Error::from(GpuError::DeviceError(format!(
+                    "Failed to allocate device memory: {}",
+                    e
+                ))))
+            }
         };
 
         // Perform dot product
         let incx = 1;
         let incy = 1;
         match cublas.dot(n, &d_a, incx, &d_b, incy, &mut d_result) {
-            Ok(()) => {},
-            Err(e) => return Err(Error::from(GpuError::KernelExecutionError(format!("cuBLAS dot failed: {}", e)))),
+            Ok(()) => {}
+            Err(e) => {
+                return Err(Error::from(GpuError::KernelExecutionError(format!(
+                    "cuBLAS dot failed: {}",
+                    e
+                ))))
+            }
         }
 
         // Copy result back to host
         let mut result = vec![0.0f64; 1];
         match device.dtoh_copy(&d_result, &mut result) {
-            Ok(()) => {},
-            Err(e) => return Err(Error::from(GpuError::TransferError(format!("Failed to copy result from device: {}", e)))),
+            Ok(()) => {}
+            Err(e) => {
+                return Err(Error::from(GpuError::TransferError(format!(
+                    "Failed to copy result from device: {}",
+                    e
+                ))))
+            }
         }
 
         Ok(result[0])
@@ -767,7 +932,8 @@ pub fn vector_add(a: &GpuVector, b: &GpuVector, manager: &GpuManager) -> Result<
     if a.data.len() != b.data.len() {
         return Err(Error::Dimension(format!(
             "Incompatible dimensions for vector addition: {} and {}",
-            a.data.len(), b.data.len()
+            a.data.len(),
+            b.data.len()
         )));
     }
 
@@ -787,18 +953,33 @@ pub fn vector_add(a: &GpuVector, b: &GpuVector, manager: &GpuManager) -> Result<
         // Copy data to device
         let d_a = match device.htod_copy(a_data) {
             Ok(d_a) => d_a,
-            Err(e) => return Err(Error::from(GpuError::TransferError(format!("Failed to copy vector A to device: {}", e)))),
+            Err(e) => {
+                return Err(Error::from(GpuError::TransferError(format!(
+                    "Failed to copy vector A to device: {}",
+                    e
+                ))))
+            }
         };
 
         let d_b = match device.htod_copy(b_data) {
             Ok(d_b) => d_b,
-            Err(e) => return Err(Error::from(GpuError::TransferError(format!("Failed to copy vector B to device: {}", e)))),
+            Err(e) => {
+                return Err(Error::from(GpuError::TransferError(format!(
+                    "Failed to copy vector B to device: {}",
+                    e
+                ))))
+            }
         };
 
         // Allocate device memory for result (copy B as the starting point)
         let mut d_result = match device.htod_copy(b_data) {
             Ok(d_result) => d_result,
-            Err(e) => return Err(Error::from(GpuError::DeviceError(format!("Failed to allocate device memory: {}", e)))),
+            Err(e) => {
+                return Err(Error::from(GpuError::DeviceError(format!(
+                    "Failed to allocate device memory: {}",
+                    e
+                ))))
+            }
         };
 
         // Perform vector addition: result = a + b
@@ -807,15 +988,25 @@ pub fn vector_add(a: &GpuVector, b: &GpuVector, manager: &GpuManager) -> Result<
         let incx = 1;
         let incy = 1;
         match cublas.axpy(n, &alpha, &d_a, incx, &mut d_result, incy) {
-            Ok(()) => {},
-            Err(e) => return Err(Error::from(GpuError::KernelExecutionError(format!("cuBLAS axpy failed: {}", e)))),
+            Ok(()) => {}
+            Err(e) => {
+                return Err(Error::from(GpuError::KernelExecutionError(format!(
+                    "cuBLAS axpy failed: {}",
+                    e
+                ))))
+            }
         }
 
         // Copy result back to host
         let mut result = vec![0.0f64; n as usize];
         match device.dtoh_copy(&d_result, &mut result) {
-            Ok(()) => {},
-            Err(e) => return Err(Error::from(GpuError::TransferError(format!("Failed to copy result from device: {}", e)))),
+            Ok(()) => {}
+            Err(e) => {
+                return Err(Error::from(GpuError::TransferError(format!(
+                    "Failed to copy result from device: {}",
+                    e
+                ))))
+            }
         }
 
         // Convert to Array1
@@ -848,7 +1039,12 @@ fn to_gpu(matrix: &Array2<f64>, device: &Arc<CudaDevice>) -> Result<DevicePtr<f6
     let data = matrix.as_slice().unwrap();
     let d_data = match device.htod_copy(data) {
         Ok(d_data) => d_data,
-        Err(e) => return Err(Error::from(GpuError::TransferError(format!("Failed to copy matrix to device: {}", e)))),
+        Err(e) => {
+            return Err(Error::from(GpuError::TransferError(format!(
+                "Failed to copy matrix to device: {}",
+                e
+            ))))
+        }
     };
 
     Ok(d_data)
@@ -859,14 +1055,17 @@ fn to_gpu(matrix: &Array2<f64>, device: &Arc<CudaDevice>) -> Result<DevicePtr<f6
 fn to_cpu<T: cudarc::driver::DeviceRepr + Copy + Default>(
     device: &Arc<CudaDevice>,
     d_data: &DevicePtr<T>,
-    shape: (usize, usize)
+    shape: (usize, usize),
 ) -> Result<Vec<T>> {
     let total_elements = shape.0 * shape.1;
     let mut result = vec![T::default(); total_elements];
 
     match device.dtoh_copy(d_data, &mut result) {
         Ok(()) => Ok(result),
-        Err(e) => Err(Error::from(GpuError::TransferError(format!("Failed to copy data from device: {}", e)))),
+        Err(e) => Err(Error::from(GpuError::TransferError(format!(
+            "Failed to copy data from device: {}",
+            e
+        )))),
     }
 }
 

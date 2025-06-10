@@ -4,25 +4,31 @@ use std::sync::Arc;
 use crate::core::error::Result;
 
 // Re-export from legacy module for now
-#[deprecated(since = "0.1.0-alpha.2", note = "Use new Series implementation in crate::series::base")]
+#[deprecated(
+    since = "0.1.0-alpha.2",
+    note = "Use new Series implementation in crate::series::base"
+)]
 pub use crate::series::Series as LegacySeries;
 
 /// Series struct: 1-dimensional data structure
 #[derive(Debug, Clone)]
-pub struct Series<T> where T: Debug + Clone {
+pub struct Series<T>
+where
+    T: Debug + Clone,
+{
     /// The values in the Series
     values: Vec<T>,
     /// The name of the Series
     name: Option<String>,
 }
 
-impl<T> Series<T> where T: Debug + Clone {
+impl<T> Series<T>
+where
+    T: Debug + Clone,
+{
     /// Create a new Series
     pub fn new(data: Vec<T>, name: Option<String>) -> Result<Self> {
-        Ok(Self {
-            values: data,
-            name,
-        })
+        Ok(Self { values: data, name })
     }
 
     /// Get the length of the Series
@@ -74,7 +80,7 @@ impl Series<i32> {
     pub fn sum(&self) -> i32 {
         self.values.iter().sum()
     }
-    
+
     /// Calculate the mean of the Series
     pub fn mean(&self) -> Result<f64> {
         if self.is_empty() {
@@ -83,16 +89,22 @@ impl Series<i32> {
         let sum: i32 = self.sum();
         Ok(sum as f64 / self.len() as f64)
     }
-    
+
     /// Get the minimum value in the Series
     pub fn min(&self) -> Result<i32> {
-        self.values.iter().min().cloned()
+        self.values
+            .iter()
+            .min()
+            .cloned()
             .ok_or_else(|| crate::core::error::Error::EmptySeries)
     }
-    
+
     /// Get the maximum value in the Series
     pub fn max(&self) -> Result<i32> {
-        self.values.iter().max().cloned()
+        self.values
+            .iter()
+            .max()
+            .cloned()
             .ok_or_else(|| crate::core::error::Error::EmptySeries)
     }
 }

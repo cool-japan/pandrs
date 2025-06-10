@@ -2,10 +2,10 @@
 //!
 //! This module provides functionality for converting execution plans to plan nodes.
 
-use crate::error::Result;
+use super::core::PlanNode;
 use crate::distributed::execution::{ExecutionPlan, Operation};
 use crate::distributed::window::WindowFunction;
-use super::core::PlanNode;
+use crate::error::Result;
 
 /// Explains an execution plan
 pub fn explain_plan(plan: &ExecutionPlan, options: &super::core::ExplainOptions) -> Result<String> {
@@ -18,29 +18,34 @@ pub fn execution_plan_to_plan_node(plan: &ExecutionPlan) -> Result<PlanNode> {
     let node = match plan.operation() {
         Operation::Select { columns } => {
             let input = dummy_scan_node(plan);
-            
+
             PlanNode::Project {
                 columns: columns.clone(),
                 input: Box::new(input),
             }
-        },
+        }
         Operation::Filter { predicate } => {
             let input = dummy_scan_node(plan);
-            
+
             PlanNode::Filter {
                 predicate: predicate.clone(),
                 input: Box::new(input),
                 selectivity: None,
             }
-        },
-        Operation::Join { right, join_type, left_keys, right_keys } => {
+        }
+        Operation::Join {
+            right,
+            join_type,
+            left_keys,
+            right_keys,
+        } => {
             let left_input = dummy_scan_node(plan);
             let right_input = PlanNode::Scan {
                 table: right.clone(),
                 columns: vec![],
                 statistics: None,
             };
-            
+
             let join_type_str = match join_type {
                 crate::distributed::execution::JoinType::Inner => "INNER",
                 crate::distributed::execution::JoinType::Left => "LEFT",
@@ -48,76 +53,81 @@ pub fn execution_plan_to_plan_node(plan: &ExecutionPlan) -> Result<PlanNode> {
                 crate::distributed::execution::JoinType::Full => "FULL OUTER",
                 crate::distributed::execution::JoinType::Cross => "CROSS",
             };
-            
-            let keys = left_keys.iter()
+
+            let keys = left_keys
+                .iter()
                 .zip(right_keys.iter())
                 .map(|(l, r)| (l.clone(), r.clone()))
                 .collect();
-            
+
             PlanNode::Join {
                 join_type: join_type_str.to_string(),
                 left: Box::new(left_input),
                 right: Box::new(right_input),
                 keys,
             }
-        },
+        }
         Operation::GroupBy { keys, aggregates } => {
             let input = dummy_scan_node(plan);
-            let agg_exprs = aggregates.iter()
+            let agg_exprs = aggregates
+                .iter()
                 .map(|agg| format!("{}({}) as {}", agg.function, agg.input, agg.output))
                 .collect();
-            
+
             PlanNode::Aggregate {
                 keys: keys.clone(),
                 aggregates: agg_exprs,
                 input: Box::new(input),
             }
-        },
+        }
         Operation::OrderBy { sort_exprs } => {
             let input = dummy_scan_node(plan);
-            let sort_exprs_str = sort_exprs.iter()
+            let sort_exprs_str = sort_exprs
+                .iter()
                 .map(|expr| {
                     let direction = if expr.ascending { "ASC" } else { "DESC" };
-                    let nulls = if expr.nulls_first { "NULLS FIRST" } else { "NULLS LAST" };
+                    let nulls = if expr.nulls_first {
+                        "NULLS FIRST"
+                    } else {
+                        "NULLS LAST"
+                    };
                     format!("{} {} {}", expr.column, direction, nulls)
                 })
                 .collect();
-            
+
             PlanNode::Sort {
                 sort_exprs: sort_exprs_str,
                 input: Box::new(input),
             }
-        },
+        }
         Operation::Limit { limit } => {
             let input = dummy_scan_node(plan);
-            
+
             PlanNode::Limit {
                 limit: *limit,
                 input: Box::new(input),
             }
-        },
+        }
         Operation::Window { window_functions } => {
             let input = dummy_scan_node(plan);
-            let window_exprs = window_functions.iter()
-                .map(|wf| wf.to_sql())
-                .collect();
-            
+            let window_exprs = window_functions.iter().map(|wf| wf.to_sql()).collect();
+
             PlanNode::Window {
                 window_functions: window_exprs,
                 input: Box::new(input),
             }
-        },
+        }
         Operation::Custom { name, params } => {
             let input = dummy_scan_node(plan);
-            
+
             PlanNode::Custom {
                 name: name.clone(),
                 params: params.clone(),
                 input: Box::new(input),
             }
-        },
+        }
     };
-    
+
     Ok(node)
 }
 

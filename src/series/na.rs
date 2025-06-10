@@ -39,10 +39,14 @@ where
             name,
         })
     }
-    
+
     /// Helper function to create NASeries from string vector
-    pub fn from_strings(string_values: Vec<String>, name: Option<String>) -> Result<NASeries<String>> {
-        let na_values = string_values.into_iter()
+    pub fn from_strings(
+        string_values: Vec<String>,
+        name: Option<String>,
+    ) -> Result<NASeries<String>> {
+        let na_values = string_values
+            .into_iter()
             .map(|s| {
                 if s.contains("NA") {
                     NA::<String>::NA
@@ -129,7 +133,7 @@ where
         self.name = Some(name);
         self
     }
-    
+
     /// Set the name (mutable reference)
     pub fn set_name(&mut self, name: String) {
         self.name = Some(name);
@@ -149,7 +153,7 @@ where
     pub fn has_na(&self) -> bool {
         self.values.iter().any(|v| v.is_na())
     }
-    
+
     /// Get a boolean array indicating which elements are NA
     pub fn is_na(&self) -> Vec<bool> {
         self.values.iter().map(|v| v.is_na()).collect()

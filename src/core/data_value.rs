@@ -26,15 +26,15 @@ impl DataValue for i64 {
     fn type_name(&self) -> &'static str {
         "i64"
     }
-    
+
     fn to_string(&self) -> String {
         format!("{}", self)
     }
-    
+
     fn clone_boxed(&self) -> Box<dyn DataValue> {
         Box::new(*self)
     }
-    
+
     fn equals(&self, other: &dyn DataValue) -> bool {
         if let Some(other) = other.as_any().downcast_ref::<i64>() {
             return self == other;
@@ -51,15 +51,15 @@ impl DataValue for f64 {
     fn type_name(&self) -> &'static str {
         "f64"
     }
-    
+
     fn to_string(&self) -> String {
         format!("{}", self)
     }
-    
+
     fn clone_boxed(&self) -> Box<dyn DataValue> {
         Box::new(*self)
     }
-    
+
     fn equals(&self, other: &dyn DataValue) -> bool {
         if let Some(other) = other.as_any().downcast_ref::<f64>() {
             return (self - other).abs() < f64::EPSILON;
@@ -76,15 +76,15 @@ impl DataValue for bool {
     fn type_name(&self) -> &'static str {
         "bool"
     }
-    
+
     fn to_string(&self) -> String {
         format!("{}", self)
     }
-    
+
     fn clone_boxed(&self) -> Box<dyn DataValue> {
         Box::new(*self)
     }
-    
+
     fn equals(&self, other: &dyn DataValue) -> bool {
         if let Some(other) = other.as_any().downcast_ref::<bool>() {
             return self == other;
@@ -101,15 +101,15 @@ impl DataValue for String {
     fn type_name(&self) -> &'static str {
         "String"
     }
-    
+
     fn to_string(&self) -> String {
         self.clone()
     }
-    
+
     fn clone_boxed(&self) -> Box<dyn DataValue> {
         Box::new(self.clone())
     }
-    
+
     fn equals(&self, other: &dyn DataValue) -> bool {
         if let Some(other) = other.as_any().downcast_ref::<String>() {
             return self == other;
@@ -126,15 +126,15 @@ impl DataValue for Arc<str> {
     fn type_name(&self) -> &'static str {
         "Arc<str>"
     }
-    
+
     fn to_string(&self) -> String {
         format!("{}", self)
     }
-    
+
     fn clone_boxed(&self) -> Box<dyn DataValue> {
         Box::new(self.clone())
     }
-    
+
     fn equals(&self, other: &dyn DataValue) -> bool {
         if let Some(other) = other.as_any().downcast_ref::<Arc<str>>() {
             return self == other;
@@ -168,7 +168,7 @@ impl<T: Display> DisplayExt for T {
     fn display_with_format(&self, format: &str) -> String {
         match format {
             "" => format!("{}", self),
-            _ => format!("{}", self),  // In a real implementation, this would handle format strings
+            _ => format!("{}", self), // In a real implementation, this would handle format strings
         }
     }
 }

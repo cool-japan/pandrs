@@ -26,9 +26,7 @@ pub fn plot_xy<P: AsRef<Path>>(x: &[f32], y: &[f32], path: P, config: PlotConfig
 
     // Do nothing if data is empty
     if x.is_empty() {
-        return Err(PandRSError::Empty(
-            "No data to plot".to_string(),
-        ));
+        return Err(PandRSError::Empty("No data to plot".to_string()));
     }
 
     // Create points
@@ -81,6 +79,13 @@ pub fn plot_xy<P: AsRef<Path>>(x: &[f32], y: &[f32], path: P, config: PlotConfig
 
 /// Fallback implementation when visualization is not available
 #[cfg(not(feature = "visualization"))]
-pub fn plot_xy<P: AsRef<Path>>(_x: &[f32], _y: &[f32], _path: P, _config: crate::vis::config::PlotConfig) -> Result<()> {
-    Err(PandRSError::FeatureNotAvailable("Visualization feature is not enabled. Recompile with --feature visualization".to_string()))
+pub fn plot_xy<P: AsRef<Path>>(
+    _x: &[f32],
+    _y: &[f32],
+    _path: P,
+    _config: crate::vis::config::PlotConfig,
+) -> Result<()> {
+    Err(PandRSError::FeatureNotAvailable(
+        "Visualization feature is not enabled. Recompile with --feature visualization".to_string(),
+    ))
 }

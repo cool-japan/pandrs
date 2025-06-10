@@ -172,8 +172,8 @@ impl PyStringPool {
         let string_vec = strings?;
         
         // Create a Python list directly
-        let py_list_temp = PyList::new_bound(py, &string_vec);
-        Ok(py_list_temp.to_object(py))
+        let py_list_temp = PyList::new(py, &string_vec)?;
+        Ok(py_list_temp.into())
     }
 
     /// Get pool statistics
@@ -251,8 +251,8 @@ pub fn indices_to_py_string_list(py: Python<'_>, indices: &[usize]) -> PyResult<
         }
     }
     
-    let py_list = PyList::new_bound(py, &strings);
-    Ok(py_list.to_object(py))
+    let py_list = PyList::new(py, &strings)?;
+    Ok(py_list.into())
 }
 
 /// Register with Python module

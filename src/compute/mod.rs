@@ -1,13 +1,13 @@
 // Computation functionality module
-pub mod parallel;
 pub mod lazy;
+pub mod parallel;
 
 #[cfg(feature = "cuda")]
 pub mod gpu;
 
 // Re-exports
-pub use parallel::ParallelUtils;
 pub use lazy::LazyFrame;
+pub use parallel::ParallelUtils;
 
 #[cfg(feature = "cuda")]
-pub use gpu::{GpuConfig, init_gpu, GpuDeviceStatus, GpuBenchmark};
+pub use gpu::{init_gpu, GpuBenchmark, GpuConfig, GpuDeviceStatus};

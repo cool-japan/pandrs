@@ -15,13 +15,13 @@ where
 {
     /// Labels for each level
     levels: Vec<Vec<T>>,
-    
+
     /// Codes indicating the index of values for each level
     codes: Vec<Vec<i32>>,
-    
+
     /// Names for each level
     names: Vec<Option<String>>,
-    
+
     /// Mapping from MultiIndex values to positions
     map: HashMap<Vec<T>, usize>,
 }
@@ -67,13 +67,13 @@ where
         if levels.is_empty() {
             return Err(PandRSError::Index("At least one level is required".into()));
         }
-        
+
         if levels.len() != codes.len() {
             return Err(PandRSError::Index(
-                "Lengths of levels and codes must match".into()
+                "Lengths of levels and codes must match".into(),
             ));
         }
-        
+
         // Validate code values
         for (level_idx, level_codes) in codes.iter().enumerate() {
             let max_code = levels[level_idx].len() as i32 - 1;
@@ -86,54 +86,54 @@ where
                 }
             }
         }
-        
+
         // Check row count consistency
         let n_rows = if !codes.is_empty() { codes[0].len() } else { 0 };
         for level_codes in &codes {
             if level_codes.len() != n_rows {
                 return Err(PandRSError::Index(
-                    "All levels must have the same number of rows".into()
+                    "All levels must have the same number of rows".into(),
                 ));
             }
         }
-        
+
         // Verify name count
         let names = match names {
             Some(n) => {
                 if n.len() != levels.len() {
                     return Err(PandRSError::Index(
-                        "Names must have the same length as levels".into()
+                        "Names must have the same length as levels".into(),
                     ));
                 }
                 n
             }
             None => vec![None; levels.len()],
         };
-        
+
         // Build mapping
         let mut map = HashMap::with_capacity(n_rows);
         for i in 0..n_rows {
             let mut row_values = Vec::with_capacity(levels.len());
-            
+
             for level_idx in 0..levels.len() {
                 let code = codes[level_idx][i];
                 if code == -1 {
                     // Missing value case
                     return Err(PandRSError::NotImplemented(
-                        "Current MultiIndex implementation does not support missing values".into()
+                        "Current MultiIndex implementation does not support missing values".into(),
                     ));
                 } else {
                     row_values.push(levels[level_idx][code as usize].clone());
                 }
             }
-            
+
             if map.insert(row_values.clone(), i).is_some() {
                 return Err(PandRSError::Index(
-                    "Duplicate values are not allowed in MultiIndex".into()
+                    "Duplicate values are not allowed in MultiIndex".into(),
                 ));
             }
         }
-        
+
         Ok(MultiIndex {
             levels,
             codes,
@@ -141,7 +141,7 @@ where
             map,
         })
     }
-    
+
     /// Creates a MultiIndex from a list of tuples
     ///
     /// Provides functionality similar to pandas.MultiIndex.from_tuples in Python.
@@ -160,9 +160,9 @@ where
         if tuples.is_empty() {
             return Err(PandRSError::Index("Empty tuple list was passed".into()));
         }
-        
+
         let n_levels = tuples[0].len();
-        
+
         // Ensure all tuples have the same length
         for (i, tuple) in tuples.iter().enumerate() {
             if tuple.len() != n_levels {
@@ -172,18 +172,18 @@ where
                 )));
             }
         }
-        
+
         // Collect unique values for each level
         let mut unique_values: Vec<Vec<T>> = vec![Vec::new(); n_levels];
         let mut level_maps: Vec<HashMap<T, i32>> = vec![HashMap::new(); n_levels];
-        
+
         // Build codes for each level
         let mut codes: Vec<Vec<i32>> = vec![vec![-1; tuples.len()]; n_levels];
-        
+
         for (row_idx, tuple) in tuples.iter().enumerate() {
             for (level_idx, value) in tuple.iter().enumerate() {
                 let level_map = &mut level_maps[level_idx];
-                
+
                 let code = match level_map.get(value) {
                     Some(&code) => code,
                     None => {
@@ -193,14 +193,14 @@ where
                         new_code
                     }
                 };
-                
+
                 codes[level_idx][row_idx] = code;
             }
         }
-        
+
         MultiIndex::new(unique_values, codes, names)
     }
-    
+
     /// Gets a tuple at a specific position
     ///
     /// # Arguments
@@ -212,7 +212,7 @@ where
         if pos >= self.len() {
             return None;
         }
-        
+
         let mut result = Vec::with_capacity(self.levels.len());
         for level_idx in 0..self.levels.len() {
             let code = self.codes[level_idx][pos];
@@ -222,10 +222,10 @@ where
             }
             result.push(self.levels[level_idx][code as usize].clone());
         }
-        
+
         Some(result)
     }
-    
+
     /// Gets the position from a tuple
     ///
     /// # Arguments
@@ -237,12 +237,12 @@ where
         if key.len() != self.levels.len() {
             return None;
         }
-        
+
         // Convert to Vec<T> and search in map
         let key_vec = key.to_vec();
         self.map.get(&key_vec).copied()
     }
-    
+
     /// Gets the length (number of rows) of the index
     pub fn len(&self) -> usize {
         if self.codes.is_empty() {
@@ -251,32 +251,32 @@ where
             self.codes[0].len()
         }
     }
-    
+
     /// Determines if the index is empty
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
-    
+
     /// Gets the number of levels
     pub fn n_levels(&self) -> usize {
         self.levels.len()
     }
-    
+
     /// Gets the values for each level
     pub fn levels(&self) -> &[Vec<T>] {
         &self.levels
     }
-    
+
     /// Gets the codes for each level
     pub fn codes(&self) -> &[Vec<i32>] {
         &self.codes
     }
-    
+
     /// Gets the names for each level
     pub fn names(&self) -> &[Option<String>] {
         &self.names
     }
-    
+
     /// Gets the values for a specific level
     ///
     /// # Arguments
@@ -296,20 +296,20 @@ where
                 self.levels.len() - 1
             )));
         }
-        
+
         let mut values = Vec::with_capacity(self.len());
         for &code in &self.codes[level] {
             if code == -1 {
                 return Err(PandRSError::NotImplemented(
-                    "Current level value extraction does not support missing values".into()
+                    "Current level value extraction does not support missing values".into(),
                 ));
             }
             values.push(self.levels[level][code as usize].clone());
         }
-        
+
         Ok(values)
     }
-    
+
     /// Creates a new MultiIndex by swapping levels
     ///
     /// # Arguments
@@ -328,19 +328,19 @@ where
                 self.levels.len() - 1
             )));
         }
-        
+
         let mut new_levels = self.levels.clone();
         let mut new_codes = self.codes.clone();
         let mut new_names = self.names.clone();
-        
+
         // Swap levels
         new_levels.swap(i, j);
         new_codes.swap(i, j);
         new_names.swap(i, j);
-        
+
         MultiIndex::new(new_levels, new_codes, Some(new_names))
     }
-    
+
     /// Sets the names for the specified levels
     ///
     /// # Arguments
@@ -359,7 +359,7 @@ where
                 self.levels.len()
             )));
         }
-        
+
         self.names = names;
         Ok(())
     }

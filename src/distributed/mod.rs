@@ -59,44 +59,30 @@ pub use expr::backward_compat;
 
 // Re-exports from core
 #[cfg(feature = "distributed")]
-pub use core::{
-    DistributedConfig,
-    DistributedDataFrame,
-    DistributedContext,
-    ToDistributed,
-};
+pub use core::{DistributedConfig, DistributedContext, DistributedDataFrame, ToDistributed};
 
 // Re-exports from execution
 #[cfg(feature = "distributed")]
 pub use execution::{
-    ExecutionEngine,
-    ExecutionContext,
-    ExecutionPlan,
-    ExecutionResult,
-    ExecutionMetrics,
-    Operation,
-    JoinType,
-    AggregateExpr,
-    SortExpr,
+    AggregateExpr, ExecutionContext, ExecutionEngine, ExecutionMetrics, ExecutionPlan,
+    ExecutionResult, JoinType, Operation, SortExpr,
 };
 
 // Re-exports from expr
 #[cfg(feature = "distributed")]
 pub use expr::{
-    Expr, Literal, BinaryOperator, UnaryOperator, ExprDataType,
-    UdfDefinition, ColumnProjection, ProjectionExt,
+    BinaryOperator, ColumnProjection, Expr, ExprDataType, Literal, ProjectionExt, UdfDefinition,
+    UnaryOperator,
 };
 
 #[cfg(feature = "distributed")]
-pub use expr::{
-    ExprSchema, ExprValidator, ColumnMeta, InferredType,
-};
+pub use expr::{ColumnMeta, ExprSchema, ExprValidator, InferredType};
 
 // Re-exports from window
 #[cfg(feature = "distributed")]
 pub use window::{
-    WindowFrameBoundary, WindowFrameType, WindowFrame, WindowFunction, WindowFunctionExt,
-    functions as window_functions,
+    functions as window_functions, WindowFrame, WindowFrameBoundary, WindowFrameType,
+    WindowFunction, WindowFunctionExt,
 };
 
 // Re-exports from schema_validator
@@ -105,11 +91,11 @@ pub use schema_validator::SchemaValidator;
 
 // Re-exports from explain
 #[cfg(feature = "distributed")]
-pub use explain::{ExplainOptions, ExplainFormat, PlanNode, explain_plan};
+pub use explain::{explain_plan, ExplainFormat, ExplainOptions, PlanNode};
 
 // Re-exports from fault_tolerance
 #[cfg(feature = "distributed")]
 pub use fault_tolerance::{
-    FaultToleranceHandler, FaultTolerantContext, RetryPolicy, RecoveryStrategy,
-    FailureType, FailureInfo, RecoveryAction, ExecutionCheckpoint, CheckpointManager,
+    CheckpointManager, ExecutionCheckpoint, FailureInfo, FailureType, FaultToleranceHandler,
+    FaultTolerantContext, RecoveryAction, RecoveryStrategy, RetryPolicy,
 };

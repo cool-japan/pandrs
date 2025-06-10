@@ -69,7 +69,10 @@ impl Default for DistributedConfig {
         optimizer_rules.insert("predicate_pushdown".to_string(), "true".to_string());
         optimizer_rules.insert("projection_pushdown".to_string(), "true".to_string());
         optimizer_rules.insert("skip_failed_rules".to_string(), "true".to_string());
-        optimizer_rules.insert("enable_round_robin_repartition".to_string(), "true".to_string());
+        optimizer_rules.insert(
+            "enable_round_robin_repartition".to_string(),
+            "true".to_string(),
+        );
         optimizer_rules.insert("prefer_hash_join".to_string(), "true".to_string());
 
         Self {
@@ -418,14 +421,14 @@ impl From<BallistaConfig> for DistributedConfig {
 // Helper function to parse memory size from string
 fn parse_memory_size(s: &str) -> Option<usize> {
     let s = s.trim().to_uppercase();
-    
+
     // Match patterns like "4GB", "512MB", etc.
     let re = regex::Regex::new(r"^(\d+)\s*([KMGT]B)?$").ok()?;
     let caps = re.captures(&s)?;
-    
+
     let num: usize = caps.get(1)?.as_str().parse().ok()?;
     let unit = caps.get(2).map_or("B", |m| m.as_str());
-    
+
     // Convert to bytes
     match unit {
         "B" => Some(num),

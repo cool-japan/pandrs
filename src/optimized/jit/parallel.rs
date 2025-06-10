@@ -2,9 +2,9 @@
 //!
 //! This module provides parallel implementations of common aggregation operations.
 
-use super::{JitResult, JitError};
 use super::config::ParallelConfig;
-use super::core::{JitFunction, JitCompilable};
+use super::core::{JitCompilable, JitFunction};
+use super::{JitError, JitResult};
 use rayon::prelude::*;
 use std::sync::Arc;
 
@@ -55,7 +55,7 @@ where
         }
 
         let chunk_size = self.config.optimal_chunk_size(data.len());
-        
+
         // Execute in parallel chunks
         let results: Vec<R> = data
             .par_chunks(chunk_size)
@@ -68,7 +68,9 @@ where
 }
 
 /// Parallel sum for f64 values
-pub fn parallel_sum_f64(config: Option<ParallelConfig>) -> ParallelJitFunction<impl Fn(&[f64]) -> f64 + Send + Sync + Clone, f64, f64> {
+pub fn parallel_sum_f64(
+    config: Option<ParallelConfig>,
+) -> ParallelJitFunction<impl Fn(&[f64]) -> f64 + Send + Sync + Clone, f64, f64> {
     ParallelJitFunction::new(
         "parallel_sum_f64",
         |chunk: &[f64]| -> f64 {
@@ -100,7 +102,9 @@ pub fn parallel_sum_f64(config: Option<ParallelConfig>) -> ParallelJitFunction<i
 }
 
 /// Parallel mean for f64 values
-pub fn parallel_mean_f64(config: Option<ParallelConfig>) -> ParallelJitFunction<impl Fn(&[f64]) -> (f64, usize) + Send + Sync + Clone, f64, (f64, usize)> {
+pub fn parallel_mean_f64(
+    config: Option<ParallelConfig>,
+) -> ParallelJitFunction<impl Fn(&[f64]) -> (f64, usize) + Send + Sync + Clone, f64, (f64, usize)> {
     ParallelJitFunction::new(
         "parallel_mean_f64",
         |chunk: &[f64]| -> (f64, usize) {
@@ -121,7 +125,7 @@ pub fn parallel_mean_f64(config: Option<ParallelConfig>) -> ParallelJitFunction<
             let mut total_sum = 0.0;
             let mut total_count = 0;
             let mut c = 0.0;
-            
+
             for (sum, count) in partial_results {
                 let y = sum - c;
                 let t = total_sum + y;
@@ -129,7 +133,7 @@ pub fn parallel_mean_f64(config: Option<ParallelConfig>) -> ParallelJitFunction<
                 total_sum = t;
                 total_count += count;
             }
-            
+
             (total_sum, total_count)
         },
         config,
@@ -140,31 +144,41 @@ pub fn parallel_mean_f64(config: Option<ParallelConfig>) -> ParallelJitFunction<
 pub fn parallel_mean_f64_value(data: &[f64], config: Option<ParallelConfig>) -> f64 {
     let mean_func = parallel_mean_f64(config);
     let (sum, count) = mean_func.execute(data);
-    if count == 0 { 0.0 } else { sum / count as f64 }
+    if count == 0 {
+        0.0
+    } else {
+        sum / count as f64
+    }
 }
 
 /// Parallel standard deviation for f64 values
-pub fn parallel_std_f64(config: Option<ParallelConfig>) -> ParallelJitFunction<impl Fn(&[f64]) -> (f64, f64, usize) + Send + Sync + Clone, f64, (f64, f64, usize)> {
+pub fn parallel_std_f64(
+    config: Option<ParallelConfig>,
+) -> ParallelJitFunction<
+    impl Fn(&[f64]) -> (f64, f64, usize) + Send + Sync + Clone,
+    f64,
+    (f64, f64, usize),
+> {
     ParallelJitFunction::new(
         "parallel_std_f64",
         |chunk: &[f64]| -> (f64, f64, usize) {
             if chunk.is_empty() {
                 return (0.0, 0.0, 0);
             }
-            
+
             // Calculate sum and sum of squares
             let mut sum = 0.0;
             let mut sum_sq = 0.0;
             let mut c1 = 0.0;
             let mut c2 = 0.0;
-            
+
             for &value in chunk {
                 // Sum with Kahan summation
                 let y1 = value - c1;
                 let t1 = sum + y1;
                 c1 = (t1 - sum) - y1;
                 sum = t1;
-                
+
                 // Sum of squares with Kahan summation
                 let value_sq = value * value;
                 let y2 = value_sq - c2;
@@ -172,7 +186,7 @@ pub fn parallel_std_f64(config: Option<ParallelConfig>) -> ParallelJitFunction<i
                 c2 = (t2 - sum_sq) - y2;
                 sum_sq = t2;
             }
-            
+
             (sum, sum_sq, chunk.len())
         },
         |partial_results: Vec<(f64, f64, usize)>| -> (f64, f64, usize) {
@@ -181,23 +195,23 @@ pub fn parallel_std_f64(config: Option<ParallelConfig>) -> ParallelJitFunction<i
             let mut total_count = 0;
             let mut c1 = 0.0;
             let mut c2 = 0.0;
-            
+
             for (sum, sum_sq, count) in partial_results {
                 // Combine sums
                 let y1 = sum - c1;
                 let t1 = total_sum + y1;
                 c1 = (t1 - total_sum) - y1;
                 total_sum = t1;
-                
+
                 // Combine sum of squares
                 let y2 = sum_sq - c2;
                 let t2 = total_sum_sq + y2;
                 c2 = (t2 - total_sum_sq) - y2;
                 total_sum_sq = t2;
-                
+
                 total_count += count;
             }
-            
+
             (total_sum, total_sum_sq, total_count)
         },
         config,
@@ -208,11 +222,11 @@ pub fn parallel_std_f64(config: Option<ParallelConfig>) -> ParallelJitFunction<i
 pub fn parallel_std_f64_value(data: &[f64], config: Option<ParallelConfig>) -> f64 {
     let std_func = parallel_std_f64(config);
     let (sum, sum_sq, count) = std_func.execute(data);
-    
+
     if count <= 1 {
         return 0.0;
     }
-    
+
     let mean = sum / count as f64;
     let variance = (sum_sq / count as f64) - (mean * mean);
     variance.max(0.0).sqrt() // Ensure non-negative due to floating point errors
@@ -222,37 +236,35 @@ pub fn parallel_std_f64_value(data: &[f64], config: Option<ParallelConfig>) -> f
 pub fn parallel_var_f64(data: &[f64], config: Option<ParallelConfig>) -> f64 {
     let std_func = parallel_std_f64(config);
     let (sum, sum_sq, count) = std_func.execute(data);
-    
+
     if count <= 1 {
         return 0.0;
     }
-    
+
     let mean = sum / count as f64;
     let variance = (sum_sq / count as f64) - (mean * mean);
     variance.max(0.0)
 }
 
 /// Parallel minimum for f64 values
-pub fn parallel_min_f64(config: Option<ParallelConfig>) -> ParallelJitFunction<impl Fn(&[f64]) -> f64 + Send + Sync + Clone, f64, f64> {
+pub fn parallel_min_f64(
+    config: Option<ParallelConfig>,
+) -> ParallelJitFunction<impl Fn(&[f64]) -> f64 + Send + Sync + Clone, f64, f64> {
     ParallelJitFunction::new(
         "parallel_min_f64",
-        |chunk: &[f64]| -> f64 {
-            chunk.iter().copied().fold(f64::INFINITY, f64::min)
-        },
-        |partial_mins: Vec<f64>| -> f64 {
-            partial_mins.into_iter().fold(f64::INFINITY, f64::min)
-        },
+        |chunk: &[f64]| -> f64 { chunk.iter().copied().fold(f64::INFINITY, f64::min) },
+        |partial_mins: Vec<f64>| -> f64 { partial_mins.into_iter().fold(f64::INFINITY, f64::min) },
         config,
     )
 }
 
 /// Parallel maximum for f64 values
-pub fn parallel_max_f64(config: Option<ParallelConfig>) -> ParallelJitFunction<impl Fn(&[f64]) -> f64 + Send + Sync + Clone, f64, f64> {
+pub fn parallel_max_f64(
+    config: Option<ParallelConfig>,
+) -> ParallelJitFunction<impl Fn(&[f64]) -> f64 + Send + Sync + Clone, f64, f64> {
     ParallelJitFunction::new(
         "parallel_max_f64",
-        |chunk: &[f64]| -> f64 {
-            chunk.iter().copied().fold(f64::NEG_INFINITY, f64::max)
-        },
+        |chunk: &[f64]| -> f64 { chunk.iter().copied().fold(f64::NEG_INFINITY, f64::max) },
         |partial_maxs: Vec<f64>| -> f64 {
             partial_maxs.into_iter().fold(f64::NEG_INFINITY, f64::max)
         },
@@ -265,16 +277,16 @@ pub fn parallel_median_f64(data: &[f64], config: Option<ParallelConfig>) -> f64 
     if data.is_empty() {
         return 0.0;
     }
-    
+
     let mut sorted_data = data.to_vec();
-    
+
     // Use parallel sort for large datasets
     if data.len() > config.as_ref().map(|c| c.min_chunk_size).unwrap_or(1000) {
         sorted_data.par_sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
     } else {
         sorted_data.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
     }
-    
+
     let len = sorted_data.len();
     if len % 2 == 0 {
         (sorted_data[len / 2 - 1] + sorted_data[len / 2]) / 2.0
@@ -342,10 +354,10 @@ mod tests {
     fn test_parallel_sum() {
         let data: Vec<f64> = (1..=1000).map(|x| x as f64).collect();
         let expected = data.iter().sum::<f64>();
-        
+
         let sum_func = parallel_sum_f64(None);
         let result = sum_func.execute(&data);
-        
+
         assert!((result - expected).abs() < 1e-10);
     }
 
@@ -353,7 +365,7 @@ mod tests {
     fn test_parallel_mean() {
         let data: Vec<f64> = (1..=100).map(|x| x as f64).collect();
         let expected = 50.5; // Mean of 1..=100
-        
+
         let result = parallel_mean_f64_value(&data, None);
         assert!((result - expected).abs() < 1e-10);
     }
@@ -362,7 +374,7 @@ mod tests {
     fn test_parallel_std() {
         let data = vec![1.0, 2.0, 3.0, 4.0, 5.0];
         let result = parallel_std_f64_value(&data, None);
-        
+
         // Expected std for [1,2,3,4,5] is approximately 1.414
         assert!((result - 1.4142135623730951).abs() < 1e-10);
     }
@@ -370,10 +382,10 @@ mod tests {
     #[test]
     fn test_parallel_min_max() {
         let data = vec![3.0, 1.0, 4.0, 1.0, 5.0, 9.0, 2.0];
-        
+
         let min_func = parallel_min_f64(None);
         let max_func = parallel_max_f64(None);
-        
+
         assert_eq!(min_func.execute(&data), 1.0);
         assert_eq!(max_func.execute(&data), 9.0);
     }
@@ -389,7 +401,7 @@ mod tests {
     fn test_small_dataset_sequential() {
         let data = vec![1.0, 2.0, 3.0]; // Below min_chunk_size
         let config = Some(ParallelConfig::new().with_min_chunk_size(10));
-        
+
         let sum_func = parallel_sum_f64(config);
         let result = sum_func.execute(&data);
         assert_eq!(result, 6.0);

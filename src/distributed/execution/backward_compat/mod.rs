@@ -4,18 +4,18 @@
 
 use std::sync::Arc;
 
-use crate::error::Result;
-use crate::distributed::partition::{Partition, PartitionSet};
 use crate::distributed::config::DistributedConfig;
+use crate::distributed::partition::{Partition, PartitionSet};
+use crate::error::Result;
 
 /// Interface for distributed execution engines
 pub trait ExecutionEngine: Send + Sync {
     /// Initializes the execution engine
     fn initialize(&mut self, config: &DistributedConfig) -> Result<()>;
-    
+
     /// Checks if the engine is initialized
     fn is_initialized(&self) -> bool;
-    
+
     /// Creates a new execution context
     fn create_context(&self, config: &DistributedConfig) -> Result<Box<dyn ExecutionContext>>;
 }
@@ -146,28 +146,24 @@ pub struct SortExpr {
 
 impl ExecutionPlan {
     /// Creates a new execution plan
-    pub fn new(
-        operation: Operation,
-        inputs: Vec<String>,
-        output: String,
-    ) -> Self {
+    pub fn new(operation: Operation, inputs: Vec<String>, output: String) -> Self {
         Self {
             operation,
             inputs,
             output,
         }
     }
-    
+
     /// Gets the operation
     pub fn operation(&self) -> &Operation {
         &self.operation
     }
-    
+
     /// Gets the inputs
     pub fn inputs(&self) -> &[String] {
         &self.inputs
     }
-    
+
     /// Gets the output
     pub fn output(&self) -> &str {
         &self.output
@@ -202,26 +198,23 @@ pub struct ExecutionMetrics {
 
 impl ExecutionResult {
     /// Creates a new execution result
-    pub fn new(
-        partitions: PartitionSet,
-        metrics: ExecutionMetrics,
-    ) -> Self {
+    pub fn new(partitions: PartitionSet, metrics: ExecutionMetrics) -> Self {
         Self {
             partitions,
             metrics,
         }
     }
-    
+
     /// Gets the partitions
     pub fn partitions(&self) -> &PartitionSet {
         &self.partitions
     }
-    
+
     /// Gets the execution metrics
     pub fn metrics(&self) -> &ExecutionMetrics {
         &self.metrics
     }
-    
+
     /// Collects the result into a local DataFrame
     pub fn collect_to_local(&self) -> Result<crate::dataframe::DataFrame> {
         #[cfg(feature = "distributed")]
@@ -251,14 +244,14 @@ impl ExecutionResult {
             ))
         }
     }
-    
+
     /// Writes the result to a Parquet file
     pub fn write_parquet(&self, path: &str) -> Result<()> {
         #[cfg(feature = "distributed")]
         {
+            use arrow::datatypes::SchemaRef;
             use std::fs::File;
             use std::sync::Arc;
-            use arrow::datatypes::SchemaRef;
 
             // Get all record batches from the partitions
             let mut batches = Vec::new();
@@ -280,19 +273,22 @@ impl ExecutionResult {
             // Write the batches to Parquet
             let schema = batches[0].schema();
 
-            let props = parquet::file::properties::WriterProperties::builder()
-                .build();
+            let props = parquet::file::properties::WriterProperties::builder().build();
 
             let mut writer = parquet::arrow::ArrowWriter::try_new(file, schema, Some(props))
-                .map_err(|e| Error::ParquetError(format!("Failed to create Parquet writer: {}", e)))?;
+                .map_err(|e| {
+                    Error::ParquetError(format!("Failed to create Parquet writer: {}", e))
+                })?;
 
             for batch in batches {
-                writer.write(&batch)
-                    .map_err(|e| Error::ParquetError(format!("Failed to write batch to Parquet: {}", e)))?;
+                writer.write(&batch).map_err(|e| {
+                    Error::ParquetError(format!("Failed to write batch to Parquet: {}", e))
+                })?;
             }
 
-            writer.close()
-                .map_err(|e| Error::ParquetError(format!("Failed to close Parquet writer: {}", e)))?;
+            writer.close().map_err(|e| {
+                Error::ParquetError(format!("Failed to close Parquet writer: {}", e))
+            })?;
 
             Ok(())
         }
@@ -344,27 +340,27 @@ impl ExecutionMetrics {
             query_id: Some(query_id.into()),
         }
     }
-    
+
     /// Gets the execution time in milliseconds
     pub fn execution_time_ms(&self) -> u64 {
         self.execution_time_ms
     }
-    
+
     /// Gets the number of rows processed
     pub fn rows_processed(&self) -> usize {
         self.rows_processed
     }
-    
+
     /// Gets the number of partitions processed
     pub fn partitions_processed(&self) -> usize {
         self.partitions_processed
     }
-    
+
     /// Gets the number of bytes processed
     pub fn bytes_processed(&self) -> usize {
         self.bytes_processed
     }
-    
+
     /// Gets the number of bytes output
     pub fn bytes_output(&self) -> usize {
         self.bytes_output
@@ -400,19 +396,26 @@ impl ExecutionMetrics {
 
         // Add processing rate if applicable
         if self.execution_time_ms > 0 && self.rows_processed > 0 {
-            let rows_per_sec = (self.rows_processed as f64 * 1000.0) / self.execution_time_ms as f64;
+            let rows_per_sec =
+                (self.rows_processed as f64 * 1000.0) / self.execution_time_ms as f64;
             result.push_str(&format!("Processing rate: {:.1} rows/s\n", rows_per_sec));
         }
 
         // Add memory metrics
         if self.bytes_processed > 0 {
             let mb = 1024.0 * 1024.0;
-            result.push_str(&format!("Memory processed: {:.2} MB\n", self.bytes_processed as f64 / mb));
+            result.push_str(&format!(
+                "Memory processed: {:.2} MB\n",
+                self.bytes_processed as f64 / mb
+            ));
         }
 
         if self.bytes_output > 0 {
             let mb = 1024.0 * 1024.0;
-            result.push_str(&format!("Memory output: {:.2} MB\n", self.bytes_output as f64 / mb));
+            result.push_str(&format!(
+                "Memory output: {:.2} MB\n",
+                self.bytes_output as f64 / mb
+            ));
         }
 
         result
