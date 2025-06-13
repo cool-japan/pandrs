@@ -5,6 +5,7 @@ pub mod datetime_accessor;
 pub mod functions;
 pub mod na;
 pub mod string_accessor;
+pub mod window;
 
 #[cfg(feature = "cuda")]
 pub mod gpu;
@@ -15,6 +16,7 @@ pub use categorical::{Categorical, CategoricalOrder, StringCategorical};
 pub use datetime_accessor::{DateTimeAccessor, DateTimeAccessorTz};
 pub use na::NASeries;
 pub use string_accessor::StringAccessor;
+pub use window::{Rolling, Expanding, EWM, WindowOps, WindowExt, WindowClosed};
 
 // Optional feature re-exports
 #[cfg(feature = "cuda")]

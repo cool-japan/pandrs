@@ -17,6 +17,16 @@ pub use excel::{
 };
 pub use json::{read_json, write_json};
 #[cfg(feature = "parquet")]
-pub use parquet::{read_parquet, write_parquet, ParquetCompression};
+pub use parquet::{
+    read_parquet, write_parquet, read_parquet_advanced, write_parquet_advanced,
+    get_parquet_metadata, get_row_group_info, get_column_statistics,
+    ParquetCompression, ParquetMetadata, RowGroupInfo, ColumnStats,
+    ParquetReadOptions, ParquetWriteOptions
+};
 #[cfg(feature = "sql")]
-pub use sql::{execute_sql, read_sql, write_to_sql};
+pub use sql::{
+    execute_sql, read_sql, write_to_sql, read_sql_advanced, read_sql_table, write_sql_advanced,
+    has_table, list_tables, get_table_schema, get_create_table_sql,
+    SqlConnection, DatabaseConnection, PoolConfig, SqlReadOptions, SqlWriteOptions,
+    WriteMode, InsertMethod, SqlValue, TableSchema, ColumnDefinition, ForeignKey
+};

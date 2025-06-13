@@ -1,13 +1,25 @@
 use pandrs::{DataFrame, Series};
 use pandrs::error::Result;
+
+#[cfg(feature = "excel")]
 use pandrs::io::{
     list_sheet_names, get_workbook_info, get_sheet_info, read_excel_sheets, 
     read_excel_with_info, write_excel_sheets, ExcelWorkbookInfo, ExcelSheetInfo
 };
+
+#[cfg(feature = "excel")]
 use std::collections::HashMap;
 
 fn main() -> Result<()> {
-    println!("=== Excel Multi-Sheet I/O Example ===");
+    #[cfg(not(feature = "excel"))]
+    {
+        println!("Excel feature is not enabled. Enable it with --features excel");
+        return Ok(());
+    }
+    
+    #[cfg(feature = "excel")]
+    {
+        println!("=== Excel Multi-Sheet I/O Example ===");
 
     // Create sample DataFrames for demonstration
     let sales_data = create_sample_sales_dataframe()?;
@@ -93,6 +105,7 @@ fn main() -> Result<()> {
 }
 
 /// Create sample sales DataFrame
+#[cfg(feature = "excel")]
 fn create_sample_sales_dataframe() -> Result<DataFrame> {
     let mut df = DataFrame::new();
     
@@ -118,6 +131,7 @@ fn create_sample_sales_dataframe() -> Result<DataFrame> {
 }
 
 /// Create sample inventory DataFrame
+#[cfg(feature = "excel")]
 fn create_sample_inventory_dataframe() -> Result<DataFrame> {
     let mut df = DataFrame::new();
     
@@ -140,6 +154,7 @@ fn create_sample_inventory_dataframe() -> Result<DataFrame> {
 }
 
 /// Create sample summary DataFrame
+#[cfg(feature = "excel")]
 fn create_sample_summary_dataframe() -> Result<DataFrame> {
     let mut df = DataFrame::new();
     
@@ -189,4 +204,7 @@ fn demonstrate_excel_patterns() {
     println!("       sheets.insert(format!(\"{{category}}_Report\"), &data);");
     println!("   }}");
     println!("   write_excel_sheets(&sheets, \"report.xlsx\", true)?;");
+    }
+    
+    Ok(())
 }

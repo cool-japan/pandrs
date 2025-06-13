@@ -8,7 +8,7 @@ fn main() -> Result<(), PandRSError> {
     // Benchmark function
     fn bench<F>(name: &str, f: F) -> Duration
     where
-        F: FnOnce() -> (),
+        F: FnOnce(),
     {
         println!("Running: {}", name);
         let start = Instant::now();

@@ -97,7 +97,7 @@ mod boundary_condition_tests {
     fn test_single_element_dataframe() {
         let mut df = OptimizedDataFrame::new();
         df.add_int_column("single", vec![42]).unwrap();
-        df.add_float_column("single_float", vec![3.14]).unwrap();
+        df.add_float_column("single_float", vec![std::f64::consts::PI]).unwrap();
         
         assert_eq!(df.row_count(), 1);
         assert_eq!(df.column_count(), 2);
@@ -108,8 +108,8 @@ mod boundary_condition_tests {
         assert_eq!(df.min("single").unwrap(), 42.0);
         assert_eq!(df.max("single").unwrap(), 42.0);
         
-        assert!((df.sum("single_float").unwrap() - 3.14).abs() < 1e-10);
-        assert!((df.mean("single_float").unwrap() - 3.14).abs() < 1e-10);
+        assert!((df.sum("single_float").unwrap() - std::f64::consts::PI).abs() < 1e-10);
+        assert!((df.mean("single_float").unwrap() - std::f64::consts::PI).abs() < 1e-10);
     }
 
     #[test]
@@ -286,7 +286,7 @@ mod invalid_input_tests {
         let mut df = OptimizedDataFrame::new();
         
         // Test various Unicode column names
-        let unicode_names = vec![
+        let unicode_names = [
             "🚀rocket",
             "数据",
             "données",
@@ -302,7 +302,7 @@ mod invalid_input_tests {
             match result {
                 Ok(_) => {
                     // If accepted, should be retrievable
-                    assert!(df.column(*name).is_ok());
+                    assert!(df.column(name).is_ok());
                 },
                 Err(_) => {
                     // If rejected, should be consistent error
@@ -315,7 +315,7 @@ mod invalid_input_tests {
     fn test_special_character_column_names() {
         let mut df = OptimizedDataFrame::new();
         
-        let special_names = vec![
+        let special_names = [
             "col with spaces",
             "col,with,commas",
             "col\"with\"quotes",

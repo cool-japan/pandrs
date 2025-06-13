@@ -7,8 +7,9 @@ use std::path::Path;
 use crate::error::Result;
 use crate::DataFrame;
 use crate::Series;
-use crate::vis::plotters_ext::{PlotSettings, PlotKind, OutputType};
+use crate::vis::backward_compat::plotters_ext::{PlotSettings, PlotKind, OutputType};
 use crate::optimized::dataframe::OptimizedDataFrame;
+use crate::optimized::convert::standard_dataframe;
 
 // Add direct plotting methods to Series
 impl<T> Series<T>
@@ -520,7 +521,7 @@ impl OptimizedDataFrame {
         title: Option<&str>
     ) -> Result<()> {
         // Convert to regular DataFrame first
-        let df = self.to_dataframe()?;
+        let df = standard_dataframe(self)?;
         df.plot_column(column, path, title)
     }
 
@@ -531,7 +532,7 @@ impl OptimizedDataFrame {
         path: P, 
         title: Option<&str>
     ) -> Result<()> {
-        let df = self.to_dataframe()?;
+        let df = standard_dataframe(self)?;
         df.line_plot(column, path, title)
     }
 
@@ -542,7 +543,7 @@ impl OptimizedDataFrame {
         path: P, 
         title: Option<&str>
     ) -> Result<()> {
-        let df = self.to_dataframe()?;
+        let df = standard_dataframe(self)?;
         df.scatter_plot(column, path, title)
     }
 
@@ -553,7 +554,7 @@ impl OptimizedDataFrame {
         path: P, 
         title: Option<&str>
     ) -> Result<()> {
-        let df = self.to_dataframe()?;
+        let df = standard_dataframe(self)?;
         df.bar_plot(column, path, title)
     }
 
@@ -564,7 +565,7 @@ impl OptimizedDataFrame {
         path: P, 
         title: Option<&str>
     ) -> Result<()> {
-        let df = self.to_dataframe()?;
+        let df = standard_dataframe(self)?;
         df.area_plot(column, path, title)
     }
 
@@ -576,7 +577,7 @@ impl OptimizedDataFrame {
         path: P, 
         title: Option<&str>
     ) -> Result<()> {
-        let df = self.to_dataframe()?;
+        let df = standard_dataframe(self)?;
         df.box_plot(value_column, category_column, path, title)
     }
 
@@ -588,7 +589,7 @@ impl OptimizedDataFrame {
         path: P, 
         title: Option<&str>
     ) -> Result<()> {
-        let df = self.to_dataframe()?;
+        let df = standard_dataframe(self)?;
         df.scatter_xy(x_column, y_column, path, title)
     }
 
@@ -599,7 +600,7 @@ impl OptimizedDataFrame {
         path: P, 
         title: Option<&str>
     ) -> Result<()> {
-        let df = self.to_dataframe()?;
+        let df = standard_dataframe(self)?;
         df.multi_line_plot(columns, path, title)
     }
 }

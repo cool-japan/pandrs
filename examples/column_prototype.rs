@@ -191,6 +191,12 @@ pub struct StringPool {
     hash_map: HashMap<String, u32>,
 }
 
+impl Default for StringPool {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl StringPool {
     pub fn new() -> Self {
         Self {
@@ -377,6 +383,12 @@ pub struct OptimizedDataFrame {
     column_indices: HashMap<String, usize>,
     // Order of columns
     column_names: Vec<String>,
+}
+
+impl Default for OptimizedDataFrame {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl OptimizedDataFrame {

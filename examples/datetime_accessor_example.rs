@@ -1,7 +1,7 @@
 use pandrs::{DataFrame, Series};
 use pandrs::error::Result;
 use pandrs::series::datetime_accessor::datetime_constructors;
-use chrono::{NaiveDate, NaiveDateTime};
+use chrono::NaiveDate;
 
 fn main() -> Result<()> {
     println!("=== DateTime Accessor Example ===");

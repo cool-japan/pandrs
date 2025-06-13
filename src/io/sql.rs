@@ -1,13 +1,262 @@
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::Arc;
+use std::time::Duration;
 
-use rusqlite::{Connection, Row, Statement};
+// SQLite support
+use rusqlite::{Connection as SqliteConnection, Row, Statement};
+
+// Multi-database support via sqlx (optional)
+#[cfg(feature = "sql")]
+use sqlx::{Pool, AnyPool, Row as SqlxRow, Column as SqlxColumn};
+
+#[cfg(feature = "sql")]
+use sqlx::any::{AnyArguments, AnyConnectOptions};
+
+#[cfg(feature = "sql")]
+use sqlx::ConnectOptions;
 
 use crate::column::{BooleanColumn, Column, Float64Column, Int64Column, StringColumn};
 use crate::dataframe::DataFrame;
 use crate::error::{Error, Result};
 use crate::optimized::OptimizedDataFrame;
 use crate::series::Series;
+
+/// Database connection types supported by PandRS
+#[derive(Debug, Clone)]
+pub enum DatabaseConnection {
+    /// SQLite file-based database
+    Sqlite(String),
+    /// PostgreSQL connection string
+    #[cfg(feature = "sql")]
+    PostgreSQL(String),
+    /// MySQL connection string  
+    #[cfg(feature = "sql")]
+    MySQL(String),
+    /// Generic database URL
+    #[cfg(feature = "sql")]
+    Generic(String),
+}
+
+/// Database connection pool configuration
+#[derive(Debug, Clone)]
+pub struct PoolConfig {
+    /// Maximum number of connections in pool
+    pub max_connections: u32,
+    /// Minimum number of connections to maintain
+    pub min_connections: u32,
+    /// Connection timeout
+    pub connect_timeout: Duration,
+    /// Maximum idle time before closing connection
+    pub idle_timeout: Option<Duration>,
+}
+
+impl Default for PoolConfig {
+    fn default() -> Self {
+        Self {
+            max_connections: 10,
+            min_connections: 1,
+            connect_timeout: Duration::from_secs(30),
+            idle_timeout: Some(Duration::from_secs(600)),
+        }
+    }
+}
+
+/// Advanced SQL reading options
+#[derive(Debug, Clone)]
+pub struct SqlReadOptions {
+    /// Read data in chunks of this size (for memory efficiency)
+    pub chunksize: Option<usize>,
+    /// Column(s) to use as index
+    pub index_col: Option<Vec<String>>,
+    /// Parse specific columns as dates
+    pub parse_dates: Option<Vec<String>>,
+    /// Override data types for specific columns
+    pub dtype: Option<HashMap<String, String>>,
+    /// Parameters for parameterized queries
+    pub params: Option<Vec<SqlValue>>,
+    /// Coerce floating point numbers
+    pub coerce_float: bool,
+}
+
+impl Default for SqlReadOptions {
+    fn default() -> Self {
+        Self {
+            chunksize: None,
+            index_col: None,
+            parse_dates: None,
+            dtype: None,
+            params: None,
+            coerce_float: true,
+        }
+    }
+}
+
+/// Advanced SQL writing options
+#[derive(Debug, Clone)]
+pub struct SqlWriteOptions {
+    /// Database schema name
+    pub schema: Option<String>,
+    /// Whether to write DataFrame index
+    pub index: bool,
+    /// Label for index column(s)
+    pub index_label: Option<String>,
+    /// Write in chunks of this size
+    pub chunksize: Option<usize>,
+    /// Data types for columns
+    pub dtype: Option<HashMap<String, String>>,
+    /// How to handle existing table
+    pub if_exists: WriteMode,
+    /// Insertion method
+    pub method: InsertMethod,
+}
+
+impl Default for SqlWriteOptions {
+    fn default() -> Self {
+        Self {
+            schema: None,
+            index: true,
+            index_label: None,
+            chunksize: Some(10000),
+            dtype: None,
+            if_exists: WriteMode::Fail,
+            method: InsertMethod::Multi,
+        }
+    }
+}
+
+/// How to handle existing tables when writing
+#[derive(Debug, Clone, PartialEq)]
+pub enum WriteMode {
+    /// Raise error if table exists
+    Fail,
+    /// Drop and recreate table
+    Replace,
+    /// Append to existing table
+    Append,
+}
+
+/// Method for inserting data
+#[derive(Debug, Clone)]
+pub enum InsertMethod {
+    /// Single INSERT statement per row
+    Single,
+    /// Multi-value INSERT statements
+    Multi,
+    /// Custom insertion logic
+    Custom,
+}
+
+/// SQL parameter value types
+#[derive(Debug, Clone)]
+pub enum SqlValue {
+    Null,
+    Integer(i64),
+    Real(f64),
+    Text(String),
+    Blob(Vec<u8>),
+    Boolean(bool),
+}
+
+/// Database table schema information
+#[derive(Debug, Clone)]
+pub struct TableSchema {
+    /// Table name
+    pub name: String,
+    /// Column definitions
+    pub columns: Vec<ColumnDefinition>,
+    /// Primary key columns
+    pub primary_keys: Vec<String>,
+    /// Foreign key constraints
+    pub foreign_keys: Vec<ForeignKey>,
+}
+
+/// Column definition in database table
+#[derive(Debug, Clone)]
+pub struct ColumnDefinition {
+    /// Column name
+    pub name: String,
+    /// SQL data type
+    pub data_type: String,
+    /// Whether column allows NULL values
+    pub nullable: bool,
+    /// Default value
+    pub default_value: Option<String>,
+}
+
+/// Foreign key constraint information
+#[derive(Debug, Clone)]
+pub struct ForeignKey {
+    /// Local column name
+    pub column: String,
+    /// Referenced table name
+    pub referenced_table: String,
+    /// Referenced column name
+    pub referenced_column: String,
+}
+
+/// Database connection manager
+pub struct SqlConnection {
+    connection_type: DatabaseConnection,
+    #[cfg(feature = "sql")]
+    pool: Option<AnyPool>,
+}
+
+impl SqlConnection {
+    /// Create new database connection from URL
+    pub fn from_url(url: &str) -> Result<Self> {
+        let connection_type = if url.starts_with("sqlite:") || url.ends_with(".db") {
+            DatabaseConnection::Sqlite(url.to_string())
+        } else {
+            #[cfg(feature = "sql")]
+            {
+                if url.starts_with("postgresql:") || url.starts_with("postgres:") {
+                    DatabaseConnection::PostgreSQL(url.to_string())
+                } else if url.starts_with("mysql:") {
+                    DatabaseConnection::MySQL(url.to_string())
+                } else {
+                    DatabaseConnection::Generic(url.to_string())
+                }
+            }
+            #[cfg(not(feature = "sql"))]
+            {
+                return Err(Error::IoError(
+                    "Multi-database support requires 'sqlx' feature".to_string()
+                ));
+            }
+        };
+        
+        Ok(Self {
+            connection_type,
+            #[cfg(feature = "sql")]
+            pool: None,
+        })
+    }
+    
+    /// Create connection with pooling
+    #[cfg(feature = "sql")]
+    pub async fn with_pool(url: &str, config: PoolConfig) -> Result<Self> {
+        let options: AnyConnectOptions = url.parse()
+            .map_err(|e| Error::IoError(format!("Invalid connection URL: {}", e)))?;
+        
+        let pool = Pool::connect_with(options)
+            .await
+            .map_err(|e| Error::IoError(format!("Failed to create connection pool: {}", e)))?;
+        
+        let connection_type = if url.starts_with("postgresql:") || url.starts_with("postgres:") {
+            DatabaseConnection::PostgreSQL(url.to_string())
+        } else if url.starts_with("mysql:") {
+            DatabaseConnection::MySQL(url.to_string())
+        } else {
+            DatabaseConnection::Generic(url.to_string())
+        };
+        
+        Ok(Self {
+            connection_type,
+            pool: Some(pool),
+        })
+    }
+}
 
 /// Create a DataFrame from SQL query results
 ///
@@ -29,7 +278,7 @@ use crate::series::Series;
 /// ```
 pub fn read_sql<P: AsRef<Path>>(query: &str, db_path: P) -> Result<DataFrame> {
     // Connect to database
-    let conn = Connection::open(db_path)
+    let conn = SqliteConnection::open(db_path)
         .map_err(|e| Error::IoError(format!("Failed to connect to database: {}", e)))?;
 
     // Prepare query
@@ -104,7 +353,7 @@ pub fn read_sql<P: AsRef<Path>>(query: &str, db_path: P) -> Result<DataFrame> {
 /// ```
 pub fn execute_sql<P: AsRef<Path>>(sql: &str, db_path: P) -> Result<usize> {
     // Connect to database
-    let conn = Connection::open(db_path)
+    let conn = SqliteConnection::open(db_path)
         .map_err(|e| Error::IoError(format!("Failed to connect to database: {}", e)))?;
 
     // Execute SQL statement
@@ -140,7 +389,7 @@ pub fn write_to_sql<P: AsRef<Path>>(
     if_exists: &str,
 ) -> Result<()> {
     // Connect to database
-    let mut conn = Connection::open(db_path)
+    let mut conn = SqliteConnection::open(db_path)
         .map_err(|e| Error::IoError(format!("Failed to connect to database: {}", e)))?;
 
     // Check if table exists
@@ -281,8 +530,373 @@ pub fn write_to_sql<P: AsRef<Path>>(
     Ok(())
 }
 
+/// Read SQL query with advanced options
+///
+/// # Arguments
+///
+/// * `sql` - SQL query to execute
+/// * `connection` - Database connection
+/// * `options` - Advanced reading options
+///
+/// # Returns
+///
+/// * `Result<DataFrame>` - DataFrame containing query results, or an error
+///
+/// # Examples
+///
+/// ```no_run
+/// use pandrs::io::{read_sql_advanced, SqlConnection, SqlReadOptions};
+///
+/// let conn = SqlConnection::from_url("sqlite:data.db").unwrap();
+/// let options = SqlReadOptions {
+///     chunksize: Some(1000),
+///     parse_dates: Some(vec!["created_at".to_string()]),
+///     ..Default::default()
+/// };
+/// let df = read_sql_advanced("SELECT * FROM users", &conn, options).unwrap();
+/// ```
+pub fn read_sql_advanced(
+    sql: &str,
+    connection: &SqlConnection,
+    options: SqlReadOptions,
+) -> Result<DataFrame> {
+    match &connection.connection_type {
+        DatabaseConnection::Sqlite(path) => {
+            read_sql_sqlite_advanced(sql, path, options)
+        }
+        #[cfg(feature = "sql")]
+        _ => {
+            // For now, fall back to basic implementation for other databases
+            // Full sqlx implementation would go here
+            Err(Error::IoError(
+                "Advanced SQL features not yet implemented for non-SQLite databases".to_string()
+            ))
+        }
+    }
+}
+
+/// Read SQL table with advanced options
+///
+/// # Arguments
+///
+/// * `table_name` - Name of the table to read
+/// * `connection` - Database connection
+/// * `options` - Advanced reading options
+///
+/// # Returns
+///
+/// * `Result<DataFrame>` - DataFrame containing table data, or an error
+///
+/// # Examples
+///
+/// ```no_run
+/// use pandrs::io::{read_sql_table, SqlConnection, SqlReadOptions};
+///
+/// let conn = SqlConnection::from_url("sqlite:data.db").unwrap();
+/// let options = SqlReadOptions {
+///     index_col: Some(vec!["id".to_string()]),
+///     ..Default::default()
+/// };
+/// let df = read_sql_table("users", &conn, options).unwrap();
+/// ```
+pub fn read_sql_table(
+    table_name: &str,
+    connection: &SqlConnection,
+    options: SqlReadOptions,
+) -> Result<DataFrame> {
+    let sql = format!("SELECT * FROM {}", table_name);
+    read_sql_advanced(&sql, connection, options)
+}
+
+/// Write DataFrame to SQL with advanced options
+///
+/// # Arguments
+///
+/// * `df` - DataFrame to write
+/// * `table_name` - Target table name
+/// * `connection` - Database connection
+/// * `options` - Advanced writing options
+///
+/// # Returns
+///
+/// * `Result<usize>` - Number of rows written, or an error
+///
+/// # Examples
+///
+/// ```no_run
+/// use pandrs::io::{write_sql_advanced, SqlConnection, SqlWriteOptions, WriteMode};
+///
+/// let conn = SqlConnection::from_url("sqlite:data.db").unwrap();
+/// let options = SqlWriteOptions {
+///     if_exists: WriteMode::Replace,
+///     chunksize: Some(5000),
+///     index: false,
+///     ..Default::default()
+/// };
+/// let rows_written = write_sql_advanced(&df, "users", &conn, options).unwrap();
+/// ```
+pub fn write_sql_advanced(
+    df: &OptimizedDataFrame,
+    table_name: &str,
+    connection: &SqlConnection,
+    options: SqlWriteOptions,
+) -> Result<usize> {
+    match &connection.connection_type {
+        DatabaseConnection::Sqlite(path) => {
+            write_sql_sqlite_advanced(df, table_name, path, options)
+        }
+        #[cfg(feature = "sql")]
+        _ => {
+            // For now, fall back to basic implementation for other databases
+            Err(Error::IoError(
+                "Advanced SQL features not yet implemented for non-SQLite databases".to_string()
+            ))
+        }
+    }
+}
+
+/// Check if table exists in database
+///
+/// # Arguments
+///
+/// * `table_name` - Name of the table to check
+/// * `connection` - Database connection
+/// * `schema` - Optional schema name
+///
+/// # Returns
+///
+/// * `Result<bool>` - True if table exists, false otherwise, or an error
+///
+/// # Examples
+///
+/// ```no_run
+/// use pandrs::io::{has_table, SqlConnection};
+///
+/// let conn = SqlConnection::from_url("sqlite:data.db").unwrap();
+/// let exists = has_table("users", &conn, None).unwrap();
+/// println!("Table exists: {}", exists);
+/// ```
+pub fn has_table(
+    table_name: &str,
+    connection: &SqlConnection,
+    schema: Option<&str>,
+) -> Result<bool> {
+    match &connection.connection_type {
+        DatabaseConnection::Sqlite(path) => {
+            let conn = SqliteConnection::open(path)
+                .map_err(|e| Error::IoError(format!("Failed to connect to database: {}", e)))?;
+            
+            let exists = conn
+                .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name=?")
+                .map_err(|e| Error::IoError(format!("Failed to prepare query: {}", e)))?
+                .exists(&[&table_name])
+                .map_err(|e| Error::IoError(format!("Failed to check table existence: {}", e)))?;
+            
+            Ok(exists)
+        }
+        #[cfg(feature = "sql")]
+        _ => {
+            // Implementation for other databases would go here
+            Err(Error::IoError(
+                "Table existence check not yet implemented for non-SQLite databases".to_string()
+            ))
+        }
+    }
+}
+
+/// List all tables in database
+///
+/// # Arguments
+///
+/// * `connection` - Database connection
+/// * `schema` - Optional schema name to filter by
+///
+/// # Returns
+///
+/// * `Result<Vec<String>>` - List of table names, or an error
+///
+/// # Examples
+///
+/// ```no_run
+/// use pandrs::io::{list_tables, SqlConnection};
+///
+/// let conn = SqlConnection::from_url("sqlite:data.db").unwrap();
+/// let tables = list_tables(&conn, None).unwrap();
+/// for table in tables {
+///     println!("Table: {}", table);
+/// }
+/// ```
+pub fn list_tables(
+    connection: &SqlConnection,
+    schema: Option<&str>,
+) -> Result<Vec<String>> {
+    match &connection.connection_type {
+        DatabaseConnection::Sqlite(path) => {
+            let conn = SqliteConnection::open(path)
+                .map_err(|e| Error::IoError(format!("Failed to connect to database: {}", e)))?;
+            
+            let mut stmt = conn
+                .prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
+                .map_err(|e| Error::IoError(format!("Failed to prepare query: {}", e)))?;
+            
+            let table_names = stmt
+                .query_map([], |row| {
+                    Ok(row.get::<_, String>(0)?)
+                })
+                .map_err(|e| Error::IoError(format!("Failed to execute query: {}", e)))?
+                .collect::<std::result::Result<Vec<String>, _>>()
+                .map_err(|e| Error::IoError(format!("Failed to collect results: {}", e)))?;
+            
+            Ok(table_names)
+        }
+        #[cfg(feature = "sql")]
+        _ => {
+            // Implementation for other databases would go here
+            Err(Error::IoError(
+                "Table listing not yet implemented for non-SQLite databases".to_string()
+            ))
+        }
+    }
+}
+
+/// Get schema information for a table
+///
+/// # Arguments
+///
+/// * `table_name` - Name of the table
+/// * `connection` - Database connection
+/// * `schema` - Optional schema name
+///
+/// # Returns
+///
+/// * `Result<TableSchema>` - Table schema information, or an error
+///
+/// # Examples
+///
+/// ```no_run
+/// use pandrs::io::{get_table_schema, SqlConnection};
+///
+/// let conn = SqlConnection::from_url("sqlite:data.db").unwrap();
+/// let schema = get_table_schema("users", &conn, None).unwrap();
+/// println!("Table {} has {} columns", schema.name, schema.columns.len());
+/// ```
+pub fn get_table_schema(
+    table_name: &str,
+    connection: &SqlConnection,
+    schema: Option<&str>,
+) -> Result<TableSchema> {
+    match &connection.connection_type {
+        DatabaseConnection::Sqlite(path) => {
+            let conn = SqliteConnection::open(path)
+                .map_err(|e| Error::IoError(format!("Failed to connect to database: {}", e)))?;
+            
+            // Get column information
+            let mut stmt = conn
+                .prepare(&format!("PRAGMA table_info({})", table_name))
+                .map_err(|e| Error::IoError(format!("Failed to prepare query: {}", e)))?;
+            
+            let columns = stmt
+                .query_map([], |row| {
+                    Ok(ColumnDefinition {
+                        name: row.get::<_, String>(1)?,
+                        data_type: row.get::<_, String>(2)?,
+                        nullable: row.get::<_, i32>(3)? == 0,
+                        default_value: row.get::<_, Option<String>>(4)?,
+                    })
+                })
+                .map_err(|e| Error::IoError(format!("Failed to execute query: {}", e)))?
+                .collect::<std::result::Result<Vec<ColumnDefinition>, _>>()
+                .map_err(|e| Error::IoError(format!("Failed to collect results: {}", e)))?;
+            
+            // Get primary key information
+            let mut stmt = conn
+                .prepare(&format!("PRAGMA table_info({})", table_name))
+                .map_err(|e| Error::IoError(format!("Failed to prepare query: {}", e)))?;
+            
+            let primary_keys = stmt
+                .query_map([], |row| {
+                    let is_pk: i32 = row.get(5)?;
+                    if is_pk > 0 {
+                        Ok(Some(row.get::<_, String>(1)?))
+                    } else {
+                        Ok(None)
+                    }
+                })
+                .map_err(|e| Error::IoError(format!("Failed to execute query: {}", e)))?
+                .filter_map(|result| result.transpose())
+                .collect::<std::result::Result<Vec<String>, _>>()
+                .map_err(|e| Error::IoError(format!("Failed to collect results: {}", e)))?;
+            
+            Ok(TableSchema {
+                name: table_name.to_string(),
+                columns,
+                primary_keys,
+                foreign_keys: Vec::new(), // Foreign keys would need additional queries
+            })
+        }
+        #[cfg(feature = "sql")]
+        _ => {
+            // Implementation for other databases would go here
+            Err(Error::IoError(
+                "Schema inspection not yet implemented for non-SQLite databases".to_string()
+            ))
+        }
+    }
+}
+
+/// Generate CREATE TABLE SQL for DataFrame
+///
+/// # Arguments
+///
+/// * `df` - DataFrame to generate SQL for
+/// * `table_name` - Target table name
+/// * `connection` - Database connection (for dialect-specific SQL)
+///
+/// # Returns
+///
+/// * `Result<String>` - CREATE TABLE SQL statement, or an error
+///
+/// # Examples
+///
+/// ```no_run
+/// use pandrs::io::{get_create_table_sql, SqlConnection};
+///
+/// let conn = SqlConnection::from_url("sqlite:data.db").unwrap();
+/// let sql = get_create_table_sql(&df, "users", &conn).unwrap();
+/// println!("CREATE SQL: {}", sql);
+/// ```
+pub fn get_create_table_sql(
+    df: &OptimizedDataFrame,
+    table_name: &str,
+    connection: &SqlConnection,
+) -> Result<String> {
+    let mut columns = Vec::new();
+    
+    for col_name in df.column_names() {
+        if let Ok(column) = df.column(col_name) {
+            let sql_type = match column.column_type() {
+                crate::column::ColumnType::Int64 => "INTEGER",
+                crate::column::ColumnType::Float64 => "REAL",
+                crate::column::ColumnType::Boolean => match &connection.connection_type {
+                    DatabaseConnection::Sqlite(_) => "INTEGER",
+                    #[cfg(feature = "sql")]
+                    DatabaseConnection::PostgreSQL(_) => "BOOLEAN",
+                    #[cfg(feature = "sql")]
+                    DatabaseConnection::MySQL(_) => "BOOLEAN",
+                    #[cfg(feature = "sql")]
+                    DatabaseConnection::Generic(_) => "BOOLEAN",
+                },
+                crate::column::ColumnType::String => "TEXT",
+            };
+            columns.push(format!("{} {}", col_name, sql_type));
+        }
+    }
+    
+    Ok(format!("CREATE TABLE {} ({})", table_name, columns.join(", ")))
+}
+
 /// Internal helper function to create a new table from an OptimizedDataFrame
-fn create_table_from_df(conn: &Connection, df: &OptimizedDataFrame, table_name: &str) -> Result<()> {
+fn create_table_from_df(conn: &SqliteConnection, df: &OptimizedDataFrame, table_name: &str) -> Result<()> {
     // Create list of column names and types
     let mut columns = Vec::new();
 
@@ -434,4 +1048,480 @@ fn infer_series_from_strings(name: &str, data: &[String]) -> Result<Option<Serie
         .collect();
 
     Ok(Some(Series::new(values, Some(name.to_string()))?))
+}
+
+/// Internal implementation for SQLite advanced reading
+fn read_sql_sqlite_advanced(
+    sql: &str,
+    db_path: &str,
+    options: SqlReadOptions,
+) -> Result<DataFrame> {
+    let conn = SqliteConnection::open(db_path)
+        .map_err(|e| Error::IoError(format!("Failed to connect to database: {}", e)))?;
+    
+    // Prepare statement
+    let mut stmt = conn
+        .prepare(sql)
+        .map_err(|e| Error::IoError(format!("Failed to prepare SQL query: {}", e)))?;
+    
+    // Get column names
+    let column_names: Vec<String> = stmt
+        .column_names()
+        .iter()
+        .map(|&name| name.to_string())
+        .collect();
+    
+    // Execute query with parameters if provided
+    let param_values: Vec<&dyn rusqlite::ToSql> = if let Some(ref params) = options.params {
+        params.iter().map(|p| p as &dyn rusqlite::ToSql).collect()
+    } else {
+        Vec::new()
+    };
+    
+    let mut rows = stmt
+        .query(param_values.as_slice())
+        .map_err(|e| Error::IoError(format!("Failed to execute SQL query: {}", e)))?;
+    
+    // Collect data
+    let mut column_data: HashMap<String, Vec<String>> = HashMap::new();
+    for name in &column_names {
+        column_data.insert(name.clone(), Vec::new());
+    }
+    
+    let mut row_count = 0;
+    while let Some(row) = rows
+        .next()
+        .map_err(|e| Error::IoError(format!("Failed to retrieve SQL query results: {}", e)))?
+    {
+        // Check chunk size limit
+        if let Some(chunksize) = options.chunksize {
+            if row_count >= chunksize {
+                break;
+            }
+        }
+        
+        for (idx, name) in column_names.iter().enumerate() {
+            let value = get_row_value(row, idx)?;
+            if let Some(data) = column_data.get_mut(name) {
+                data.push(value);
+            }
+        }
+        row_count += 1;
+    }
+    
+    // Create DataFrame with enhanced type inference
+    let mut df = DataFrame::new();
+    
+    for name in column_names {
+        if let Some(data) = column_data.get(&name) {
+            // Check if this column should be parsed as date
+            let is_date_column = options.parse_dates
+                .as_ref()
+                .map(|dates| dates.contains(&name))
+                .unwrap_or(false);
+            
+            // Check for explicit dtype
+            let explicit_dtype = options.dtype
+                .as_ref()
+                .and_then(|dtypes| dtypes.get(&name));
+            
+            if let Some(series) = infer_series_from_strings_advanced(
+                &name, 
+                data, 
+                is_date_column, 
+                explicit_dtype,
+                options.coerce_float
+            )? {
+                df.add_column(name.clone(), series)?;
+            }
+        }
+    }
+    
+    Ok(df)
+}
+
+/// Internal implementation for SQLite advanced writing
+fn write_sql_sqlite_advanced(
+    df: &OptimizedDataFrame,
+    table_name: &str,
+    db_path: &str,
+    options: SqlWriteOptions,
+) -> Result<usize> {
+    let mut conn = SqliteConnection::open(db_path)
+        .map_err(|e| Error::IoError(format!("Failed to connect to database: {}", e)))?;
+    
+    // Check if table exists
+    let table_exists = conn
+        .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name=?")
+        .map_err(|e| Error::IoError(format!("Failed to prepare table verification query: {}", e)))?
+        .exists(&[&table_name])
+        .map_err(|e| Error::IoError(format!("Failed to verify table existence: {}", e)))?;
+    
+    // Handle existing table based on if_exists option
+    if table_exists {
+        match options.if_exists {
+            WriteMode::Fail => {
+                return Err(Error::IoError(format!(
+                    "Table '{}' already exists",
+                    table_name
+                )));
+            }
+            WriteMode::Replace => {
+                conn.execute(&format!("DROP TABLE IF EXISTS {}", table_name), [])
+                    .map_err(|e| Error::IoError(format!("Failed to drop table: {}", e)))?;
+                create_table_from_df_advanced(&conn, df, table_name, &options)?;
+            }
+            WriteMode::Append => {
+                // Table exists, proceed to append
+            }
+        }
+    } else {
+        create_table_from_df_advanced(&conn, df, table_name, &options)?;
+    }
+    
+    // Insert data with chunking
+    let chunk_size = options.chunksize.unwrap_or(df.row_count());
+    let mut total_inserted = 0;
+    
+    for chunk_start in (0..df.row_count()).step_by(chunk_size) {
+        let chunk_end = (chunk_start + chunk_size).min(df.row_count());
+        let rows_inserted = insert_data_chunk(
+            &mut conn,
+            df,
+            table_name,
+            chunk_start,
+            chunk_end,
+            &options
+        )?;
+        total_inserted += rows_inserted;
+    }
+    
+    Ok(total_inserted)
+}
+
+/// Create table with advanced options
+fn create_table_from_df_advanced(
+    conn: &SqliteConnection,
+    df: &OptimizedDataFrame,
+    table_name: &str,
+    options: &SqlWriteOptions,
+) -> Result<()> {
+    let mut columns = Vec::new();
+    
+    // Add index column if requested
+    if options.index {
+        let index_name = options.index_label
+            .as_ref()
+            .map(|s| s.as_str())
+            .unwrap_or("index");
+        columns.push(format!("{} INTEGER", index_name));
+    }
+    
+    // Add data columns
+    for col_name in df.column_names() {
+        if let Ok(column) = df.column(col_name) {
+            let sql_type = if let Some(ref dtype_map) = options.dtype {
+                dtype_map.get(col_name)
+                    .map(|s| s.as_str())
+                    .unwrap_or_else(|| match column.column_type() {
+                        crate::column::ColumnType::Int64 => "INTEGER",
+                        crate::column::ColumnType::Float64 => "REAL",
+                        crate::column::ColumnType::Boolean => "INTEGER",
+                        crate::column::ColumnType::String => "TEXT",
+                    })
+            } else {
+                match column.column_type() {
+                    crate::column::ColumnType::Int64 => "INTEGER",
+                    crate::column::ColumnType::Float64 => "REAL",
+                    crate::column::ColumnType::Boolean => "INTEGER",
+                    crate::column::ColumnType::String => "TEXT",
+                }
+            };
+            columns.push(format!("{} {}", col_name, sql_type));
+        }
+    }
+    
+    let create_sql = format!("CREATE TABLE {} ({})", table_name, columns.join(", "));
+    conn.execute(&create_sql, [])
+        .map_err(|e| Error::IoError(format!("Failed to create table: {}", e)))?;
+    
+    Ok(())
+}
+
+/// Insert data chunk with different insertion methods
+fn insert_data_chunk(
+    conn: &mut SqliteConnection,
+    df: &OptimizedDataFrame,
+    table_name: &str,
+    start_row: usize,
+    end_row: usize,
+    options: &SqlWriteOptions,
+) -> Result<usize> {
+    let column_names = df.column_names();
+    let mut all_columns = Vec::new();
+    
+    // Add index column if requested
+    if options.index {
+        let index_name = options.index_label
+            .as_ref()
+            .map(|s| s.as_str())
+            .unwrap_or("index");
+        all_columns.push(index_name.to_string());
+    }
+    all_columns.extend(column_names.iter().cloned());
+    
+    match options.method {
+        InsertMethod::Single => {
+            insert_single_rows(conn, df, table_name, start_row, end_row, &all_columns, options)
+        }
+        InsertMethod::Multi => {
+            insert_multi_rows(conn, df, table_name, start_row, end_row, &all_columns, options)
+        }
+        InsertMethod::Custom => {
+            // For now, fall back to multi-row insertion
+            insert_multi_rows(conn, df, table_name, start_row, end_row, &all_columns, options)
+        }
+    }
+}
+
+/// Insert rows one by one
+fn insert_single_rows(
+    conn: &mut SqliteConnection,
+    df: &OptimizedDataFrame,
+    table_name: &str,
+    start_row: usize,
+    end_row: usize,
+    all_columns: &[String],
+    options: &SqlWriteOptions,
+) -> Result<usize> {
+    let columns = all_columns.join(", ");
+    let placeholders: Vec<String> = (0..all_columns.len()).map(|_| "?".to_string()).collect();
+    let placeholders = placeholders.join(", ");
+    let insert_sql = format!("INSERT INTO {} ({}) VALUES ({})", table_name, columns, placeholders);
+    
+    let tx = conn.transaction()
+        .map_err(|e| Error::IoError(format!("Failed to start transaction: {}", e)))?;
+    
+    let mut inserted = 0;
+    for row_idx in start_row..end_row {
+        let mut row_values: Vec<String> = Vec::new();
+        
+        // Add index value if requested
+        if options.index {
+            row_values.push(row_idx.to_string());
+        }
+        
+        // Add data values
+        for col_name in df.column_names().iter() {
+            if let Ok(column) = df.column(col_name) {
+                let value = extract_column_value(column, row_idx)?;
+                row_values.push(value);
+            } else {
+                row_values.push("NULL".to_string());
+            }
+        }
+        
+        let params: Vec<&dyn rusqlite::ToSql> = row_values
+            .iter()
+            .map(|s| s as &dyn rusqlite::ToSql)
+            .collect();
+        
+        tx.execute(&insert_sql, params.as_slice())
+            .map_err(|e| Error::IoError(format!("Failed to insert data: {}", e)))?;
+        
+        inserted += 1;
+    }
+    
+    tx.commit()
+        .map_err(|e| Error::IoError(format!("Failed to commit transaction: {}", e)))?;
+    
+    Ok(inserted)
+}
+
+/// Insert multiple rows in single statement
+fn insert_multi_rows(
+    conn: &mut SqliteConnection,
+    df: &OptimizedDataFrame,
+    table_name: &str,
+    start_row: usize,
+    end_row: usize,
+    all_columns: &[String],
+    options: &SqlWriteOptions,
+) -> Result<usize> {
+    let columns = all_columns.join(", ");
+    
+    // Build values for all rows
+    let mut all_values = Vec::new();
+    let mut all_params = Vec::new();
+    
+    for row_idx in start_row..end_row {
+        let mut row_values = Vec::new();
+        
+        // Add index value if requested
+        if options.index {
+            row_values.push(row_idx.to_string());
+        }
+        
+        // Add data values
+        for col_name in df.column_names().iter() {
+            if let Ok(column) = df.column(col_name) {
+                let value = extract_column_value(column, row_idx)?;
+                row_values.push(value);
+            } else {
+                row_values.push("NULL".to_string());
+            }
+        }
+        
+        let placeholders: Vec<String> = (0..row_values.len()).map(|_| "?".to_string()).collect();
+        all_values.push(format!("({})", placeholders.join(", ")));
+        
+        for value in row_values {
+            all_params.push(value);
+        }
+    }
+    
+    let insert_sql = format!(
+        "INSERT INTO {} ({}) VALUES {}",
+        table_name,
+        columns,
+        all_values.join(", ")
+    );
+    
+    let params: Vec<&dyn rusqlite::ToSql> = all_params
+        .iter()
+        .map(|s| s as &dyn rusqlite::ToSql)
+        .collect();
+    
+    let inserted = conn.execute(&insert_sql, params.as_slice())
+        .map_err(|e| Error::IoError(format!("Failed to insert data: {}", e)))?;
+    
+    Ok(inserted)
+}
+
+/// Extract value from column at specific row index
+fn extract_column_value(
+    column: crate::optimized::ColumnView,
+    row_idx: usize,
+) -> Result<String> {
+    match column.column_type() {
+        crate::column::ColumnType::Int64 => {
+            if let Some(int_col) = column.as_int64() {
+                match int_col.get(row_idx) {
+                    Ok(Some(val)) => Ok(val.to_string()),
+                    Ok(None) => Ok("NULL".to_string()),
+                    Err(_) => Ok("NULL".to_string()),
+                }
+            } else {
+                Ok("NULL".to_string())
+            }
+        }
+        crate::column::ColumnType::Float64 => {
+            if let Some(float_col) = column.as_float64() {
+                match float_col.get(row_idx) {
+                    Ok(Some(val)) => Ok(val.to_string()),
+                    Ok(None) => Ok("NULL".to_string()),
+                    Err(_) => Ok("NULL".to_string()),
+                }
+            } else {
+                Ok("NULL".to_string())
+            }
+        }
+        crate::column::ColumnType::Boolean => {
+            if let Some(bool_col) = column.as_boolean() {
+                match bool_col.get(row_idx) {
+                    Ok(Some(val)) => Ok(if val { "1".to_string() } else { "0".to_string() }),
+                    Ok(None) => Ok("NULL".to_string()),
+                    Err(_) => Ok("NULL".to_string()),
+                }
+            } else {
+                Ok("NULL".to_string())
+            }
+        }
+        crate::column::ColumnType::String => {
+            if let Some(str_col) = column.as_string() {
+                match str_col.get(row_idx) {
+                    Ok(Some(val)) => Ok(val.to_string()),
+                    Ok(None) => Ok("NULL".to_string()),
+                    Err(_) => Ok("NULL".to_string()),
+                }
+            } else {
+                Ok("NULL".to_string())
+            }
+        }
+    }
+}
+
+/// Enhanced type inference with date parsing and explicit types
+fn infer_series_from_strings_advanced(
+    name: &str,
+    data: &[String],
+    is_date_column: bool,
+    explicit_dtype: Option<&String>,
+    coerce_float: bool,
+) -> Result<Option<Series<String>>> {
+    if data.is_empty() {
+        return Ok(None);
+    }
+    
+    // Handle explicit data type specification
+    if let Some(dtype) = explicit_dtype {
+        return match dtype.to_lowercase().as_str() {
+            "int64" | "integer" => {
+                let values: Vec<i64> = data
+                    .iter()
+                    .map(|s| s.parse().unwrap_or(0))
+                    .collect();
+                let series = Series::new(values, Some(name.to_string()))?;
+                Ok(Some(series.to_string_series()?))
+            }
+            "float64" | "float" => {
+                let values: Vec<f64> = data
+                    .iter()
+                    .map(|s| s.parse().unwrap_or(0.0))
+                    .collect();
+                let series = Series::new(values, Some(name.to_string()))?;
+                Ok(Some(series.to_string_series()?))
+            }
+            "bool" | "boolean" => {
+                let values: Vec<bool> = data
+                    .iter()
+                    .map(|s| {
+                        let s = s.trim().to_lowercase();
+                        s == "true" || s == "1"
+                    })
+                    .collect();
+                let series = Series::new(values, Some(name.to_string()))?;
+                Ok(Some(series.to_string_series()?))
+            }
+            _ => {
+                // Default to string
+                Ok(Some(Series::new(data.to_vec(), Some(name.to_string()))?))
+            }
+        };
+    }
+    
+    // Handle date parsing
+    if is_date_column {
+        // For now, keep as strings but could parse to date types in future
+        return Ok(Some(Series::new(data.to_vec(), Some(name.to_string()))?));
+    }
+    
+    // Automatic type inference (existing logic enhanced)
+    infer_series_from_strings(name, data)
+}
+
+/// Implementation of ToSql for SqlValue
+impl rusqlite::ToSql for SqlValue {
+    fn to_sql(&self) -> rusqlite::Result<rusqlite::types::ToSqlOutput<'_>> {
+        use rusqlite::types::{ToSqlOutput, Value};
+        
+        match self {
+            SqlValue::Null => Ok(ToSqlOutput::Owned(Value::Null)),
+            SqlValue::Integer(i) => Ok(ToSqlOutput::Owned(Value::Integer(*i))),
+            SqlValue::Real(r) => Ok(ToSqlOutput::Owned(Value::Real(*r))),
+            SqlValue::Text(s) => Ok(ToSqlOutput::Owned(Value::Text(s.clone()))),
+            SqlValue::Blob(b) => Ok(ToSqlOutput::Owned(Value::Blob(b.clone()))),
+            SqlValue::Boolean(b) => Ok(ToSqlOutput::Owned(Value::Integer(if *b { 1 } else { 0 }))),
+        }
+    }
 }

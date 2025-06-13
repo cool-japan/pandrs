@@ -2,6 +2,11 @@
 //!
 //! This module provides deprecated re-exports of the old visualization API for backward compatibility.
 
+#[cfg(feature = "visualization")]
+pub mod direct_plot;
+#[cfg(feature = "visualization")]
+pub mod plotters_ext;
+
 use crate::error::Result;
 use crate::vis::config::{OutputFormat, PlotConfig, PlotType};
 use crate::DataFrame;

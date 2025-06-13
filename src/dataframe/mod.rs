@@ -1,8 +1,12 @@
 // DataFrame implementations module
 pub mod apply;
 pub mod base;
+pub mod groupby;
+pub mod indexing;
 pub mod join;
 pub mod optimized;
+pub mod plotting;
+pub mod query;
 pub mod serialize;
 pub mod transform;
 pub mod view;
@@ -13,7 +17,18 @@ pub mod gpu;
 // Re-exports for convenience
 pub use apply::{ApplyExt, Axis};
 pub use base::DataFrame;
+pub use groupby::{GroupByExt, DataFrameGroupBy, NamedAgg, ColumnAggBuilder, AggFunc};
+pub use indexing::{
+    AdvancedIndexingExt, ILocIndexer, LocIndexer, AtIndexer, IAtIndexer, 
+    SelectionBuilder, IndexAligner, MultiLevelIndex, RowSelector, ColumnSelector, 
+    IndexRange, AlignmentStrategy, selectors
+};
 pub use join::{JoinExt, JoinType};
+pub use plotting::{
+    EnhancedPlotExt, StatPlotBuilder, PlotConfig, PlotKind, PlotFormat, 
+    ColorScheme, PlotStyle, FillStyle, GridStyle, InteractivePlot, PlotTheme, utils
+};
+pub use query::{QueryExt, QueryEngine, QueryContext, LiteralValue};
 pub use transform::{MeltOptions, StackOptions, TransformExt, UnstackOptions};
 
 // Optional feature re-exports

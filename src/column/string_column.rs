@@ -19,7 +19,7 @@ pub enum StringColumnOptimizationMode {
 
 /// Default optimization mode
 pub static mut DEFAULT_OPTIMIZATION_MODE: StringColumnOptimizationMode =
-    StringColumnOptimizationMode::Categorical;
+    StringColumnOptimizationMode::GlobalPool;
 
 /// Structure representing a string column (using string pool)
 #[derive(Debug, Clone)]
@@ -78,32 +78,8 @@ impl StringColumn {
 
     /// Create a StringColumn with optimized one-pass processing
     pub fn from_strings_optimized(data: Vec<String>) -> Self {
-        let mut unique_strings = Vec::with_capacity(1000);
-        let mut str_to_idx = HashMap::with_capacity(1000);
-        let mut indices = Vec::with_capacity(data.len());
-
-        // Index strings in a single pass
-        for s in &data {
-            if let Some(&idx) = str_to_idx.get(s) {
-                indices.push(idx);
-            } else {
-                let idx = unique_strings.len() as u32;
-                str_to_idx.insert(s.clone(), idx);
-                unique_strings.push(s.clone());
-                indices.push(idx);
-            }
-        }
-
-        // Create string pool
-        let pool = StringPool::from_strings(unique_strings);
-
-        Self {
-            string_pool: Arc::new(pool),
-            indices: indices.into(),
-            null_mask: None,
-            name: None,
-            optimization_mode: StringColumnOptimizationMode::Categorical,
-        }
+        // Use the global pool mode for better thread safety
+        Self::new_with_global_pool(data)
     }
 
     /// Create a StringColumn with a name

@@ -24,7 +24,7 @@ fn test_optimized_groupby_creation() -> Result<()> {
 
     // Validation - not checking exact group count as it may vary by implementation
     // Just verifying that grouping was performed
-    assert!(grouped.len() > 0); // At least one group exists
+    assert!(!grouped.is_empty()); // At least one group exists
 
     Ok(())
 }
@@ -164,7 +164,7 @@ fn test_optimized_groupby_multiple_keys() -> Result<()> {
 
     // Validation - not checking exact group count as it may vary by implementation
     // Just verifying that grouping was performed
-    assert!(grouped.len() > 0); // At least one group exists
+    assert!(!grouped.is_empty()); // At least one group exists
 
     // Use LazyFrame for aggregation
     let lazy_df = LazyFrame::new(df);

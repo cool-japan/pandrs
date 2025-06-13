@@ -1,33 +1,18 @@
 #[cfg(feature = "sql")]
 use pandrs::io::sql::{write_to_sql, read_sql, execute_sql};
-
-use pandrs::optimized::dataframe::OptimizedDataFrame;
-use pandrs::column::{StringColumn, Int64Column, Float64Column, BooleanColumn};
+#[allow(unused_imports)]
+use pandrs::optimized::OptimizedDataFrame;
 
 #[cfg(feature = "sql")]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Create test data
     let mut df = OptimizedDataFrame::new();
     
-    // Add string column
-    let names = vec!["Alice".to_string(), "Bob".to_string(), "Charlie".to_string()];
-    let name_column = StringColumn::with_name(names, "name");
-    df.add_column("name".to_string(), name_column)?;
-    
-    // Add integer column
-    let ages = vec![25i64, 30i64, 35i64];
-    let age_column = Int64Column::with_name(ages, "age");
-    df.add_column("age".to_string(), age_column)?;
-    
-    // Add float column
-    let heights = vec![5.6f64, 5.9f64, 6.1f64];
-    let height_column = Float64Column::with_name(heights, "height");
-    df.add_column("height".to_string(), height_column)?;
-    
-    // Add boolean column
-    let is_active = vec![true, false, true];
-    let active_column = BooleanColumn::with_name(is_active, "is_active");
-    df.add_column("is_active".to_string(), active_column)?;
+    // Add columns using the simplified API
+    df.add_string_column("name", vec!["Alice".to_string(), "Bob".to_string(), "Charlie".to_string()])?;
+    df.add_int_column("age", vec![25i64, 30i64, 35i64])?;
+    df.add_float_column("height", vec![5.6f64, 5.9f64, 6.1f64])?;
+    df.add_bool_column("is_active", vec![true, false, true])?;
     
     println!("Original DataFrame:");
     println!("Columns: {:?}", df.column_names());

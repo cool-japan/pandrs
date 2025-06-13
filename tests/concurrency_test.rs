@@ -328,7 +328,7 @@ mod dataframe_concurrency_tests {
     fn test_concurrent_groupby_operations() {
         // Create DataFrame with categorical data for groupby
         let mut df = OptimizedDataFrame::new();
-        let categories = vec!["A", "B", "C", "D"];
+        let categories = ["A", "B", "C", "D"];
         let data_size = 1000;
         
         let category_data: Vec<String> = (0..data_size)

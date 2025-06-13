@@ -1,4 +1,4 @@
-use pandrs::storage::column_store::{ColumnStore, CompressionType};
+use pandrs::storage::column_store::ColumnStore;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Testing Enhanced Column Store Implementation");
@@ -7,7 +7,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Test 1: Basic column storage
     println!("\n=== Test 1: Basic Column Storage ===");
-    let names = vec!["Alice", "Bob", "Charlie", "Alice", "Bob"];
+    let names = ["Alice", "Bob", "Charlie", "Alice", "Bob"];
     let name_bytes: Vec<Vec<u8>> = names.iter().map(|s| s.as_bytes().to_vec()).collect();
     
     store.add_column(
@@ -20,7 +20,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     
     // Test 2: Add numeric data
     println!("\n=== Test 2: Numeric Data ===");
-    let ages = vec![25u32, 30, 35, 25, 30];
+    let ages = [25u32, 30, 35, 25, 30];
     let age_bytes: Vec<Vec<u8>> = ages.iter().map(|&age| age.to_le_bytes().to_vec()).collect();
     
     store.add_column(
@@ -31,7 +31,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Test 3: Run-length encoding test
     println!("\n=== Test 3: Run-Length Encoding Test ===");
-    let repeated_data = vec!["A", "A", "A", "B", "B"]; // Same length as other columns
+    let repeated_data = ["A", "A", "A", "B", "B"]; // Same length as other columns
     let repeated_bytes: Vec<Vec<u8>> = repeated_data.iter().map(|s| s.as_bytes().to_vec()).collect();
     
     store.add_column(
@@ -70,7 +70,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Test 7: Dictionary encoding test
     println!("\n=== Test 7: Dictionary Encoding Test ===");
-    let categories = vec!["Red", "Blue", "Green", "Red", "Blue"]; // Same length as other columns
+    let categories = ["Red", "Blue", "Green", "Red", "Blue"]; // Same length as other columns
     let category_bytes: Vec<Vec<u8>> = categories.iter().map(|s| s.as_bytes().to_vec()).collect();
     
     store.add_column(

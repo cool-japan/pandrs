@@ -30,6 +30,7 @@ pub mod error;
 pub mod groupby;
 pub mod index;
 pub mod io;
+pub mod jupyter;
 pub mod large;
 pub mod ml;
 pub mod na;
@@ -81,6 +82,12 @@ pub use parallel::ParallelUtils;
 pub use series::{Categorical, CategoricalOrder, NASeries, Series, StringCategorical};
 pub use stats::{DescriptiveStats, LinearRegressionResult, TTestResult};
 pub use vis::{OutputFormat, PlotConfig, PlotType};
+
+// Jupyter integration exports
+pub use jupyter::{
+    JupyterConfig, JupyterColorScheme, JupyterDisplay, JupyterMagics, TableStyle, TableWidth,
+    get_jupyter_config, set_jupyter_config, init_jupyter, jupyter_dark_mode, jupyter_light_mode
+};
 // Machine learning features (new organization)
 pub use ml::anomaly::{IsolationForest, LocalOutlierFactor, OneClassSVM};
 pub use ml::clustering::{AgglomerativeClustering, DistanceMetric, KMeans, Linkage, DBSCAN};

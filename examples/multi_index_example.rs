@@ -76,7 +76,7 @@ fn main() -> Result<()> {
     let mut simple_df = DataFrame::with_index(simple_idx);
 
     // Add data
-    let values = vec![100, 200, 300];
+    let values = [100, 200, 300];
     let str_values: Vec<String> = values.iter().map(|v| v.to_string()).collect();
     simple_df.add_column(
         "values".to_string(),

@@ -8,12 +8,12 @@ fn test_optimized_multi_index_simulation() -> Result<()> {
     let mut df = OptimizedDataFrame::new();
 
     // Create multiple index columns
-    let level1 = vec!["A", "A", "B", "B"]
+    let level1 = ["A", "A", "B", "B"]
         .iter()
         .map(|s| s.to_string())
         .collect::<Vec<String>>();
 
-    let level2 = vec!["1", "2", "2", "3"]
+    let level2 = ["1", "2", "2", "3"]
         .iter()
         .map(|s| s.to_string())
         .collect::<Vec<String>>();

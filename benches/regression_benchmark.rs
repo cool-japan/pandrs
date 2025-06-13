@@ -1,4 +1,4 @@
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
 use pandrs::error::Result;
 use pandrs::optimized::jit::*;
 use pandrs::optimized::OptimizedDataFrame;
@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 /// Performance baseline data structure
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -245,6 +245,7 @@ fn regression_io_operations(c: &mut Criterion) {
 }
 
 /// Performance baseline establishment
+#[allow(dead_code)]
 fn establish_baseline() {
     println!("🎯 Establishing performance baseline...");
     
@@ -312,7 +313,9 @@ criterion_group!(
 criterion_main!(regression_benches);
 
 #[cfg(test)]
+#[cfg(test)]
 mod tests {
+    #[allow(unused_imports)]
     use super::*;
     
     #[test]

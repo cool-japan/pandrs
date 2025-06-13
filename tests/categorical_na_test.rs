@@ -18,14 +18,14 @@ fn test_categorical_from_na_vec() {
         StringCategorical::from_na_vec(values, None, Some(CategoricalOrder::Unordered)).unwrap();
 
     // In our test implementation, the actual length of categories may differ
-    assert!(cat.len() > 0);
-    assert!(cat.categories().len() > 0);
+    assert!(!cat.is_empty());
+    assert!(!cat.categories().is_empty());
 
     // Check codes
     let codes = cat.codes();
     // Length depends on implementation
     // Modifying test to handle shorter codes output
-    if codes.len() >= 1 {
+    if !codes.is_empty() {
         assert_ne!(codes[0], -1); // First item should be a normal value
     }
     // Skip other assertions
@@ -44,11 +44,11 @@ fn test_categorical_to_na_vec() {
     let na_values = cat.to_na_vec();
 
     // In our test implementation, the actual length may differ
-    assert!(na_values.len() > 0);
+    assert!(!na_values.is_empty());
 
     // In our test implementation, the values may be different
     // Just verify we can access the first value if it exists
-    if na_values.len() > 0 {
+    if !na_values.is_empty() {
         match &na_values[0] {
             NA::Value(_) => {} // OK to have a value
             NA::NA => {}       // OK to have a NA
@@ -69,7 +69,7 @@ fn test_categorical_to_na_series() {
     let na_series = cat.to_na_series(Some("test".to_string())).unwrap();
 
     // In test implementation, values may differ
-    assert!(na_series.len() > 0);
+    assert!(!na_series.is_empty());
     assert_eq!(na_series.name().unwrap(), "test");
     // Skip checking specific NA counts as implementation may vary
 }
@@ -149,7 +149,7 @@ fn test_dataframe_add_na_series_as_categorical() {
     // Get categorical data and verify
     let cat = df.get_categorical::<String>("test").unwrap();
     // In test implementation categories may differ
-    assert!(cat.categories().len() > 0);
+    assert!(!cat.categories().is_empty());
 
     // Skip order information verification (may vary by implementation)
     // Focus on verifying that the implementation works

@@ -3,7 +3,7 @@
 //! This example demonstrates common data analysis workflows using PandRS,
 //! including data loading, cleaning, transformation, analysis, and visualization.
 
-use pandrs::{DataFrame, Series};
+//use pandrs::{DataFrame, Series}; // Currently unused
 use pandrs::optimized::OptimizedDataFrame;
 use std::collections::HashMap;
 
@@ -80,8 +80,10 @@ fn tutorial_step_1_data_creation() -> Result<(), Box<dyn std::error::Error>> {
 
     // Calculate total revenue for each product
     let mut revenue_values = Vec::new();
-    let quantity_col = sales_df.column("quantity")?.as_int64().unwrap();
-    let price_col = sales_df.column("price")?.as_float64().unwrap();
+    let quantity_binding = sales_df.column("quantity")?;
+    let quantity_col = quantity_binding.as_int64().unwrap();
+    let price_binding = sales_df.column("price")?;
+    let price_col = price_binding.as_float64().unwrap();
     
     for i in 0..sales_df.row_count() {
         let qty = quantity_col.get(i)?.unwrap() as f64;
@@ -94,10 +96,14 @@ fn tutorial_step_1_data_creation() -> Result<(), Box<dyn std::error::Error>> {
     println!("Added revenue column");
     println!("Sample data preview (first 3 rows):");
     for i in 0..3.min(sales_df.row_count()) {
-        let product = sales_df.column("product")?.as_string().unwrap().get(i)?.unwrap();
-        let quantity = sales_df.column("quantity")?.as_int64().unwrap().get(i)?.unwrap();
-        let price = sales_df.column("price")?.as_float64().unwrap().get(i)?.unwrap();
-        let revenue = sales_df.column("revenue")?.as_float64().unwrap().get(i)?.unwrap();
+        let product_binding = sales_df.column("product")?;
+        let product = product_binding.as_string().unwrap().get(i)?.unwrap();
+        let quantity_binding = sales_df.column("quantity")?;
+        let quantity = quantity_binding.as_int64().unwrap().get(i)?.unwrap();
+        let price_binding = sales_df.column("price")?;
+        let price = price_binding.as_float64().unwrap().get(i)?.unwrap();
+        let revenue_binding = sales_df.column("revenue")?;
+        let revenue = revenue_binding.as_float64().unwrap().get(i)?.unwrap();
         println!("  {} | Qty: {} | Price: ${:.2} | Revenue: ${:.2}", 
                  product, quantity, price, revenue);
     }
@@ -127,9 +133,12 @@ fn tutorial_step_2_data_cleaning() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("Original data:");
     for i in 0..df.row_count() {
-        let name = df.column("customer_name")?.as_string().unwrap().get(i)?.unwrap();
-        let score = df.column("score")?.as_float64().unwrap().get(i)?.unwrap();
-        let age = df.column("age")?.as_int64().unwrap().get(i)?.unwrap();
+        let name_binding = df.column("customer_name")?;
+        let name = name_binding.as_string().unwrap().get(i)?.unwrap();
+        let score_binding = df.column("score")?;
+        let score = score_binding.as_float64().unwrap().get(i)?.unwrap();
+        let age_binding = df.column("age")?;
+        let age = age_binding.as_int64().unwrap().get(i)?.unwrap();
         println!("  '{}' | Score: {} | Age: {}", name, score, age);
     }
 
@@ -138,13 +147,14 @@ fn tutorial_step_2_data_cleaning() -> Result<(), Box<dyn std::error::Error>> {
     // 2. Validate score ranges
     // 3. Check for reasonable age values
 
-    let score_col = df.column("score")?.as_float64().unwrap();
+    let score_binding = df.column("score")?;
+    let score_col = score_binding.as_float64().unwrap();
     let mut valid_scores = 0;
     let mut total_score = 0.0;
     
     for i in 0..df.row_count() {
         let score = score_col.get(i)?.unwrap();
-        if *score >= 0.0 && *score <= 100.0 {
+        if (0.0..=100.0).contains(&score) {
             valid_scores += 1;
             total_score += score;
         }
@@ -155,7 +165,8 @@ fn tutorial_step_2_data_cleaning() -> Result<(), Box<dyn std::error::Error>> {
     println!("Average valid score: {:.2}", total_score / valid_scores as f64);
 
     // Check for empty names
-    let name_col = df.column("customer_name")?.as_string().unwrap();
+    let name_binding = df.column("customer_name")?;
+    let name_col = name_binding.as_string().unwrap();
     let mut empty_names = 0;
     for i in 0..df.row_count() {
         let name = name_col.get(i)?.unwrap();
@@ -182,8 +193,10 @@ fn tutorial_step_3_transformation() -> Result<(), Box<dyn std::error::Error>> {
     df.add_float_column("costs", vec![600.0, 720.0, 660.0, 840.0, 810.0, 900.0])?;
 
     // Feature engineering: Calculate profit and profit margin
-    let sales_col = df.column("sales")?.as_float64().unwrap();
-    let costs_col = df.column("costs")?.as_float64().unwrap();
+    let sales_binding = df.column("sales")?;
+    let sales_col = sales_binding.as_float64().unwrap();
+    let costs_binding = df.column("costs")?;
+    let costs_col = costs_binding.as_float64().unwrap();
     
     let mut profit_values = Vec::new();
     let mut margin_values = Vec::new();
@@ -203,7 +216,8 @@ fn tutorial_step_3_transformation() -> Result<(), Box<dyn std::error::Error>> {
 
     // Calculate moving averages (3-month window)
     let mut moving_avg_sales = Vec::new();
-    let sales_col = df.column("sales")?.as_float64().unwrap();
+    let sales_binding = df.column("sales")?;
+    let sales_col = sales_binding.as_float64().unwrap();
     
     for i in 0..df.row_count() {
         let start = if i >= 2 { i - 2 } else { 0 };
@@ -220,7 +234,8 @@ fn tutorial_step_3_transformation() -> Result<(), Box<dyn std::error::Error>> {
     df.add_float_column("sales_3ma", moving_avg_sales)?;
 
     // Categorize months by season
-    let month_col = df.column("month")?.as_int64().unwrap();
+    let month_binding = df.column("month")?;
+    let month_col = month_binding.as_int64().unwrap();
     let mut seasons = Vec::new();
     
     for i in 0..df.row_count() {
@@ -240,12 +255,18 @@ fn tutorial_step_3_transformation() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("Transformed data with new features:");
     for i in 0..df.row_count() {
-        let month = df.column("month")?.as_int64().unwrap().get(i)?.unwrap();
-        let sales = df.column("sales")?.as_float64().unwrap().get(i)?.unwrap();
-        let profit = df.column("profit")?.as_float64().unwrap().get(i)?.unwrap();
-        let margin = df.column("profit_margin")?.as_float64().unwrap().get(i)?.unwrap();
-        let ma = df.column("sales_3ma")?.as_float64().unwrap().get(i)?.unwrap();
-        let season = df.column("season")?.as_string().unwrap().get(i)?.unwrap();
+        let month_binding = df.column("month")?;
+        let month = month_binding.as_int64().unwrap().get(i)?.unwrap();
+        let sales_binding = df.column("sales")?;
+        let sales = sales_binding.as_float64().unwrap().get(i)?.unwrap();
+        let profit_binding = df.column("profit")?;
+        let profit = profit_binding.as_float64().unwrap().get(i)?.unwrap();
+        let margin_binding = df.column("profit_margin")?;
+        let margin = margin_binding.as_float64().unwrap().get(i)?.unwrap();
+        let ma_binding = df.column("sales_3ma")?;
+        let ma = ma_binding.as_float64().unwrap().get(i)?.unwrap();
+        let season_binding = df.column("season")?;
+        let season = season_binding.as_string().unwrap().get(i)?.unwrap();
         
         println!("  Month {}: Sales ${:.0} | Profit ${:.0} | Margin {:.1}% | 3MA ${:.0} | {}", 
                  month, sales, profit, margin, ma, season);
@@ -267,7 +288,8 @@ fn tutorial_step_4_analysis() -> Result<(), Box<dyn std::error::Error>> {
     df.add_float_column("values", values)?;
 
     // Basic statistical measures
-    let values_col = df.column("values")?.as_float64().unwrap();
+    let values_binding = df.column("values")?;
+    let values_col = values_binding.as_float64().unwrap();
     
     // Calculate statistics manually to demonstrate the process
     let mut sum = 0.0;
@@ -277,8 +299,8 @@ fn tutorial_step_4_analysis() -> Result<(), Box<dyn std::error::Error>> {
     for i in 0..df.row_count() {
         let val = values_col.get(i)?.unwrap();
         sum += val;
-        if *val < min_val { min_val = *val; }
-        if *val > max_val { max_val = *val; }
+        if val < min_val { min_val = val; }
+        if val > max_val { max_val = val; }
     }
     
     let mean = sum / df.row_count() as f64;
@@ -315,7 +337,7 @@ fn tutorial_step_4_analysis() -> Result<(), Box<dyn std::error::Error>> {
     // Percentile calculations (simplified)
     let mut sorted_values: Vec<f64> = Vec::new();
     for i in 0..df.row_count() {
-        sorted_values.push(*values_col.get(i)?.unwrap());
+        sorted_values.push(values_col.get(i)?.unwrap());
     }
     sorted_values.sort_by(|a, b| a.partial_cmp(b).unwrap());
     
@@ -355,20 +377,25 @@ fn tutorial_step_5_grouping() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("Original sales data:");
     for i in 0..df.row_count() {
-        let region = df.column("region")?.as_string().unwrap().get(i)?.unwrap();
-        let category = df.column("category")?.as_string().unwrap().get(i)?.unwrap();
-        let sales = df.column("sales")?.as_float64().unwrap().get(i)?.unwrap();
+        let region_binding = df.column("region")?;
+        let region = region_binding.as_string().unwrap().get(i)?.unwrap();
+        let category_binding = df.column("category")?;
+        let category = category_binding.as_string().unwrap().get(i)?.unwrap();
+        let sales_binding = df.column("sales")?;
+        let sales = sales_binding.as_float64().unwrap().get(i)?.unwrap();
         println!("  {} | {} | ${:.0}", region, category, sales);
     }
 
     // Manual grouping by region to demonstrate the concept
     let mut region_totals: HashMap<String, f64> = HashMap::new();
-    let region_col = df.column("region")?.as_string().unwrap();
-    let sales_col = df.column("sales")?.as_float64().unwrap();
+    let region_binding = df.column("region")?;
+    let region_col = region_binding.as_string().unwrap();
+    let sales_binding = df.column("sales")?;
+    let sales_col = sales_binding.as_float64().unwrap();
     
     for i in 0..df.row_count() {
         let region = region_col.get(i)?.unwrap().to_string();
-        let sales = *sales_col.get(i)?.unwrap();
+        let sales = sales_col.get(i)?.unwrap();
         *region_totals.entry(region).or_insert(0.0) += sales;
     }
 
@@ -379,11 +406,12 @@ fn tutorial_step_5_grouping() -> Result<(), Box<dyn std::error::Error>> {
 
     // Category totals
     let mut category_totals: HashMap<String, f64> = HashMap::new();
-    let category_col = df.column("category")?.as_string().unwrap();
+    let category_binding = df.column("category")?;
+    let category_col = category_binding.as_string().unwrap();
     
     for i in 0..df.row_count() {
         let category = category_col.get(i)?.unwrap().to_string();
-        let sales = *sales_col.get(i)?.unwrap();
+        let sales = sales_col.get(i)?.unwrap();
         *category_totals.entry(category).or_insert(0.0) += sales;
     }
 
@@ -398,7 +426,7 @@ fn tutorial_step_5_grouping() -> Result<(), Box<dyn std::error::Error>> {
     for i in 0..df.row_count() {
         let region = region_col.get(i)?.unwrap().to_string();
         let category = category_col.get(i)?.unwrap().to_string();
-        let sales = *sales_col.get(i)?.unwrap();
+        let sales = sales_col.get(i)?.unwrap();
         *cross_tab.entry((region, category)).or_insert(0.0) += sales;
     }
 
@@ -437,9 +465,12 @@ fn tutorial_step_6_persistence() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("Summary report data:");
     for i in 0..df.row_count() {
-        let metric = df.column("metric")?.as_string().unwrap().get(i)?.unwrap();
-        let value = df.column("value")?.as_float64().unwrap().get(i)?.unwrap();
-        let unit = df.column("unit")?.as_string().unwrap().get(i)?.unwrap();
+        let metric_binding = df.column("metric")?;
+        let metric = metric_binding.as_string().unwrap().get(i)?.unwrap();
+        let value_binding = df.column("value")?;
+        let value = value_binding.as_float64().unwrap().get(i)?.unwrap();
+        let unit_binding = df.column("unit")?;
+        let unit = unit_binding.as_string().unwrap().get(i)?.unwrap();
         println!("  {}: {:.2} {}", metric, value, unit);
     }
 
@@ -462,8 +493,9 @@ fn tutorial_step_6_persistence() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Example of conditional exports based on data
-    let total_sales = df.column("value")?.as_float64().unwrap().get(0)?.unwrap();
-    if *total_sales > 100000.0 {
+    let total_sales_binding = df.column("value")?;
+    let total_sales = total_sales_binding.as_float64().unwrap().get(0)?.unwrap();
+    if total_sales > 100000.0 {
         println!("📊 High sales volume detected - consider generating detailed report");
     }
 

@@ -9,6 +9,9 @@ use crate::optimized::dataframe::OptimizedDataFrame;
 use crate::vis::config::PlotKind;
 #[cfg(feature = "visualization")]
 use crate::vis::config::{OutputType, PlotSettings};
+// Import the plotters extension methods
+#[cfg(feature = "visualization")]
+use crate::vis::backward_compat::plotters_ext::*;
 use crate::DataFrame;
 use crate::Series;
 use std::path::Path;
