@@ -254,7 +254,7 @@ fn estimate_batch_memory_usage(batch: &arrow::record_batch::RecordBatch) -> usiz
     // Add size for each column
     for column in batch.columns() {
         // Get size of array data buffers
-        for buffer in column.data().buffers() {
+        for buffer in column.to_data().buffers() {
             total_size += buffer.len();
         }
 

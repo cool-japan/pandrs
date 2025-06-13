@@ -15,9 +15,9 @@ pub mod core;
 #[cfg(feature = "distributed")]
 pub mod execution;
 
-// Expression module for query expressions (temporarily disabled)
-// #[cfg(feature = "distributed")]
-// pub mod expr;
+// Expression module for query expressions
+#[cfg(feature = "distributed")]
+pub mod expr;
 
 // Engines module for different execution engines
 #[cfg(feature = "distributed")]
@@ -27,9 +27,9 @@ pub mod engines;
 // #[cfg(feature = "distributed")]
 // pub mod api;
 
-// Schema validator module (temporarily disabled)
-// #[cfg(feature = "distributed")]
-// mod schema_validator;
+// Schema validator module
+#[cfg(feature = "distributed")]
+mod schema_validator;
 
 // Window operations for time series (temporarily disabled)
 // #[cfg(feature = "distributed")]
@@ -68,15 +68,15 @@ pub use execution::{
     ExecutionResult, JoinType, Operation, SortExpr,
 };
 
-// Re-exports from expr (temporarily disabled)
-// #[cfg(feature = "distributed")]
-// pub use expr::{
-//     BinaryOperator, ColumnProjection, Expr, ExprDataType, Literal, ProjectionExt, UdfDefinition,
-//     UnaryOperator,
-// };
+// Re-exports from expr
+#[cfg(feature = "distributed")]
+pub use expr::{
+    BinaryOperator, ColumnProjection, Expr, ExprDataType, Literal, ProjectionExt, UdfDefinition,
+    UnaryOperator,
+};
 
-// #[cfg(feature = "distributed")]
-// pub use expr::{ColumnMeta, ExprSchema, ExprValidator, InferredType};
+#[cfg(feature = "distributed")]
+pub use expr::{ColumnMeta, ExprSchema, ExprValidator, InferredType};
 
 // Re-exports from window (temporarily disabled)
 // #[cfg(feature = "distributed")]
@@ -85,9 +85,9 @@ pub use execution::{
 //     WindowFunction, WindowFunctionExt,
 // };
 
-// Re-exports from schema_validator (temporarily disabled)
-// #[cfg(feature = "distributed")]
-// pub use schema_validator::SchemaValidator;
+// Re-exports from schema_validator
+#[cfg(feature = "distributed")]
+pub use schema_validator::SchemaValidator;
 
 // Re-exports from explain (temporarily disabled)
 // #[cfg(feature = "distributed")]

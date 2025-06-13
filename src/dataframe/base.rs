@@ -231,30 +231,35 @@ impl DataFrame {
         }
     }
 
-    /// Get string values from a column (stub implementation for tests)
+    /// Get string values from a column
     pub fn get_column_string_values(&self, column_name: &str) -> Result<Vec<String>> {
         if !self.contains_column(column_name) {
             return Err(Error::ColumnNotFound(column_name.to_string()));
         }
 
-        // This is a simplified implementation for testing
-        if column_name == "name" {
-            return Ok(vec![
-                "Alice".to_string(),
-                "Bob".to_string(),
-                "Charlie".to_string(),
-            ]);
-        } else if column_name == "age" {
-            return Ok(vec!["30".to_string(), "25".to_string(), "35".to_string()]);
+        let column = self.columns.get(column_name).unwrap();
+        
+        // Try to downcast to different Series types and convert to strings
+        if let Some(string_series) = column.as_any().downcast_ref::<crate::series::Series<String>>() {
+            Ok(string_series.values().to_vec())
+        } else if let Some(i32_series) = column.as_any().downcast_ref::<crate::series::Series<i32>>() {
+            Ok(i32_series.values().iter().map(|v| ToString::to_string(v)).collect())
+        } else if let Some(i64_series) = column.as_any().downcast_ref::<crate::series::Series<i64>>() {
+            Ok(i64_series.values().iter().map(|v| ToString::to_string(v)).collect())
+        } else if let Some(f32_series) = column.as_any().downcast_ref::<crate::series::Series<f32>>() {
+            Ok(f32_series.values().iter().map(|v| ToString::to_string(v)).collect())
+        } else if let Some(f64_series) = column.as_any().downcast_ref::<crate::series::Series<f64>>() {
+            Ok(f64_series.values().iter().map(|v| ToString::to_string(v)).collect())
+        } else if let Some(bool_series) = column.as_any().downcast_ref::<crate::series::Series<bool>>() {
+            Ok(bool_series.values().iter().map(|v| ToString::to_string(v)).collect())
+        } else {
+            // Fallback for unsupported types
+            let mut result = Vec::with_capacity(self.row_count);
+            for i in 0..self.row_count {
+                result.push(format!("unsupported_type_{}_{}", column_name, i));
+            }
+            Ok(result)
         }
-
-        // For other columns, return dummy values
-        let mut result = Vec::with_capacity(self.row_count);
-        for i in 0..self.row_count {
-            result.push(format!("value_{}_{}", column_name, i));
-        }
-
-        Ok(result)
     }
 
     /// Get a column by index (compatibility method)

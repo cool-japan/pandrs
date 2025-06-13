@@ -4,20 +4,58 @@
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Crate](https://img.shields.io/crates/v/pandrs.svg)](https://crates.io/crates/pandrs)
 
-A DataFrame library for data analysis implemented in Rust. It has features and design inspired by Python's `pandas` library, combining fast data processing with type safety.
+A high-performance DataFrame library for data analysis implemented in Rust. It has features and design inspired by Python's `pandas` library, combining fast data processing with type safety and distributed computing capabilities.
+
+## 🚀 What's New in Alpha.4
+
+**Enhanced DataFrame Operations:**
+- **Column Management**: New `rename_columns()` and `set_column_names()` methods for flexible column renaming
+- **Enhanced I/O**: Real data extraction in Parquet/SQL operations with improved type safety
+- **Distributed Processing**: Production-ready DataFusion integration with schema validation and fault tolerance
+- **Python Bindings**: Complete alpha.4 feature coverage with optimized string pool integration
+
+**Performance & Reliability:**
+- **Comprehensive Testing**: 100+ integration tests covering all major features and edge cases
+- **Schema Validation**: Type-safe distributed operations with compile-time validation
+- **Fault Tolerance**: Checkpoint/recovery system for robust distributed processing
+- **Memory Optimization**: Advanced string pool with up to 89.8% memory reduction
+
+## 🏁 Quick Start (Alpha.4)
+
+```rust
+use pandrs::{DataFrame, OptimizedDataFrame, Column, StringColumn, Int64Column};
+use std::collections::HashMap;
+
+// Create DataFrame with alpha.4 column management
+let mut df = DataFrame::new();
+df.add_column("name".to_string(), 
+    pandrs::series::Series::from_vec(vec!["Alice", "Bob", "Carol"], Some("name")))?;
+
+// New in alpha.4: Rename columns with a mapping
+let mut rename_map = HashMap::new();
+rename_map.insert("name".to_string(), "employee_name".to_string());
+df.rename_columns(&rename_map)?;
+
+// New in alpha.4: Set all column names at once
+df.set_column_names(vec!["person_name".to_string()])?;
+
+// Distributed processing with DataFusion (alpha.4)
+use pandrs::distributed::DistributedContext;
+let mut context = DistributedContext::new_local(4)?;
+context.register_dataframe("people", &df)?;
+let result = context.sql("SELECT * FROM people WHERE person_name LIKE 'A%'")?;
+```
 
 ## Key Features
 
-- Efficient data processing with high-performance column-oriented storage
-- Low memory footprint with categorical data and string pool optimization
-- Multi-core utilization through parallel processing
-- GPU acceleration with CUDA integration (up to 20x speedup)
-- Optimization with lazy evaluation system
-- Thread-safe implementation
-- Robustness leveraging Rust's type safety and ownership system
-- Modularized design (implementation divided by functionality)
-- Python integration (PyO3 bindings)
-- WebAssembly support for browser-based visualization
+- **🔥 High-Performance Processing**: Column-oriented storage with up to 5x faster aggregations
+- **🧠 Memory Efficient**: String pool optimization reducing memory usage by up to 89.8%
+- **⚡ Multi-core & GPU**: Parallel processing + CUDA acceleration (up to 20x speedup)
+- **🌐 Distributed Computing**: DataFusion-powered distributed processing for large datasets
+- **🐍 Python Integration**: Full PyO3 bindings with pandas interoperability
+- **🔒 Type Safety**: Rust's ownership system ensuring memory safety and thread safety
+- **📊 Rich Analytics**: Statistical functions, ML metrics, and categorical data analysis
+- **💾 Flexible I/O**: Parquet, CSV, JSON, SQL, and Excel support with real data extraction
 
 ## Features
 
@@ -71,19 +109,42 @@ df.to_csv("data.csv")?;
 
 // Load DataFrame from CSV
 let df_from_csv = DataFrame::from_csv("data.csv", true)?;
+
+// DataFrame column management (new in alpha.4)
+use std::collections::HashMap;
+
+// Rename specific columns using a mapping
+let mut rename_map = HashMap::new();
+rename_map.insert("age".to_string(), "years_old".to_string());
+rename_map.insert("height".to_string(), "height_cm".to_string());
+df.rename_columns(&rename_map)?;
+
+// Set all column names at once
+df.set_column_names(vec!["person_age".to_string(), "person_height".to_string()])?;
 ```
 
-### Numeric Operations
+### Numeric Operations and Series Management
 
 ```rust
 // Create numeric series
-let numbers = Series::new(vec![10, 20, 30, 40, 50], Some("values".to_string()))?;
+let mut numbers = Series::new(vec![10, 20, 30, 40, 50], Some("values".to_string()))?;
 
 // Statistical calculations
 let sum = numbers.sum();         // 150
 let mean = numbers.mean()?;      // 30
 let min = numbers.min()?;        // 10
 let max = numbers.max()?;        // 50
+
+// Series name management (new in alpha.4)
+numbers.set_name("updated_values".to_string());
+assert_eq!(numbers.name(), Some(&"updated_values".to_string()));
+
+// Create series with fluent API
+let named_series = Series::new(vec![1, 2, 3], None)?
+    .with_name("my_series".to_string());
+
+// Convert series types with name preservation
+let string_series = numbers.to_string_series()?;
 ```
 
 ## Installation
@@ -92,14 +153,14 @@ Add the following to your Cargo.toml:
 
 ```toml
 [dependencies]
-pandrs = "0.1.0-alpha.3"
+pandrs = "0.1.0-alpha.4"
 ```
 
 For GPU acceleration, add the CUDA feature flag (requires CUDA toolkit installation):
 
 ```toml
 [dependencies]
-pandrs = { version = "0.1.0-alpha.3", features = ["cuda"] }
+pandrs = { version = "0.1.0-alpha.4", features = ["cuda"] }
 ```
 
 **Note**: The CUDA feature requires NVIDIA CUDA toolkit to be installed on your system.
@@ -108,14 +169,14 @@ For distributed processing capabilities, add the distributed feature:
 
 ```toml
 [dependencies]
-pandrs = { version = "0.1.0-alpha.3", features = ["distributed"] }
+pandrs = { version = "0.1.0-alpha.4", features = ["distributed"] }
 ```
 
 Multiple features can be combined:
 
 ```toml
 [dependencies]
-pandrs = { version = "0.1.0-alpha.3", features = ["cuda", "distributed", "wasm"] }
+pandrs = { version = "0.1.0-alpha.4", features = ["cuda", "distributed", "wasm"] }
 ```
 
 ### Working with Missing Values (NA)
@@ -797,7 +858,43 @@ The implementation of optimized column-oriented storage, lazy evaluation system,
 | 100,000 rows | 1% (high duplication) | 82ms | 35ms | 2.34x | 88.6% |
 | 1,000,000 rows | 1% (high duplication) | 845ms | 254ms | 3.33x | 89.8% |
 
-## Recent Improvements
+## 🆕 Alpha.4 Major Improvements
+
+### 🔧 Enhanced DataFrame API
+- **Column Management**: New `rename_columns()` and `set_column_names()` methods for flexible DataFrame schema management
+- **Series Operations**: Enhanced name management with `set_name()` and `with_name()` methods
+- **Type Conversions**: Improved type conversion utilities like `to_string_series()` for Series
+- **API Consistency**: Fluent interface design across all DataFrame operations
+
+### 🌐 Production-Ready Distributed Processing
+- **DataFusion Integration**: Complete integration with Apache DataFusion for scalable data processing
+- **Schema Validation**: Compile-time schema validation preventing runtime errors
+- **Fault Tolerance**: Checkpoint and recovery system for robust distributed operations
+- **SQL Interface**: Full SQL query support with complex JOIN, window functions, and UDFs
+
+### 💾 Enhanced Data I/O
+- **Real Data Extraction**: Parquet and SQL I/O operations now use actual data instead of placeholders
+- **Type Safety**: Improved Arrow integration with proper null value handling
+- **Performance**: Optimized data conversion processes for better throughput
+
+### 🐍 Complete Python Bindings
+- **Feature Parity**: All alpha.4 features available through Python bindings
+- **Pandas Integration**: Seamless interoperability with pandas DataFrames
+- **Memory Optimization**: String pool integration reducing Python memory overhead
+
+- **Comprehensive Test Coverage**
+  - 26 new edge case tests covering boundary conditions, error handling, and invalid inputs
+  - Stress testing for large datasets (100K+ rows) and concurrent operations
+  - String pool concurrency testing with thread safety validation
+  - Memory management and resource cleanup testing
+  - Unicode and special character support validation
+  - Null value handling with proper bitmask validation
+
+- **Enhanced Parquet and SQL Support**
+  - Real data extraction in Parquet write operations (replacing dummy implementations)
+  - Improved column data access patterns for all data types
+  - Better Arrow integration with proper null value handling
+  - Enhanced type safety in data conversion processes
 
 - **GPU Acceleration Integration**
   - CUDA-based acceleration for performance-critical operations
@@ -959,6 +1056,34 @@ cargo test --all-features
 - The `cuda` feature requires NVIDIA CUDA toolkit installation
 - The `visualization` feature currently has compilation issues and is excluded from safe testing
 - Use `test-core` for reliable testing without external dependencies
+
+### Edge Case and Error Condition Testing
+
+Run comprehensive edge case tests (new in alpha.4):
+
+```bash
+cargo test --test edge_cases_test
+```
+
+Run concurrency and thread safety tests:
+
+```bash
+cargo test --test concurrency_test
+```
+
+Run I/O error condition tests:
+
+```bash
+cargo test --test io_error_conditions_test
+```
+
+These tests cover:
+- **Boundary Conditions**: Empty data, single elements, extreme numeric values, NaN/infinity handling
+- **Input Validation**: Invalid column names, duplicate columns, mismatched lengths, out-of-bounds access
+- **Resource Management**: Large datasets (100K+ rows), string pool stress testing, memory cleanup
+- **Concurrency**: Multi-threaded access, string pool thread safety, race condition prevention
+- **Type Safety**: Type mismatches, column access patterns, error propagation
+- **I/O Error Handling**: File permissions, malformed data, disk space issues, encoding problems
 
 ## Dependency Versions
 

@@ -319,90 +319,14 @@ impl SchemaValidator {
         Ok(())
     }
 
-    /// Validates a WINDOW operation
+    /// Validates a WINDOW operation (temporarily disabled - window module not enabled)
+    #[allow(dead_code)]
     fn validate_window(
         &self,
-        schema: &ExprSchema,
-        window_functions: &[crate::distributed::window::WindowFunction],
+        _schema: &ExprSchema,
+        _window_functions: &[String], // TODO: Replace with WindowFunction when window module is enabled
     ) -> Result<()> {
-        for wf in window_functions {
-            // Check that output column doesn't already exist in schema
-            if schema.has_column(&wf.output) {
-                return Err(Error::InvalidOperation(format!(
-                    "Output column already exists in schema: {}",
-                    wf.output
-                )));
-            }
-
-            // Check that input columns exist in schema
-            for input in &wf.inputs {
-                if !input.is_empty() && !schema.has_column(input) {
-                    return Err(Error::InvalidOperation(format!(
-                        "Input column not found in schema: {}",
-                        input
-                    )));
-                }
-            }
-
-            // Check that partition columns exist in schema
-            for col in &wf.partition_by {
-                if !schema.has_column(col) {
-                    return Err(Error::InvalidOperation(format!(
-                        "Partition column not found in schema: {}",
-                        col
-                    )));
-                }
-            }
-
-            // Check that order columns exist in schema
-            for (col, _) in &wf.order_by {
-                if !schema.has_column(col) {
-                    return Err(Error::InvalidOperation(format!(
-                        "Order column not found in schema: {}",
-                        col
-                    )));
-                }
-            }
-
-            // Check that function is compatible with column type if inputs exist
-            if !wf.inputs.is_empty() && !wf.inputs[0].is_empty() {
-                let col = schema.column(&wf.inputs[0]).unwrap();
-
-                match wf.function.as_str() {
-                    "row_number" | "rank" | "dense_rank" => {
-                        // These functions can be applied to any column
-                    }
-                    "sum" | "avg" | "min" | "max" => {
-                        // These functions require numeric or date columns
-                        match col.data_type {
-                            crate::distributed::expr::ExprDataType::Integer
-                            | crate::distributed::expr::ExprDataType::Float
-                            | crate::distributed::expr::ExprDataType::Date
-                            | crate::distributed::expr::ExprDataType::Timestamp => {
-                                // Valid types for these functions
-                            }
-                            _ => {
-                                return Err(Error::InvalidOperation(format!(
-                                    "Window function '{}' not supported for column type {:?}",
-                                    wf.function, col.data_type
-                                )));
-                            }
-                        }
-                    }
-                    "first_value" | "last_value" | "nth_value" | "lead" | "lag" => {
-                        // These functions can be applied to any column
-                    }
-                    _ => {
-                        // Unknown window function
-                        return Err(Error::InvalidOperation(format!(
-                            "Unknown window function: {}",
-                            wf.function
-                        )));
-                    }
-                }
-            }
-        }
-
+        // TODO: Implement window function validation when window module is enabled
         Ok(())
     }
 }

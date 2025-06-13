@@ -1,7 +1,10 @@
-use pandrs::optimized::dataframe::OptimizedDataFrame;
+#[cfg(feature = "sql")]
 use pandrs::io::sql::{write_to_sql, read_sql, execute_sql};
+
+use pandrs::optimized::dataframe::OptimizedDataFrame;
 use pandrs::column::{StringColumn, Int64Column, Float64Column, BooleanColumn};
 
+#[cfg(feature = "sql")]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Create test data
     let mut df = OptimizedDataFrame::new();
@@ -51,4 +54,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("SQL I/O test completed successfully!");
     
     Ok(())
+}
+
+#[cfg(not(feature = "sql"))]
+fn main() {
+    println!("SQL feature not enabled. Please run with `cargo run --example test_sql_fix --features sql`");
 }

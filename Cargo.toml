@@ -90,3 +90,19 @@ criterion = { version = "0.5", features = ["html_reports"] }
 [[bench]]
 name = "comprehensive_benchmark"
 harness = false
+
+[[bench]]
+name = "enhanced_comprehensive_benchmark"
+harness = false
+
+[[bench]]
+name = "regression_benchmark"
+harness = false
+
+[[bench]]
+name = "profiling_benchmark"
+harness = false
+
+[[bench]]
+name = "legacy_dataframe_bench"
+harness = false

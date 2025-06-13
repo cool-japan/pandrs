@@ -67,18 +67,9 @@ fn benchmark_aggregation_operations(c: &mut Criterion) {
         b.iter(|| black_box(df.sum("value").unwrap()));
     });
 
-    group.bench_function("sum_with_jit_config", |b| {
-        let config = ParallelConfig::default();
-        b.iter(|| black_box(df.sum_with_config("value", Some(config.clone())).unwrap()));
-    });
-
+    // JIT config not available, using standard operations
     group.bench_function("mean_standard", |b| {
         b.iter(|| black_box(df.mean("value").unwrap()));
-    });
-
-    group.bench_function("mean_with_jit_config", |b| {
-        let config = ParallelConfig::default();
-        b.iter(|| black_box(df.mean_with_config("value", Some(config.clone())).unwrap()));
     });
 
     group.bench_function("max_standard", |b| {
@@ -200,7 +191,17 @@ fn benchmark_filter_operations(c: &mut Criterion) {
                 // Filter rows where value > 500
                 let int_col = df.get_int_column("value").unwrap();
                 let mask: Vec<bool> = (0..df.row_count())
-                    .map(|i| int_col.get(i).unwrap_or(None).unwrap_or(0) > 500)
+                    .map(|i| {
+                        if let Some(val_opt) = int_col.get(i) {
+                            if let Some(val) = val_opt {
+                                *val > 500
+                            } else {
+                                false
+                            }
+                        } else {
+                            false
+                        }
+                    })
                     .collect();
                 black_box(mask);
             });

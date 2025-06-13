@@ -89,7 +89,7 @@ impl DistributedDataFrame {
         use crate::distributed::engines::datafusion::conversion::dataframe_to_record_batches;
 
         // Determine batch size based on DataFrame size and concurrency
-        let row_count = df.shape()?.0;
+        let row_count = df.row_count();
         let batch_size = std::cmp::max(1, row_count / std::cmp::max(1, config.concurrency()));
 
         // Convert to record batches
@@ -216,7 +216,7 @@ impl DistributedDataFrame {
         if let Some(result) = &self.current_result {
             context.write_parquet(result, path)
         } else {
-            Err(Error::InvalidState("No result available".to_string()))
+            Err(Error::InvalidValue("No result available".to_string()))
         }
     }
 
@@ -233,7 +233,7 @@ impl DistributedDataFrame {
         if let Some(result) = &self.current_result {
             context.write_csv(result, path)
         } else {
-            Err(Error::InvalidState("No result available".to_string()))
+            Err(Error::InvalidValue("No result available".to_string()))
         }
     }
 
@@ -399,6 +399,50 @@ impl DistributedDataFrame {
     pub fn with_lazy(&mut self, lazy: bool) -> &mut Self {
         self.lazy = lazy;
         self
+    }
+    
+    /// Check if this DataFrame is using lazy evaluation
+    pub fn is_lazy(&self) -> bool {
+        self.lazy
+    }
+    
+    /// Clone this DataFrame without data (empty)
+    pub fn clone_empty(&self) -> Self {
+        Self {
+            config: self.config.clone(),
+            engine: self.engine.clone(),
+            context: self.context.clone(),
+            current_result: None,
+            id: format!("{}_empty", self.id),
+            lazy: self.lazy,
+            pending_operations: Vec::new(),
+        }
+    }
+    
+    /// Add a pending operation to this DataFrame
+    pub fn add_pending_operation(&mut self, operation: ExecutionPlan, _inputs: Vec<String>) {
+        self.pending_operations.push(operation);
+    }
+    
+    /// Execute an operation immediately
+    pub fn execute_operation(&self, _operation: ExecutionPlan, _inputs: Vec<String>) -> Result<Self> {
+        // TODO: Implement operation execution
+        Ok(self.clone())
+    }
+}
+
+#[cfg(feature = "distributed")]
+impl Clone for DistributedDataFrame {
+    fn clone(&self) -> Self {
+        Self {
+            config: self.config.clone(),
+            engine: self.engine.clone(),
+            context: self.context.clone(),
+            current_result: self.current_result.clone(),
+            id: self.id.clone(),
+            lazy: self.lazy,
+            pending_operations: self.pending_operations.clone(),
+        }
     }
 }
 

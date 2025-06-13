@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
 
-use crate::distributed::dataframe::DistributedDataFrame;
+use crate::distributed::core::dataframe::DistributedDataFrame;
 use crate::distributed::execution::{ExecutionPlan, Operation};
 use crate::error::Result;
 

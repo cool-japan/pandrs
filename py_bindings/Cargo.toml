@@ -18,5 +18,8 @@ numpy = "0.25.0"
 ndarray = "0.16.1"
 
 [features]
-default = []
+default = ["parquet", "sql"]
 cuda = ["pandrs/cuda"]
+parquet = ["pandrs/parquet"]
+sql = ["pandrs/sql"]
+distributed = ["pandrs/distributed"]

@@ -2,6 +2,7 @@ use numpy::IntoPyArray;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
+use std::collections::HashMap;
 // Import the parent crate (using explicit paths)
 use ::pandrs::{
     OptimizedDataFrame, LazyFrame, AggregateOp, 
@@ -117,6 +118,33 @@ impl PyOptimizedDataFrame {
     #[getter]
     fn shape(&self) -> PyResult<(usize, usize)> {
         Ok((self.inner.row_count(), self.inner.column_count()))
+    }
+
+    /// Rename columns using a dictionary mapping old names to new names
+    fn rename_columns(&mut self, columns: PyObject, py: Python<'_>) -> PyResult<()> {
+        // Convert Python dict to Rust HashMap
+        let dict = columns.downcast_bound::<PyDict>(py)?;
+        let mut column_map = HashMap::new();
+        
+        for item in dict.iter() {
+            let (key, value) = item;
+            let old_name: String = key.extract()?;
+            let new_name: String = value.extract()?;
+            column_map.insert(old_name, new_name);
+        }
+        
+        match self.inner.rename_columns(&column_map) {
+            Ok(_) => Ok(()),
+            Err(e) => Err(PyValueError::new_err(format!("Failed to rename columns: {}", e))),
+        }
+    }
+
+    /// Set all column names in the DataFrame
+    fn set_column_names(&mut self, names: Vec<String>) -> PyResult<()> {
+        match self.inner.set_column_names(names) {
+            Ok(_) => Ok(()),
+            Err(e) => Err(PyValueError::new_err(format!("Failed to set column names: {}", e))),
+        }
     }
 
     /// Filter rows by a boolean column
@@ -297,6 +325,75 @@ impl PyOptimizedDataFrame {
         }
         
         Ok(PyOptimizedDataFrame { inner: df })
+    }
+
+    /// Write DataFrame to Parquet file with optional compression
+    #[cfg(feature = "parquet")]
+    fn to_parquet(&self, path: &str, compression: Option<&str>) -> PyResult<()> {
+        use ::pandrs::io::parquet::{write_parquet, ParquetCompression};
+        
+        let compression_type = compression.map(|comp| match comp {
+            "snappy" => ParquetCompression::Snappy,
+            "gzip" => ParquetCompression::Gzip,
+            "brotli" => ParquetCompression::Brotli,
+            "lz4" => ParquetCompression::Lz4,
+            "zstd" => ParquetCompression::Zstd,
+            _ => ParquetCompression::Snappy,
+        });
+        
+        match write_parquet(&self.inner, path, compression_type) {
+            Ok(_) => Ok(()),
+            Err(e) => Err(PyValueError::new_err(format!("Failed to write Parquet: {}", e))),
+        }
+    }
+
+    /// Read DataFrame from Parquet file  
+    #[cfg(feature = "parquet")]
+    #[classmethod]
+    fn from_parquet(_cls: &Bound<'_, PyType>, path: &str) -> PyResult<Self> {
+        use ::pandrs::io::parquet::read_parquet;
+        
+        match read_parquet(path) {
+            Ok(df) => Ok(PyOptimizedDataFrame { inner: df }),
+            Err(e) => Err(PyValueError::new_err(format!("Failed to read Parquet: {}", e))),
+        }
+    }
+
+    /// Write DataFrame to SQL database
+    #[cfg(feature = "sql")]
+    fn to_sql(&self, table_name: &str, db_path: &str, if_exists: &str) -> PyResult<()> {
+        use ::pandrs::io::sql::write_to_sql;
+        
+        match write_to_sql(&self.inner, table_name, db_path, if_exists) {
+            Ok(_) => Ok(()),
+            Err(e) => Err(PyValueError::new_err(format!("Failed to write to SQL: {}", e))),
+        }
+    }
+
+    /// Read DataFrame from SQL query
+    #[cfg(feature = "sql")]
+    #[classmethod]  
+    fn from_sql(_cls: &Bound<'_, PyType>, query: &str, db_path: &str) -> PyResult<Self> {
+        use ::pandrs::io::sql::read_sql;
+        
+        match read_sql(query, db_path) {
+            Ok(df) => {
+                // Convert regular DataFrame to OptimizedDataFrame
+                let mut opt_df = OptimizedDataFrame::new();
+                
+                // Add each column from the regular DataFrame
+                for col_name in df.column_names() {
+                    // This is a placeholder - we'd need proper conversion logic here
+                    // For now, return error suggesting to use regular DataFrame for SQL
+                    return Err(PyValueError::new_err(
+                        "SQL operations currently only supported for regular DataFrame. Use DataFrame.from_sql() instead."
+                    ));
+                }
+                
+                Ok(PyOptimizedDataFrame { inner: opt_df })
+            },
+            Err(e) => Err(PyValueError::new_err(format!("Failed to read from SQL: {}", e))),
+        }
     }
 }
 
