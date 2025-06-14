@@ -95,7 +95,7 @@ impl JitNumeric for f64 {
     }
     
     fn sqrt(&self) -> Self {
-        self.sqrt()
+        f64::sqrt(*self)
     }
     
     fn pow(&self, exp: i32) -> Self {
@@ -103,7 +103,7 @@ impl JitNumeric for f64 {
     }
     
     fn is_nan(&self) -> bool {
-        self.is_nan()
+        f64::is_nan(*self)
     }
     
     fn type_name() -> &'static str {
@@ -154,7 +154,7 @@ impl JitNumeric for f32 {
     }
     
     fn sqrt(&self) -> Self {
-        self.sqrt()
+        f32::sqrt(*self)
     }
     
     fn pow(&self, exp: i32) -> Self {
@@ -162,7 +162,7 @@ impl JitNumeric for f32 {
     }
     
     fn is_nan(&self) -> bool {
-        self.is_nan()
+        f32::is_nan(*self)
     }
     
     fn type_name() -> &'static str {
@@ -217,12 +217,7 @@ impl JitNumeric for i64 {
     }
     
     fn pow(&self, exp: i32) -> Self {
-        if exp >= 0 {
-            self.pow(exp as u32)
-        } else {
-            // Negative exponents for integers are handled via f64 and rounded
-            (*self as f64).powi(exp) as i64
-        }
+        (*self as f64).powi(exp) as i64
     }
     
     fn is_nan(&self) -> bool {
@@ -281,12 +276,7 @@ impl JitNumeric for i32 {
     }
     
     fn pow(&self, exp: i32) -> Self {
-        if exp >= 0 {
-            self.pow(exp as u32)
-        } else {
-            // Negative exponents for integers are handled via f64 and rounded
-            (*self as f64).powi(exp) as i32
-        }
+        (*self as f64).powi(exp) as i32
     }
     
     fn is_nan(&self) -> bool {
@@ -299,7 +289,7 @@ impl JitNumeric for i32 {
 }
 
 /// Type-erased numeric value for interoperability between different types
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum NumericValue {
     /// 64-bit floating point
     F64(f64),

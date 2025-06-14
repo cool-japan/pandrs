@@ -1,5 +1,7 @@
 use crate::core::error::{Error, Result};
+use crate::storage::traits::{StorageEngine, AccessPattern, PerformanceProfile, Speed, Efficiency, StorageStatistics, DataChunk, StorageConfig};
 use std::collections::HashMap;
+use std::ops::Range;
 use std::sync::{Arc, RwLock};
 
 /// Compression strategies for columnar data
@@ -90,6 +92,7 @@ impl CompressedColumnData {
 }
 
 /// A column-oriented storage engine for data
+#[derive(Debug)]
 pub struct ColumnStore {
     /// Stored columns indexed by name
     columns: Arc<RwLock<HashMap<String, CompressedColumnData>>>,
@@ -394,5 +397,158 @@ impl ColumnStore {
 impl Default for ColumnStore {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// Handle for column store operations
+#[derive(Debug, Clone)]
+pub struct ColumnStoreHandle {
+    /// Unique identifier for the storage instance
+    pub id: usize,
+    /// Reference to the column store
+    pub store: Arc<ColumnStore>,
+}
+
+impl ColumnStoreHandle {
+    /// Create a new handle
+    pub fn new(id: usize, store: Arc<ColumnStore>) -> Self {
+        Self { id, store }
+    }
+}
+
+impl StorageEngine for ColumnStore {
+    type Handle = ColumnStoreHandle;
+    type Error = Error;
+
+    fn create_storage(&mut self, _config: &StorageConfig) -> Result<Self::Handle> {
+        // Create a new handle for this storage instance
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static NEXT_ID: AtomicUsize = AtomicUsize::new(1);
+        let id = NEXT_ID.fetch_add(1, Ordering::SeqCst);
+        
+        Ok(ColumnStoreHandle::new(id, Arc::new(ColumnStore::new())))
+    }
+
+    fn read_chunk(&self, handle: &Self::Handle, range: Range<usize>) -> Result<DataChunk> {
+        // For column store, we'll concatenate all column data within the range
+        let columns = handle.store.columns.read().unwrap();
+        let mut chunk_data = Vec::new();
+        let mut total_rows = 0;
+        
+        for (_name, compressed_data) in columns.iter() {
+            let decompressed = compressed_data.decompress();
+            // Apply range if applicable
+            let start = range.start.min(decompressed.len());
+            let end = range.end.min(decompressed.len());
+            if start < end {
+                chunk_data.extend_from_slice(&decompressed[start..end]);
+                total_rows = (end - start) / 8; // Assume 8 bytes per value for simplicity
+            }
+        }
+
+        let metadata = crate::storage::traits::ChunkMetadata {
+            row_count: total_rows,
+            column_count: columns.len(),
+            compression: crate::storage::traits::CompressionPreference::Auto,
+            uncompressed_size: chunk_data.len(),
+            compressed_size: chunk_data.len(), // Would be different with compression
+        };
+
+        Ok(DataChunk::new(chunk_data, metadata))
+    }
+
+    fn write_chunk(&mut self, handle: &Self::Handle, chunk: DataChunk) -> Result<()> {
+        // For simplicity, we'll add this as a new column with a generated name
+        let column_name = format!("chunk_{}", chunk.metadata.row_count);
+        
+        // Convert chunk data to the format expected by add_column
+        let data: Vec<Vec<u8>> = chunk.data
+            .chunks(8) // Assume 8 bytes per value
+            .map(|chunk| chunk.to_vec())
+            .collect();
+        
+        handle.store.add_column(column_name, &data, "bytes".to_string())?;
+        Ok(())
+    }
+
+    fn append_chunk(&mut self, handle: &Self::Handle, chunk: DataChunk) -> Result<()> {
+        // For column store, append is similar to write for new data
+        self.write_chunk(handle, chunk)
+    }
+
+    fn flush(&mut self, _handle: &Self::Handle) -> Result<()> {
+        // Column store is in-memory, so flush is a no-op
+        Ok(())
+    }
+
+    fn delete_storage(&mut self, _handle: &Self::Handle) -> Result<()> {
+        // For in-memory storage, this would clear the data
+        // Implementation would depend on handle management
+        Ok(())
+    }
+
+    fn performance_profile(&self) -> PerformanceProfile {
+        PerformanceProfile {
+            read_speed: Speed::Fast,
+            write_speed: Speed::Medium,
+            memory_efficiency: Efficiency::Good,
+            compression_ratio: 0.7, // Estimate based on compression strategies
+            random_access_speed: Speed::Fast,
+            sequential_access_speed: Speed::VeryFast,
+        }
+    }
+
+    fn storage_stats(&self, handle: &Self::Handle) -> Result<StorageStatistics> {
+        let stats = handle.store.stats();
+        Ok(StorageStatistics {
+            total_size: stats.total_size_bytes,
+            chunk_count: stats.total_columns,
+            avg_compression_ratio: stats.compression_ratio,
+            read_operations: stats.read_operations as u64,
+            write_operations: stats.write_operations as u64,
+            cache_hit_rate: 0.9, // Assume high cache hit rate for in-memory storage
+        })
+    }
+
+    fn supports_random_access(&self) -> bool {
+        true
+    }
+
+    fn supports_streaming(&self) -> bool {
+        false // Column store is batch-oriented
+    }
+
+    fn supports_compression(&self) -> bool {
+        true
+    }
+
+    fn optimal_chunk_size(&self) -> usize {
+        64 * 1024 // 64KB chunks
+    }
+
+    fn memory_overhead(&self) -> usize {
+        1024 // Approximate overhead per chunk
+    }
+
+    fn optimize_for_pattern(&mut self, pattern: AccessPattern) -> Result<()> {
+        match pattern {
+            AccessPattern::Columnar | AccessPattern::ReadHeavy => {
+                // Already optimized for these patterns
+                Ok(())
+            }
+            AccessPattern::Sequential => {
+                // Could pre-load adjacent data
+                Ok(())
+            }
+            _ => {
+                // Other patterns might not be optimal for column store
+                Ok(())
+            }
+        }
+    }
+
+    fn compact(&mut self, handle: &Self::Handle) -> Result<()> {
+        // Trigger optimization to recompress all columns
+        handle.store.optimize()
     }
 }

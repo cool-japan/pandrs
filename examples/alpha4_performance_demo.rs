@@ -244,7 +244,7 @@ fn demo_series_operations() -> std::result::Result<(), Box<dyn std::error::Error
     
     // Series creation performance
     let start = Instant::now();
-    let series = pandrs::series::Series::new(data.clone(), Some("test_series".to_string()))?;
+    let _series = pandrs::series::Series::new(data.clone(), Some("test_series".to_string()))?;
     let creation_duration = start.elapsed();
     
     println!("🔨 Series creation: {:.2}ms", creation_duration.as_secs_f64() * 1000.0);

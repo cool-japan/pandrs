@@ -1,4 +1,5 @@
 use thiserror::Error;
+use crate::core::error_context::{ErrorContext, ErrorRecovery, ErrorRecoveryHelper};
 
 /// Error type definitions
 #[derive(Error, Debug)]
@@ -150,6 +151,13 @@ pub enum Error {
 
     #[error("Other error: {0}")]
     Other(String),
+
+    /// Enhanced error with context
+    #[error("Enhanced error: {message}")]
+    Enhanced {
+        message: String,
+        context: ErrorContext,
+    },
 }
 
 // Maintaining backward compatibility with PandRSError
@@ -180,6 +188,73 @@ impl From<regex::Error> for Error {
 impl From<std::io::Error> for Error {
     fn from(err: std::io::Error) -> Self {
         Error::Io(err)
+    }
+}
+
+// Implement ErrorRecovery trait for Error
+impl ErrorRecovery for Error {
+    fn suggest_fixes(&self) -> Vec<String> {
+        match self {
+            Error::ColumnNotFound(name) => {
+                vec![
+                    format!("Column '{}' not found", name),
+                    "Use .columns() to list available columns".to_string(),
+                    "Check for typos in column name".to_string(),
+                ]
+            }
+            Error::ColumnTypeMismatch { name, expected, found } => {
+                ErrorRecoveryHelper::type_mismatch_suggestions(name, &format!("{:?}", expected), &format!("{:?}", found))
+            }
+            Error::InconsistentRowCount { expected, found } => {
+                ErrorRecoveryHelper::shape_mismatch_suggestions((*expected, 0), (*found, 0))
+            }
+            Error::IndexOutOfBounds { index, size } => {
+                vec![
+                    format!("Index {} is out of bounds for size {}", index, size),
+                    format!("Valid range is 0 to {}", size.saturating_sub(1)),
+                    "Use .len() to check size before indexing".to_string(),
+                ]
+            }
+            Error::InvalidInput(msg) => {
+                vec![
+                    format!("Invalid input: {}", msg),
+                    "Check input data format and types".to_string(),
+                    "Refer to documentation for expected input format".to_string(),
+                ]
+            }
+            Error::Enhanced { context, .. } => context.suggested_fixes.clone(),
+            _ => vec!["Refer to PandRS documentation for error resolution".to_string()],
+        }
+    }
+
+    fn can_auto_recover(&self) -> bool {
+        match self {
+            Error::ColumnTypeMismatch { .. } => true, // Could auto-convert types
+            Error::IndexOutOfBounds { .. } => false, // Cannot auto-fix bounds
+            Error::ColumnNotFound(_) => false, // Cannot guess column names
+            Error::Enhanced { context, .. } => {
+                // Could implement more sophisticated recovery logic
+                !context.suggested_fixes.is_empty()
+            }
+            _ => false,
+        }
+    }
+
+    fn attempt_recovery(&self) -> std::result::Result<Option<Box<dyn std::any::Any>>, Error> {
+        match self {
+            Error::ColumnTypeMismatch { .. } => {
+                // In a real implementation, this would attempt type conversion
+                Err(Error::NotImplemented("Auto-recovery for type mismatch".to_string()))
+            }
+            _ => Err(Error::NotImplemented("Auto-recovery".to_string())),
+        }
+    }
+
+    fn error_context(&self) -> Option<&ErrorContext> {
+        match self {
+            Error::Enhanced { context, .. } => Some(context),
+            _ => None,
+        }
     }
 }
 

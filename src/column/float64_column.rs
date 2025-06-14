@@ -1,8 +1,8 @@
 use std::any::Any;
 use std::sync::Arc;
 
-use crate::column::common::{Column, ColumnTrait, ColumnType};
-use crate::error::{Error, Result};
+use crate::core::column::{Column, ColumnTrait, ColumnType};
+use crate::core::error::{Error, Result};
 
 /// Structure representing a Float64 column
 #[derive(Debug, Clone)]

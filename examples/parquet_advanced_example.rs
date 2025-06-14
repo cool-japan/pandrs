@@ -1,5 +1,7 @@
-use pandrs::{DataFrame, Series};
 use pandrs::error::Result;
+
+#[cfg(feature = "parquet")]
+use pandrs::DataFrame;
 
 #[cfg(feature = "parquet")]
 use pandrs::io::{
@@ -13,7 +15,6 @@ fn main() -> Result<()> {
     #[cfg(not(feature = "parquet"))]
     {
         println!("Parquet feature is not enabled. Enable it with --features parquet");
-        return Ok(());
     }
     
     #[cfg(feature = "parquet")]

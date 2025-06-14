@@ -1,5 +1,7 @@
-use pandrs::{DataFrame, Series};
 use pandrs::error::Result;
+
+#[cfg(feature = "excel")]
+use pandrs::{DataFrame, Series};
 
 #[cfg(feature = "excel")]
 use pandrs::io::{
@@ -171,6 +173,7 @@ fn create_sample_summary_dataframe() -> Result<DataFrame> {
 }
 
 /// Demonstrate advanced Excel operation patterns
+#[allow(dead_code)]
 fn demonstrate_excel_patterns() {
     println!("\n--- Advanced Usage Patterns ---");
     
@@ -204,7 +207,5 @@ fn demonstrate_excel_patterns() {
     println!("       sheets.insert(format!(\"{{category}}_Report\"), &data);");
     println!("   }}");
     println!("   write_excel_sheets(&sheets, \"report.xlsx\", true)?;");
-    }
-    
-    Ok(())
+}
 }

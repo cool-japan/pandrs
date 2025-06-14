@@ -70,11 +70,11 @@ pub type Int32ArrayFn = dyn Fn(Vec<i32>) -> i32 + Send + Sync;
 
 /// Represents a JIT-compiled function
 #[derive(Clone)]
-pub struct JitFunction<F = FloatArrayFn> {
+pub struct JitFunction {
     /// Function name for debugging and caching
     name: String,
     /// Native function to use when JIT is disabled
-    native_fn: Arc<F>,
+    native_fn: Arc<FloatArrayFn>,
     /// Input type name
     input_type: &'static str,
     /// Output type name
@@ -127,12 +127,12 @@ impl JitStats {
     }
 }
 
-impl<F> JitFunction<F>
-where
-    F: Fn(Vec<f64>) -> f64 + Send + Sync + 'static,
-{
+impl JitFunction {
     /// Create a new JIT function with a native implementation
-    pub fn new(name: impl Into<String>, native_fn: F) -> Self {
+    pub fn new<F>(name: impl Into<String>, native_fn: F) -> Self 
+    where
+        F: Fn(Vec<f64>) -> f64 + Send + Sync + 'static,
+    {
         Self {
             name: name.into(),
             native_fn: Arc::new(native_fn),
@@ -178,10 +178,7 @@ where
     }
 }
 
-impl<F> JitCompilable<Vec<f64>, f64> for JitFunction<F>
-where
-    F: Fn(Vec<f64>) -> f64 + Send + Sync,
-{
+impl JitCompilable<Vec<f64>, f64> for JitFunction {
     fn execute(&self, args: Vec<f64>) -> f64 {
         // Record execution time for benchmarking
         let start = std::time::Instant::now();
@@ -230,9 +227,9 @@ impl JitContext {
         // In a real implementation, this would use Cranelift to compile
         // the function. For now, it's just a stub.
         
-        use cranelift_codegen::settings;
-        
-        let _flags_builder = settings::builder();
+        // TODO: Implement actual JIT compilation with Cranelift
+        // use cranelift_codegen::settings;
+        // let _flags_builder = settings::builder();
         // Configure JIT settings here
         
         // Create the JIT context
@@ -243,7 +240,7 @@ impl JitContext {
 }
 
 /// Decorator-like function to create JIT functions (similar to @numba.jit in Python)
-pub fn jit<F>(name: impl Into<String>, f: F) -> JitFunction<F>
+pub fn jit<F>(name: impl Into<String>, f: F) -> JitFunction
 where
     F: Fn(Vec<f64>) -> f64 + Send + Sync + 'static,
 {

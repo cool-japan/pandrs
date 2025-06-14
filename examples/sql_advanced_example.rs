@@ -1,5 +1,7 @@
-use pandrs::{DataFrame, Series};
 use pandrs::error::Result;
+
+#[cfg(feature = "sql")]
+use pandrs::{DataFrame, Series};
 
 #[cfg(feature = "sql")]
 use pandrs::io::{
@@ -175,13 +177,14 @@ fn main() -> Result<()> {
     println!("✓ Connection pooling (with sqlx)");
     println!("✓ Transaction management");
     println!("✓ Performance optimizations");
-    }
-
+    
     Ok(())
+    }
 }
 
 /// Create sample DataFrame for demonstration
 #[cfg(feature = "sql")]
+#[allow(dead_code)]
 fn create_sample_dataframe() -> Result<DataFrame> {
     let mut df = DataFrame::new();
     
@@ -207,6 +210,7 @@ fn create_sample_dataframe() -> Result<DataFrame> {
 }
 
 /// Demonstrate performance optimization patterns
+#[allow(dead_code)]
 fn demonstrate_performance_patterns() {
     println!("\n--- Performance Optimization Patterns ---");
     
@@ -243,6 +247,7 @@ fn demonstrate_performance_patterns() {
 }
 
 /// Demonstrate different database engine support
+#[allow(dead_code)]
 fn demonstrate_database_engines() {
     println!("\n--- Multi-Database Engine Support ---");
     

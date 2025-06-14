@@ -1,9 +1,9 @@
 use std::any::Any;
 use std::sync::Arc;
 
-use crate::column::common::{Column, ColumnTrait, ColumnType};
+use crate::core::column::{Column, ColumnTrait, ColumnType};
 use crate::column::string_pool::{StringPool, GLOBAL_STRING_POOL};
-use crate::error::{Error, Result};
+use crate::core::error::{Error, Result};
 use std::collections::HashMap;
 
 /// Optimization modes for string columns

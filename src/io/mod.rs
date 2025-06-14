@@ -6,6 +6,9 @@ pub mod json;
 pub mod parquet;
 #[cfg(feature = "sql")]
 pub mod sql;
+#[cfg(feature = "streaming")]
+pub mod streaming;
+pub mod format_traits;
 
 // Re-export commonly used functions
 pub use csv::{read_csv, write_csv};
@@ -29,4 +32,20 @@ pub use sql::{
     has_table, list_tables, get_table_schema, get_create_table_sql,
     SqlConnection, DatabaseConnection, PoolConfig, SqlReadOptions, SqlWriteOptions,
     WriteMode, InsertMethod, SqlValue, TableSchema, ColumnDefinition, ForeignKey
+};
+#[cfg(feature = "streaming")]
+pub use streaming::{
+    StreamingDataSource, StreamingDataSink, StreamProcessor, StreamingPipeline, DataFrameStreaming,
+    StreamMetadata, SinkMetadata, StreamSchema, StreamField, StreamDataType, StreamType, SinkType,
+    ProcessorMetadata, ProcessorType, ProcessorConfig, ProcessorStats, PipelineConfig, PipelineStats,
+    StreamWindow, WindowType, WindowStats, ErrorStrategy, ErrorHandler, ErrorAction, ErrorStats,
+    MemoryStreamSource, MemoryStreamSink, StageStats, PipelineStage,
+};
+pub use format_traits::{
+    FileFormat, SqlOps, StreamingOps, DataOperations, FormatRegistry,
+    FormatCapabilities, SqlCapabilities, StreamingCapabilities,
+    DataSource, DataDestination, TransformPipeline, TransformStage, JoinType,
+    TableSchema, ColumnDefinition, SqlDataType, ColumnConstraint,
+    ForeignKeyConstraint, ReferentialAction, IndexDefinition, IndexType,
+    FormatDataType, SqlStandard, SerializationFormat,
 };

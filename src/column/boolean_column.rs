@@ -1,9 +1,9 @@
 use std::any::Any;
 use std::sync::Arc;
 
-use crate::column::common::{Column, ColumnTrait, ColumnType};
+use crate::core::column::{Column, ColumnTrait, ColumnType};
 use crate::core::column::BitMask;
-use crate::error::{Error, Result};
+use crate::core::error::{Error, Result};
 
 /// Structure representing a boolean column (optimized with BitMask)
 #[derive(Debug, Clone)]
