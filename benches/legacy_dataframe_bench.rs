@@ -1,5 +1,5 @@
 // Simple DataFrame benchmarks using Criterion
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use pandrs::dataframe::serialize::SerializeExt;
 use pandrs::{DataFrame, Series};
 use std::collections::HashMap;
@@ -14,7 +14,7 @@ fn bench_create_small_dataframe(c: &mut Criterion) {
                 Some("B".to_string()),
             ).unwrap();
             let col_c = Series::new(
-                vec!["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"]
+                ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"]
                     .iter()
                     .map(|s| s.to_string())
                     .collect(),

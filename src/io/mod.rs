@@ -16,22 +16,29 @@ pub use csv::{read_csv, write_csv};
 pub use excel::{
     read_excel, write_excel, list_sheet_names, get_workbook_info, get_sheet_info,
     read_excel_sheets, read_excel_with_info, write_excel_sheets,
-    ExcelWorkbookInfo, ExcelSheetInfo
+    read_excel_enhanced, write_excel_enhanced, optimize_excel_file, analyze_excel_file,
+    ExcelWorkbookInfo, ExcelSheetInfo, ExcelCell, ExcelCellFormat, NamedRange,
+    ExcelReadOptions, ExcelWriteOptions, ExcelFileAnalysis
 };
 pub use json::{read_json, write_json};
 #[cfg(feature = "parquet")]
 pub use parquet::{
     read_parquet, write_parquet, read_parquet_advanced, write_parquet_advanced,
     get_parquet_metadata, get_row_group_info, get_column_statistics,
+    read_parquet_enhanced, read_parquet_with_schema_evolution, read_parquet_with_predicates,
+    write_parquet_streaming, analyze_parquet_schema, StreamingParquetReader,
     ParquetCompression, ParquetMetadata, RowGroupInfo, ColumnStats,
-    ParquetReadOptions, ParquetWriteOptions
+    ParquetReadOptions, ParquetWriteOptions, SchemaEvolution, PredicateFilter,
+    AdvancedParquetReadOptions, ParquetSchemaAnalysis
 };
 #[cfg(feature = "sql")]
 pub use sql::{
     execute_sql, read_sql, write_to_sql, read_sql_advanced, read_sql_table, write_sql_advanced,
     has_table, list_tables, get_table_schema, get_create_table_sql,
     SqlConnection, DatabaseConnection, PoolConfig, SqlReadOptions, SqlWriteOptions,
-    WriteMode, InsertMethod, SqlValue, TableSchema, ColumnDefinition, ForeignKey
+    WriteMode, InsertMethod, SqlValue, TableSchema, ColumnDefinition, ForeignKey,
+    AsyncDatabasePool, ConnectionStats, TransactionManager, IsolationLevel, DatabaseOperation,
+    QueryBuilder, SchemaIntrospector
 };
 #[cfg(feature = "streaming")]
 pub use streaming::{
@@ -45,7 +52,7 @@ pub use format_traits::{
     FileFormat, SqlOps, StreamingOps, DataOperations, FormatRegistry,
     FormatCapabilities, SqlCapabilities, StreamingCapabilities,
     DataSource, DataDestination, TransformPipeline, TransformStage, JoinType,
-    TableSchema, ColumnDefinition, SqlDataType, ColumnConstraint,
-    ForeignKeyConstraint, ReferentialAction, IndexDefinition, IndexType,
-    FormatDataType, SqlStandard, SerializationFormat,
+    TableSchema as FormatTableSchema, ColumnDefinition as FormatColumnDefinition, 
+    SqlDataType, ColumnConstraint, ForeignKeyConstraint, ReferentialAction, 
+    IndexDefinition, IndexType, FormatDataType, SqlStandard, SerializationFormat,
 };

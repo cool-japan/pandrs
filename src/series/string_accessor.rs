@@ -1,6 +1,47 @@
 use crate::core::error::Error as PandrsError;
 use crate::series::base::Series;
 use regex::Regex;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex, OnceLock};
+
+/// Regex cache for performance optimization
+/// Caches compiled regex patterns to avoid recompilation
+static REGEX_CACHE: OnceLock<Arc<Mutex<HashMap<String, Regex>>>> = OnceLock::new();
+
+/// Get or compile a regex pattern with caching
+fn get_or_compile_regex(pattern: &str, case_insensitive: bool) -> Result<Regex, PandrsError> {
+    let cache_key = if case_insensitive {
+        format!("(?i){}", pattern)
+    } else {
+        pattern.to_string()
+    };
+    
+    // Initialize cache if needed
+    let cache = REGEX_CACHE.get_or_init(|| Arc::new(Mutex::new(HashMap::new())));
+    
+    // Try to get from cache first
+    {
+        let cache_guard = cache.lock().unwrap();
+        if let Some(regex) = cache_guard.get(&cache_key) {
+            return Ok(regex.clone());
+        }
+    }
+    
+    // Compile new regex
+    let regex = if case_insensitive {
+        Regex::new(&format!("(?i){}", pattern))
+    } else {
+        Regex::new(pattern)
+    }.map_err(|e| PandrsError::InvalidValue(format!("Invalid regex pattern '{}': {}", pattern, e)))?;
+    
+    // Store in cache
+    {
+        let mut cache_guard = cache.lock().unwrap();
+        cache_guard.insert(cache_key, regex.clone());
+    }
+    
+    Ok(regex)
+}
 
 /// String accessor for Series containing string data
 /// Provides pandas-like string operations through .str accessor
@@ -60,13 +101,23 @@ impl StringAccessor {
     }
 
     /// Check if strings contain a pattern
+    /// 
+    /// # Arguments
+    /// * `pattern` - Pattern to search for
+    /// * `case` - If true, perform case-sensitive search
+    /// * `regex` - If true, treat pattern as regex
+    /// 
+    /// # Examples
+    /// ```
+    /// use pandrs::Series;
+    /// let data = vec!["hello world".to_string(), "HELLO".to_string()];
+    /// let series = Series::new(data, None).unwrap();
+    /// let result = series.str().unwrap().contains("hello", false, false).unwrap();
+    /// assert_eq!(result.values(), &[true, true]); // Case insensitive
+    /// ```
     pub fn contains(&self, pattern: &str, case: bool, regex: bool) -> Result<Series<bool>, PandrsError> {
         if regex {
-            let re = if case {
-                Regex::new(pattern)
-            } else {
-                Regex::new(&format!("(?i){}", pattern))
-            }.map_err(|e| PandrsError::InvalidValue(format!("Invalid regex pattern: {}", e)))?;
+            let re = get_or_compile_regex(pattern, !case)?;
             
             let bool_values: Vec<bool> = self.series.values()
                 .iter()
@@ -133,13 +184,24 @@ impl StringAccessor {
     }
 
     /// Replace occurrences of a pattern
+    /// 
+    /// # Arguments
+    /// * `pattern` - Pattern to replace
+    /// * `replacement` - Replacement string
+    /// * `regex` - If true, treat pattern as regex
+    /// * `case` - If true, perform case-sensitive replacement
+    /// 
+    /// # Examples
+    /// ```
+    /// use pandrs::Series;
+    /// let data = vec!["hello world".to_string(), "test".to_string()];
+    /// let series = Series::new(data, None).unwrap();
+    /// let result = series.str().unwrap().replace("world", "rust", false, true).unwrap();
+    /// assert_eq!(result.values()[0], "hello rust");
+    /// ```
     pub fn replace(&self, pattern: &str, replacement: &str, regex: bool, case: bool) -> Result<Series<String>, PandrsError> {
         if regex {
-            let re = if case {
-                Regex::new(pattern)
-            } else {
-                Regex::new(&format!("(?i){}", pattern))
-            }.map_err(|e| PandrsError::InvalidValue(format!("Invalid regex pattern: {}", e)))?;
+            let re = get_or_compile_regex(pattern, !case)?;
             
             let replaced_values: Vec<String> = self.series.values()
                 .iter()
@@ -198,11 +260,20 @@ impl StringAccessor {
             .map_err(|e| PandrsError::Type(format!("Failed to create series: {:?}", e)))
     }
 
-    /// Get string length
+    /// Get string length (character count, not byte count)
+    /// 
+    /// # Examples
+    /// ```
+    /// use pandrs::Series;
+    /// let data = vec!["hello".to_string(), "café".to_string(), "🦀".to_string()];
+    /// let series = Series::new(data, None).unwrap();
+    /// let lengths = series.str().unwrap().len().unwrap();
+    /// assert_eq!(lengths.values(), &[5i64, 4i64, 1i64]); // Character count, not bytes
+    /// ```
     pub fn len(&self) -> Result<Series<i64>, PandrsError> {
         let lengths: Vec<i64> = self.series.values()
             .iter()
-            .map(|s| s.len() as i64)
+            .map(|s| s.chars().count() as i64)  // Use character count for Unicode safety
             .collect();
         
         Series::new(lengths, self.series.name().cloned())
@@ -264,19 +335,22 @@ impl StringAccessor {
     }
 
     /// Extract substring using regex groups
+    /// 
+    /// # Arguments
+    /// * `pattern` - Regex pattern with capture groups
+    /// * `flags` - Optional regex flags (e.g., "i" for case insensitive)
+    /// 
+    /// # Examples
+    /// ```
+    /// use pandrs::Series;
+    /// let data = vec!["abc123def".to_string(), "xyz456ghi".to_string()];
+    /// let series = Series::new(data, None).unwrap();
+    /// let result = series.str().unwrap().extract(r"(\d+)", None).unwrap();
+    /// assert_eq!(result.values(), &["123".to_string(), "456".to_string()]);
+    /// ```
     pub fn extract(&self, pattern: &str, flags: Option<&str>) -> Result<Series<String>, PandrsError> {
-        let regex_pattern = if let Some(f) = flags {
-            if f.contains('i') {
-                format!("(?i){}", pattern)
-            } else {
-                pattern.to_string()
-            }
-        } else {
-            pattern.to_string()
-        };
-        
-        let re = Regex::new(&regex_pattern)
-            .map_err(|e| PandrsError::InvalidValue(format!("Invalid regex pattern: {}", e)))?;
+        let case_insensitive = flags.map_or(false, |f| f.contains('i'));
+        let re = get_or_compile_regex(pattern, case_insensitive)?;
         
         let extracted_values: Vec<String> = self.series.values()
             .iter()
@@ -298,19 +372,23 @@ impl StringAccessor {
     }
 
     /// Find all matches of pattern
+    /// 
+    /// # Arguments
+    /// * `pattern` - Regex pattern to find
+    /// * `flags` - Optional regex flags (e.g., "i" for case insensitive)
+    /// 
+    /// # Examples
+    /// ```
+    /// use pandrs::Series;
+    /// let data = vec!["abc123def456".to_string(), "nodigits".to_string()];
+    /// let series = Series::new(data, None).unwrap();
+    /// let result = series.str().unwrap().findall(r"\d+", None).unwrap();
+    /// assert!(result.values()[0].contains("123"));
+    /// assert!(result.values()[0].contains("456"));
+    /// ```
     pub fn findall(&self, pattern: &str, flags: Option<&str>) -> Result<Series<String>, PandrsError> {
-        let regex_pattern = if let Some(f) = flags {
-            if f.contains('i') {
-                format!("(?i){}", pattern)
-            } else {
-                pattern.to_string()
-            }
-        } else {
-            pattern.to_string()
-        };
-        
-        let re = Regex::new(&regex_pattern)
-            .map_err(|e| PandrsError::InvalidValue(format!("Invalid regex pattern: {}", e)))?;
+        let case_insensitive = flags.map_or(false, |f| f.contains('i'));
+        let re = get_or_compile_regex(pattern, case_insensitive)?;
         
         let found_values: Vec<String> = self.series.values()
             .iter()
@@ -327,19 +405,22 @@ impl StringAccessor {
     }
 
     /// Count occurrences of pattern
+    /// 
+    /// # Arguments
+    /// * `pattern` - Regex pattern to count
+    /// * `flags` - Optional regex flags (e.g., "i" for case insensitive)
+    /// 
+    /// # Examples
+    /// ```
+    /// use pandrs::Series;
+    /// let data = vec!["abc123def456".to_string(), "nodigits".to_string()];
+    /// let series = Series::new(data, None).unwrap();
+    /// let result = series.str().unwrap().count(r"\d", None).unwrap();
+    /// assert_eq!(result.values(), &[6i64, 0i64]); // 6 digits in first, 0 in second
+    /// ```
     pub fn count(&self, pattern: &str, flags: Option<&str>) -> Result<Series<i64>, PandrsError> {
-        let regex_pattern = if let Some(f) = flags {
-            if f.contains('i') {
-                format!("(?i){}", pattern)
-            } else {
-                pattern.to_string()
-            }
-        } else {
-            pattern.to_string()
-        };
-        
-        let re = Regex::new(&regex_pattern)
-            .map_err(|e| PandrsError::InvalidValue(format!("Invalid regex pattern: {}", e)))?;
+        let case_insensitive = flags.map_or(false, |f| f.contains('i'));
+        let re = get_or_compile_regex(pattern, case_insensitive)?;
         
         let counts: Vec<i64> = self.series.values()
             .iter()
@@ -350,15 +431,198 @@ impl StringAccessor {
             .map_err(|e| PandrsError::Type(format!("Failed to create series: {:?}", e)))
     }
 
+    /// Check if all characters are alphabetic
+    /// 
+    /// # Examples
+    /// ```
+    /// use pandrs::Series;
+    /// let data = vec!["hello".to_string(), "world123".to_string(), "".to_string()];
+    /// let series = Series::new(data, None).unwrap();
+    /// let result = series.str().unwrap().isalpha().unwrap();
+    /// assert_eq!(result.values(), &[true, false, false]);
+    /// ```
+    pub fn isalpha(&self) -> Result<Series<bool>, PandrsError> {
+        let bool_values: Vec<bool> = self.series.values()
+            .iter()
+            .map(|s| !s.is_empty() && s.chars().all(|c| c.is_alphabetic()))
+            .collect();
+        
+        Series::new(bool_values, self.series.name().cloned())
+            .map_err(|e| PandrsError::Type(format!("Failed to create boolean series: {:?}", e)))
+    }
+
+    /// Check if all characters are digits
+    /// 
+    /// # Examples
+    /// ```
+    /// use pandrs::Series;
+    /// let data = vec!["123".to_string(), "12.3".to_string(), "".to_string()];
+    /// let series = Series::new(data, None).unwrap();
+    /// let result = series.str().unwrap().isdigit().unwrap();
+    /// assert_eq!(result.values(), &[true, false, false]);
+    /// ```
+    pub fn isdigit(&self) -> Result<Series<bool>, PandrsError> {
+        let bool_values: Vec<bool> = self.series.values()
+            .iter()
+            .map(|s| !s.is_empty() && s.chars().all(|c| c.is_ascii_digit()))
+            .collect();
+        
+        Series::new(bool_values, self.series.name().cloned())
+            .map_err(|e| PandrsError::Type(format!("Failed to create boolean series: {:?}", e)))
+    }
+
+    /// Check if all characters are alphanumeric
+    /// 
+    /// # Examples
+    /// ```
+    /// use pandrs::Series;
+    /// let data = vec!["hello123".to_string(), "hello-world".to_string(), "".to_string()];
+    /// let series = Series::new(data, None).unwrap();
+    /// let result = series.str().unwrap().isalnum().unwrap();
+    /// assert_eq!(result.values(), &[true, false, false]);
+    /// ```
+    pub fn isalnum(&self) -> Result<Series<bool>, PandrsError> {
+        let bool_values: Vec<bool> = self.series.values()
+            .iter()
+            .map(|s| !s.is_empty() && s.chars().all(|c| c.is_alphanumeric()))
+            .collect();
+        
+        Series::new(bool_values, self.series.name().cloned())
+            .map_err(|e| PandrsError::Type(format!("Failed to create boolean series: {:?}", e)))
+    }
+
+    /// Check if all characters are whitespace
+    /// 
+    /// # Examples
+    /// ```
+    /// use pandrs::Series;
+    /// let data = vec!["   ".to_string(), "\t\n".to_string(), "hello".to_string()];
+    /// let series = Series::new(data, None).unwrap();
+    /// let result = series.str().unwrap().isspace().unwrap();
+    /// assert_eq!(result.values(), &[true, true, false]);
+    /// ```
+    pub fn isspace(&self) -> Result<Series<bool>, PandrsError> {
+        let bool_values: Vec<bool> = self.series.values()
+            .iter()
+            .map(|s| !s.is_empty() && s.chars().all(|c| c.is_whitespace()))
+            .collect();
+        
+        Series::new(bool_values, self.series.name().cloned())
+            .map_err(|e| PandrsError::Type(format!("Failed to create boolean series: {:?}", e)))
+    }
+
+    /// Check if string is lowercase
+    /// 
+    /// # Examples
+    /// ```
+    /// use pandrs::Series;
+    /// let data = vec!["hello".to_string(), "Hello".to_string(), "123".to_string()];
+    /// let series = Series::new(data, None).unwrap();
+    /// let result = series.str().unwrap().islower().unwrap();
+    /// assert_eq!(result.values(), &[true, false, false]);
+    /// ```
+    pub fn islower(&self) -> Result<Series<bool>, PandrsError> {
+        let bool_values: Vec<bool> = self.series.values()
+            .iter()
+            .map(|s| {
+                let has_cased = s.chars().any(|c| c.is_alphabetic());
+                has_cased && s.chars().filter(|c| c.is_alphabetic()).all(|c| c.is_lowercase())
+            })
+            .collect();
+        
+        Series::new(bool_values, self.series.name().cloned())
+            .map_err(|e| PandrsError::Type(format!("Failed to create boolean series: {:?}", e)))
+    }
+
+    /// Check if string is uppercase
+    /// 
+    /// # Examples
+    /// ```
+    /// use pandrs::Series;
+    /// let data = vec!["HELLO".to_string(), "Hello".to_string(), "123".to_string()];
+    /// let series = Series::new(data, None).unwrap();
+    /// let result = series.str().unwrap().isupper().unwrap();
+    /// assert_eq!(result.values(), &[true, false, false]);
+    /// ```
+    pub fn isupper(&self) -> Result<Series<bool>, PandrsError> {
+        let bool_values: Vec<bool> = self.series.values()
+            .iter()
+            .map(|s| {
+                let has_cased = s.chars().any(|c| c.is_alphabetic());
+                has_cased && s.chars().filter(|c| c.is_alphabetic()).all(|c| c.is_uppercase())
+            })
+            .collect();
+        
+        Series::new(bool_values, self.series.name().cloned())
+            .map_err(|e| PandrsError::Type(format!("Failed to create boolean series: {:?}", e)))
+    }
+
+    /// Swap case of alphabetic characters
+    /// 
+    /// # Examples
+    /// ```
+    /// use pandrs::Series;
+    /// let data = vec!["Hello World".to_string(), "RUST".to_string()];
+    /// let series = Series::new(data, None).unwrap();
+    /// let result = series.str().unwrap().swapcase().unwrap();
+    /// assert_eq!(result.values(), &["hELLO wORLD".to_string(), "rust".to_string()]);
+    /// ```
+    pub fn swapcase(&self) -> Result<Series<String>, PandrsError> {
+        let swapped_values: Vec<String> = self.series.values()
+            .iter()
+            .map(|s| {
+                s.chars()
+                    .map(|c| {
+                        if c.is_uppercase() {
+                            c.to_lowercase().collect::<String>()
+                        } else if c.is_lowercase() {
+                            c.to_uppercase().collect::<String>()
+                        } else {
+                            c.to_string()
+                        }
+                    })
+                    .collect::<String>()
+            })
+            .collect();
+        
+        Series::new(swapped_values, self.series.name().cloned())
+            .map_err(|e| PandrsError::Type(format!("Failed to create series: {:?}", e)))
+    }
+
     /// Pad strings to specified width
+    /// 
+    /// # Arguments
+    /// * `width` - Target width for padding
+    /// * `side` - Padding side: "left", "right", or "both"
+    /// * `fillchar` - Character to use for padding
+    /// 
+    /// # Examples
+    /// ```
+    /// use pandrs::Series;
+    /// let data = vec!["hi".to_string(), "world".to_string()];
+    /// let series = Series::new(data, None).unwrap();
+    /// let padded = series.str().unwrap().pad(8, "left", '*').unwrap();
+    /// assert_eq!(padded.values()[0], "******hi");
+    /// ```
+    /// 
+    /// # Errors
+    /// Returns error if `side` is not one of "left", "right", or "both"
     pub fn pad(&self, width: usize, side: &str, fillchar: char) -> Result<Series<String>, PandrsError> {
+        // Input validation
+        if !matches!(side, "left" | "right" | "both") {
+            return Err(PandrsError::InvalidValue(
+                format!("Invalid side parameter '{}'. Must be 'left', 'right', or 'both'", side)
+            ));
+        }
+        
         let padded_values: Vec<String> = self.series.values()
             .iter()
             .map(|s| {
-                if s.len() >= width {
+                let char_count = s.chars().count(); // Use character count for Unicode safety
+                if char_count >= width {
                     s.clone()
                 } else {
-                    let padding_needed = width - s.len();
+                    let padding_needed = width - char_count;
                     match side {
                         "left" => format!("{}{}", fillchar.to_string().repeat(padding_needed), s),
                         "right" => format!("{}{}", s, fillchar.to_string().repeat(padding_needed)),
@@ -370,7 +634,7 @@ impl StringAccessor {
                                 s,
                                 fillchar.to_string().repeat(right_pad))
                         }
-                        _ => s.clone() // Invalid side, return original
+                        _ => unreachable!() // Already validated above
                     }
                 }
             })

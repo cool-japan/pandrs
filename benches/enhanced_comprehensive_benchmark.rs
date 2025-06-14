@@ -13,6 +13,7 @@ struct BenchmarkConfig {
     string_cardinality: usize,
     null_percentage: f64,
     enable_jit_comparison: bool,
+    #[allow(dead_code)]
     enable_memory_tracking: bool,
 }
 
@@ -383,7 +384,7 @@ fn benchmark_simd_detailed(c: &mut Criterion) {
     
     for &size in &test_sizes {
         let f64_data: Vec<f64> = (0..size).map(|i| (i as f64) * 0.1 + rand::random::<f64>()).collect();
-        let i64_data: Vec<i64> = (0..size).map(|i| i as i64 + rand::random::<i64>() % 1000).collect();
+        let _i64_data: Vec<i64> = (0..size).map(|i| i as i64 + rand::random::<i64>() % 1000).collect();
         
         group.throughput(Throughput::Elements(size as u64));
         
@@ -461,7 +462,7 @@ fn benchmark_performance_comparison(c: &mut Criterion) {
     });
     
     group.bench_function("full_pipeline_with_jit", |b| {
-        let jit_config = ParallelConfig::default();
+        let _jit_config = ParallelConfig::default();
         b.iter(|| {
             // JIT config not available, using standard operations
             let sum_result = df.sum("trend_value").unwrap();

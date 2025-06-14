@@ -2,6 +2,7 @@ use pandrs::error::Result;
 use pandrs::{AggregateOp, Column, Int64Column, LazyFrame, OptimizedDataFrame, StringColumn};
 
 #[test]
+#[allow(clippy::result_large_err)]
 fn test_optimized_groupby_creation() -> Result<()> {
     // Create test dataframe
     let mut df = OptimizedDataFrame::new();
@@ -30,6 +31,7 @@ fn test_optimized_groupby_creation() -> Result<()> {
 }
 
 #[test]
+#[allow(clippy::result_large_err)]
 fn test_optimized_groupby_aggregation() -> Result<()> {
     // Create test dataframe
     let mut df = OptimizedDataFrame::new();
@@ -79,6 +81,7 @@ fn test_optimized_groupby_aggregation() -> Result<()> {
 }
 
 #[test]
+#[allow(clippy::result_large_err)]
 fn test_optimized_groupby_multiple_aggregations() -> Result<()> {
     // Create test dataframe
     let mut df = OptimizedDataFrame::new();
@@ -131,6 +134,7 @@ fn test_optimized_groupby_multiple_aggregations() -> Result<()> {
 }
 
 #[test]
+#[allow(clippy::result_large_err)]
 fn test_optimized_groupby_multiple_keys() -> Result<()> {
     // Create test dataframe
     let mut df = OptimizedDataFrame::new();

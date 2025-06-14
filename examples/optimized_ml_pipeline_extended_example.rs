@@ -8,6 +8,7 @@ use pandrs::error::Result;
 use pandrs::ml::{AdvancedPipeline, BinningStrategy, FeatureEngineeringStage, WindowOperation};
 use pandrs::optimized::OptimizedDataFrame;
 
+#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     println!("=== Extended ML Pipeline Example ===\n");
 
@@ -56,6 +57,7 @@ fn main() -> Result<()> {
     Ok(())
 }
 
+#[allow(clippy::result_large_err)]
 fn basic_feature_engineering_example(df: &OptimizedDataFrame) -> Result<()> {
     // Create feature engineering stage with polynomial features
     let feature_stage = FeatureEngineeringStage::new()
@@ -82,6 +84,7 @@ fn basic_feature_engineering_example(df: &OptimizedDataFrame) -> Result<()> {
     Ok(())
 }
 
+#[allow(clippy::result_large_err)]
 fn advanced_pipeline_example(df: &OptimizedDataFrame) -> Result<()> {
     // Create comprehensive feature engineering stage
     let feature_stage = FeatureEngineeringStage::new()
@@ -125,6 +128,7 @@ fn advanced_pipeline_example(df: &OptimizedDataFrame) -> Result<()> {
     Ok(())
 }
 
+#[allow(clippy::result_large_err)]
 fn custom_transformation_example(df: &OptimizedDataFrame) -> Result<()> {
     // Create feature engineering stage with custom transformation
     let feature_stage = FeatureEngineeringStage::new()
@@ -162,6 +166,7 @@ fn custom_transformation_example(df: &OptimizedDataFrame) -> Result<()> {
     Ok(())
 }
 
+#[allow(clippy::result_large_err)]
 fn financial_analysis_pipeline(df: &OptimizedDataFrame) -> Result<()> {
     // Multi-stage pipeline for financial analysis
 

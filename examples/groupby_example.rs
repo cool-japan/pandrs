@@ -1,6 +1,7 @@
 use pandrs::error::Result;
 use pandrs::{GroupBy, Series};
 
+#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     println!("=== Example of GroupBy Operations ===");
 
@@ -8,7 +9,7 @@ fn main() -> Result<()> {
     let values = Series::new(vec![10, 20, 15, 30, 25, 15], Some("values".to_string()))?;
 
     // Keys for grouping
-    let keys = vec!["A", "B", "A", "C", "B", "A"];
+    let keys = ["A", "B", "A", "C", "B", "A"];
 
     // Create GroupBy
     let group_by = GroupBy::new(

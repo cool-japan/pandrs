@@ -3,6 +3,7 @@ use pandrs::{BooleanColumn, Column, Float64Column, Int64Column, OptimizedDataFra
 use std::path::Path;
 
 /// Trait for Excel IO operations
+#[allow(clippy::result_large_err)]
 pub trait ExcelExt {
     /// Write DataFrame to Excel file
     fn to_excel<P: AsRef<Path>>(
@@ -25,6 +26,7 @@ pub trait ExcelExt {
 }
 
 /// Trait for Parquet IO operations
+#[allow(clippy::result_large_err)]
 pub trait ParquetExt {
     /// Write DataFrame to Parquet file
     fn to_parquet<P: AsRef<Path>>(

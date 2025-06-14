@@ -10,6 +10,9 @@ pub mod query;
 pub mod serialize;
 pub mod transform;
 pub mod view;
+pub mod window;
+pub mod enhanced_window;
+pub mod groupby_window;
 
 #[cfg(feature = "cuda")]
 pub mod gpu;
@@ -30,6 +33,15 @@ pub use plotting::{
 };
 pub use query::{QueryExt, QueryEngine, QueryContext, LiteralValue};
 pub use transform::{MeltOptions, StackOptions, TransformExt, UnstackOptions};
+pub use window::DataFrameWindowExt;
+pub use enhanced_window::{
+    DataFrameWindowExt as EnhancedDataFrameWindowExt, DataFrameRolling, DataFrameExpanding, 
+    DataFrameEWM, DataFrameRollingOps, DataFrameExpandingOps, DataFrameEWMOps, DataFrameTimeRolling
+};
+pub use groupby_window::{
+    GroupWiseWindowExt, GroupWiseRolling, GroupWiseExpanding, GroupWiseEWM, GroupWiseTimeRolling,
+    GroupWiseRollingOps, GroupWiseExpandingOps, GroupWiseEWMOps, GroupWiseTimeRollingOps
+};
 
 // Optional feature re-exports
 #[cfg(feature = "cuda")]

@@ -1,5 +1,7 @@
 //! Basic tests for machine learning functionality
 
+#![allow(clippy::result_large_err)]
+
 #[cfg(test)]
 mod tests {
     use pandrs::column::ColumnTrait;

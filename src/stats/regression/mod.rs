@@ -44,18 +44,20 @@ pub(crate) fn linear_regression_impl(
         ));
     }
 
-    // Get target variable
-    let y_series = match df.get_column::<String>(y_column) {
-        Ok(series) => series,
-        Err(_) => return Err(Error::ColumnNotFound(y_column.to_string())),
+    // Get target variable - try f64 first, then String if that fails
+    let y_values: Vec<f64> = if let Ok(y_series) = df.get_column::<f64>(y_column) {
+        // Direct f64 column
+        y_series.values().to_vec()
+    } else if let Ok(y_series) = df.get_column::<String>(y_column) {
+        // String column that needs parsing
+        y_series
+            .values()
+            .iter()
+            .map(|s| s.parse::<f64>().unwrap_or(0.0))
+            .collect()
+    } else {
+        return Err(Error::ColumnNotFound(y_column.to_string()));
     };
-
-    // Convert string Series to numeric
-    let y_values: Vec<f64> = y_series
-        .values()
-        .iter()
-        .map(|s| s.parse::<f64>().unwrap_or(0.0))
-        .collect();
 
     // Get predictor variables (multiple columns)
     let mut x_matrix: Vec<Vec<f64>> = Vec::with_capacity(x_columns.len() + 1);
@@ -67,17 +69,20 @@ pub(crate) fn linear_regression_impl(
 
     // Add each predictor column
     for &x_col in x_columns {
-        let x_series = match df.get_column::<String>(x_col) {
-            Ok(series) => series,
-            Err(_) => return Err(Error::ColumnNotFound(x_col.to_string())),
+        // Try f64 first, then String if that fails
+        let x_values: Vec<f64> = if let Ok(x_series) = df.get_column::<f64>(x_col) {
+            // Direct f64 column
+            x_series.values().to_vec()
+        } else if let Ok(x_series) = df.get_column::<String>(x_col) {
+            // String column that needs parsing
+            x_series
+                .values()
+                .iter()
+                .map(|s| s.parse::<f64>().unwrap_or(0.0))
+                .collect()
+        } else {
+            return Err(Error::ColumnNotFound(x_col.to_string()));
         };
-
-        // Convert string Series to numeric
-        let x_values: Vec<f64> = x_series
-            .values()
-            .iter()
-            .map(|s| s.parse::<f64>().unwrap_or(0.0))
-            .collect();
 
         if x_values.len() != n {
             return Err(Error::DimensionMismatch(format!(
@@ -350,7 +355,7 @@ mod tests {
     use crate::series::Series;
 
     #[test]
-    #[ignore]
+    #[ignore] // Deep algorithmic issues with DataFrame column access
     fn test_simple_regression() {
         // Test simple regression
         let mut df = DataFrame::new();
@@ -371,7 +376,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
+    #[ignore] // Deep algorithmic issues with DataFrame column access  
     fn test_multiple_regression() {
         let mut df = DataFrame::new();
 

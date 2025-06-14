@@ -1,5 +1,4 @@
-use pandrs::dataframe::apply::ApplyExt;
-use pandrs::dataframe::DataFrame;
+use pandrs::dataframe::{DataFrame, DataFrameWindowExt};
 use pandrs::error::Result;
 use pandrs::series::Series;
 

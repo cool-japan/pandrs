@@ -1,7 +1,6 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId};
 use pandrs::*;
 use std::collections::HashMap;
-use std::time::Instant;
 
 /// Comprehensive benchmarking suite for PandRS Alpha.4
 /// 
@@ -19,13 +18,13 @@ fn create_test_dataframe(size: usize) -> DataFrame {
     let values: Vec<f64> = (0..size).map(|i| (i as f64) * 1.5).collect();
     
     df.add_column("id".to_string(), 
-        pandrs::series::Series::from_vec(ids, Some("id".to_string())).unwrap()).unwrap();
+        pandrs::series::Series::new(ids, Some("id".to_string())).unwrap()).unwrap();
     df.add_column("name".to_string(), 
-        pandrs::series::Series::from_vec(names, Some("name".to_string())).unwrap()).unwrap();
+        pandrs::series::Series::new(names, Some("name".to_string())).unwrap()).unwrap();
     df.add_column("category".to_string(), 
-        pandrs::series::Series::from_vec(categories, Some("category".to_string())).unwrap()).unwrap();
+        pandrs::series::Series::new(categories, Some("category".to_string())).unwrap()).unwrap();
     df.add_column("value".to_string(), 
-        pandrs::series::Series::from_vec(values, Some("value".to_string())).unwrap()).unwrap();
+        pandrs::series::Series::new(values, Some("value".to_string())).unwrap()).unwrap();
         
     df
 }
@@ -236,13 +235,13 @@ fn bench_series_operations(c: &mut Criterion) {
         // Benchmark series creation
         group.bench_with_input(BenchmarkId::new("series_creation", size), &data, |b, data| {
             b.iter(|| {
-                black_box(pandrs::series::Series::from_vec(data.clone(), Some("test".to_string())).unwrap())
+                black_box(pandrs::series::Series::new(data.clone(), Some("test".to_string())).unwrap())
             })
         });
         
         // Benchmark series name operations (Alpha.4 feature)
         group.bench_with_input(BenchmarkId::new("series_name_operations", size), &data, |b, data| {
-            let mut series = pandrs::series::Series::from_vec(data.clone(), None).unwrap();
+            let mut series = pandrs::series::Series::new(data.clone(), None).unwrap();
             b.iter(|| {
                 series.set_name("test_name".to_string());
                 black_box(series.name())
@@ -252,7 +251,7 @@ fn bench_series_operations(c: &mut Criterion) {
         // Benchmark series with_name (Alpha.4 fluent interface)
         group.bench_with_input(BenchmarkId::new("series_with_name", size), &data, |b, data| {
             b.iter(|| {
-                let series = pandrs::series::Series::from_vec(data.clone(), None).unwrap()
+                let series = pandrs::series::Series::new(data.clone(), None).unwrap()
                     .with_name("fluent_name".to_string());
                 black_box(series)
             })
@@ -332,10 +331,10 @@ fn bench_type_conversion(c: &mut Criterion) {
     
     for size in [1_000, 10_000, 100_000].iter() {
         let int_data: Vec<i32> = (0..*size).map(|i| i as i32).collect();
-        let series = pandrs::series::Series::from_vec(int_data, Some("test".to_string())).unwrap();
+        let series = pandrs::series::Series::new(int_data, Some("test".to_string())).unwrap();
         
         // Alpha.4 enhanced type conversion
-        group.bench_with_input(BenchmarkId::new("to_string_series", size), &series, |b, series| {
+        group.bench_with_input(BenchmarkId::new("to_string_series", size), &series, |b, series: &pandrs::series::Series<i32>| {
             b.iter(|| {
                 black_box(series.to_string_series().unwrap())
             })
@@ -349,7 +348,7 @@ fn bench_type_conversion(c: &mut Criterion) {
 fn bench_error_handling(c: &mut Criterion) {
     let mut group = c.benchmark_group("Error Handling");
     
-    let df = create_test_dataframe(1000);
+    let mut df = create_test_dataframe(1000);
     
     // Test error handling performance for invalid operations
     group.bench_function("invalid_column_rename", |b| {

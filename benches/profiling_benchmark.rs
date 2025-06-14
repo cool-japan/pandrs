@@ -7,6 +7,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 /// Memory tracking allocator for profiling
+#[allow(dead_code)]
 struct TrackingAllocator;
 
 static ALLOCATED: AtomicUsize = AtomicUsize::new(0);
@@ -306,7 +307,7 @@ fn profile_io_operations(c: &mut Criterion) {
         group.bench_with_input(
             BenchmarkId::new("csv_write", size),
             &df,
-            |b, df| {
+            |b, _df| {
                 b.iter_custom(|iters| {
                     ProfilingMetrics::reset_memory_counters();
                     let start = Instant::now();
@@ -337,11 +338,11 @@ fn profile_io_operations(c: &mut Criterion) {
         group.bench_with_input(
             BenchmarkId::new("parquet_write", size),
             &df,
-            |b, df| {
+            |b, _df| {
                 b.iter_custom(|iters| {
                     let start = Instant::now();
                     
-                    for i in 0..iters {
+                    for _i in 0..iters {
                         #[cfg(feature = "parquet")]
                         {
                             use pandrs::io::{write_parquet, ParquetCompression};

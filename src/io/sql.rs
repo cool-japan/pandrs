@@ -1525,3 +1525,601 @@ impl rusqlite::ToSql for SqlValue {
         }
     }
 }
+
+/// Enhanced database connection pool manager with async support
+pub struct AsyncDatabasePool {
+    /// Connection pool
+    #[cfg(feature = "sql")]
+    pool: AnyPool,
+    /// Pool configuration
+    config: PoolConfig,
+    /// Connection statistics
+    stats: ConnectionStats,
+}
+
+/// Connection pool statistics
+#[derive(Debug, Clone, Default)]
+pub struct ConnectionStats {
+    /// Total connections created
+    pub total_connections: u64,
+    /// Active connections
+    pub active_connections: u32,
+    /// Idle connections
+    pub idle_connections: u32,
+    /// Total queries executed
+    pub total_queries: u64,
+    /// Average query duration (milliseconds)
+    pub avg_query_duration: f64,
+}
+
+impl AsyncDatabasePool {
+    /// Create a new async database pool
+    ///
+    /// # Arguments
+    ///
+    /// * `url` - Database connection URL
+    /// * `config` - Pool configuration
+    ///
+    /// # Returns
+    ///
+    /// * `Result<Self>` - New async pool or error
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use pandrs::io::{AsyncDatabasePool, PoolConfig};
+    /// use tokio;
+    ///
+    /// #[tokio::main]
+    /// async fn main() {
+    ///     let config = PoolConfig::default();
+    ///     let pool = AsyncDatabasePool::new("postgresql://user:pass@localhost/db", config).await.unwrap();
+    /// }
+    /// ```
+    #[cfg(feature = "sql")]
+    pub async fn new(url: &str, _config: PoolConfig) -> Result<Self> {
+        use sqlx::any::AnyPoolOptions;
+        
+        let pool = AnyPoolOptions::new()
+            .max_connections(_config.max_connections)
+            .min_connections(_config.min_connections)
+            .acquire_timeout(_config.connect_timeout)
+            .idle_timeout(_config.idle_timeout)
+            .connect(url)
+            .await
+            .map_err(|e| Error::IoError(format!("Failed to create async pool: {}", e)))?;
+        
+        Ok(Self {
+            pool,
+            config: _config,
+            stats: ConnectionStats::default(),
+        })
+    }
+
+    /// Execute async SQL query and return DataFrame
+    ///
+    /// # Arguments
+    ///
+    /// * `query` - SQL query to execute
+    /// * `params` - Optional query parameters
+    ///
+    /// # Returns
+    ///
+    /// * `Result<DataFrame>` - Query results as DataFrame
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use pandrs::io::{AsyncDatabasePool, SqlValue};
+    ///
+    /// async fn example(pool: &AsyncDatabasePool) {
+    ///     let params = vec![SqlValue::Integer(25)];
+    ///     let df = pool.query_async("SELECT * FROM users WHERE age > ?", Some(params)).await.unwrap();
+    /// }
+    /// ```
+    #[cfg(feature = "sql")]
+    pub async fn query_async(&self, query: &str, _params: Option<Vec<SqlValue>>) -> Result<DataFrame> {
+        use std::time::Instant;
+        
+        let _start_time = Instant::now();
+        
+        // Execute query
+        let rows = sqlx::query(query)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| Error::IoError(format!("Async query failed: {}", e)))?;
+        
+        let _query_duration = _start_time.elapsed().as_millis() as f64;
+        
+        // Convert rows to DataFrame
+        let df = convert_sqlx_rows_to_dataframe(&rows)?;
+        
+        // Update statistics (would need Arc<Mutex<ConnectionStats>> for thread safety)
+        
+        Ok(df)
+    }
+
+    /// Execute async bulk insert operation
+    ///
+    /// # Arguments
+    ///
+    /// * `table_name` - Target table name
+    /// * `df` - DataFrame to insert
+    /// * `options` - Write options
+    ///
+    /// # Returns
+    ///
+    /// * `Result<u64>` - Number of rows inserted
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use pandrs::io::{AsyncDatabasePool, SqlWriteOptions};
+    ///
+    /// async fn example(pool: &AsyncDatabasePool, df: &DataFrame) {
+    ///     let options = SqlWriteOptions::default();
+    ///     let rows_inserted = pool.bulk_insert_async("users", df, options).await.unwrap();
+    /// }
+    /// ```
+    #[cfg(feature = "sql")]
+    pub async fn bulk_insert_async(
+        &self, 
+        table_name: &str, 
+        df: &DataFrame, 
+        options: SqlWriteOptions
+    ) -> Result<u64> {
+        use sqlx::Executor;
+        
+        // Begin transaction for bulk insert
+        let mut tx = self.pool.begin()
+            .await
+            .map_err(|e| Error::IoError(format!("Failed to begin transaction: {}", e)))?;
+        
+        let chunk_size = options.chunksize.unwrap_or(10000);
+        let mut total_inserted = 0u64;
+        
+        // Process in chunks
+        for chunk_start in (0..df.row_count()).step_by(chunk_size) {
+            let chunk_end = std::cmp::min(chunk_start + chunk_size, df.row_count());
+            
+            // Generate bulk INSERT SQL for this chunk
+            let insert_sql = generate_bulk_insert_sql(table_name, df, chunk_start, chunk_end, &options)?;
+            
+            // Execute bulk insert
+            let result = tx.execute(sqlx::query(&insert_sql))
+                .await
+                .map_err(|e| Error::IoError(format!("Bulk insert failed: {}", e)))?;
+            
+            total_inserted += result.rows_affected();
+        }
+        
+        // Commit transaction
+        tx.commit()
+            .await
+            .map_err(|e| Error::IoError(format!("Failed to commit transaction: {}", e)))?;
+        
+        Ok(total_inserted)
+    }
+
+    /// Get connection pool statistics
+    pub fn get_stats(&self) -> &ConnectionStats {
+        &self.stats
+    }
+
+    /// Close the connection pool
+    #[cfg(feature = "sql")]
+    pub async fn close(self) {
+        self.pool.close().await;
+    }
+}
+
+/// Generate bulk INSERT SQL statement
+fn generate_bulk_insert_sql(
+    table_name: &str,
+    df: &DataFrame,
+    start_row: usize,
+    end_row: usize,
+    _options: &SqlWriteOptions,
+) -> Result<String> {
+    // Get column names
+    let columns: Vec<String> = df.column_names().iter().cloned().collect();
+    
+    // Build INSERT statement
+    let mut sql = format!("INSERT INTO {} (", table_name);
+    sql.push_str(&columns.join(", "));
+    sql.push_str(") VALUES ");
+    
+    // Add value placeholders (simplified implementation)
+    let value_rows: Vec<String> = (start_row..end_row)
+        .map(|_row_idx| {
+            let placeholders: Vec<String> = columns.iter()
+                .map(|_| "?".to_string())
+                .collect();
+            format!("({})", placeholders.join(", "))
+        })
+        .collect();
+    
+    sql.push_str(&value_rows.join(", "));
+    
+    Ok(sql)
+}
+
+/// Convert sqlx rows to DataFrame
+#[cfg(feature = "sql")]
+fn convert_sqlx_rows_to_dataframe(rows: &[sqlx::any::AnyRow]) -> Result<DataFrame> {
+    use sqlx::Row;
+    
+    if rows.is_empty() {
+        return Ok(DataFrame::new());
+    }
+    
+    let mut df = DataFrame::new();
+    
+    // Get column information from first row
+    let first_row = &rows[0];
+    let column_count = first_row.len();
+    
+    for col_idx in 0..column_count {
+        let column = first_row.column(col_idx);
+        let col_name = column.name().to_string();
+        
+        // Extract column data
+        let mut values = Vec::new();
+        for row in rows {
+            // Simplified value extraction - try to get as string
+            let value = match row.try_get::<String, _>(col_idx) {
+                Ok(s) => s,
+                Err(_) => "NULL".to_string(), // Fallback for non-string types
+            };
+            values.push(value);
+        }
+        
+        let series = Series::new(values, Some(col_name.clone()))?;
+        df.add_column(col_name, series)?;
+    }
+    
+    Ok(df)
+}
+
+/// Advanced database transaction manager
+pub struct TransactionManager {
+    /// Connection pool
+    #[cfg(feature = "sql")]
+    pool: AnyPool,
+    /// Transaction timeout
+    timeout: Duration,
+    /// Isolation level
+    isolation_level: IsolationLevel,
+}
+
+/// Transaction isolation levels
+#[derive(Debug, Clone)]
+pub enum IsolationLevel {
+    ReadUncommitted,
+    ReadCommitted,
+    RepeatableRead,
+    Serializable,
+}
+
+impl TransactionManager {
+    /// Create new transaction manager
+    #[cfg(feature = "sql")]
+    pub fn new(pool: AnyPool) -> Self {
+        Self {
+            pool,
+            timeout: Duration::from_secs(30),
+            isolation_level: IsolationLevel::ReadCommitted,
+        }
+    }
+
+    /// Execute multiple operations in a transaction
+    ///
+    /// # Arguments
+    ///
+    /// * `operations` - Vector of SQL operations to execute
+    ///
+    /// # Returns
+    ///
+    /// * `Result<Vec<DataFrame>>` - Results of each operation
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use pandrs::io::{TransactionManager, DatabaseOperation};
+    ///
+    /// async fn example(tx_manager: &TransactionManager) {
+    ///     let ops = vec![
+    ///         DatabaseOperation::Query("SELECT COUNT(*) FROM orders".to_string()),
+    ///         DatabaseOperation::Execute("UPDATE orders SET status = 'processed'".to_string()),
+    ///     ];
+    ///     let results = tx_manager.execute_transaction(ops).await.unwrap();
+    /// }
+    /// ```
+    #[cfg(feature = "sql")]
+    pub async fn execute_transaction(&self, operations: Vec<DatabaseOperation>) -> Result<Vec<Option<DataFrame>>> {
+        use sqlx::Executor;
+        
+        let mut tx = self.pool.begin()
+            .await
+            .map_err(|e| Error::IoError(format!("Failed to begin transaction: {}", e)))?;
+        
+        let mut results = Vec::new();
+        
+        for operation in operations {
+            match operation {
+                DatabaseOperation::Query(sql) => {
+                    let rows = sqlx::query(&sql)
+                        .fetch_all(&mut *tx)
+                        .await
+                        .map_err(|e| Error::IoError(format!("Transaction query failed: {}", e)))?;
+                    
+                    let df = convert_sqlx_rows_to_dataframe(&rows)?;
+                    results.push(Some(df));
+                }
+                DatabaseOperation::Execute(sql) => {
+                    tx.execute(sqlx::query(&sql))
+                        .await
+                        .map_err(|e| Error::IoError(format!("Transaction execute failed: {}", e)))?;
+                    results.push(None);
+                }
+            }
+        }
+        
+        tx.commit()
+            .await
+            .map_err(|e| Error::IoError(format!("Failed to commit transaction: {}", e)))?;
+        
+        Ok(results)
+    }
+}
+
+/// Database operation for transactions
+#[derive(Debug, Clone)]
+pub enum DatabaseOperation {
+    /// Query that returns results
+    Query(String),
+    /// Execute statement (no results)
+    Execute(String),
+}
+
+/// Database query builder for type-safe SQL generation
+pub struct QueryBuilder {
+    /// Table name
+    table: Option<String>,
+    /// SELECT columns
+    select_columns: Vec<String>,
+    /// WHERE conditions
+    where_conditions: Vec<String>,
+    /// JOIN clauses
+    joins: Vec<String>,
+    /// ORDER BY clauses
+    order_by: Vec<String>,
+    /// LIMIT clause
+    limit: Option<usize>,
+    /// OFFSET clause
+    offset: Option<usize>,
+}
+
+impl QueryBuilder {
+    /// Create new query builder
+    pub fn new() -> Self {
+        Self {
+            table: None,
+            select_columns: Vec::new(),
+            where_conditions: Vec::new(),
+            joins: Vec::new(),
+            order_by: Vec::new(),
+            limit: None,
+            offset: None,
+        }
+    }
+
+    /// Set table to query from
+    pub fn from(mut self, table: &str) -> Self {
+        self.table = Some(table.to_string());
+        self
+    }
+
+    /// Add SELECT column
+    pub fn select(mut self, column: &str) -> Self {
+        self.select_columns.push(column.to_string());
+        self
+    }
+
+    /// Add WHERE condition
+    pub fn where_clause(mut self, condition: &str) -> Self {
+        self.where_conditions.push(condition.to_string());
+        self
+    }
+
+    /// Add JOIN clause
+    pub fn join(mut self, join_clause: &str) -> Self {
+        self.joins.push(join_clause.to_string());
+        self
+    }
+
+    /// Add ORDER BY clause
+    pub fn order_by(mut self, column: &str, direction: &str) -> Self {
+        self.order_by.push(format!("{} {}", column, direction));
+        self
+    }
+
+    /// Set LIMIT
+    pub fn limit(mut self, limit: usize) -> Self {
+        self.limit = Some(limit);
+        self
+    }
+
+    /// Set OFFSET
+    pub fn offset(mut self, offset: usize) -> Self {
+        self.offset = Some(offset);
+        self
+    }
+
+    /// Build the SQL query
+    pub fn build(self) -> Result<String> {
+        let table = self.table.ok_or_else(|| Error::IoError("Table name is required".to_string()))?;
+        
+        let mut sql = String::new();
+        
+        // SELECT clause
+        if self.select_columns.is_empty() {
+            sql.push_str("SELECT *");
+        } else {
+            sql.push_str(&format!("SELECT {}", self.select_columns.join(", ")));
+        }
+        
+        // FROM clause
+        sql.push_str(&format!(" FROM {}", table));
+        
+        // JOIN clauses
+        for join in &self.joins {
+            sql.push_str(&format!(" {}", join));
+        }
+        
+        // WHERE clause
+        if !self.where_conditions.is_empty() {
+            sql.push_str(&format!(" WHERE {}", self.where_conditions.join(" AND ")));
+        }
+        
+        // ORDER BY clause
+        if !self.order_by.is_empty() {
+            sql.push_str(&format!(" ORDER BY {}", self.order_by.join(", ")));
+        }
+        
+        // LIMIT clause
+        if let Some(limit) = self.limit {
+            sql.push_str(&format!(" LIMIT {}", limit));
+        }
+        
+        // OFFSET clause
+        if let Some(offset) = self.offset {
+            sql.push_str(&format!(" OFFSET {}", offset));
+        }
+        
+        Ok(sql)
+    }
+}
+
+impl Default for QueryBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Database schema introspection utilities
+pub struct SchemaIntrospector {
+    /// Connection pool
+    #[cfg(feature = "sql")]
+    pool: AnyPool,
+}
+
+impl SchemaIntrospector {
+    /// Create new schema introspector
+    #[cfg(feature = "sql")]
+    pub fn new(pool: AnyPool) -> Self {
+        Self { pool }
+    }
+
+    /// Get all table names in the database
+    ///
+    /// # Returns
+    ///
+    /// * `Result<Vec<String>>` - List of table names
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use pandrs::io::SchemaIntrospector;
+    ///
+    /// async fn example(inspector: &SchemaIntrospector) {
+    ///     let tables = inspector.list_tables().await.unwrap();
+    ///     for table in tables {
+    ///         println!("Table: {}", table);
+    ///     }
+    /// }
+    /// ```
+    #[cfg(feature = "sql")]
+    pub async fn list_tables(&self) -> Result<Vec<String>> {
+        use sqlx::Row;
+        
+        let query = r#"
+            SELECT table_name 
+            FROM information_schema.tables 
+            WHERE table_schema = 'public'
+        "#;
+        
+        let rows = sqlx::query(query)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| Error::IoError(format!("Failed to list tables: {}", e)))?;
+        
+        let mut tables = Vec::new();
+        for row in rows {
+            let table_name: String = row.get(0);
+            tables.push(table_name);
+        }
+        
+        Ok(tables)
+    }
+
+    /// Get detailed schema information for a table
+    ///
+    /// # Arguments
+    ///
+    /// * `table_name` - Name of the table to inspect
+    ///
+    /// # Returns
+    ///
+    /// * `Result<TableSchema>` - Detailed table schema
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use pandrs::io::SchemaIntrospector;
+    ///
+    /// async fn example(inspector: &SchemaIntrospector) {
+    ///     let schema = inspector.describe_table("users").await.unwrap();
+    ///     println!("Table has {} columns", schema.columns.len());
+    /// }
+    /// ```
+    #[cfg(feature = "sql")]
+    pub async fn describe_table(&self, table_name: &str) -> Result<TableSchema> {
+        use sqlx::Row;
+        
+        let query = r#"
+            SELECT column_name, data_type, is_nullable, column_default
+            FROM information_schema.columns 
+            WHERE table_name = $1
+            ORDER BY ordinal_position
+        "#;
+        
+        let rows = sqlx::query(query)
+            .bind(table_name)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|e| Error::IoError(format!("Failed to describe table: {}", e)))?;
+        
+        let mut columns = Vec::new();
+        for row in rows {
+            let column_name: String = row.get(0);
+            let data_type: String = row.get(1);
+            let is_nullable: String = row.get(2);
+            let column_default: Option<String> = row.get(3);
+            
+            columns.push(ColumnDefinition {
+                name: column_name,
+                data_type,
+                nullable: is_nullable == "YES",
+                default_value: column_default,
+            });
+        }
+        
+        Ok(TableSchema {
+            name: table_name.to_string(),
+            columns,
+            primary_keys: Vec::new(), // Would need additional query
+            foreign_keys: Vec::new(), // Would need additional query
+        })
+    }
+}

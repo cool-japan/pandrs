@@ -1,3 +1,5 @@
+#![allow(clippy::result_large_err)]
+
 use pandrs::dataframe::base::DataFrame;
 use pandrs::dataframe::query::{QueryExt, QueryEngine, QueryContext, LiteralValue};
 use pandrs::series::base::Series;

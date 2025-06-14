@@ -3,6 +3,8 @@
 //! This module provides comprehensive tests to ensure all traits in the PandRS
 //! system work correctly together and maintain their contracts.
 
+#![allow(clippy::result_large_err)]
+
 use pandrs::core::error::{Error, Result};
 use pandrs::core::data_value::DataValue;
 use std::any::Any;
@@ -83,7 +85,7 @@ impl TraitComplianceTestSuite {
         
         // Create test data values
         let int_value = TestDataValue::new_int(42);
-        let float_value = TestDataValue::new_float(3.14);
+        let float_value = TestDataValue::new_float(std::f64::consts::PI);
         let string_value = TestDataValue::new_string("hello".to_string());
         let null_value = TestDataValue::new_null();
         

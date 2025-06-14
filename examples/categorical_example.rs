@@ -5,6 +5,7 @@ use pandrs::{DataFrame, Series};
 // For compatibility with the new API
 type StringCategorical = Categorical<String>;
 
+#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     println!("=== Example of Using Categorical Data Type ===\n");
 
@@ -13,7 +14,7 @@ fn main() -> Result<()> {
     // ===========================================================
 
     println!("--- Creating Basic Categorical Data ---");
-    let values = vec!["Tokyo", "Osaka", "Tokyo", "Nagoya", "Osaka", "Tokyo"];
+    let values = ["Tokyo", "Osaka", "Tokyo", "Nagoya", "Osaka", "Tokyo"];
     let values_str: Vec<String> = values.iter().map(|s| s.to_string()).collect();
 
     // Create categorical data (unique values are automatically extracted)
@@ -42,11 +43,11 @@ fn main() -> Result<()> {
     // ===========================================================
 
     println!("\n--- Creating with Explicit Category List ---");
-    let values2 = vec!["Red", "Blue", "Red"];
+    let values2 = ["Red", "Blue", "Red"];
     let values2_str: Vec<String> = values2.iter().map(|s| s.to_string()).collect();
 
     // Define all categories beforehand
-    let categories = vec!["Red", "Blue", "Green", "Yellow"];
+    let categories = ["Red", "Blue", "Green", "Yellow"];
     let categories_str: Vec<String> = categories.iter().map(|s| s.to_string()).collect();
 
     // Create ordered categorical data
@@ -68,21 +69,21 @@ fn main() -> Result<()> {
 
     // Base categorical data
     // Changed: Using false instead of None for the ordered parameter
-    let fruits = vec!["Apple", "Banana", "Apple", "Orange"];
+    let fruits = ["Apple", "Banana", "Apple", "Orange"];
     let fruits_str: Vec<String> = fruits.iter().map(|s| s.to_string()).collect();
     let mut fruit_cat = StringCategorical::new(fruits_str, None, false)?;
 
     println!("Original Categories: {:?}", fruit_cat.categories());
 
     // Add categories
-    let new_cats = vec!["Grape", "Strawberry"];
+    let new_cats = ["Grape", "Strawberry"];
     let new_cats_str: Vec<String> = new_cats.iter().map(|s| s.to_string()).collect();
     fruit_cat.add_categories(new_cats_str)?;
 
     println!("Categories after addition: {:?}", fruit_cat.categories());
 
     // Change category order
-    let reordered = vec!["Banana", "Strawberry", "Orange", "Apple", "Grape"];
+    let reordered = ["Banana", "Strawberry", "Orange", "Apple", "Grape"];
     let reordered_str: Vec<String> = reordered.iter().map(|s| s.to_string()).collect();
     fruit_cat.reorder_categories(reordered_str)?;
 
@@ -99,9 +100,9 @@ fn main() -> Result<()> {
     let mut df = DataFrame::new();
 
     // Add regular columns
-    let regions = vec!["Hokkaido", "Kanto", "Kansai", "Kyushu", "Kanto", "Kansai"];
+    let regions = ["Hokkaido", "Kanto", "Kansai", "Kyushu", "Kanto", "Kansai"];
     let regions_str: Vec<String> = regions.iter().map(|s| s.to_string()).collect();
-    let pop = vec!["Low", "High", "High", "Medium", "High", "High"];
+    let pop = ["Low", "High", "High", "Medium", "High", "High"];
     let pop_str: Vec<String> = pop.iter().map(|s| s.to_string()).collect();
 
     df.add_column(
@@ -124,7 +125,7 @@ fn main() -> Result<()> {
 
     // Create categorical data
     // Changed: Using boolean instead of Some(CategoricalOrder::Ordered)
-    let populations = vec!["Low", "Medium", "High"];
+    let populations = ["Low", "Medium", "High"];
     let populations_str: Vec<String> = populations.iter().map(|s| s.to_string()).collect();
     let pop_cat = StringCategorical::new(
         populations_str,
@@ -133,13 +134,13 @@ fn main() -> Result<()> {
     )?;
 
     // Region data
-    let regions = vec!["Hokkaido", "Kanto", "Kansai"];
+    let regions = ["Hokkaido", "Kanto", "Kansai"];
     let regions_str: Vec<String> = regions.iter().map(|s| s.to_string()).collect();
 
     // Create DataFrame from both categorical data
-    let categoricals = vec![("Population".to_string(), pop_cat)];
+    let categoricals = [("Population".to_string(), pop_cat)];
 
-    let mut df_cat = DataFrame::from_categoricals(categoricals)?;
+    let mut df_cat = DataFrame::from_categoricals(categoricals.to_vec())?;
 
     // Add region column
     df_cat.add_column(
@@ -167,21 +168,21 @@ fn main() -> Result<()> {
 
     // Create product and color data as separate categories
     // Changed: Using false instead of None for the ordered parameter
-    let products = vec!["A", "B", "C"];
+    let products = ["A", "B", "C"];
     let products_str: Vec<String> = products.iter().map(|s| s.to_string()).collect();
     let product_cat = StringCategorical::new(products_str, None, false)?;
 
-    let colors = vec!["Red", "Blue", "Green"];
+    let colors = ["Red", "Blue", "Green"];
     let colors_str: Vec<String> = colors.iter().map(|s| s.to_string()).collect();
     let color_cat = StringCategorical::new(colors_str, None, false)?;
 
     // Create a DataFrame containing both categories
-    let multi_categoricals = vec![
+    let multi_categoricals = [
         ("Product".to_string(), product_cat),
         ("Color".to_string(), color_cat),
     ];
 
-    let multi_df = DataFrame::from_categoricals(multi_categoricals)?;
+    let multi_df = DataFrame::from_categoricals(multi_categoricals.to_vec())?;
 
     println!("Multi-Categorical DataFrame:\n{:?}", multi_df);
     println!(
@@ -203,9 +204,9 @@ fn main() -> Result<()> {
     let mut df_simple = DataFrame::new();
 
     // Add product data
-    let products = vec!["A", "B", "C", "A", "B"];
+    let products = ["A", "B", "C", "A", "B"];
     let products_str: Vec<String> = products.iter().map(|s| s.to_string()).collect();
-    let sales = vec!["100", "150", "200", "120", "180"];
+    let sales = ["100", "150", "200", "120", "180"];
     let sales_str: Vec<String> = sales.iter().map(|s| s.to_string()).collect();
 
     df_simple.add_column(
@@ -229,7 +230,7 @@ fn main() -> Result<()> {
     // Create a simple categorical series
     // Changed: Using false instead of None for the ordered parameter
     let letter_cat = StringCategorical::new(
-        vec!["A".to_string(), "B".to_string(), "C".to_string()],
+        ["A".to_string(), "B".to_string(), "C".to_string()].to_vec(),
         None,
         false,
     )?;

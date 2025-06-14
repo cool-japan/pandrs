@@ -12,6 +12,7 @@ use pandrs::io::{
 #[cfg(feature = "excel")]
 use std::collections::HashMap;
 
+#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     #[cfg(not(feature = "excel"))]
     {

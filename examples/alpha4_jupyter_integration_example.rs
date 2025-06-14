@@ -17,6 +17,7 @@ use pandrs::core::error::Result;
 use std::collections::HashMap;
 use std::fs;
 
+#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     println!("📔 Jupyter Integration Example for PandRS Alpha 4");
     println!("=================================================\n");
@@ -208,6 +209,7 @@ fn main() -> Result<()> {
     Ok(())
 }
 
+#[allow(clippy::result_large_err)]
 fn create_sample_data() -> Result<DataFrame> {
     let mut data = HashMap::new();
     
@@ -239,11 +241,13 @@ fn create_sample_data() -> Result<DataFrame> {
     DataFrame::from_map(data, None)
 }
 
+#[allow(clippy::result_large_err)]
 fn create_sample_series() -> Result<Series<i32>> {
     let data = vec![10, 25, 15, 30, 20, 35, 18, 28];
     Series::new(data, Some("sales_count".to_string()))
 }
 
+#[allow(clippy::result_large_err)]
 fn create_large_sample_data() -> Result<DataFrame> {
     let mut data = HashMap::new();
     
@@ -274,6 +278,7 @@ fn create_large_sample_data() -> Result<DataFrame> {
     DataFrame::from_map(data, None)
 }
 
+#[allow(clippy::result_large_err)]
 fn create_jupyter_notebook_template(df: &DataFrame, series: &Series<i32>) -> Result<String> {
     let config = JupyterConfig::default();
     

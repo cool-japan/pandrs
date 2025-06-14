@@ -3,6 +3,7 @@ use pandrs::{DataFrame, Series};
 use pandrs::optimized::OptimizedDataFrame;
 use std::collections::HashMap;
 
+#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     println!("=== PandRS Basic Usage Example (Alpha 4) ===");
 

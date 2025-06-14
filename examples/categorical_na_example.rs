@@ -3,6 +3,7 @@ use pandrs::series::{CategoricalOrder, StringCategorical};
 use pandrs::{DataFrame, Series, NA};
 use std::path::Path;
 
+#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     println!("=== Example of Categorical Data with Missing Values ===\n");
 

@@ -6,12 +6,13 @@ use pandrs::{Column, Float64Column, OptimizedDataFrame, StringColumn};
 // Parsing helper function has been removed as it's not used
 
 #[test]
+#[allow(clippy::result_large_err)]
 fn test_optimized_window_operations() -> Result<()> {
     // Create time series data for testing
     let mut df = OptimizedDataFrame::new();
 
     // Create date column
-    let dates = vec![
+    let dates = [
         "2023-01-01",
         "2023-01-02",
         "2023-01-03",
@@ -58,6 +59,7 @@ fn test_optimized_window_operations() -> Result<()> {
 }
 
 #[test]
+#[allow(clippy::result_large_err)]
 fn test_optimized_cumulative_operations() -> Result<()> {
     // Test to simulate cumulative operations
     let mut df = OptimizedDataFrame::new();

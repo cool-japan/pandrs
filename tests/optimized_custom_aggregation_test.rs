@@ -1,3 +1,5 @@
+#![allow(clippy::result_large_err)]
+
 #[cfg(test)]
 mod optimized_custom_aggregation_tests {
     use pandrs::error::Result;

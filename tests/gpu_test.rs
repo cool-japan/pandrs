@@ -208,6 +208,6 @@ mod tests {
     fn test_gpu_dummy() {
         // Dummy test for when CUDA is not enabled
         println!("GPU tests are only enabled with CUDA feature");
-        assert!(true);
+        // Test passes - GPU feature not enabled
     }
 }
