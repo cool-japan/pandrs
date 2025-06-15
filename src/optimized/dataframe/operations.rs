@@ -14,7 +14,7 @@ use crate::column::{
 use crate::error::{Error, Result};
 use crate::index::{DataFrameIndex, Index, IndexTrait};
 
-use super::core::{OptimizedDataFrame, ColumnView};
+use super::core::{ColumnView, OptimizedDataFrame};
 
 // Import direct aggregation methods
 use crate::optimized::direct_aggregations::*;
@@ -220,7 +220,7 @@ impl OptimizedDataFrame {
 
         // Clear the existing column_indices and rebuild it with new names
         self.column_indices.clear();
-        
+
         // Update column_names and rebuild column_indices
         for (i, new_name) in names.into_iter().enumerate() {
             self.column_indices.insert(new_name.clone(), i);

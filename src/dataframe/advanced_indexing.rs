@@ -10,7 +10,7 @@
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 
-use chrono::{NaiveDateTime, Duration, NaiveDate, Datelike, Timelike, Utc, DateTime, FixedOffset};
+use chrono::{DateTime, Datelike, Duration, FixedOffset, NaiveDate, NaiveDateTime, Timelike, Utc};
 use chrono_tz::Tz;
 
 use crate::core::error::{Error, Result};
@@ -22,29 +22,33 @@ use crate::series::base::Series;
 pub trait Index: fmt::Debug + Clone {
     /// Get the length of the index
     fn len(&self) -> usize;
-    
+
     /// Check if the index is empty
     fn is_empty(&self) -> bool {
         self.len() == 0
     }
-    
+
     /// Get string representation of index values
     fn to_string_vec(&self) -> Vec<String>;
-    
+
     /// Get the name of the index
     fn name(&self) -> Option<&str>;
-    
+
     /// Set the name of the index
     fn set_name(&mut self, name: Option<String>);
-    
+
     /// Check if index contains duplicates
     fn has_duplicates(&self) -> bool;
-    
+
     /// Get unique values (returns same type)
-    fn unique(&self) -> Result<Self> where Self: Sized;
-    
+    fn unique(&self) -> Result<Self>
+    where
+        Self: Sized;
+
     /// Sort the index (returns same type)
-    fn sort(&self, ascending: bool) -> Result<(Self, Vec<usize>)> where Self: Sized;
+    fn sort(&self, ascending: bool) -> Result<(Self, Vec<usize>)>
+    where
+        Self: Sized;
 }
 
 /// Enum wrapper for different index types (for polymorphic usage)
@@ -66,12 +70,12 @@ impl IndexType {
             IndexType::Categorical(idx) => idx.len(),
         }
     }
-    
+
     /// Check if the index is empty
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
-    
+
     /// Get string representation of index values
     pub fn to_string_vec(&self) -> Vec<String> {
         match self {
@@ -81,7 +85,7 @@ impl IndexType {
             IndexType::Categorical(idx) => idx.to_string_vec(),
         }
     }
-    
+
     /// Get the name of the index
     pub fn name(&self) -> Option<&str> {
         match self {
@@ -91,7 +95,7 @@ impl IndexType {
             IndexType::Categorical(idx) => idx.name(),
         }
     }
-    
+
     /// Check if index contains duplicates
     pub fn has_duplicates(&self) -> bool {
         match self {
@@ -107,13 +111,13 @@ impl IndexType {
 pub trait IndexSetOps<T: Index> {
     /// Union of two indexes
     fn union(&self, other: &T) -> Result<IndexType>;
-    
+
     /// Intersection of two indexes
     fn intersection(&self, other: &T) -> Result<IndexType>;
-    
+
     /// Difference of two indexes (self - other)
     fn difference(&self, other: &T) -> Result<IndexType>;
-    
+
     /// Symmetric difference of two indexes
     fn symmetric_difference(&self, other: &T) -> Result<IndexType>;
 }
@@ -141,13 +145,9 @@ impl DatetimeIndex {
             frequency: None,
         }
     }
-    
+
     /// Create a datetime index with timezone
-    pub fn with_timezone(
-        values: Vec<NaiveDateTime>,
-        name: Option<String>,
-        timezone: Tz,
-    ) -> Self {
+    pub fn with_timezone(values: Vec<NaiveDateTime>, name: Option<String>, timezone: Tz) -> Self {
         Self {
             values,
             name,
@@ -155,7 +155,7 @@ impl DatetimeIndex {
             frequency: None,
         }
     }
-    
+
     /// Create a datetime range with frequency
     pub fn date_range(
         start: NaiveDateTime,
@@ -166,7 +166,7 @@ impl DatetimeIndex {
     ) -> Result<Self> {
         let freq_duration = Self::parse_frequency(frequency)?;
         let mut values = Vec::new();
-        
+
         match (end, periods) {
             (Some(end_date), None) => {
                 // Generate range from start to end
@@ -201,7 +201,7 @@ impl DatetimeIndex {
                 ));
             }
         }
-        
+
         Ok(Self {
             values,
             name,
@@ -209,7 +209,7 @@ impl DatetimeIndex {
             frequency: Some(frequency.to_string()),
         })
     }
-    
+
     /// Parse frequency string to Duration
     fn parse_frequency(freq: &str) -> Result<Duration> {
         let freq = freq.to_lowercase();
@@ -227,62 +227,84 @@ impl DatetimeIndex {
                     if let Ok(num) = num_str.parse::<i64>() {
                         Ok(Duration::minutes(num))
                     } else {
-                        Err(Error::InvalidValue(format!("Invalid frequency format: {}", freq)))
+                        Err(Error::InvalidValue(format!(
+                            "Invalid frequency format: {}",
+                            freq
+                        )))
                     }
                 } else if freq.ends_with("h") || freq.ends_with("hour") || freq.ends_with("hours") {
-                    let num_str = freq.trim_end_matches("h").trim_end_matches("our").trim_end_matches("s");
+                    let num_str = freq
+                        .trim_end_matches("h")
+                        .trim_end_matches("our")
+                        .trim_end_matches("s");
                     if let Ok(num) = num_str.parse::<i64>() {
                         Ok(Duration::hours(num))
                     } else {
-                        Err(Error::InvalidValue(format!("Invalid frequency format: {}", freq)))
+                        Err(Error::InvalidValue(format!(
+                            "Invalid frequency format: {}",
+                            freq
+                        )))
                     }
                 } else if freq.ends_with("d") || freq.ends_with("day") || freq.ends_with("days") {
-                    let num_str = freq.trim_end_matches("d").trim_end_matches("ay").trim_end_matches("s");
+                    let num_str = freq
+                        .trim_end_matches("d")
+                        .trim_end_matches("ay")
+                        .trim_end_matches("s");
                     if let Ok(num) = num_str.parse::<i64>() {
                         Ok(Duration::days(num))
                     } else {
-                        Err(Error::InvalidValue(format!("Invalid frequency format: {}", freq)))
+                        Err(Error::InvalidValue(format!(
+                            "Invalid frequency format: {}",
+                            freq
+                        )))
                     }
                 } else {
-                    Err(Error::InvalidValue(format!("Invalid frequency format: {}", freq)))
+                    Err(Error::InvalidValue(format!(
+                        "Invalid frequency format: {}",
+                        freq
+                    )))
                 }
             }
         }
     }
-    
+
     /// Get year component
     pub fn year(&self) -> Vec<i32> {
         self.values.iter().map(|dt| dt.year()).collect()
     }
-    
+
     /// Get month component
     pub fn month(&self) -> Vec<u32> {
         self.values.iter().map(|dt| dt.month()).collect()
     }
-    
+
     /// Get day component
     pub fn day(&self) -> Vec<u32> {
         self.values.iter().map(|dt| dt.day()).collect()
     }
-    
+
     /// Get hour component
     pub fn hour(&self) -> Vec<u32> {
         self.values.iter().map(|dt| dt.hour()).collect()
     }
-    
+
     /// Get minute component
     pub fn minute(&self) -> Vec<u32> {
         self.values.iter().map(|dt| dt.minute()).collect()
     }
-    
+
     /// Get weekday component (0=Monday, 6=Sunday)
     pub fn weekday(&self) -> Vec<u32> {
-        self.values.iter().map(|dt| dt.weekday().num_days_from_monday()).collect()
+        self.values
+            .iter()
+            .map(|dt| dt.weekday().num_days_from_monday())
+            .collect()
     }
-    
+
     /// Filter by date range
     pub fn filter_range(&self, start: NaiveDateTime, end: NaiveDateTime) -> Result<Vec<usize>> {
-        Ok(self.values
+        Ok(self
+            .values
             .iter()
             .enumerate()
             .filter_map(|(i, dt)| {
@@ -294,19 +316,19 @@ impl DatetimeIndex {
             })
             .collect())
     }
-    
+
     /// Resample to different frequency
     pub fn resample(&self, frequency: &str) -> Result<Vec<Vec<usize>>> {
         let freq_duration = Self::parse_frequency(frequency)?;
         let mut groups = Vec::new();
-        
+
         if self.values.is_empty() {
             return Ok(groups);
         }
-        
+
         let mut current_group = Vec::new();
         let mut group_start = self.values[0];
-        
+
         for (i, dt) in self.values.iter().enumerate() {
             if *dt >= group_start + freq_duration {
                 if !current_group.is_empty() {
@@ -317,11 +339,11 @@ impl DatetimeIndex {
             }
             current_group.push(i);
         }
-        
+
         if !current_group.is_empty() {
             groups.push(current_group);
         }
-        
+
         Ok(groups)
     }
 }
@@ -330,47 +352,47 @@ impl Index for DatetimeIndex {
     fn len(&self) -> usize {
         self.values.len()
     }
-    
+
     fn to_string_vec(&self) -> Vec<String> {
         self.values
             .iter()
             .map(|dt| dt.format("%Y-%m-%d %H:%M:%S").to_string())
             .collect()
     }
-    
+
     fn name(&self) -> Option<&str> {
         self.name.as_deref()
     }
-    
+
     fn set_name(&mut self, name: Option<String>) {
         self.name = name;
     }
-    
+
     fn has_duplicates(&self) -> bool {
         let mut seen = HashSet::new();
         self.values.iter().any(|dt| !seen.insert(dt))
     }
-    
+
     fn unique(&self) -> Result<Self> {
         let mut unique_values: Vec<NaiveDateTime> = self.values.clone();
         unique_values.sort();
         unique_values.dedup();
-        
+
         Ok(DatetimeIndex::new(unique_values, self.name.clone()))
     }
-    
+
     fn sort(&self, ascending: bool) -> Result<(Self, Vec<usize>)> {
         let mut indices: Vec<usize> = (0..self.values.len()).collect();
-        
+
         if ascending {
             indices.sort_by(|&a, &b| self.values[a].cmp(&self.values[b]));
         } else {
             indices.sort_by(|&a, &b| self.values[b].cmp(&self.values[a]));
         }
-        
+
         let sorted_values: Vec<NaiveDateTime> = indices.iter().map(|&i| self.values[i]).collect();
         let sorted_index = DatetimeIndex::new(sorted_values, self.name.clone());
-        
+
         Ok((sorted_index, indices))
     }
 }
@@ -417,12 +439,12 @@ impl Period {
     pub fn new(start: NaiveDate, end: NaiveDate, label: String) -> Self {
         Self { start, end, label }
     }
-    
+
     /// Check if a date falls within this period
     pub fn contains(&self, date: NaiveDate) -> bool {
         date >= self.start && date <= self.end
     }
-    
+
     /// Get period duration in days
     pub fn duration_days(&self) -> i64 {
         (self.end - self.start).num_days() + 1
@@ -438,7 +460,7 @@ impl PeriodIndex {
             frequency,
         }
     }
-    
+
     /// Create period range
     pub fn period_range(
         start: NaiveDate,
@@ -448,7 +470,7 @@ impl PeriodIndex {
     ) -> Result<Self> {
         let mut periods = Vec::new();
         let mut current = start;
-        
+
         while current <= end {
             let (period_end, label) = match frequency {
                 PeriodFrequency::Annual => {
@@ -464,50 +486,53 @@ impl PeriodIndex {
                     let quarter = ((current.month() - 1) / 3) + 1;
                     let quarter_start_month = ((quarter - 1) * 3) + 1;
                     let quarter_end_month = quarter * 3;
-                    
-                    let period_end = NaiveDate::from_ymd_opt(year, quarter_end_month, 
+
+                    let period_end = NaiveDate::from_ymd_opt(
+                        year,
+                        quarter_end_month,
                         match quarter_end_month {
                             3 => 31,
                             6 => 30,
                             9 => 30,
                             12 => 31,
                             _ => return Err(Error::InvalidValue("Invalid quarter".to_string())),
-                        })
-                        .ok_or_else(|| Error::InvalidValue("Invalid quarter end date".to_string()))?;
-                    
+                        },
+                    )
+                    .ok_or_else(|| Error::InvalidValue("Invalid quarter end date".to_string()))?;
+
                     (period_end, format!("{}-Q{}", year, quarter))
                 }
                 PeriodFrequency::Monthly => {
                     let year = current.year();
                     let month = current.month();
-                    
+
                     // Get last day of month
                     let next_month = if month == 12 { 1 } else { month + 1 };
                     let next_year = if month == 12 { year + 1 } else { year };
                     let first_of_next = NaiveDate::from_ymd_opt(next_year, next_month, 1)
                         .ok_or_else(|| Error::InvalidValue("Invalid next month".to_string()))?;
-                    let period_end = first_of_next.pred_opt()
+                    let period_end = first_of_next
+                        .pred_opt()
                         .ok_or_else(|| Error::InvalidValue("Invalid month end".to_string()))?;
-                    
+
                     (period_end, format!("{}-{:02}", year, month))
                 }
                 PeriodFrequency::Weekly => {
                     let period_end = current + Duration::days(6);
-                    (period_end.min(end), format!("{}-W{:02}", current.year(), current.iso_week().week()))
+                    (
+                        period_end.min(end),
+                        format!("{}-W{:02}", current.year(), current.iso_week().week()),
+                    )
                 }
-                PeriodFrequency::Daily => {
-                    (current, current.format("%Y-%m-%d").to_string())
-                }
+                PeriodFrequency::Daily => (current, current.format("%Y-%m-%d").to_string()),
             };
-            
+
             periods.push(Period::new(current, period_end, label));
-            
+
             // Move to next period
             current = match frequency {
-                PeriodFrequency::Annual => {
-                    NaiveDate::from_ymd_opt(current.year() + 1, 1, 1)
-                        .ok_or_else(|| Error::InvalidValue("Invalid next year".to_string()))?
-                }
+                PeriodFrequency::Annual => NaiveDate::from_ymd_opt(current.year() + 1, 1, 1)
+                    .ok_or_else(|| Error::InvalidValue("Invalid next year".to_string()))?,
                 PeriodFrequency::Quarterly => {
                     let quarter = ((current.month() - 1) / 3) + 1;
                     if quarter == 4 {
@@ -517,41 +542,41 @@ impl PeriodIndex {
                     }
                     .ok_or_else(|| Error::InvalidValue("Invalid next quarter".to_string()))?
                 }
-                PeriodFrequency::Monthly => {
-                    if current.month() == 12 {
-                        NaiveDate::from_ymd_opt(current.year() + 1, 1, 1)
-                    } else {
-                        NaiveDate::from_ymd_opt(current.year(), current.month() + 1, 1)
-                    }
-                    .ok_or_else(|| Error::InvalidValue("Invalid next month".to_string()))?
+                PeriodFrequency::Monthly => if current.month() == 12 {
+                    NaiveDate::from_ymd_opt(current.year() + 1, 1, 1)
+                } else {
+                    NaiveDate::from_ymd_opt(current.year(), current.month() + 1, 1)
                 }
+                .ok_or_else(|| Error::InvalidValue("Invalid next month".to_string()))?,
                 PeriodFrequency::Weekly => current + Duration::days(7),
                 PeriodFrequency::Daily => current + Duration::days(1),
             };
-            
+
             if current > end {
                 break;
             }
         }
-        
+
         Ok(Self::new(periods, frequency, name))
     }
-    
+
     /// Find periods containing a specific date
     pub fn find_periods_containing(&self, date: NaiveDate) -> Vec<usize> {
         self.periods
             .iter()
             .enumerate()
-            .filter_map(|(i, period)| {
-                if period.contains(date) {
-                    Some(i)
-                } else {
-                    None
-                }
-            })
+            .filter_map(
+                |(i, period)| {
+                    if period.contains(date) {
+                        Some(i)
+                    } else {
+                        None
+                    }
+                },
+            )
             .collect()
     }
-    
+
     /// Get period labels
     pub fn labels(&self) -> Vec<&str> {
         self.periods.iter().map(|p| p.label.as_str()).collect()
@@ -562,44 +587,50 @@ impl Index for PeriodIndex {
     fn len(&self) -> usize {
         self.periods.len()
     }
-    
+
     fn to_string_vec(&self) -> Vec<String> {
         self.periods.iter().map(|p| p.label.clone()).collect()
     }
-    
+
     fn name(&self) -> Option<&str> {
         self.name.as_deref()
     }
-    
+
     fn set_name(&mut self, name: Option<String>) {
         self.name = name;
     }
-    
+
     fn has_duplicates(&self) -> bool {
         let mut seen = HashSet::new();
         self.periods.iter().any(|p| !seen.insert(&p.label))
     }
-    
+
     fn unique(&self) -> Result<Self> {
         let mut unique_periods: Vec<Period> = self.periods.clone();
         unique_periods.sort_by(|a, b| a.label.cmp(&b.label));
         unique_periods.dedup_by(|a, b| a.label == b.label);
-        
-        Ok(PeriodIndex::new(unique_periods, self.frequency.clone(), self.name.clone()))
+
+        Ok(PeriodIndex::new(
+            unique_periods,
+            self.frequency.clone(),
+            self.name.clone(),
+        ))
     }
-    
+
     fn sort(&self, ascending: bool) -> Result<(Self, Vec<usize>)> {
         let mut indices: Vec<usize> = (0..self.periods.len()).collect();
-        
+
         if ascending {
             indices.sort_by(|&a, &b| self.periods[a].start.cmp(&self.periods[b].start));
         } else {
             indices.sort_by(|&a, &b| self.periods[b].start.cmp(&self.periods[a].start));
         }
-        
-        let sorted_periods: Vec<Period> = indices.iter().map(|&i| self.periods[i].clone()).collect();
-        let sorted_index = PeriodIndex::new(sorted_periods, self.frequency.clone(), self.name.clone());
-        
+
+        let sorted_periods: Vec<Period> =
+            indices.iter().map(|&i| self.periods[i].clone()).collect();
+        let sorted_index =
+            PeriodIndex::new(sorted_periods, self.frequency.clone(), self.name.clone());
+
         Ok((sorted_index, indices))
     }
 }
@@ -645,12 +676,12 @@ impl Interval {
         let label = format!("({}, {})", left, right);
         Self { left, right, label }
     }
-    
+
     /// Create interval with custom label
     pub fn with_label(left: f64, right: f64, label: String) -> Self {
         Self { left, right, label }
     }
-    
+
     /// Check if a value falls within this interval
     pub fn contains(&self, value: f64, closed: &IntervalClosed) -> bool {
         match closed {
@@ -660,12 +691,12 @@ impl Interval {
             IntervalClosed::Neither => value > self.left && value < self.right,
         }
     }
-    
+
     /// Get interval width
     pub fn width(&self) -> f64 {
         self.right - self.left
     }
-    
+
     /// Get interval midpoint
     pub fn midpoint(&self) -> f64 {
         (self.left + self.right) / 2.0
@@ -681,24 +712,30 @@ impl IntervalIndex {
             closed,
         }
     }
-    
+
     /// Create interval index from breaks
-    pub fn from_breaks(breaks: Vec<f64>, closed: IntervalClosed, name: Option<String>) -> Result<Self> {
+    pub fn from_breaks(
+        breaks: Vec<f64>,
+        closed: IntervalClosed,
+        name: Option<String>,
+    ) -> Result<Self> {
         if breaks.len() < 2 {
-            return Err(Error::InvalidValue("At least 2 breaks required".to_string()));
+            return Err(Error::InvalidValue(
+                "At least 2 breaks required".to_string(),
+            ));
         }
-        
+
         let mut sorted_breaks = breaks;
         sorted_breaks.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-        
+
         let intervals: Vec<Interval> = sorted_breaks
             .windows(2)
             .map(|window| Interval::new(window[0], window[1]))
             .collect();
-        
+
         Ok(Self::new(intervals, closed, name))
     }
-    
+
     /// Create equal-width bins
     pub fn cut(
         values: &[f64],
@@ -709,27 +746,27 @@ impl IntervalIndex {
         if values.is_empty() {
             return Err(Error::InvalidValue("Cannot cut empty values".to_string()));
         }
-        
+
         let min_val = values.iter().fold(f64::INFINITY, |a, &b| a.min(b));
         let max_val = values.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b));
-        
+
         if min_val == max_val {
             return Err(Error::InvalidValue("All values are identical".to_string()));
         }
-        
+
         let width = (max_val - min_val) / bins as f64;
         let mut breaks = Vec::with_capacity(bins + 1);
-        
+
         for i in 0..=bins {
             breaks.push(min_val + (i as f64 * width));
         }
-        
+
         // Ensure the last break includes the maximum value
         breaks[bins] = max_val + f64::EPSILON;
-        
+
         Self::from_breaks(breaks, closed, name)
     }
-    
+
     /// Create quantile-based bins
     pub fn qcut(
         values: &[f64],
@@ -740,36 +777,40 @@ impl IntervalIndex {
         if values.is_empty() {
             return Err(Error::InvalidValue("Cannot qcut empty values".to_string()));
         }
-        
+
         let mut sorted_values = values.to_vec();
         sorted_values.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-        
+
         let mut breaks = Vec::with_capacity(bins + 1);
         breaks.push(sorted_values[0]);
-        
+
         for i in 1..bins {
             let index = (i as f64 / bins as f64 * sorted_values.len() as f64) as usize;
             let clamped_index = index.min(sorted_values.len() - 1);
             breaks.push(sorted_values[clamped_index]);
         }
-        
+
         breaks.push(sorted_values[sorted_values.len() - 1] + f64::EPSILON);
-        
+
         // Remove duplicates while preserving order
         let mut unique_breaks = Vec::new();
         for &brk in &breaks {
-            if unique_breaks.is_empty() || (brk - unique_breaks[unique_breaks.len() - 1] as f64).abs() > f64::EPSILON {
+            if unique_breaks.is_empty()
+                || (brk - unique_breaks[unique_breaks.len() - 1] as f64).abs() > f64::EPSILON
+            {
                 unique_breaks.push(brk);
             }
         }
-        
+
         if unique_breaks.len() < 2 {
-            return Err(Error::InvalidValue("Not enough unique values for quantile bins".to_string()));
+            return Err(Error::InvalidValue(
+                "Not enough unique values for quantile bins".to_string(),
+            ));
         }
-        
+
         Self::from_breaks(unique_breaks, closed, name)
     }
-    
+
     /// Find intervals containing a specific value
     pub fn find_intervals_containing(&self, value: f64) -> Vec<usize> {
         self.intervals
@@ -784,17 +825,17 @@ impl IntervalIndex {
             })
             .collect()
     }
-    
+
     /// Get interval labels
     pub fn labels(&self) -> Vec<&str> {
         self.intervals.iter().map(|i| i.label.as_str()).collect()
     }
-    
+
     /// Get interval midpoints
     pub fn midpoints(&self) -> Vec<f64> {
         self.intervals.iter().map(|i| i.midpoint()).collect()
     }
-    
+
     /// Get interval widths
     pub fn widths(&self) -> Vec<f64> {
         self.intervals.iter().map(|i| i.width()).collect()
@@ -805,50 +846,64 @@ impl Index for IntervalIndex {
     fn len(&self) -> usize {
         self.intervals.len()
     }
-    
+
     fn to_string_vec(&self) -> Vec<String> {
         self.intervals.iter().map(|i| i.label.clone()).collect()
     }
-    
+
     fn name(&self) -> Option<&str> {
         self.name.as_deref()
     }
-    
+
     fn set_name(&mut self, name: Option<String>) {
         self.name = name;
     }
-    
+
     fn has_duplicates(&self) -> bool {
         let mut seen = HashSet::new();
         self.intervals.iter().any(|i| !seen.insert(&i.label))
     }
-    
+
     fn unique(&self) -> Result<Self> {
         let mut unique_intervals: Vec<Interval> = self.intervals.clone();
-        unique_intervals.sort_by(|a, b| a.left.partial_cmp(&b.left).unwrap_or(std::cmp::Ordering::Equal));
+        unique_intervals.sort_by(|a, b| {
+            a.left
+                .partial_cmp(&b.left)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         unique_intervals.dedup_by(|a, b| a.label == b.label);
-        
-        Ok(IntervalIndex::new(unique_intervals, self.closed.clone(), self.name.clone()))
+
+        Ok(IntervalIndex::new(
+            unique_intervals,
+            self.closed.clone(),
+            self.name.clone(),
+        ))
     }
-    
+
     fn sort(&self, ascending: bool) -> Result<(Self, Vec<usize>)> {
         let mut indices: Vec<usize> = (0..self.intervals.len()).collect();
-        
+
         if ascending {
             indices.sort_by(|&a, &b| {
-                self.intervals[a].left.partial_cmp(&self.intervals[b].left)
+                self.intervals[a]
+                    .left
+                    .partial_cmp(&self.intervals[b].left)
                     .unwrap_or(std::cmp::Ordering::Equal)
             });
         } else {
             indices.sort_by(|&a, &b| {
-                self.intervals[b].left.partial_cmp(&self.intervals[a].left)
+                self.intervals[b]
+                    .left
+                    .partial_cmp(&self.intervals[a].left)
                     .unwrap_or(std::cmp::Ordering::Equal)
             });
         }
-        
-        let sorted_intervals: Vec<Interval> = indices.iter().map(|&i| self.intervals[i].clone()).collect();
-        let sorted_index = IntervalIndex::new(sorted_intervals, self.closed.clone(), self.name.clone());
-        
+
+        let sorted_intervals: Vec<Interval> =
+            indices.iter().map(|&i| self.intervals[i].clone()).collect();
+        let sorted_index =
+            IntervalIndex::new(sorted_intervals, self.closed.clone(), self.name.clone());
+
         Ok((sorted_index, indices))
     }
 }
@@ -872,7 +927,7 @@ impl CategoricalIndex {
         let mut categories = Vec::new();
         let mut category_map = HashMap::new();
         let mut codes = Vec::with_capacity(values.len());
-        
+
         for value in values {
             let code = if let Some(&existing_code) = category_map.get(&value) {
                 existing_code
@@ -884,7 +939,7 @@ impl CategoricalIndex {
             };
             codes.push(Some(code));
         }
-        
+
         Self {
             codes,
             categories,
@@ -892,7 +947,7 @@ impl CategoricalIndex {
             ordered,
         }
     }
-    
+
     /// Create categorical index with predefined categories
     pub fn with_categories(
         values: Vec<String>,
@@ -905,14 +960,14 @@ impl CategoricalIndex {
             .enumerate()
             .map(|(i, cat)| (cat.clone(), i))
             .collect();
-        
+
         let mut codes = Vec::with_capacity(values.len());
-        
+
         for value in values {
             let code = category_map.get(&value).copied();
             codes.push(code);
         }
-        
+
         Ok(Self {
             codes,
             categories,
@@ -920,7 +975,7 @@ impl CategoricalIndex {
             ordered,
         })
     }
-    
+
     /// Get category values
     pub fn values(&self) -> Vec<Option<String>> {
         self.codes
@@ -928,7 +983,7 @@ impl CategoricalIndex {
             .map(|&code| code.map(|c| self.categories[c].clone()))
             .collect()
     }
-    
+
     /// Get category counts
     pub fn value_counts(&self) -> HashMap<String, usize> {
         let mut counts = HashMap::new();
@@ -940,7 +995,7 @@ impl CategoricalIndex {
         }
         counts
     }
-    
+
     /// Add new categories
     pub fn add_categories(&mut self, new_categories: Vec<String>) -> Result<()> {
         let existing_set: HashSet<_> = self.categories.iter().collect();
@@ -948,41 +1003,41 @@ impl CategoricalIndex {
             .into_iter()
             .filter(|cat| !existing_set.contains(cat))
             .collect();
-        
+
         self.categories.extend(categories_to_add);
         Ok(())
     }
-    
+
     /// Remove categories (and set corresponding codes to None)
     pub fn remove_categories(&mut self, categories_to_remove: Vec<String>) -> Result<()> {
         let remove_set: HashSet<_> = categories_to_remove.iter().collect();
         let mut old_to_new_index = HashMap::new();
         let mut new_categories = Vec::new();
-        
+
         for (old_idx, category) in self.categories.iter().enumerate() {
             if !remove_set.contains(category) {
                 old_to_new_index.insert(old_idx, new_categories.len());
                 new_categories.push(category.clone());
             }
         }
-        
+
         // Update codes
         for code in &mut self.codes {
             if let Some(old_code) = *code {
                 *code = old_to_new_index.get(&old_code).copied();
             }
         }
-        
+
         self.categories = new_categories;
         Ok(())
     }
-    
+
     /// Memory usage in bytes
     pub fn memory_usage(&self) -> usize {
         let codes_size = self.codes.len() * std::mem::size_of::<Option<usize>>();
         let categories_size: usize = self.categories.iter().map(|s| s.len()).sum();
         let name_size = self.name.as_ref().map_or(0, |s| s.len());
-        
+
         codes_size + categories_size + name_size + std::mem::size_of::<Self>()
     }
 }
@@ -991,42 +1046,40 @@ impl Index for CategoricalIndex {
     fn len(&self) -> usize {
         self.codes.len()
     }
-    
+
     fn to_string_vec(&self) -> Vec<String> {
         self.codes
             .iter()
-            .map(|&code| {
-                match code {
-                    Some(c) => self.categories[c].clone(),
-                    None => "NaN".to_string(),
-                }
+            .map(|&code| match code {
+                Some(c) => self.categories[c].clone(),
+                None => "NaN".to_string(),
             })
             .collect()
     }
-    
+
     fn name(&self) -> Option<&str> {
         self.name.as_deref()
     }
-    
+
     fn set_name(&mut self, name: Option<String>) {
         self.name = name;
     }
-    
+
     fn has_duplicates(&self) -> bool {
         let mut seen = HashSet::new();
         self.codes.iter().any(|&code| !seen.insert(code))
     }
-    
+
     fn unique(&self) -> Result<Self> {
         let mut unique_codes = Vec::new();
         let mut seen = HashSet::new();
-        
+
         for &code in &self.codes {
             if seen.insert(code) {
                 unique_codes.push(code);
             }
         }
-        
+
         Ok(CategoricalIndex {
             codes: unique_codes,
             categories: self.categories.clone(),
@@ -1034,27 +1087,37 @@ impl Index for CategoricalIndex {
             ordered: self.ordered,
         })
     }
-    
+
     fn sort(&self, ascending: bool) -> Result<(Self, Vec<usize>)> {
         let mut indices: Vec<usize> = (0..self.codes.len()).collect();
-        
-        indices.sort_by(|&a, &b| {
-            match (self.codes[a], self.codes[b]) {
-                (Some(code_a), Some(code_b)) => {
-                    let cat_a = &self.categories[code_a];
-                    let cat_b = &self.categories[code_b];
-                    if ascending {
-                        cat_a.cmp(cat_b)
-                    } else {
-                        cat_b.cmp(cat_a)
-                    }
+
+        indices.sort_by(|&a, &b| match (self.codes[a], self.codes[b]) {
+            (Some(code_a), Some(code_b)) => {
+                let cat_a = &self.categories[code_a];
+                let cat_b = &self.categories[code_b];
+                if ascending {
+                    cat_a.cmp(cat_b)
+                } else {
+                    cat_b.cmp(cat_a)
                 }
-                (Some(_), None) => if ascending { std::cmp::Ordering::Less } else { std::cmp::Ordering::Greater },
-                (None, Some(_)) => if ascending { std::cmp::Ordering::Greater } else { std::cmp::Ordering::Less },
-                (None, None) => std::cmp::Ordering::Equal,
             }
+            (Some(_), None) => {
+                if ascending {
+                    std::cmp::Ordering::Less
+                } else {
+                    std::cmp::Ordering::Greater
+                }
+            }
+            (None, Some(_)) => {
+                if ascending {
+                    std::cmp::Ordering::Greater
+                } else {
+                    std::cmp::Ordering::Less
+                }
+            }
+            (None, None) => std::cmp::Ordering::Equal,
         });
-        
+
         let sorted_codes: Vec<Option<usize>> = indices.iter().map(|&i| self.codes[i]).collect();
         let sorted_index = CategoricalIndex {
             codes: sorted_codes,
@@ -1062,7 +1125,7 @@ impl Index for CategoricalIndex {
             name: self.name.clone(),
             ordered: self.ordered,
         };
-        
+
         Ok((sorted_index, indices))
     }
 }
@@ -1075,57 +1138,57 @@ impl IndexOperations {
     pub fn union_string_indexes(left: &[String], right: &[String]) -> Vec<String> {
         let mut result = left.to_vec();
         let left_set: HashSet<_> = left.iter().collect();
-        
+
         for item in right {
             if !left_set.contains(item) {
                 result.push(item.clone());
             }
         }
-        
+
         result
     }
-    
+
     /// Intersection of two string-based indexes
     pub fn intersection_string_indexes(left: &[String], right: &[String]) -> Vec<String> {
         let right_set: HashSet<_> = right.iter().collect();
-        
+
         left.iter()
             .filter(|item| right_set.contains(item))
             .cloned()
             .collect()
     }
-    
+
     /// Difference of two string-based indexes (left - right)
     pub fn difference_string_indexes(left: &[String], right: &[String]) -> Vec<String> {
         let right_set: HashSet<_> = right.iter().collect();
-        
+
         left.iter()
             .filter(|item| !right_set.contains(item))
             .cloned()
             .collect()
     }
-    
+
     /// Symmetric difference of two string-based indexes
     pub fn symmetric_difference_string_indexes(left: &[String], right: &[String]) -> Vec<String> {
         let left_set: HashSet<_> = left.iter().collect();
         let right_set: HashSet<_> = right.iter().collect();
-        
+
         let mut result = Vec::new();
-        
+
         // Items in left but not in right
         for item in left {
             if !right_set.contains(item) {
                 result.push(item.clone());
             }
         }
-        
+
         // Items in right but not in left
         for item in right {
             if !left_set.contains(item) {
                 result.push(item.clone());
             }
         }
-        
+
         result
     }
 }
@@ -1133,8 +1196,12 @@ impl IndexOperations {
 /// Extension trait to add advanced indexing to DataFrame
 pub trait AdvancedIndexingExt {
     /// Set datetime index
-    fn set_datetime_index(&self, column: &str, name: Option<String>) -> Result<(DataFrame, DatetimeIndex)>;
-    
+    fn set_datetime_index(
+        &self,
+        column: &str,
+        name: Option<String>,
+    ) -> Result<(DataFrame, DatetimeIndex)>;
+
     /// Set period index
     fn set_period_index(
         &self,
@@ -1142,7 +1209,7 @@ pub trait AdvancedIndexingExt {
         frequency: PeriodFrequency,
         name: Option<String>,
     ) -> Result<(DataFrame, PeriodIndex)>;
-    
+
     /// Set interval index by cutting a column
     fn set_interval_index_cut(
         &self,
@@ -1151,7 +1218,7 @@ pub trait AdvancedIndexingExt {
         closed: IntervalClosed,
         name: Option<String>,
     ) -> Result<(DataFrame, IntervalIndex)>;
-    
+
     /// Set interval index by quantile cutting a column
     fn set_interval_index_qcut(
         &self,
@@ -1160,7 +1227,7 @@ pub trait AdvancedIndexingExt {
         closed: IntervalClosed,
         name: Option<String>,
     ) -> Result<(DataFrame, IntervalIndex)>;
-    
+
     /// Set categorical index
     fn set_categorical_index(
         &self,
@@ -1171,23 +1238,27 @@ pub trait AdvancedIndexingExt {
 }
 
 impl AdvancedIndexingExt for DataFrame {
-    fn set_datetime_index(&self, column: &str, name: Option<String>) -> Result<(DataFrame, DatetimeIndex)> {
+    fn set_datetime_index(
+        &self,
+        column: &str,
+        name: Option<String>,
+    ) -> Result<(DataFrame, DatetimeIndex)> {
         let column_values = self.get_column_string_values(column)?;
         let mut datetime_values = Vec::new();
-        
+
         for value in &column_values {
             let dt = NaiveDateTime::parse_from_str(value, "%Y-%m-%d %H:%M:%S")
                 .or_else(|_| NaiveDateTime::parse_from_str(value, "%Y-%m-%d"))
                 .map_err(|_| Error::InvalidValue(format!("Cannot parse datetime: {}", value)))?;
             datetime_values.push(dt);
         }
-        
+
         let index = DatetimeIndex::new(datetime_values, name);
         let df_without_index = self.drop_columns(&[column.to_string()])?;
-        
+
         Ok((df_without_index, index))
     }
-    
+
     fn set_period_index(
         &self,
         start_date: NaiveDate,
@@ -1195,7 +1266,7 @@ impl AdvancedIndexingExt for DataFrame {
         name: Option<String>,
     ) -> Result<(DataFrame, PeriodIndex)> {
         let row_count = self.row_count();
-        
+
         // Calculate end date based on row count and frequency
         let end_date = match frequency {
             PeriodFrequency::Daily => start_date + Duration::days(row_count as i64 - 1),
@@ -1221,20 +1292,24 @@ impl AdvancedIndexingExt for DataFrame {
                     } else {
                         NaiveDate::from_ymd_opt(current.year(), ((quarter) * 3) + 1, 1)
                     }
-                    .ok_or_else(|| Error::InvalidValue("Invalid quarter calculation".to_string()))?;
+                    .ok_or_else(|| {
+                        Error::InvalidValue("Invalid quarter calculation".to_string())
+                    })?;
                 }
                 current
             }
-            PeriodFrequency::Annual => {
-                NaiveDate::from_ymd_opt(start_date.year() + row_count as i32 - 1, start_date.month(), start_date.day())
-                    .ok_or_else(|| Error::InvalidValue("Invalid year calculation".to_string()))?
-            }
+            PeriodFrequency::Annual => NaiveDate::from_ymd_opt(
+                start_date.year() + row_count as i32 - 1,
+                start_date.month(),
+                start_date.day(),
+            )
+            .ok_or_else(|| Error::InvalidValue("Invalid year calculation".to_string()))?,
         };
-        
+
         let index = PeriodIndex::period_range(start_date, end_date, frequency, name)?;
         Ok((self.clone(), index))
     }
-    
+
     fn set_interval_index_cut(
         &self,
         column: &str,
@@ -1244,19 +1319,20 @@ impl AdvancedIndexingExt for DataFrame {
     ) -> Result<(DataFrame, IntervalIndex)> {
         let column_values = self.get_column_string_values(column)?;
         let mut numeric_values = Vec::new();
-        
+
         for value in &column_values {
-            let num = value.parse::<f64>()
+            let num = value
+                .parse::<f64>()
                 .map_err(|_| Error::InvalidValue(format!("Cannot parse number: {}", value)))?;
             numeric_values.push(num);
         }
-        
+
         let index = IntervalIndex::cut(&numeric_values, bins, closed, name)?;
         let df_without_index = self.drop_columns(&[column.to_string()])?;
-        
+
         Ok((df_without_index, index))
     }
-    
+
     fn set_interval_index_qcut(
         &self,
         column: &str,
@@ -1266,19 +1342,20 @@ impl AdvancedIndexingExt for DataFrame {
     ) -> Result<(DataFrame, IntervalIndex)> {
         let column_values = self.get_column_string_values(column)?;
         let mut numeric_values = Vec::new();
-        
+
         for value in &column_values {
-            let num = value.parse::<f64>()
+            let num = value
+                .parse::<f64>()
                 .map_err(|_| Error::InvalidValue(format!("Cannot parse number: {}", value)))?;
             numeric_values.push(num);
         }
-        
+
         let index = IntervalIndex::qcut(&numeric_values, bins, closed, name)?;
         let df_without_index = self.drop_columns(&[column.to_string()])?;
-        
+
         Ok((df_without_index, index))
     }
-    
+
     fn set_categorical_index(
         &self,
         column: &str,
@@ -1288,7 +1365,7 @@ impl AdvancedIndexingExt for DataFrame {
         let column_values = self.get_column_string_values(column)?;
         let index = CategoricalIndex::new(column_values, name, ordered);
         let df_without_index = self.drop_columns(&[column.to_string()])?;
-        
+
         Ok((df_without_index, index))
     }
 }

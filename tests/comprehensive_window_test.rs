@@ -1,6 +1,6 @@
-use pandrs::{DataFrame, Series};
-use pandrs::series::{WindowExt, WindowOps};
 use pandrs::error::Result;
+use pandrs::series::{WindowExt, WindowOps};
+use pandrs::{DataFrame, Series};
 
 #[test]
 #[allow(clippy::result_large_err)]
@@ -11,7 +11,7 @@ fn test_series_rolling_operations() -> Result<()> {
     // Test rolling mean
     let rolling_mean = series.rolling(3)?.mean()?;
     assert_eq!(rolling_mean.len(), 10);
-    
+
     // First two values should be NaN, then (1+2+3)/3 = 2.0
     assert!(rolling_mean.values()[0].is_nan());
     assert!(rolling_mean.values()[1].is_nan());
@@ -58,7 +58,7 @@ fn test_series_expanding_operations() -> Result<()> {
     // Test expanding mean with min_periods=2
     let expanding_mean = series.expanding(2)?.mean()?;
     assert_eq!(expanding_mean.len(), 5);
-    
+
     // First value should be NaN, second should be (10+20)/2 = 15.0
     assert!(expanding_mean.values()[0].is_nan());
     assert!((expanding_mean.values()[1] - 15.0).abs() < 1e-10);
@@ -94,13 +94,13 @@ fn test_series_ewm_operations() -> Result<()> {
     // Test EWM mean with alpha=0.5
     let ewm_mean = series.ewm().alpha(0.5)?.mean()?;
     assert_eq!(ewm_mean.len(), 5);
-    
+
     // First value should be 10.0
     assert!((ewm_mean.values()[0] - 10.0).abs() < 1e-10);
-    
+
     // Second value: 0.5 * 20 + 0.5 * 10 = 15.0
     assert!((ewm_mean.values()[1] - 15.0).abs() < 1e-10);
-    
+
     // Third value: 0.5 * 30 + 0.5 * 15 = 22.5
     assert!((ewm_mean.values()[2] - 22.5).abs() < 1e-10);
 
@@ -163,11 +163,23 @@ fn test_dataframe_rolling_operations() -> Result<()> {
     // Create test DataFrame
     let mut df = DataFrame::new();
     let values = vec!["10", "20", "30", "40", "50"];
-    let dates = vec!["2024-01-01", "2024-01-02", "2024-01-03", "2024-01-04", "2024-01-05"];
-    
-    let date_series = Series::new(dates.into_iter().map(|s| s.to_string()).collect(), Some("Date".to_string()))?;
-    let value_series = Series::new(values.into_iter().map(|s| s.to_string()).collect(), Some("Value".to_string()))?;
-    
+    let dates = vec![
+        "2024-01-01",
+        "2024-01-02",
+        "2024-01-03",
+        "2024-01-04",
+        "2024-01-05",
+    ];
+
+    let date_series = Series::new(
+        dates.into_iter().map(|s| s.to_string()).collect(),
+        Some("Date".to_string()),
+    )?;
+    let value_series = Series::new(
+        values.into_iter().map(|s| s.to_string()).collect(),
+        Some("Value".to_string()),
+    )?;
+
     df.add_column("Date".to_string(), date_series)?;
     df.add_column("Value".to_string(), value_series)?;
 
@@ -227,11 +239,11 @@ fn test_rolling_min_periods() -> Result<()> {
     // Test rolling with min_periods
     let rolling_min_periods = series.rolling(5)?.min_periods(3).mean()?;
     assert_eq!(rolling_min_periods.len(), 5);
-    
+
     // First two should be NaN (less than min_periods=3)
     assert!(rolling_min_periods.values()[0].is_nan());
     assert!(rolling_min_periods.values()[1].is_nan());
-    
+
     // Third should be valid (exactly min_periods=3)
     assert!((rolling_min_periods.values()[2] - 2.0).abs() < 1e-10); // (1+2+3)/3
 
@@ -247,7 +259,7 @@ fn test_centered_rolling() -> Result<()> {
     // Test centered rolling window
     let rolling_centered = series.rolling(3)?.center(true).mean()?;
     assert_eq!(rolling_centered.len(), 7);
-    
+
     // With centering, the middle value should have more valid results
     // This depends on the exact implementation, so we just check it runs
     assert!(!rolling_centered.values().iter().all(|&x| x.is_nan()));
@@ -264,7 +276,7 @@ fn test_window_count_operation() -> Result<()> {
     // Test rolling count
     let rolling_count = series.rolling(3)?.count()?;
     assert_eq!(rolling_count.len(), 5);
-    
+
     // First two should be 1 and 2 respectively (or 0 depending on implementation)
     // The third should be 3 (full window)
     assert_eq!(rolling_count.values()[2], 3);
@@ -284,21 +296,33 @@ fn test_large_dataset_performance() -> Result<()> {
     let start = std::time::Instant::now();
     let _rolling_mean = series.rolling(50)?.mean()?;
     let duration = start.elapsed();
-    
+
     // Should complete within reasonable time (adjust threshold as needed)
-    assert!(duration.as_millis() < 1000, "Rolling operation took too long: {:?}", duration);
+    assert!(
+        duration.as_millis() < 1000,
+        "Rolling operation took too long: {:?}",
+        duration
+    );
 
     let start = std::time::Instant::now();
     let _expanding_mean = series.expanding(10)?.mean()?;
     let duration = start.elapsed();
-    
-    assert!(duration.as_millis() < 1000, "Expanding operation took too long: {:?}", duration);
+
+    assert!(
+        duration.as_millis() < 1000,
+        "Expanding operation took too long: {:?}",
+        duration
+    );
 
     let start = std::time::Instant::now();
     let _ewm_mean = series.ewm().span(20).mean()?;
     let duration = start.elapsed();
-    
-    assert!(duration.as_millis() < 1000, "EWM operation took too long: {:?}", duration);
+
+    assert!(
+        duration.as_millis() < 1000,
+        "EWM operation took too long: {:?}",
+        duration
+    );
 
     Ok(())
 }

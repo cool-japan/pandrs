@@ -27,22 +27,22 @@ fn main() -> Result<()> {
     // Create a comprehensive dataset
     demo_index_creation()?;
     println!();
-    
+
     demo_cross_section_selection()?;
     println!();
-    
+
     demo_advanced_selection_criteria()?;
     println!();
-    
+
     demo_hierarchical_operations()?;
     println!();
-    
+
     demo_level_management()?;
     println!();
-    
+
     demo_groupby_operations()?;
     println!();
-    
+
     demo_performance_features()?;
     println!();
 
@@ -58,18 +58,66 @@ fn demo_index_creation() -> Result<()> {
 
     // Create a complex hierarchical dataset (Sales data by Region, Product, Quarter)
     let tuples = vec![
-        vec![IndexValue::from("North"), IndexValue::from("Laptop"), IndexValue::from("Q1")],
-        vec![IndexValue::from("North"), IndexValue::from("Laptop"), IndexValue::from("Q2")],
-        vec![IndexValue::from("North"), IndexValue::from("Desktop"), IndexValue::from("Q1")],
-        vec![IndexValue::from("North"), IndexValue::from("Desktop"), IndexValue::from("Q2")],
-        vec![IndexValue::from("South"), IndexValue::from("Laptop"), IndexValue::from("Q1")],
-        vec![IndexValue::from("South"), IndexValue::from("Laptop"), IndexValue::from("Q2")],
-        vec![IndexValue::from("South"), IndexValue::from("Desktop"), IndexValue::from("Q1")],
-        vec![IndexValue::from("South"), IndexValue::from("Desktop"), IndexValue::from("Q2")],
-        vec![IndexValue::from("East"), IndexValue::from("Laptop"), IndexValue::from("Q1")],
-        vec![IndexValue::from("East"), IndexValue::from("Laptop"), IndexValue::from("Q2")],
-        vec![IndexValue::from("West"), IndexValue::from("Desktop"), IndexValue::from("Q1")],
-        vec![IndexValue::from("West"), IndexValue::from("Desktop"), IndexValue::from("Q2")],
+        vec![
+            IndexValue::from("North"),
+            IndexValue::from("Laptop"),
+            IndexValue::from("Q1"),
+        ],
+        vec![
+            IndexValue::from("North"),
+            IndexValue::from("Laptop"),
+            IndexValue::from("Q2"),
+        ],
+        vec![
+            IndexValue::from("North"),
+            IndexValue::from("Desktop"),
+            IndexValue::from("Q1"),
+        ],
+        vec![
+            IndexValue::from("North"),
+            IndexValue::from("Desktop"),
+            IndexValue::from("Q2"),
+        ],
+        vec![
+            IndexValue::from("South"),
+            IndexValue::from("Laptop"),
+            IndexValue::from("Q1"),
+        ],
+        vec![
+            IndexValue::from("South"),
+            IndexValue::from("Laptop"),
+            IndexValue::from("Q2"),
+        ],
+        vec![
+            IndexValue::from("South"),
+            IndexValue::from("Desktop"),
+            IndexValue::from("Q1"),
+        ],
+        vec![
+            IndexValue::from("South"),
+            IndexValue::from("Desktop"),
+            IndexValue::from("Q2"),
+        ],
+        vec![
+            IndexValue::from("East"),
+            IndexValue::from("Laptop"),
+            IndexValue::from("Q1"),
+        ],
+        vec![
+            IndexValue::from("East"),
+            IndexValue::from("Laptop"),
+            IndexValue::from("Q2"),
+        ],
+        vec![
+            IndexValue::from("West"),
+            IndexValue::from("Desktop"),
+            IndexValue::from("Q1"),
+        ],
+        vec![
+            IndexValue::from("West"),
+            IndexValue::from("Desktop"),
+            IndexValue::from("Q2"),
+        ],
     ];
 
     let level_names = Some(vec![
@@ -80,16 +128,24 @@ fn demo_index_creation() -> Result<()> {
 
     let index = AdvancedMultiIndex::new(tuples, level_names)?;
 
-    println!("Created MultiIndex with {} levels and {} rows", index.n_levels(), index.len());
+    println!(
+        "Created MultiIndex with {} levels and {} rows",
+        index.n_levels(),
+        index.len()
+    );
     println!("Level names: {:?}", index.level_names());
-    
+
     // Show unique values for each level
     for level in 0..index.n_levels() {
         let values = index.get_level_values(level)?;
-        println!("Level {} ({}): {} unique values", 
-                 level, 
-                 index.level_names()[level].as_ref().unwrap_or(&"unnamed".to_string()),
-                 values.len());
+        println!(
+            "Level {} ({}): {} unique values",
+            level,
+            index.level_names()[level]
+                .as_ref()
+                .unwrap_or(&"unnamed".to_string()),
+            values.len()
+        );
         println!("  Values: {:?}", values);
     }
 
@@ -102,24 +158,38 @@ fn demo_index_creation() -> Result<()> {
     // Test creation from arrays
     println!("\nCreating from separate arrays:");
     let regions = vec![
-        IndexValue::from("North"), IndexValue::from("North"), 
-        IndexValue::from("South"), IndexValue::from("South")
+        IndexValue::from("North"),
+        IndexValue::from("North"),
+        IndexValue::from("South"),
+        IndexValue::from("South"),
     ];
     let products = vec![
-        IndexValue::from("A"), IndexValue::from("B"), 
-        IndexValue::from("A"), IndexValue::from("B")
+        IndexValue::from("A"),
+        IndexValue::from("B"),
+        IndexValue::from("A"),
+        IndexValue::from("B"),
     ];
     let quarters = vec![
-        IndexValue::from(1), IndexValue::from(1), 
-        IndexValue::from(2), IndexValue::from(2)
+        IndexValue::from(1),
+        IndexValue::from(1),
+        IndexValue::from(2),
+        IndexValue::from(2),
     ];
 
     let array_index = AdvancedMultiIndex::from_arrays(
         vec![regions, products, quarters],
-        Some(vec![Some("Region".to_string()), Some("Product".to_string()), Some("Quarter".to_string())])
+        Some(vec![
+            Some("Region".to_string()),
+            Some("Product".to_string()),
+            Some("Quarter".to_string()),
+        ]),
     )?;
 
-    println!("Array-based index: {} levels, {} rows", array_index.n_levels(), array_index.len());
+    println!(
+        "Array-based index: {} levels, {} rows",
+        array_index.n_levels(),
+        array_index.len()
+    );
 
     Ok(())
 }
@@ -130,14 +200,46 @@ fn demo_cross_section_selection() -> Result<()> {
     println!("==========================");
 
     let tuples = vec![
-        vec![IndexValue::from("A"), IndexValue::from(1), IndexValue::from("X")],
-        vec![IndexValue::from("A"), IndexValue::from(1), IndexValue::from("Y")],
-        vec![IndexValue::from("A"), IndexValue::from(2), IndexValue::from("X")],
-        vec![IndexValue::from("A"), IndexValue::from(2), IndexValue::from("Y")],
-        vec![IndexValue::from("B"), IndexValue::from(1), IndexValue::from("X")],
-        vec![IndexValue::from("B"), IndexValue::from(1), IndexValue::from("Y")],
-        vec![IndexValue::from("B"), IndexValue::from(2), IndexValue::from("X")],
-        vec![IndexValue::from("B"), IndexValue::from(2), IndexValue::from("Y")],
+        vec![
+            IndexValue::from("A"),
+            IndexValue::from(1),
+            IndexValue::from("X"),
+        ],
+        vec![
+            IndexValue::from("A"),
+            IndexValue::from(1),
+            IndexValue::from("Y"),
+        ],
+        vec![
+            IndexValue::from("A"),
+            IndexValue::from(2),
+            IndexValue::from("X"),
+        ],
+        vec![
+            IndexValue::from("A"),
+            IndexValue::from(2),
+            IndexValue::from("Y"),
+        ],
+        vec![
+            IndexValue::from("B"),
+            IndexValue::from(1),
+            IndexValue::from("X"),
+        ],
+        vec![
+            IndexValue::from("B"),
+            IndexValue::from(1),
+            IndexValue::from("Y"),
+        ],
+        vec![
+            IndexValue::from("B"),
+            IndexValue::from(2),
+            IndexValue::from("X"),
+        ],
+        vec![
+            IndexValue::from("B"),
+            IndexValue::from(2),
+            IndexValue::from("Y"),
+        ],
     ];
 
     let mut index = AdvancedMultiIndex::new(tuples, None)?;
@@ -183,14 +285,46 @@ fn demo_advanced_selection_criteria() -> Result<()> {
     println!("==============================");
 
     let tuples = vec![
-        vec![IndexValue::from("A"), IndexValue::from(1), IndexValue::from(10.5)],
-        vec![IndexValue::from("A"), IndexValue::from(2), IndexValue::from(20.3)],
-        vec![IndexValue::from("A"), IndexValue::from(3), IndexValue::from(15.7)],
-        vec![IndexValue::from("B"), IndexValue::from(1), IndexValue::from(25.1)],
-        vec![IndexValue::from("B"), IndexValue::from(2), IndexValue::from(18.9)],
-        vec![IndexValue::from("B"), IndexValue::from(3), IndexValue::from(22.4)],
-        vec![IndexValue::from("C"), IndexValue::from(1), IndexValue::from(12.8)],
-        vec![IndexValue::from("C"), IndexValue::from(2), IndexValue::from(30.2)],
+        vec![
+            IndexValue::from("A"),
+            IndexValue::from(1),
+            IndexValue::from(10.5),
+        ],
+        vec![
+            IndexValue::from("A"),
+            IndexValue::from(2),
+            IndexValue::from(20.3),
+        ],
+        vec![
+            IndexValue::from("A"),
+            IndexValue::from(3),
+            IndexValue::from(15.7),
+        ],
+        vec![
+            IndexValue::from("B"),
+            IndexValue::from(1),
+            IndexValue::from(25.1),
+        ],
+        vec![
+            IndexValue::from("B"),
+            IndexValue::from(2),
+            IndexValue::from(18.9),
+        ],
+        vec![
+            IndexValue::from("B"),
+            IndexValue::from(3),
+            IndexValue::from(22.4),
+        ],
+        vec![
+            IndexValue::from("C"),
+            IndexValue::from(1),
+            IndexValue::from(12.8),
+        ],
+        vec![
+            IndexValue::from("C"),
+            IndexValue::from(2),
+            IndexValue::from(30.2),
+        ],
     ];
 
     let index = AdvancedMultiIndex::new(tuples, None)?;
@@ -200,27 +334,24 @@ fn demo_advanced_selection_criteria() -> Result<()> {
 
     // Exact selection: multiple level constraints
     println!("1. Exact Selection (A at level 0 AND 1 at level 1):");
-    let exact_criteria = SelectionCriteria::Exact(vec![
-        (0, IndexValue::from("A")),
-        (1, IndexValue::from(1)),
-    ]);
+    let exact_criteria =
+        SelectionCriteria::Exact(vec![(0, IndexValue::from("A")), (1, IndexValue::from(1))]);
     let exact_result = index.select(exact_criteria)?;
     println!("   Selected indices: {:?}", exact_result);
     println!();
 
     // Partial selection: any matching constraint
     println!("2. Partial Selection (A at level 0 OR 1 at level 1):");
-    let partial_criteria = SelectionCriteria::Partial(vec![
-        (0, IndexValue::from("A")),
-        (1, IndexValue::from(1)),
-    ]);
+    let partial_criteria =
+        SelectionCriteria::Partial(vec![(0, IndexValue::from("A")), (1, IndexValue::from(1))]);
     let partial_result = index.select(partial_criteria)?;
     println!("   Selected indices: {:?}", partial_result);
     println!();
 
     // Range selection: values between bounds
     println!("3. Range Selection (level 2 values between 15.0 and 25.0):");
-    let range_criteria = SelectionCriteria::Range(2, IndexValue::from(15.0), IndexValue::from(25.0));
+    let range_criteria =
+        SelectionCriteria::Range(2, IndexValue::from(15.0), IndexValue::from(25.0));
     let range_result = index.select(range_criteria)?;
     println!("   Selected indices: {:?}", range_result);
     println!();
@@ -242,7 +373,8 @@ fn demo_advanced_selection_criteria() -> Result<()> {
 
     // Level selection: multiple values at a level
     println!("6. Level Selection (A or C at level 0):");
-    let level_criteria = SelectionCriteria::Level(0, vec![IndexValue::from("A"), IndexValue::from("C")]);
+    let level_criteria =
+        SelectionCriteria::Level(0, vec![IndexValue::from("A"), IndexValue::from("C")]);
     let level_result = index.select(level_criteria)?;
     println!("   Selected indices: {:?}", level_result);
 
@@ -255,14 +387,46 @@ fn demo_hierarchical_operations() -> Result<()> {
     println!("===========================");
 
     let tuples = vec![
-        vec![IndexValue::from("2023"), IndexValue::from("Q1"), IndexValue::from("Jan")],
-        vec![IndexValue::from("2023"), IndexValue::from("Q1"), IndexValue::from("Feb")],
-        vec![IndexValue::from("2023"), IndexValue::from("Q1"), IndexValue::from("Mar")],
-        vec![IndexValue::from("2023"), IndexValue::from("Q2"), IndexValue::from("Apr")],
-        vec![IndexValue::from("2023"), IndexValue::from("Q2"), IndexValue::from("May")],
-        vec![IndexValue::from("2023"), IndexValue::from("Q2"), IndexValue::from("Jun")],
-        vec![IndexValue::from("2024"), IndexValue::from("Q1"), IndexValue::from("Jan")],
-        vec![IndexValue::from("2024"), IndexValue::from("Q1"), IndexValue::from("Feb")],
+        vec![
+            IndexValue::from("2023"),
+            IndexValue::from("Q1"),
+            IndexValue::from("Jan"),
+        ],
+        vec![
+            IndexValue::from("2023"),
+            IndexValue::from("Q1"),
+            IndexValue::from("Feb"),
+        ],
+        vec![
+            IndexValue::from("2023"),
+            IndexValue::from("Q1"),
+            IndexValue::from("Mar"),
+        ],
+        vec![
+            IndexValue::from("2023"),
+            IndexValue::from("Q2"),
+            IndexValue::from("Apr"),
+        ],
+        vec![
+            IndexValue::from("2023"),
+            IndexValue::from("Q2"),
+            IndexValue::from("May"),
+        ],
+        vec![
+            IndexValue::from("2023"),
+            IndexValue::from("Q2"),
+            IndexValue::from("Jun"),
+        ],
+        vec![
+            IndexValue::from("2024"),
+            IndexValue::from("Q1"),
+            IndexValue::from("Jan"),
+        ],
+        vec![
+            IndexValue::from("2024"),
+            IndexValue::from("Q1"),
+            IndexValue::from("Feb"),
+        ],
     ];
 
     let level_names = Some(vec![
@@ -282,7 +446,12 @@ fn demo_hierarchical_operations() -> Result<()> {
     let year_keys = index.get_group_keys(&[0])?;
     for key in &year_keys {
         let indices = index.get_group_indices(&[0], key)?;
-        println!("   {:?}: {} rows (indices: {:?})", key, indices.len(), indices);
+        println!(
+            "   {:?}: {} rows (indices: {:?})",
+            key,
+            indices.len(),
+            indices
+        );
     }
     println!();
 
@@ -315,10 +484,30 @@ fn demo_level_management() -> Result<()> {
     println!("==============================");
 
     let tuples = vec![
-        vec![IndexValue::from("A"), IndexValue::from(1), IndexValue::from("X"), IndexValue::from(true)],
-        vec![IndexValue::from("A"), IndexValue::from(2), IndexValue::from("Y"), IndexValue::from(false)],
-        vec![IndexValue::from("B"), IndexValue::from(1), IndexValue::from("X"), IndexValue::from(true)],
-        vec![IndexValue::from("B"), IndexValue::from(2), IndexValue::from("Y"), IndexValue::from(false)],
+        vec![
+            IndexValue::from("A"),
+            IndexValue::from(1),
+            IndexValue::from("X"),
+            IndexValue::from(true),
+        ],
+        vec![
+            IndexValue::from("A"),
+            IndexValue::from(2),
+            IndexValue::from("Y"),
+            IndexValue::from(false),
+        ],
+        vec![
+            IndexValue::from("B"),
+            IndexValue::from(1),
+            IndexValue::from("X"),
+            IndexValue::from(true),
+        ],
+        vec![
+            IndexValue::from("B"),
+            IndexValue::from(2),
+            IndexValue::from("Y"),
+            IndexValue::from(false),
+        ],
     ];
 
     let level_names = Some(vec![
@@ -353,16 +542,16 @@ fn demo_level_management() -> Result<()> {
     // Cache management
     println!("3. Cache management:");
     let mut mutable_index = index.clone();
-    
+
     // Perform operations that use cache
     let _ = mutable_index.xs(IndexValue::from("A"), 0, false)?;
     let _ = mutable_index.xs(IndexValue::from("B"), 0, false)?;
     let _ = mutable_index.xs(IndexValue::from(1), 1, false)?;
-    
+
     let cache_stats = mutable_index.cache_stats();
     println!("   Cache size: {} entries", cache_stats.size);
     println!("   Should clear: {}", cache_stats.should_clear());
-    
+
     mutable_index.clear_cache();
     let after_clear = mutable_index.cache_stats();
     println!("   Cache size after clear: {} entries", after_clear.size);
@@ -376,14 +565,46 @@ fn demo_groupby_operations() -> Result<()> {
     println!("====================");
 
     let tuples = vec![
-        vec![IndexValue::from("Sales"), IndexValue::from("North"), IndexValue::from("Q1")],
-        vec![IndexValue::from("Sales"), IndexValue::from("North"), IndexValue::from("Q2")],
-        vec![IndexValue::from("Sales"), IndexValue::from("South"), IndexValue::from("Q1")],
-        vec![IndexValue::from("Sales"), IndexValue::from("South"), IndexValue::from("Q2")],
-        vec![IndexValue::from("Marketing"), IndexValue::from("North"), IndexValue::from("Q1")],
-        vec![IndexValue::from("Marketing"), IndexValue::from("North"), IndexValue::from("Q2")],
-        vec![IndexValue::from("Marketing"), IndexValue::from("South"), IndexValue::from("Q1")],
-        vec![IndexValue::from("Marketing"), IndexValue::from("South"), IndexValue::from("Q2")],
+        vec![
+            IndexValue::from("Sales"),
+            IndexValue::from("North"),
+            IndexValue::from("Q1"),
+        ],
+        vec![
+            IndexValue::from("Sales"),
+            IndexValue::from("North"),
+            IndexValue::from("Q2"),
+        ],
+        vec![
+            IndexValue::from("Sales"),
+            IndexValue::from("South"),
+            IndexValue::from("Q1"),
+        ],
+        vec![
+            IndexValue::from("Sales"),
+            IndexValue::from("South"),
+            IndexValue::from("Q2"),
+        ],
+        vec![
+            IndexValue::from("Marketing"),
+            IndexValue::from("North"),
+            IndexValue::from("Q1"),
+        ],
+        vec![
+            IndexValue::from("Marketing"),
+            IndexValue::from("North"),
+            IndexValue::from("Q2"),
+        ],
+        vec![
+            IndexValue::from("Marketing"),
+            IndexValue::from("South"),
+            IndexValue::from("Q1"),
+        ],
+        vec![
+            IndexValue::from("Marketing"),
+            IndexValue::from("South"),
+            IndexValue::from("Q2"),
+        ],
     ];
 
     let level_names = Some(vec![
@@ -451,7 +672,11 @@ fn demo_performance_features() -> Result<()> {
     }
 
     let mut index = AdvancedMultiIndex::new(tuples, None)?;
-    println!("Created large index: {} rows, {} levels", index.len(), index.n_levels());
+    println!(
+        "Created large index: {} rows, {} levels",
+        index.len(),
+        index.n_levels()
+    );
     println!();
 
     // Benchmark cross-section operations
@@ -462,7 +687,10 @@ fn demo_performance_features() -> Result<()> {
     }
     let xs_time = start.elapsed();
     println!("   Time: {:.3}ms", xs_time.as_secs_f64() * 1000.0);
-    println!("   Avg per operation: {:.3}μs", xs_time.as_nanos() as f64 / 1_000_000.0);
+    println!(
+        "   Avg per operation: {:.3}μs",
+        xs_time.as_nanos() as f64 / 1_000_000.0
+    );
     println!();
 
     // Benchmark selection operations
@@ -474,7 +702,10 @@ fn demo_performance_features() -> Result<()> {
     }
     let select_time = start.elapsed();
     println!("   Time: {:.3}ms", select_time.as_secs_f64() * 1000.0);
-    println!("   Avg per operation: {:.3}μs", select_time.as_nanos() as f64 / 1_000_000.0);
+    println!(
+        "   Avg per operation: {:.3}μs",
+        select_time.as_nanos() as f64 / 1_000_000.0
+    );
     println!();
 
     // Benchmark groupby operations
@@ -485,20 +716,23 @@ fn demo_performance_features() -> Result<()> {
     }
     let groupby_time = start.elapsed();
     println!("   Time: {:.3}ms", groupby_time.as_secs_f64() * 1000.0);
-    println!("   Avg per operation: {:.3}μs", groupby_time.as_nanos() as f64 / 1_000.0);
+    println!(
+        "   Avg per operation: {:.3}μs",
+        groupby_time.as_nanos() as f64 / 1_000.0
+    );
     println!();
 
     // Cache effectiveness
     println!("4. Cache effectiveness:");
     let cache_stats_before = index.cache_stats();
-    
+
     // Perform repeated operations
     for _ in 0..50 {
         let _ = index.xs(IndexValue::from("A"), 0, false)?;
         let _ = index.xs(IndexValue::from("B"), 0, false)?;
         let _ = index.xs(IndexValue::from("C"), 0, false)?;
     }
-    
+
     let cache_stats_after = index.cache_stats();
     println!("   Cache entries before: {}", cache_stats_before.size);
     println!("   Cache entries after: {}", cache_stats_after.size);
@@ -511,7 +745,7 @@ fn demo_performance_features() -> Result<()> {
     let level_memory = index.n_levels() * 1024; // Rough estimate for level maps
     let cache_memory = cache_stats_after.size * 256; // Rough estimate per cache entry
     let total_memory = tuple_memory + level_memory + cache_memory;
-    
+
     println!("   Estimated memory usage:");
     println!("     Tuples: ~{} bytes", tuple_memory);
     println!("     Level maps: ~{} bytes", level_memory);

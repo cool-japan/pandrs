@@ -3,13 +3,13 @@
 //! This module provides comprehensive pandas-like window operations for DataFrames including rolling windows,
 //! expanding windows, and exponentially weighted moving operations with full feature parity to Series.
 
-use std::collections::HashMap;
-use std::any::Any;
 use crate::core::error::{Error, Result};
 use crate::dataframe::base::DataFrame;
+use crate::series::window::{Expanding, Rolling, WindowClosed, EWM};
 use crate::series::{Series, WindowExt, WindowOps};
-use crate::series::window::{WindowClosed, Rolling, Expanding, EWM};
-use chrono::{NaiveDateTime, Duration};
+use chrono::{Duration, NaiveDateTime};
+use std::any::Any;
+use std::collections::HashMap;
 
 /// Advanced rolling window configuration for DataFrames
 #[derive(Debug, Clone)]
@@ -31,22 +31,22 @@ impl DataFrameRolling {
             columns: None,
         }
     }
-    
+
     pub fn min_periods(mut self, min_periods: usize) -> Self {
         self.min_periods = Some(min_periods);
         self
     }
-    
+
     pub fn center(mut self, center: bool) -> Self {
         self.center = center;
         self
     }
-    
+
     pub fn closed(mut self, closed: WindowClosed) -> Self {
         self.closed = closed;
         self
     }
-    
+
     pub fn columns(mut self, columns: Vec<String>) -> Self {
         self.columns = Some(columns);
         self
@@ -67,7 +67,7 @@ impl DataFrameExpanding {
             columns: None,
         }
     }
-    
+
     pub fn columns(mut self, columns: Vec<String>) -> Self {
         self.columns = Some(columns);
         self
@@ -96,41 +96,43 @@ impl DataFrameEWM {
             columns: None,
         }
     }
-    
+
     pub fn alpha(mut self, alpha: f64) -> Result<Self> {
         if alpha <= 0.0 || alpha > 1.0 {
-            return Err(Error::InvalidValue("Alpha must be between 0 and 1".to_string()));
+            return Err(Error::InvalidValue(
+                "Alpha must be between 0 and 1".to_string(),
+            ));
         }
         self.alpha = Some(alpha);
         self.span = None;
         self.halflife = None;
         Ok(self)
     }
-    
+
     pub fn span(mut self, span: usize) -> Self {
         self.span = Some(span);
         self.alpha = None;
         self.halflife = None;
         self
     }
-    
+
     pub fn halflife(mut self, halflife: f64) -> Self {
         self.halflife = Some(halflife);
         self.alpha = None;
         self.span = None;
         self
     }
-    
+
     pub fn adjust(mut self, adjust: bool) -> Self {
         self.adjust = adjust;
         self
     }
-    
+
     pub fn ignore_na(mut self, ignore_na: bool) -> Self {
         self.ignore_na = ignore_na;
         self
     }
-    
+
     pub fn columns(mut self, columns: Vec<String>) -> Self {
         self.columns = Some(columns);
         self
@@ -141,22 +143,22 @@ impl DataFrameEWM {
 pub trait DataFrameWindowExt {
     /// Create a rolling window configuration
     fn rolling(&self, window_size: usize) -> DataFrameRolling;
-    
+
     /// Create an expanding window configuration
     fn expanding(&self, min_periods: usize) -> DataFrameExpanding;
-    
+
     /// Create an EWM window configuration
     fn ewm(&self) -> DataFrameEWM;
-    
+
     /// Apply rolling window operations with advanced configuration
     fn apply_rolling<'a>(&'a self, config: &'a DataFrameRolling) -> DataFrameRollingOps<'a>;
-    
+
     /// Apply expanding window operations with advanced configuration
     fn apply_expanding<'a>(&'a self, config: &'a DataFrameExpanding) -> DataFrameExpandingOps<'a>;
-    
+
     /// Apply EWM operations with advanced configuration
     fn apply_ewm<'a>(&'a self, config: &'a DataFrameEWM) -> Result<DataFrameEWMOps<'a>>;
-    
+
     /// Time-based rolling window for datetime columns
     fn rolling_time(&self, window: Duration, on: &str) -> Result<DataFrameTimeRolling>;
 }
@@ -190,47 +192,49 @@ impl DataFrameWindowExt for DataFrame {
     fn rolling(&self, window_size: usize) -> DataFrameRolling {
         DataFrameRolling::new(window_size)
     }
-    
+
     fn expanding(&self, min_periods: usize) -> DataFrameExpanding {
         DataFrameExpanding::new(min_periods)
     }
-    
+
     fn ewm(&self) -> DataFrameEWM {
         DataFrameEWM::new()
     }
-    
+
     fn apply_rolling<'a>(&'a self, config: &'a DataFrameRolling) -> DataFrameRollingOps<'a> {
         DataFrameRollingOps {
             dataframe: self,
             config,
         }
     }
-    
+
     fn apply_expanding<'a>(&'a self, config: &'a DataFrameExpanding) -> DataFrameExpandingOps<'a> {
         DataFrameExpandingOps {
             dataframe: self,
             config,
         }
     }
-    
+
     fn apply_ewm<'a>(&'a self, config: &'a DataFrameEWM) -> Result<DataFrameEWMOps<'a>> {
         // Validate EWM configuration
         if config.alpha.is_none() && config.span.is_none() && config.halflife.is_none() {
-            return Err(Error::InvalidValue("Must specify either alpha, span, or halflife for EWM".to_string()));
+            return Err(Error::InvalidValue(
+                "Must specify either alpha, span, or halflife for EWM".to_string(),
+            ));
         }
-        
+
         Ok(DataFrameEWMOps {
             dataframe: self,
             config,
         })
     }
-    
+
     fn rolling_time(&self, window: Duration, on: &str) -> Result<DataFrameTimeRolling> {
         // Verify the datetime column exists
         if !self.column_names().contains(&on.to_string()) {
             return Err(Error::ColumnNotFound(on.to_string()));
         }
-        
+
         Ok(DataFrameTimeRolling {
             dataframe: self,
             window,
@@ -245,47 +249,47 @@ impl<'a> DataFrameRollingOps<'a> {
     pub fn mean(&self) -> Result<DataFrame> {
         self.apply_operation("mean")
     }
-    
+
     /// Apply rolling sum operation
     pub fn sum(&self) -> Result<DataFrame> {
         self.apply_operation("sum")
     }
-    
+
     /// Apply rolling standard deviation operation
     pub fn std(&self, ddof: usize) -> Result<DataFrame> {
         self.apply_operation_with_param("std", ddof)
     }
-    
+
     /// Apply rolling variance operation
     pub fn var(&self, ddof: usize) -> Result<DataFrame> {
         self.apply_operation_with_param("var", ddof)
     }
-    
+
     /// Apply rolling minimum operation
     pub fn min(&self) -> Result<DataFrame> {
         self.apply_operation("min")
     }
-    
+
     /// Apply rolling maximum operation
     pub fn max(&self) -> Result<DataFrame> {
         self.apply_operation("max")
     }
-    
+
     /// Apply rolling count operation
     pub fn count(&self) -> Result<DataFrame> {
         self.apply_operation("count")
     }
-    
+
     /// Apply rolling median operation
     pub fn median(&self) -> Result<DataFrame> {
         self.apply_operation("median")
     }
-    
+
     /// Apply rolling quantile operation
     pub fn quantile(&self, q: f64) -> Result<DataFrame> {
         self.apply_operation_with_param("quantile", q)
     }
-    
+
     /// Apply custom aggregation function
     pub fn apply<F>(&self, func: F) -> Result<DataFrame>
     where
@@ -293,33 +297,35 @@ impl<'a> DataFrameRollingOps<'a> {
     {
         let target_columns = self.get_target_columns()?;
         let mut result_df = self.dataframe.clone();
-        
+
         for column_name in target_columns {
             let column = self.dataframe.get_column_as_f64(&column_name)?;
-            let rolling = column.rolling(self.config.window_size)?
+            let rolling = column
+                .rolling(self.config.window_size)?
                 .min_periods(self.config.min_periods.unwrap_or(self.config.window_size))
                 .center(self.config.center)
                 .closed(self.config.closed);
-            
+
             let result_series = rolling.apply(func)?;
             let result_column_name = format!("{}_{}", column_name, "custom");
             result_df.add_column(result_column_name, result_series.to_string_series()?)?;
         }
-        
+
         Ok(result_df)
     }
-    
+
     fn apply_operation(&self, operation: &str) -> Result<DataFrame> {
         let target_columns = self.get_target_columns()?;
         let mut result_df = self.dataframe.clone();
-        
+
         for column_name in target_columns {
             let column = self.dataframe.get_column_as_f64(&column_name)?;
-            let rolling = column.rolling(self.config.window_size)?
+            let rolling = column
+                .rolling(self.config.window_size)?
                 .min_periods(self.config.min_periods.unwrap_or(self.config.window_size))
                 .center(self.config.center)
                 .closed(self.config.closed);
-            
+
             let result_series = match operation {
                 "mean" => rolling.mean()?,
                 "sum" => rolling.sum()?,
@@ -329,33 +335,40 @@ impl<'a> DataFrameRollingOps<'a> {
                 "count" => {
                     let count_series = rolling.count()?;
                     // Convert usize to f64 for consistency
-                    let f64_values: Vec<f64> = count_series.values().iter().map(|&v| v as f64).collect();
+                    let f64_values: Vec<f64> =
+                        count_series.values().iter().map(|&v| v as f64).collect();
                     Series::new(f64_values, count_series.name().cloned())?
-                },
-                _ => return Err(Error::InvalidValue(format!("Unsupported operation: {}", operation))),
+                }
+                _ => {
+                    return Err(Error::InvalidValue(format!(
+                        "Unsupported operation: {}",
+                        operation
+                    )))
+                }
             };
-            
+
             let result_column_name = format!("{}_{}", column_name, operation);
             result_df.add_column(result_column_name, result_series.to_string_series()?)?;
         }
-        
+
         Ok(result_df)
     }
-    
+
     fn apply_operation_with_param<T>(&self, operation: &str, param: T) -> Result<DataFrame>
     where
         T: Copy + 'static,
     {
         let target_columns = self.get_target_columns()?;
         let mut result_df = self.dataframe.clone();
-        
+
         for column_name in target_columns {
             let column = self.dataframe.get_column_as_f64(&column_name)?;
-            let rolling = column.rolling(self.config.window_size)?
+            let rolling = column
+                .rolling(self.config.window_size)?
                 .min_periods(self.config.min_periods.unwrap_or(self.config.window_size))
                 .center(self.config.center)
                 .closed(self.config.closed);
-            
+
             let result_series = match operation {
                 "std" => {
                     if let Some(ddof) = (&param as &dyn Any).downcast_ref::<usize>() {
@@ -363,31 +376,38 @@ impl<'a> DataFrameRollingOps<'a> {
                     } else {
                         rolling.std(1)?
                     }
-                },
+                }
                 "var" => {
                     if let Some(ddof) = (&param as &dyn Any).downcast_ref::<usize>() {
                         rolling.var(*ddof)?
                     } else {
                         rolling.var(1)?
                     }
-                },
+                }
                 "quantile" => {
                     if let Some(q) = (&param as &dyn Any).downcast_ref::<f64>() {
                         rolling.quantile(*q)?
                     } else {
-                        return Err(Error::InvalidValue("Invalid quantile parameter".to_string()));
+                        return Err(Error::InvalidValue(
+                            "Invalid quantile parameter".to_string(),
+                        ));
                     }
-                },
-                _ => return Err(Error::InvalidValue(format!("Unsupported operation: {}", operation))),
+                }
+                _ => {
+                    return Err(Error::InvalidValue(format!(
+                        "Unsupported operation: {}",
+                        operation
+                    )))
+                }
             };
-            
+
             let result_column_name = format!("{}_{}", column_name, operation);
             result_df.add_column(result_column_name, result_series.to_string_series()?)?;
         }
-        
+
         Ok(result_df)
     }
-    
+
     fn get_target_columns(&self) -> Result<Vec<String>> {
         if let Some(ref columns) = self.config.columns {
             // Verify all specified columns exist
@@ -410,55 +430,55 @@ impl<'a> DataFrameExpandingOps<'a> {
     pub fn mean(&self) -> Result<DataFrame> {
         self.apply_operation("mean")
     }
-    
+
     /// Apply expanding sum operation
     pub fn sum(&self) -> Result<DataFrame> {
         self.apply_operation("sum")
     }
-    
+
     /// Apply expanding standard deviation operation
     pub fn std(&self, ddof: usize) -> Result<DataFrame> {
         self.apply_operation_with_param("std", ddof)
     }
-    
+
     /// Apply expanding variance operation
     pub fn var(&self, ddof: usize) -> Result<DataFrame> {
         self.apply_operation_with_param("var", ddof)
     }
-    
+
     /// Apply expanding minimum operation
     pub fn min(&self) -> Result<DataFrame> {
         self.apply_operation("min")
     }
-    
+
     /// Apply expanding maximum operation
     pub fn max(&self) -> Result<DataFrame> {
         self.apply_operation("max")
     }
-    
+
     /// Apply expanding count operation
     pub fn count(&self) -> Result<DataFrame> {
         self.apply_operation("count")
     }
-    
+
     /// Apply expanding median operation
     pub fn median(&self) -> Result<DataFrame> {
         self.apply_operation("median")
     }
-    
+
     /// Apply expanding quantile operation
     pub fn quantile(&self, q: f64) -> Result<DataFrame> {
         self.apply_operation_with_param("quantile", q)
     }
-    
+
     fn apply_operation(&self, operation: &str) -> Result<DataFrame> {
         let target_columns = self.get_target_columns()?;
         let mut result_df = self.dataframe.clone();
-        
+
         for column_name in target_columns {
             let column = self.dataframe.get_column_as_f64(&column_name)?;
             let expanding = column.expanding(self.config.min_periods)?;
-            
+
             let result_series = match operation {
                 "mean" => expanding.mean()?,
                 "sum" => expanding.sum()?,
@@ -467,30 +487,36 @@ impl<'a> DataFrameExpandingOps<'a> {
                 "median" => expanding.median()?,
                 "count" => {
                     let count_series = expanding.count()?;
-                    let f64_values: Vec<f64> = count_series.values().iter().map(|&v| v as f64).collect();
+                    let f64_values: Vec<f64> =
+                        count_series.values().iter().map(|&v| v as f64).collect();
                     Series::new(f64_values, count_series.name().cloned())?
-                },
-                _ => return Err(Error::InvalidValue(format!("Unsupported operation: {}", operation))),
+                }
+                _ => {
+                    return Err(Error::InvalidValue(format!(
+                        "Unsupported operation: {}",
+                        operation
+                    )))
+                }
             };
-            
+
             let result_column_name = format!("{}_{}", column_name, operation);
             result_df.add_column(result_column_name, result_series.to_string_series()?)?;
         }
-        
+
         Ok(result_df)
     }
-    
+
     fn apply_operation_with_param<T>(&self, operation: &str, param: T) -> Result<DataFrame>
     where
         T: Copy + 'static,
     {
         let target_columns = self.get_target_columns()?;
         let mut result_df = self.dataframe.clone();
-        
+
         for column_name in target_columns {
             let column = self.dataframe.get_column_as_f64(&column_name)?;
             let expanding = column.expanding(self.config.min_periods)?;
-            
+
             let result_series = match operation {
                 "std" => {
                     if let Some(ddof) = (&param as &dyn Any).downcast_ref::<usize>() {
@@ -498,31 +524,38 @@ impl<'a> DataFrameExpandingOps<'a> {
                     } else {
                         expanding.std(1)?
                     }
-                },
+                }
                 "var" => {
                     if let Some(ddof) = (&param as &dyn Any).downcast_ref::<usize>() {
                         expanding.var(*ddof)?
                     } else {
                         expanding.var(1)?
                     }
-                },
+                }
                 "quantile" => {
                     if let Some(q) = (&param as &dyn Any).downcast_ref::<f64>() {
                         expanding.quantile(*q)?
                     } else {
-                        return Err(Error::InvalidValue("Invalid quantile parameter".to_string()));
+                        return Err(Error::InvalidValue(
+                            "Invalid quantile parameter".to_string(),
+                        ));
                     }
-                },
-                _ => return Err(Error::InvalidValue(format!("Unsupported operation: {}", operation))),
+                }
+                _ => {
+                    return Err(Error::InvalidValue(format!(
+                        "Unsupported operation: {}",
+                        operation
+                    )))
+                }
             };
-            
+
             let result_column_name = format!("{}_{}", column_name, operation);
             result_df.add_column(result_column_name, result_series.to_string_series()?)?;
         }
-        
+
         Ok(result_df)
     }
-    
+
     fn get_target_columns(&self) -> Result<Vec<String>> {
         if let Some(ref columns) = self.config.columns {
             for col in columns {
@@ -543,27 +576,28 @@ impl<'a> DataFrameEWMOps<'a> {
     pub fn mean(&self) -> Result<DataFrame> {
         self.apply_operation("mean")
     }
-    
+
     /// Apply EWM standard deviation operation
     pub fn std(&self, ddof: usize) -> Result<DataFrame> {
         self.apply_operation_with_param("std", ddof)
     }
-    
+
     /// Apply EWM variance operation
     pub fn var(&self, ddof: usize) -> Result<DataFrame> {
         self.apply_operation_with_param("var", ddof)
     }
-    
+
     fn apply_operation(&self, operation: &str) -> Result<DataFrame> {
         let target_columns = self.get_target_columns()?;
         let mut result_df = self.dataframe.clone();
-        
+
         for column_name in target_columns {
             let column = self.dataframe.get_column_as_f64(&column_name)?;
-            let mut ewm = column.ewm()
+            let mut ewm = column
+                .ewm()
                 .adjust(self.config.adjust)
                 .ignore_na(self.config.ignore_na);
-            
+
             if let Some(alpha) = self.config.alpha {
                 ewm = ewm.alpha(alpha)?;
             } else if let Some(span) = self.config.span {
@@ -571,32 +605,38 @@ impl<'a> DataFrameEWMOps<'a> {
             } else if let Some(halflife) = self.config.halflife {
                 ewm = ewm.halflife(halflife);
             }
-            
+
             let result_series = match operation {
                 "mean" => ewm.mean()?,
-                _ => return Err(Error::InvalidValue(format!("Unsupported EWM operation: {}", operation))),
+                _ => {
+                    return Err(Error::InvalidValue(format!(
+                        "Unsupported EWM operation: {}",
+                        operation
+                    )))
+                }
             };
-            
+
             let result_column_name = format!("{}_{}", column_name, operation);
             result_df.add_column(result_column_name, result_series.to_string_series()?)?;
         }
-        
+
         Ok(result_df)
     }
-    
+
     fn apply_operation_with_param<T>(&self, operation: &str, param: T) -> Result<DataFrame>
     where
         T: Copy + 'static,
     {
         let target_columns = self.get_target_columns()?;
         let mut result_df = self.dataframe.clone();
-        
+
         for column_name in target_columns {
             let column = self.dataframe.get_column_as_f64(&column_name)?;
-            let mut ewm = column.ewm()
+            let mut ewm = column
+                .ewm()
                 .adjust(self.config.adjust)
                 .ignore_na(self.config.ignore_na);
-            
+
             if let Some(alpha) = self.config.alpha {
                 ewm = ewm.alpha(alpha)?;
             } else if let Some(span) = self.config.span {
@@ -604,7 +644,7 @@ impl<'a> DataFrameEWMOps<'a> {
             } else if let Some(halflife) = self.config.halflife {
                 ewm = ewm.halflife(halflife);
             }
-            
+
             let result_series = match operation {
                 "std" => {
                     if let Some(ddof) = (&param as &dyn Any).downcast_ref::<usize>() {
@@ -612,24 +652,29 @@ impl<'a> DataFrameEWMOps<'a> {
                     } else {
                         ewm.std(1)?
                     }
-                },
+                }
                 "var" => {
                     if let Some(ddof) = (&param as &dyn Any).downcast_ref::<usize>() {
                         ewm.var(*ddof)?
                     } else {
                         ewm.var(1)?
                     }
-                },
-                _ => return Err(Error::InvalidValue(format!("Unsupported EWM operation: {}", operation))),
+                }
+                _ => {
+                    return Err(Error::InvalidValue(format!(
+                        "Unsupported EWM operation: {}",
+                        operation
+                    )))
+                }
             };
-            
+
             let result_column_name = format!("{}_{}", column_name, operation);
             result_df.add_column(result_column_name, result_series.to_string_series()?)?;
         }
-        
+
         Ok(result_df)
     }
-    
+
     fn get_target_columns(&self) -> Result<Vec<String>> {
         if let Some(ref columns) = self.config.columns {
             for col in columns {
@@ -650,40 +695,54 @@ impl<'a> DataFrameTimeRolling<'a> {
     pub fn mean(&self) -> Result<DataFrame> {
         self.apply_time_operation("mean")
     }
-    
+
     /// Apply time-based rolling sum
     pub fn sum(&self) -> Result<DataFrame> {
         self.apply_time_operation("sum")
     }
-    
+
     /// Apply time-based rolling count
     pub fn count(&self) -> Result<DataFrame> {
         self.apply_time_operation("count")
     }
-    
+
     fn apply_time_operation(&self, operation: &str) -> Result<DataFrame> {
         // Get datetime column
-        let datetime_series = self.dataframe.get_column::<NaiveDateTime>(&self.datetime_column)
-            .map_err(|_| Error::InvalidValue(format!("Column '{}' is not a datetime column", self.datetime_column)))?;
-        
+        let datetime_series = self
+            .dataframe
+            .get_column::<NaiveDateTime>(&self.datetime_column)
+            .map_err(|_| {
+                Error::InvalidValue(format!(
+                    "Column '{}' is not a datetime column",
+                    self.datetime_column
+                ))
+            })?;
+
         let mut result_df = self.dataframe.clone();
         let numeric_columns = self.dataframe.get_numeric_column_names();
-        
+
         for column_name in numeric_columns {
             if column_name == self.datetime_column {
                 continue;
             }
-            
+
             let column = self.dataframe.get_column_as_f64(&column_name)?;
-            let result_values = self.calculate_time_window_operation(&datetime_series, &column, operation)?;
-            
-            let result_series = Series::new(result_values, Some(format!("{}_{}", column_name, operation)))?;
-            result_df.add_column(format!("{}_{}", column_name, operation), result_series.to_string_series()?)?;
+            let result_values =
+                self.calculate_time_window_operation(&datetime_series, &column, operation)?;
+
+            let result_series = Series::new(
+                result_values,
+                Some(format!("{}_{}", column_name, operation)),
+            )?;
+            result_df.add_column(
+                format!("{}_{}", column_name, operation),
+                result_series.to_string_series()?,
+            )?;
         }
-        
+
         Ok(result_df)
     }
-    
+
     fn calculate_time_window_operation(
         &self,
         datetime_series: &Series<NaiveDateTime>,
@@ -691,10 +750,10 @@ impl<'a> DataFrameTimeRolling<'a> {
         operation: &str,
     ) -> Result<Vec<f64>> {
         let mut result = Vec::with_capacity(datetime_series.len());
-        
+
         for (i, current_time) in datetime_series.values().iter().enumerate() {
             let window_start = *current_time - self.window;
-            
+
             // Collect values within the time window
             let mut window_values = Vec::new();
             for (j, time) in datetime_series.values().iter().enumerate() {
@@ -702,7 +761,7 @@ impl<'a> DataFrameTimeRolling<'a> {
                     window_values.push(value_series.values()[j]);
                 }
             }
-            
+
             let result_value = match operation {
                 "mean" => {
                     if window_values.is_empty() {
@@ -710,15 +769,20 @@ impl<'a> DataFrameTimeRolling<'a> {
                     } else {
                         window_values.iter().sum::<f64>() / window_values.len() as f64
                     }
-                },
+                }
                 "sum" => window_values.iter().sum::<f64>(),
                 "count" => window_values.len() as f64,
-                _ => return Err(Error::InvalidValue(format!("Unsupported time operation: {}", operation))),
+                _ => {
+                    return Err(Error::InvalidValue(format!(
+                        "Unsupported time operation: {}",
+                        operation
+                    )))
+                }
             };
-            
+
             result.push(result_value);
         }
-        
+
         Ok(result)
     }
 }
@@ -733,26 +797,31 @@ impl DataFrame {
             for value in string_series.values() {
                 match value.parse::<f64>() {
                     Ok(val) => f64_values.push(val),
-                    Err(_) => return Err(Error::InvalidValue(format!("Cannot convert column '{}' to numeric", column_name))),
+                    Err(_) => {
+                        return Err(Error::InvalidValue(format!(
+                            "Cannot convert column '{}' to numeric",
+                            column_name
+                        )))
+                    }
                 }
             }
             return Series::new(f64_values, Some(column_name.to_string()));
         }
-        
+
         Err(Error::ColumnNotFound(column_name.to_string()))
     }
-    
+
     /// Helper method to get all numeric column names
     pub fn get_numeric_column_names(&self) -> Vec<String> {
         let mut numeric_columns = Vec::new();
-        
+
         for column_name in self.column_names() {
             // Try to convert to f64 to check if numeric
             if self.get_column_as_f64(&column_name).is_ok() {
                 numeric_columns.push(column_name);
             }
         }
-        
+
         numeric_columns
     }
 }

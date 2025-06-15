@@ -1,31 +1,31 @@
 //! SQL module for PandRS
-//! 
+//!
 //! This module provides comprehensive SQL database support for reading and writing DataFrames.
 //! It is organized into several submodules for better maintainability:
-//! 
+//!
 //! - `connection`: Database connection management and configuration
 //! - `operations`: Core SQL operations and DataFrame conversion
 //! - `advanced`: Advanced features including async operations and transactions
 //! - `schema`: Schema management and introspection utilities
-//! 
+//!
 //! # Basic Usage
-//! 
+//!
 //! ```no_run
 //! use pandrs::io::sql::{read_sql, write_to_sql, SqlConnection};
-//! 
+//!
 //! // Read from database
 //! let df = read_sql("SELECT * FROM users", "database.db").unwrap();
-//! 
+//!
 //! // Write to database with connection
 //! let conn = SqlConnection::from_url("sqlite:database.db").unwrap();
 //! // write_sql_advanced(&df, "users", &conn, SqlWriteOptions::default()).unwrap();
 //! ```
-//! 
+//!
 //! # Advanced Usage
-//! 
+//!
 //! ```no_run
 //! use pandrs::io::sql::{AsyncDatabasePool, PoolConfig, SqlReadOptions};
-//! 
+//!
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 //! // Async operations with connection pooling
 //! let config = PoolConfig::default();
@@ -35,65 +35,34 @@
 //! # }
 //! ```
 
+pub mod advanced;
 pub mod connection;
 pub mod operations;
-pub mod advanced;
 pub mod schema;
 
 // Re-export commonly used types and functions from each module
 
 // Connection management
 pub use connection::{
-    DatabaseConnection,
-    PoolConfig,
-    SqlConnection,
-    SqlValue,
-    AsyncDatabasePool,
-    ConnectionStats,
-    TransactionManager,
-    DatabaseOperation,
-    IsolationLevel,
+    AsyncDatabasePool, ConnectionStats, DatabaseConnection, DatabaseOperation, IsolationLevel,
+    PoolConfig, SqlConnection, SqlValue, TransactionManager,
 };
 
 // Core operations
 pub use operations::{
-    SqlReadOptions,
-    SqlWriteOptions,
-    WriteMode,
-    InsertMethod,
-    read_sql,
-    execute_sql,
-    write_to_sql,
-    read_sql_advanced,
-    read_sql_table,
-    write_sql_advanced,
+    execute_sql, read_sql, read_sql_advanced, read_sql_table, write_sql_advanced, write_to_sql,
+    InsertMethod, SqlReadOptions, SqlWriteOptions, WriteMode,
 };
 
 // Schema management
 pub use schema::{
-    TableSchema,
-    ColumnDefinition,
-    ForeignKey,
-    IndexDefinition,
-    ColumnStats,
-    TableAnalysis,
-    SchemaIntrospector,
-    SchemaComparator,
-    SchemaComparison,
-    SchemaDifference,
-    has_table,
-    list_tables,
-    get_table_schema,
-    get_create_table_sql,
+    get_create_table_sql, get_table_schema, has_table, list_tables, ColumnDefinition, ColumnStats,
+    ForeignKey, IndexDefinition, SchemaComparator, SchemaComparison, SchemaDifference,
+    SchemaIntrospector, TableAnalysis, TableSchema,
 };
 
 // Advanced features
-pub use advanced::{
-    QueryBuilder,
-    AdvancedConnectionPool,
-    RetrySettings,
-    HealthCheckResult,
-};
+pub use advanced::{AdvancedConnectionPool, HealthCheckResult, QueryBuilder, RetrySettings};
 
 // Convenience re-exports for backward compatibility and ease of use
 pub use connection::SqlConnection as Connection;
@@ -142,13 +111,13 @@ mod tests {
     #[test]
     fn test_sql_value_to_sql() {
         use rusqlite::ToSql;
-        
+
         let null_val = SqlValue::Null;
         let int_val = SqlValue::Integer(42);
         let real_val = SqlValue::Real(3.14);
         let text_val = SqlValue::Text("hello".to_string());
         let bool_val = SqlValue::Boolean(true);
-        
+
         // Test that conversion doesn't panic
         assert!(null_val.to_sql().is_ok());
         assert!(int_val.to_sql().is_ok());
@@ -168,7 +137,7 @@ mod tests {
             .limit(10)
             .build()
             .unwrap();
-        
+
         assert!(query.contains("SELECT name, age"));
         assert!(query.contains("FROM users"));
         assert!(query.contains("WHERE age > 18"));
@@ -191,7 +160,7 @@ mod tests {
             .offset(10)
             .build()
             .unwrap();
-        
+
         assert!(query.contains("SELECT u.name, u.email, p.title"));
         assert!(query.contains("INNER JOIN profiles p ON u.id = p.user_id"));
         assert!(query.contains("WHERE u.active = true AND p.public = true"));
@@ -239,7 +208,7 @@ mod tests {
             scale: None,
             auto_increment: true,
         };
-        
+
         assert_eq!(col_def.name, "id");
         assert_eq!(col_def.data_type, "INTEGER");
         assert!(!col_def.nullable);
@@ -255,7 +224,7 @@ mod tests {
             on_delete: Some("CASCADE".to_string()),
             on_update: Some("RESTRICT".to_string()),
         };
-        
+
         assert_eq!(fk.column, "user_id");
         assert_eq!(fk.referenced_table, "users");
         assert_eq!(fk.on_delete, Some("CASCADE".to_string()));
@@ -269,7 +238,7 @@ mod tests {
             unique: true,
             index_type: Some("BTREE".to_string()),
         };
-        
+
         assert_eq!(index.name, "idx_user_email");
         assert_eq!(index.columns.len(), 1);
         assert!(index.unique);
@@ -305,7 +274,7 @@ mod tests {
             foreign_keys: vec![],
             indexes: vec![],
         };
-        
+
         assert_eq!(schema.name, "users");
         assert_eq!(schema.columns.len(), 2);
         assert_eq!(schema.primary_keys.len(), 1);

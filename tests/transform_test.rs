@@ -16,9 +16,6 @@ mod tests {
         value_str.trim_matches('"').to_string()
     }
 
-
-
-
     #[test]
     fn test_conditional_aggregate() {
         // Create test DataFrame
@@ -136,5 +133,4 @@ mod tests {
         assert_eq!(clean_databox_value(&id_col.values()[3].to_string()), "4");
         assert_eq!(clean_databox_value(&value_col.values()[3].to_string()), "d");
     }
-
 }

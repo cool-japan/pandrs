@@ -72,11 +72,11 @@ impl LinearRegression {
         // Calculate R² = 1 - (SS_res / SS_tot)
         let y_mean = y_actual.iter().sum::<f64>() / y_actual.len() as f64;
 
-        let ss_tot: f64 = y_actual.iter()
-            .map(|&y| (y - y_mean).powi(2))
-            .sum();
+        let ss_tot: f64 = y_actual.iter().map(|&y| (y - y_mean).powi(2)).sum();
 
-        let ss_res: f64 = y_actual.iter().zip(y_pred.iter())
+        let ss_res: f64 = y_actual
+            .iter()
+            .zip(y_pred.iter())
             .map(|(&actual, &pred)| (actual - pred).powi(2))
             .sum();
 
@@ -253,7 +253,7 @@ impl SupervisedModel for LinearRegression {
         for feature_name in &feature_names {
             let feature_col = train_data.get_column::<f64>(feature_name)?;
             let feature_values = feature_col.as_f64()?;
-            
+
             if feature_values.len() != n {
                 return Err(Error::DimensionMismatch(format!(
                     "Feature column '{}' has different length than target",
@@ -268,11 +268,10 @@ impl SupervisedModel for LinearRegression {
         if self.normalize {
             for i in if self.fit_intercept { 1 } else { 0 }..x_matrix.len() {
                 let mean = x_matrix[i].iter().sum::<f64>() / n as f64;
-                let variance = x_matrix[i].iter()
-                    .map(|&x| (x - mean).powi(2))
-                    .sum::<f64>() / n as f64;
+                let variance =
+                    x_matrix[i].iter().map(|&x| (x - mean).powi(2)).sum::<f64>() / n as f64;
                 let std_dev = variance.sqrt();
-                
+
                 if std_dev > 1e-10 {
                     for j in 0..n {
                         x_matrix[i][j] = (x_matrix[i][j] - mean) / std_dev;
@@ -297,7 +296,7 @@ impl SupervisedModel for LinearRegression {
         // Store results
         let mut coefficients = HashMap::new();
         let start_idx = if self.fit_intercept { 1 } else { 0 };
-        
+
         if self.fit_intercept {
             self.intercept = Some(beta_coefs[0]);
         } else {
@@ -350,7 +349,7 @@ impl SupervisedModel for LinearRegression {
         for feature_name in feature_names {
             let feature_col = data.get_column::<f64>(feature_name)?;
             let feature_values = feature_col.as_f64()?;
-            
+
             if feature_values.len() != n_samples {
                 return Err(Error::DimensionMismatch(format!(
                     "Feature column '{}' has different length than expected",
@@ -436,14 +435,18 @@ impl ModelEvaluator for LinearRegression {
 
         // Calculate R² = 1 - (SS_res / SS_tot)
         let y_mean = target_values.iter().sum::<f64>() / n_samples as f64;
-        let ss_tot: f64 = target_values.iter()
-            .map(|&y| (y - y_mean).powi(2))
-            .sum();
-        let ss_res: f64 = predictions.iter().zip(target_values.iter())
+        let ss_tot: f64 = target_values.iter().map(|&y| (y - y_mean).powi(2)).sum();
+        let ss_res: f64 = predictions
+            .iter()
+            .zip(target_values.iter())
             .map(|(&pred, &actual)| (actual - pred).powi(2))
             .sum();
-        
-        let r2 = if ss_tot == 0.0 { 1.0 } else { 1.0 - ss_res / ss_tot };
+
+        let r2 = if ss_tot == 0.0 {
+            1.0
+        } else {
+            1.0 - ss_res / ss_tot
+        };
 
         let prediction_time = start_time.elapsed().as_secs_f64();
 

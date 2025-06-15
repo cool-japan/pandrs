@@ -8,18 +8,21 @@ use std::collections::HashMap;
 fn bench_create_small_dataframe(c: &mut Criterion) {
     c.bench_function("create_small_dataframe", |b| {
         b.iter(|| {
-            let col_a = Series::new(vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10], Some("A".to_string())).unwrap();
+            let col_a =
+                Series::new(vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10], Some("A".to_string())).unwrap();
             let col_b = Series::new(
                 vec![1.1, 2.2, 3.3, 4.4, 5.5, 6.6, 7.7, 8.8, 9.9, 10.1],
                 Some("B".to_string()),
-            ).unwrap();
+            )
+            .unwrap();
             let col_c = Series::new(
                 ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"]
                     .iter()
                     .map(|s| s.to_string())
                     .collect(),
                 Some("C".to_string()),
-            ).unwrap();
+            )
+            .unwrap();
 
             let mut df = DataFrame::new();
             df.add_column("A".to_string(), col_a).unwrap();
@@ -38,11 +41,13 @@ fn bench_create_medium_dataframe(c: &mut Criterion) {
             let col_b = Series::new(
                 (0..1000).map(|i| i as f64 * 0.5).collect::<Vec<_>>(),
                 Some("B".to_string()),
-            ).unwrap();
+            )
+            .unwrap();
             let col_c = Series::new(
                 (0..1000).map(|i| format!("val_{}", i)).collect::<Vec<_>>(),
                 Some("C".to_string()),
-            ).unwrap();
+            )
+            .unwrap();
 
             let mut df = DataFrame::new();
             df.add_column("A".to_string(), col_a).unwrap();
@@ -83,13 +88,15 @@ fn bench_column_access(c: &mut Criterion) {
     let col_b = Series::new(
         (0..10_000).map(|i| i as f64 * 0.5).collect::<Vec<_>>(),
         Some("B".to_string()),
-    ).unwrap();
+    )
+    .unwrap();
     let col_c = Series::new(
         (0..10_000)
             .map(|i| format!("val_{}", i))
             .collect::<Vec<_>>(),
         Some("C".to_string()),
-    ).unwrap();
+    )
+    .unwrap();
 
     let mut df = DataFrame::new();
     df.add_column("A".to_string(), col_a).unwrap();
@@ -112,11 +119,13 @@ fn bench_to_csv_small(c: &mut Criterion) {
     let col_b = Series::new(
         (0..100).map(|i| i as f64 * 0.5).collect::<Vec<_>>(),
         Some("B".to_string()),
-    ).unwrap();
+    )
+    .unwrap();
     let col_c = Series::new(
         (0..100).map(|i| format!("val_{}", i)).collect::<Vec<_>>(),
         Some("C".to_string()),
-    ).unwrap();
+    )
+    .unwrap();
 
     let mut df = DataFrame::new();
     df.add_column("A".to_string(), col_a).unwrap();
@@ -142,11 +151,13 @@ fn bench_to_json_small(c: &mut Criterion) {
     let col_b = Series::new(
         (0..100).map(|i| i as f64 * 0.5).collect::<Vec<_>>(),
         Some("B".to_string()),
-    ).unwrap();
+    )
+    .unwrap();
     let col_c = Series::new(
         (0..100).map(|i| format!("val_{}", i)).collect::<Vec<_>>(),
         Some("C".to_string()),
-    ).unwrap();
+    )
+    .unwrap();
 
     let mut df = DataFrame::new();
     df.add_column("A".to_string(), col_a).unwrap();

@@ -1,6 +1,6 @@
 use pandrs::error::Result;
-use pandrs::{DataFrame, Series};
 use pandrs::optimized::OptimizedDataFrame;
+use pandrs::{DataFrame, Series};
 use std::collections::HashMap;
 
 #[allow(clippy::result_large_err)]
@@ -27,10 +27,9 @@ fn main() -> Result<()> {
     println!("\n=== Series Name Management (New in Alpha 4) ===");
     ages.set_name("person_age".to_string());
     println!("Updated age series name: {:?}", ages.name());
-    
+
     // Create series with fluent API
-    let weights = Series::new(vec![70, 80, 75], None)?
-        .with_name("weight_kg".to_string());
+    let weights = Series::new(vec![70, 80, 75], None)?.with_name("weight_kg".to_string());
     println!("Weight series with fluent API: {:?}", weights.name());
 
     // Statistics for numeric series
@@ -55,22 +54,28 @@ fn main() -> Result<()> {
     // Create an OptimizedDataFrame (recommended for performance)
     println!("\n=== Creating an OptimizedDataFrame (Recommended) ===");
     let mut opt_df = OptimizedDataFrame::new();
-    opt_df.add_string_column("name", vec![
-        "Alice".to_string(),
-        "Bob".to_string(), 
-        "Charlie".to_string(),
-    ])?;
+    opt_df.add_string_column(
+        "name",
+        vec![
+            "Alice".to_string(),
+            "Bob".to_string(),
+            "Charlie".to_string(),
+        ],
+    )?;
     opt_df.add_int_column("age", vec![30, 25, 40])?;
     opt_df.add_int_column("height", vec![180, 175, 182])?;
     opt_df.add_float_column("weight", vec![70.5, 80.2, 75.8])?;
 
-    println!("OptimizedDataFrame created with {} rows and {} columns", 
-             opt_df.row_count(), opt_df.column_count());
+    println!(
+        "OptimizedDataFrame created with {} rows and {} columns",
+        opt_df.row_count(),
+        opt_df.column_count()
+    );
     println!("Column Names: {:?}", opt_df.column_names());
 
     // Demonstrate new column management features (alpha.4)
     println!("\n=== Column Management (New in Alpha 4) ===");
-    
+
     // Rename specific columns
     let mut rename_map = HashMap::new();
     rename_map.insert("age".to_string(), "years_old".to_string());
@@ -85,11 +90,14 @@ fn main() -> Result<()> {
         "height_measurement".to_string(),
         "body_weight".to_string(),
     ])?;
-    println!("After setting all column names: {:?}", opt_df.column_names());
+    println!(
+        "After setting all column names: {:?}",
+        opt_df.column_names()
+    );
 
     // Testing I/O operations with enhanced error handling
     println!("\n=== I/O Operations ===");
-    
+
     // Save traditional DataFrame to CSV
     let traditional_file = "traditional_data.csv";
     match df.to_csv(traditional_file) {
@@ -97,18 +105,21 @@ fn main() -> Result<()> {
         Err(e) => println!("❌ Failed to save traditional DataFrame: {}", e),
     }
 
-    // Save OptimizedDataFrame to CSV 
+    // Save OptimizedDataFrame to CSV
     let optimized_file = "optimized_data.csv";
     match opt_df.to_csv(optimized_file, true) {
         Ok(_) => {
             println!("✅ Saved OptimizedDataFrame to {}", optimized_file);
-            
+
             // Try to read it back using the I/O module
             match pandrs::io::read_csv(optimized_file, true) {
                 Ok(loaded_df) => {
                     println!("✅ Successfully loaded DataFrame from CSV");
-                    println!("   Loaded {} rows and {} columns", 
-                             loaded_df.row_count(), loaded_df.column_count());
+                    println!(
+                        "   Loaded {} rows and {} columns",
+                        loaded_df.row_count(),
+                        loaded_df.column_count()
+                    );
                     println!("   Column Names: {:?}", loaded_df.column_names());
                 }
                 Err(e) => println!("❌ Failed to load CSV: {}", e),
@@ -141,7 +152,10 @@ fn main() -> Result<()> {
 
     // Type safety demonstration - this should return None
     let wrong_type = age_col_view.as_string();
-    println!("Accessing Int64 column as String: {:?}", wrong_type.is_some());
+    println!(
+        "Accessing Int64 column as String: {:?}",
+        wrong_type.is_some()
+    );
 
     println!("\n🎉 Alpha 4 Basic Usage Example Complete! 🎉");
     Ok(())

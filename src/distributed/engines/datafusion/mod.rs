@@ -127,20 +127,20 @@ impl ExecutionContext for DataFusionContext {
     fn execute_plan(&mut self, plan: ExecutionPlan) -> Result<ExecutionResult> {
         // Convert the execution plan to SQL
         let sql = self.plan_to_sql(&plan)?;
-        
+
         // Execute the SQL
         self.sql(&sql)
     }
-    
+
     fn register_in_memory_table(&mut self, name: &str, partitions: PartitionSet) -> Result<()> {
-        use std::sync::Arc;
-        use datafusion::datasource::MemTable;
         use datafusion::arrow::record_batch::RecordBatch;
-        
+        use datafusion::datasource::MemTable;
+        use std::sync::Arc;
+
         // Convert partitions to record batches
         let mut batches = Vec::new();
         let mut schema = None;
-        
+
         for partition in partitions.partitions() {
             if let Some(data) = partition.data() {
                 if schema.is_none() {
@@ -149,115 +149,128 @@ impl ExecutionContext for DataFusionContext {
                 batches.push(data.clone());
             }
         }
-        
+
         if batches.is_empty() {
             return Err(Error::InvalidValue("No data in partition set".to_string()));
         }
-        
-        let schema = schema.ok_or_else(|| {
-            Error::InvalidValue("No schema found in partitions".to_string())
-        })?;
-        
+
+        let schema = schema
+            .ok_or_else(|| Error::InvalidValue("No schema found in partitions".to_string()))?;
+
         // Create memory table
         let mem_table = MemTable::try_new(schema, vec![batches])
             .map_err(|e| Error::InvalidValue(format!("Failed to create memory table: {}", e)))?;
-        
+
         // Register table with DataFusion
-        self.context.write().unwrap().register_table(name, Arc::new(mem_table))
+        self.context
+            .write()
+            .unwrap()
+            .register_table(name, Arc::new(mem_table))
             .map_err(|e| Error::InvalidValue(format!("Failed to register table: {}", e)))?;
-        
+
         // Store in our registry
         self.registered_tables.insert(name.to_string(), partitions);
-        
+
         Ok(())
     }
-    
+
     fn register_csv(&mut self, name: &str, path: &str) -> Result<()> {
         // TODO: Implement CSV registration properly
-        use std::sync::Arc;
         use arrow::datatypes::Schema;
         use datafusion::datasource::MemTable;
-        
+        use std::sync::Arc;
+
         // For now, register empty table as placeholder
         let schema = Arc::new(Schema::new(vec![]));
         let mem_table = MemTable::try_new(schema, vec![vec![]])
             .map_err(|e| Error::InvalidValue(format!("Failed to create CSV table: {}", e)))?;
-        
-        self.context.write().unwrap().register_table(name, Arc::new(mem_table))
+
+        self.context
+            .write()
+            .unwrap()
+            .register_table(name, Arc::new(mem_table))
             .map_err(|e| Error::InvalidValue(format!("Failed to register CSV table: {}", e)))?;
-        
+
         Ok(())
     }
-    
+
     fn register_parquet(&mut self, name: &str, path: &str) -> Result<()> {
-        // TODO: Implement Parquet registration properly  
-        use std::sync::Arc;
+        // TODO: Implement Parquet registration properly
         use arrow::datatypes::Schema;
         use datafusion::datasource::MemTable;
-        
+        use std::sync::Arc;
+
         // For now, register empty table as placeholder
         let schema = Arc::new(Schema::new(vec![]));
         let mem_table = MemTable::try_new(schema, vec![vec![]])
             .map_err(|e| Error::InvalidValue(format!("Failed to create Parquet table: {}", e)))?;
-        
-        self.context.write().unwrap().register_table(name, Arc::new(mem_table))
+
+        self.context
+            .write()
+            .unwrap()
+            .register_table(name, Arc::new(mem_table))
             .map_err(|e| Error::InvalidValue(format!("Failed to register Parquet table: {}", e)))?;
-        
+
         Ok(())
     }
-    
+
     fn sql(&mut self, query: &str) -> Result<ExecutionResult> {
-        use crate::distributed::core::partition::{PartitionSet, Partition};
-        
+        use crate::distributed::core::partition::{Partition, PartitionSet};
+
         // Execute SQL query using DataFusion
         let sql_result = futures::executor::block_on(async {
             let df = self.context.write().unwrap().sql(query).await?;
             df.collect().await
-        }).map_err(|e| Error::InvalidValue(format!("SQL execution failed: {}", e)))?;
-        
+        })
+        .map_err(|e| Error::InvalidValue(format!("SQL execution failed: {}", e)))?;
+
         // Convert result to our format
         let mut partitions = Vec::new();
         for (i, batch) in sql_result.iter().enumerate() {
             partitions.push(Partition::new(i, batch.clone()));
         }
-        
+
         let schema = if sql_result.is_empty() {
             use arrow::datatypes::Schema;
             std::sync::Arc::new(Schema::new(vec![]))
         } else {
             sql_result[0].schema()
         };
-        
+
         let partition_set = PartitionSet::new(partitions, schema);
-        
-        Ok(ExecutionResult::new(partition_set, schema, self.metrics.clone()))
+
+        Ok(ExecutionResult::new(
+            partition_set,
+            schema,
+            self.metrics.clone(),
+        ))
     }
-    
+
     fn table_schema(&self, name: &str) -> Result<arrow::datatypes::SchemaRef> {
         // TODO: Implement proper schema retrieval
         use arrow::datatypes::Schema;
         Ok(std::sync::Arc::new(Schema::new(vec![])))
     }
-    
+
     fn explain_plan(&self, plan: &ExecutionPlan, _with_statistics: bool) -> Result<String> {
         // TODO: Implement proper plan explanation
         Ok(format!("Execution plan for: {}", plan.input()))
     }
-    
+
     fn write_parquet(&mut self, _result: &ExecutionResult, _path: &str) -> Result<()> {
         // TODO: Implement Parquet writing
         Ok(())
     }
-    
+
     fn write_csv(&mut self, _result: &ExecutionResult, _path: &str) -> Result<()> {
         // TODO: Implement CSV writing
         Ok(())
     }
-    
+
     fn metrics(&self) -> Result<ExecutionMetrics> {
         Ok(self.metrics.clone())
     }
-    
+
     fn clone(&self) -> Box<dyn ExecutionContext> {
         // TODO: Implement proper cloning
         Box::new(DataFusionContext::new())
@@ -268,7 +281,7 @@ impl DataFusionContext {
     /// Helper method to convert ExecutionPlan to SQL (private implementation)
     fn plan_to_sql(&self, plan: &ExecutionPlan) -> Result<String> {
         let mut sql = format!("SELECT * FROM {}", plan.input());
-        
+
         for operation in plan.operations() {
             match operation {
                 Operation::Filter(condition) => {
@@ -277,41 +290,59 @@ impl DataFusionContext {
                     } else {
                         sql = format!("{} WHERE {}", sql, condition);
                     }
-                },
+                }
                 Operation::Select(columns) => {
                     let column_list = columns.join(", ");
                     sql = sql.replace("SELECT *", &format!("SELECT {}", column_list));
-                },
+                }
                 Operation::Aggregate(group_by, aggregates) => {
-                    let agg_exprs: Vec<String> = aggregates.iter()
+                    let agg_exprs: Vec<String> = aggregates
+                        .iter()
                         .map(|agg| {
                             let func_upper = agg.function.to_uppercase();
                             let func_lower = agg.function.to_lowercase();
-                            format!("{}({}) as {}_{}", func_upper, agg.column, func_lower, agg.column)
+                            format!(
+                                "{}({}) as {}_{}",
+                                func_upper, agg.column, func_lower, agg.column
+                            )
                         })
                         .collect();
-                    
+
                     if !group_by.is_empty() {
                         let group_columns = group_by.join(", ");
-                        sql = format!("SELECT {}, {} FROM ({}) GROUP BY {}",
-                            group_columns, agg_exprs.join(", "), sql, group_columns);
+                        sql = format!(
+                            "SELECT {}, {} FROM ({}) GROUP BY {}",
+                            group_columns,
+                            agg_exprs.join(", "),
+                            sql,
+                            group_columns
+                        );
                     } else {
                         sql = format!("SELECT {} FROM ({})", agg_exprs.join(", "), sql);
                     }
-                },
+                }
                 Operation::OrderBy(sort_exprs) => {
-                    let sort_list: Vec<String> = sort_exprs.iter()
-                        .map(|expr| format!("{} {}",
-                            expr.column,
-                            if expr.ascending { "ASC" } else { "DESC" }
-                        ))
+                    let sort_list: Vec<String> = sort_exprs
+                        .iter()
+                        .map(|expr| {
+                            format!(
+                                "{} {}",
+                                expr.column,
+                                if expr.ascending { "ASC" } else { "DESC" }
+                            )
+                        })
                         .collect();
                     sql = format!("{} ORDER BY {}", sql, sort_list.join(", "));
-                },
+                }
                 Operation::Limit(n) => {
                     sql = format!("{} LIMIT {}", sql, n);
-                },
-                Operation::Join { join_type, right, left_keys: _, right_keys: _ } => {
+                }
+                Operation::Join {
+                    join_type,
+                    right,
+                    left_keys: _,
+                    right_keys: _,
+                } => {
                     // For now, use simplified join syntax
                     let on_condition = "true"; // Placeholder
                     let join_type_str = match join_type {
@@ -322,17 +353,17 @@ impl DataFusionContext {
                         JoinType::Cross => "CROSS JOIN",
                     };
                     sql = format!("{} {} {} ON {}", sql, join_type_str, right, on_condition);
-                },
+                }
                 Operation::Distinct => {
                     sql = sql.replace("SELECT", "SELECT DISTINCT");
-                },
+                }
                 _ => {
                     // For now, ignore unsupported operations
                     // TODO: Implement remaining operations
                 }
             }
         }
-        
+
         Ok(sql)
     }
 }

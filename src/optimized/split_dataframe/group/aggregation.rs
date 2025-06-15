@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 use rayon::prelude::*;
 
 use super::super::core::OptimizedDataFrame;
-use super::types::{GroupBy, AggregateOp, CustomAggregation, AggregateFn};
+use super::types::{AggregateFn, AggregateOp, CustomAggregation, GroupBy};
 use crate::column::{Column, ColumnTrait, Float64Column, StringColumn};
 use crate::error::{Error, Result};
 use crate::index::StringMultiIndex;
@@ -469,9 +469,7 @@ impl<'a> GroupBy<'a> {
                         sum as f64
                     }
                     // Use the existing implementation for standard operations
-                    _ => {
-                        self.calculate_aggregation(col, agg.op, row_indices)?
-                    }
+                    _ => self.calculate_aggregation(col, agg.op, row_indices)?,
                 };
 
                 agg_result_data

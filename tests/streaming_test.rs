@@ -56,7 +56,6 @@ fn test_data_stream_basics() -> Result<()> {
 }
 
 #[test]
-#[ignore = "StreamAggregator implementation is not yet complete"]
 fn test_stream_aggregator() -> Result<()> {
     let headers = vec![
         "id".to_string(),
@@ -81,7 +80,6 @@ fn test_stream_aggregator() -> Result<()> {
 }
 
 #[test]
-#[ignore = "StreamProcessor implementation is not yet complete"]
 fn test_stream_processor() -> Result<()> {
     let headers = vec!["id".to_string(), "text".to_string(), "category".to_string()];
 
@@ -226,7 +224,6 @@ fn test_real_time_analytics() -> Result<()> {
 }
 
 #[test]
-#[ignore = "batch_to_dataframe implementation is not yet complete"]
 fn test_batch_to_dataframe() -> Result<()> {
     let headers = vec!["id".to_string(), "value".to_string()];
 

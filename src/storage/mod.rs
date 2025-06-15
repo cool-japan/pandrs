@@ -1,16 +1,16 @@
 // Storage engines module
+pub mod adaptive_string_pool;
 pub mod column_store;
 pub mod disk;
+pub mod hybrid_large_scale;
 pub mod memory_mapped;
+pub mod ml_strategy_selector;
 pub mod string_pool;
 pub mod traits;
-pub mod unified_memory;
-pub mod unified_manager;
 pub mod unified_column_store;
-pub mod ml_strategy_selector;
+pub mod unified_manager;
+pub mod unified_memory;
 pub mod zero_copy;
-pub mod adaptive_string_pool;
-pub mod hybrid_large_scale;
 // pub mod unified_string_pool; // Temporarily disabled due to Send/Sync issues
 pub mod simple_unified_string_pool;
 
@@ -22,62 +22,62 @@ pub use string_pool::StringPool;
 
 // Re-exports for unified storage system
 pub use traits::{
-    StorageEngine, StorageStrategy, UnifiedStorageManager,
-    StorageConfig, StorageRequirements, DataChunk, PerformanceProfile,
-    AccessPattern, PerformancePriority, DurabilityLevel, CompressionPreference,
-    StorageEngineId, StorageHandle, StorageHandleId,
+    AccessPattern, CompressionPreference, DataChunk, DurabilityLevel, PerformancePriority,
+    PerformanceProfile, StorageConfig, StorageEngine, StorageEngineId, StorageHandle,
+    StorageHandleId, StorageRequirements, StorageStrategy, UnifiedStorageManager,
 };
 
 // Re-exports for unified memory management
 pub use unified_memory::{
-    StorageStrategy as UnifiedStorageStrategy, StorageType, StorageHandle as UnifiedStorageHandle,
-    StorageConfig as UnifiedStorageConfig, StorageRequirements as UnifiedStorageRequirements,
-    DataChunk as UnifiedDataChunk, ChunkRange, StorageStats, PerformanceProfile as UnifiedPerformanceProfile,
-    AccessPattern as UnifiedAccessPattern, PerformancePriority as UnifiedPerformancePriority,
-    DurabilityLevel as UnifiedDurabilityLevel, CompressionPreference as UnifiedCompressionPreference,
-    ConcurrencyLevel, IoPattern, DataCharacteristics, StrategyCapability, ResourceCost,
-    StorageId, StorageMetadata, PerformanceTracker, AtomicMemoryStats, Speed, Efficiency,
-    QueryOptimization, ParallelScalability, CompressionType, CompactionResult,
+    AccessPattern as UnifiedAccessPattern, AtomicMemoryStats, ChunkRange, CompactionResult,
+    CompressionPreference as UnifiedCompressionPreference, CompressionType, ConcurrencyLevel,
+    DataCharacteristics, DataChunk as UnifiedDataChunk, DurabilityLevel as UnifiedDurabilityLevel,
+    Efficiency, IoPattern, ParallelScalability, PerformancePriority as UnifiedPerformancePriority,
+    PerformanceProfile as UnifiedPerformanceProfile, PerformanceTracker, QueryOptimization,
+    ResourceCost, Speed, StorageConfig as UnifiedStorageConfig,
+    StorageHandle as UnifiedStorageHandle, StorageId, StorageMetadata,
+    StorageRequirements as UnifiedStorageRequirements, StorageStats,
+    StorageStrategy as UnifiedStorageStrategy, StorageType, StrategyCapability,
 };
 
 // Re-exports for unified memory manager
 pub use unified_manager::{
-    UnifiedMemoryManager, MemoryConfig, StrategySelectionAlgorithm, CacheManager, 
-    PerformanceMonitor, StrategySelector, StrategySelection, DefaultStrategySelector,
+    CacheManager, DefaultStrategySelector, MemoryConfig, PerformanceMonitor, StrategySelection,
+    StrategySelectionAlgorithm, StrategySelector, UnifiedMemoryManager,
 };
 
 // Re-exports for ML-based strategy selection
 pub use ml_strategy_selector::{
-    MLStrategySelector, AdaptiveUnifiedMemoryManager, WorkloadFeatures, 
-    PerformancePrediction, TrainingExample, ModelStats,
+    AdaptiveUnifiedMemoryManager, MLStrategySelector, ModelStats, PerformancePrediction,
+    TrainingExample, WorkloadFeatures,
 };
 
 // Re-exports for zero-copy operations
 pub use zero_copy::{
-    ZeroCopyView, ZeroCopyManager, MemoryMappedView, CacheAwareAllocator,
-    CacheTopology, CacheLevel, MemoryLayout, CacheAwareOps, ZeroCopyStats,
-    MemoryPool, AllocationStats, CACHE_LINE_SIZE, PAGE_SIZE,
+    AllocationStats, CacheAwareAllocator, CacheAwareOps, CacheLevel, CacheTopology, MemoryLayout,
+    MemoryMappedView, MemoryPool, ZeroCopyManager, ZeroCopyStats, ZeroCopyView, CACHE_LINE_SIZE,
+    PAGE_SIZE,
 };
 
 // Re-exports for unified column store
 pub use unified_column_store::{
-    UnifiedColumnStoreStrategy, ColumnStoreConfig, EncodingType, CompressionEngine,
-    EncodingStrategy, BlockManager, ColumnStoreHandle, ColumnLayout, ColumnDataType,
-    ColumnStatistics, CompressedBlock, BlockId, PhysicalStorage,
+    BlockId, BlockManager, ColumnDataType, ColumnLayout, ColumnStatistics, ColumnStoreConfig,
+    ColumnStoreHandle, CompressedBlock, CompressionEngine, EncodingStrategy, EncodingType,
+    PhysicalStorage, UnifiedColumnStoreStrategy,
 };
 
 // Re-exports for adaptive string pool
 pub use adaptive_string_pool::{
-    AdaptiveStringPoolStrategy, StringPoolConfig, StringCharacteristics, PatternAnalysis,
-    StringStorageStrategy, StringCompressionAlgorithm, StringPoolHandle, StringPoolStatistics,
-    StringPatternAnalyzer, StringCompressionEngine, CompressionDictionary, StringId,
+    AdaptiveStringPoolStrategy, CompressionDictionary, PatternAnalysis, StringCharacteristics,
+    StringCompressionAlgorithm, StringCompressionEngine, StringId, StringPatternAnalyzer,
+    StringPoolConfig, StringPoolHandle, StringPoolStatistics, StringStorageStrategy,
 };
 
 // Re-exports for hybrid large scale strategy
 pub use hybrid_large_scale::{
-    HybridLargeScaleStrategy, HybridConfig, TierConfig, TierStorageType, DataTier,
-    AccessPattern as HybridAccessPattern, AccessPatternType, TieredDataEntry, DataId,
-    TierManager, TieringReport, TierBackend, TierStorageInfo, HybridHandle, HybridStatistics,
+    AccessPattern as HybridAccessPattern, AccessPatternType, DataId, DataTier, HybridConfig,
+    HybridHandle, HybridLargeScaleStrategy, HybridStatistics, TierBackend, TierConfig, TierManager,
+    TierStorageInfo, TierStorageType, TieredDataEntry, TieringReport,
 };
 
 // Re-exports for unified zero-copy string pool (temporarily disabled)
@@ -88,5 +88,5 @@ pub use hybrid_large_scale::{
 
 // Re-exports for simplified unified zero-copy string pool
 pub use simple_unified_string_pool::{
-    SimpleUnifiedStringPool, SimpleStringView, SimpleStringPoolStats,
+    SimpleStringPoolStats, SimpleStringView, SimpleUnifiedStringPool,
 };

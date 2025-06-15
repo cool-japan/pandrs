@@ -6,10 +6,8 @@ use std::sync::{Arc, Mutex};
 use rayon::prelude::*;
 
 use super::super::core::OptimizedDataFrame;
-use super::types::{GroupBy, AggregateOp, CustomAggregation, AggregateFn};
-use crate::column::{
-    BooleanColumn, Column, ColumnTrait, Float64Column, Int64Column, StringColumn,
-};
+use super::types::{AggregateFn, AggregateOp, CustomAggregation, GroupBy};
+use crate::column::{BooleanColumn, Column, ColumnTrait, Float64Column, Int64Column, StringColumn};
 use crate::error::Result;
 
 impl<'a> GroupBy<'a> {

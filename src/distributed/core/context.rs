@@ -163,7 +163,7 @@ impl DistributedContext {
     /// Validates a schema against registered datasets
     pub fn validate_schema(&self, schema: &ExprSchema) -> Result<()> {
         let validator = SchemaValidator::new();
-        // TODO: Implement proper schema validation 
+        // TODO: Implement proper schema validation
         // validator.validate_plan requires ExecutionPlan, not ExprSchema
         Ok(())
     }

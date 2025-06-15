@@ -392,9 +392,25 @@ mod tests {
 
         // For y = 1 + x1 + x2, we expect intercept ≈ 1, coefficients ≈ [1, 1]
         // Allow for reasonable numerical tolerance with small datasets
-        assert!((result.intercept - 1.0).abs() < 1.0, "Intercept was {}, expected ~1.0", result.intercept);
-        assert!((result.coefficients[0] - 1.0).abs() < 1.0, "First coefficient was {}, expected ~1.0", result.coefficients[0]);
-        assert!((result.coefficients[1] - 1.0).abs() < 1.0, "Second coefficient was {}, expected ~1.0", result.coefficients[1]);
-        assert!(result.r_squared > 0.95, "R-squared was {}, expected > 0.95", result.r_squared);
+        assert!(
+            (result.intercept - 1.0).abs() < 1.0,
+            "Intercept was {}, expected ~1.0",
+            result.intercept
+        );
+        assert!(
+            (result.coefficients[0] - 1.0).abs() < 1.0,
+            "First coefficient was {}, expected ~1.0",
+            result.coefficients[0]
+        );
+        assert!(
+            (result.coefficients[1] - 1.0).abs() < 1.0,
+            "Second coefficient was {}, expected ~1.0",
+            result.coefficients[1]
+        );
+        assert!(
+            result.r_squared > 0.95,
+            "R-squared was {}, expected > 0.95",
+            result.r_squared
+        );
     }
 }

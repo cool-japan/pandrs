@@ -7,7 +7,7 @@ use rusqlite::{Connection as SqliteConnection, Row, Statement};
 
 // Multi-database support via sqlx (optional)
 #[cfg(feature = "sql")]
-use sqlx::{Pool, AnyPool, Row as SqlxRow, Column as SqlxColumn};
+use sqlx::{AnyPool, Column as SqlxColumn, Pool, Row as SqlxRow};
 
 #[cfg(feature = "sql")]
 use sqlx::any::{AnyArguments, AnyConnectOptions};
@@ -94,28 +94,29 @@ impl SqlConnection {
             #[cfg(not(feature = "sql"))]
             {
                 return Err(Error::IoError(
-                    "Multi-database support requires 'sqlx' feature".to_string()
+                    "Multi-database support requires 'sqlx' feature".to_string(),
                 ));
             }
         };
-        
+
         Ok(Self {
             connection_type,
             #[cfg(feature = "sql")]
             pool: None,
         })
     }
-    
+
     /// Create connection with pooling
     #[cfg(feature = "sql")]
     pub async fn with_pool(url: &str, config: PoolConfig) -> Result<Self> {
-        let options: AnyConnectOptions = url.parse()
+        let options: AnyConnectOptions = url
+            .parse()
             .map_err(|e| Error::IoError(format!("Invalid connection URL: {}", e)))?;
-        
+
         let pool = Pool::connect_with(options)
             .await
             .map_err(|e| Error::IoError(format!("Failed to create connection pool: {}", e)))?;
-        
+
         let connection_type = if url.starts_with("postgresql:") || url.starts_with("postgres:") {
             DatabaseConnection::PostgreSQL(url.to_string())
         } else if url.starts_with("mysql:") {
@@ -123,7 +124,7 @@ impl SqlConnection {
         } else {
             DatabaseConnection::Generic(url.to_string())
         };
-        
+
         Ok(Self {
             connection_type,
             pool: Some(pool),
@@ -195,7 +196,7 @@ impl AsyncDatabasePool {
     #[cfg(feature = "sql")]
     pub async fn new(url: &str, _config: PoolConfig) -> Result<Self> {
         use sqlx::any::AnyPoolOptions;
-        
+
         let pool = AnyPoolOptions::new()
             .max_connections(_config.max_connections)
             .min_connections(_config.min_connections)
@@ -204,7 +205,7 @@ impl AsyncDatabasePool {
             .connect(url)
             .await
             .map_err(|e| Error::IoError(format!("Failed to create async pool: {}", e)))?;
-        
+
         Ok(Self {
             pool,
             config: _config,
@@ -234,7 +235,7 @@ impl AsyncDatabasePool {
 impl rusqlite::ToSql for SqlValue {
     fn to_sql(&self) -> rusqlite::Result<rusqlite::types::ToSqlOutput<'_>> {
         use rusqlite::types::{ToSqlOutput, Value};
-        
+
         match self {
             SqlValue::Null => Ok(ToSqlOutput::Owned(Value::Null)),
             SqlValue::Integer(i) => Ok(ToSqlOutput::Owned(Value::Integer(*i))),

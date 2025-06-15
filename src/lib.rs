@@ -85,8 +85,8 @@ pub use vis::{OutputFormat, PlotConfig, PlotType};
 
 // Jupyter integration exports
 pub use jupyter::{
-    JupyterConfig, JupyterColorScheme, JupyterDisplay, JupyterMagics, TableStyle, TableWidth,
-    get_jupyter_config, set_jupyter_config, init_jupyter, jupyter_dark_mode, jupyter_light_mode
+    get_jupyter_config, init_jupyter, jupyter_dark_mode, jupyter_light_mode, set_jupyter_config,
+    JupyterColorScheme, JupyterConfig, JupyterDisplay, JupyterMagics, TableStyle, TableWidth,
 };
 // Machine learning features (new organization)
 pub use ml::anomaly::{IsolationForest, LocalOutlierFactor, OneClassSVM};

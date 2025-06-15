@@ -7,13 +7,13 @@
 //! - Configuration management
 //! - Data explorer and summary views
 
-use pandrs::jupyter::{
-    JupyterConfig, JupyterColorScheme, JupyterDisplay, JupyterMagics, TableStyle, TableWidth,
-    init_jupyter, jupyter_dark_mode, jupyter_light_mode, set_jupyter_config
-};
-use pandrs::dataframe::DataFrame;
-use pandrs::series::Series;
 use pandrs::core::error::Result;
+use pandrs::dataframe::DataFrame;
+use pandrs::jupyter::{
+    init_jupyter, jupyter_dark_mode, jupyter_light_mode, set_jupyter_config, JupyterColorScheme,
+    JupyterConfig, JupyterDisplay, JupyterMagics, TableStyle, TableWidth,
+};
+use pandrs::series::Series;
 use std::collections::HashMap;
 use std::fs;
 
@@ -25,28 +25,31 @@ fn main() -> Result<()> {
     // 1. Initialize Jupyter Integration
     println!("1️⃣ Initializing Jupyter Integration");
     println!("------------------------------------");
-    
+
     init_jupyter()?;
-    
+
     // Create sample data for demonstration
     let df = create_sample_data()?;
     let series = create_sample_series()?;
-    
-    println!("📊 Created sample DataFrame: {} rows × {} columns", 
-             df.row_count(), df.column_names().len());
+
+    println!(
+        "📊 Created sample DataFrame: {} rows × {} columns",
+        df.row_count(),
+        df.column_names().len()
+    );
     println!("📈 Created sample Series: {} values\n", series.len());
 
     // 2. Basic HTML Display
     println!("2️⃣ Basic HTML Display");
     println!("---------------------");
-    
+
     let default_config = JupyterConfig::default();
-    
+
     // Generate DataFrame HTML
     let df_html = df.to_jupyter_html(&default_config)?;
     fs::write("jupyter_output/dataframe_display.html", &df_html)?;
     println!("✅ Generated DataFrame HTML: jupyter_output/dataframe_display.html");
-    
+
     // Generate Series HTML
     let series_html = series.to_jupyter_html(&default_config)?;
     fs::write("jupyter_output/series_display.html", &series_html)?;
@@ -55,19 +58,19 @@ fn main() -> Result<()> {
     // 3. Custom Styling and Themes
     println!("\n3️⃣ Custom Styling and Themes");
     println!("-----------------------------");
-    
+
     // Dark mode configuration
     let dark_config = jupyter_dark_mode();
     let dark_html = df.to_jupyter_html(&dark_config)?;
     fs::write("jupyter_output/dataframe_dark.html", &dark_html)?;
     println!("✅ Generated dark theme HTML: jupyter_output/dataframe_dark.html");
-    
-    // Light mode configuration  
+
+    // Light mode configuration
     let light_config = jupyter_light_mode();
     let light_html = df.to_jupyter_html(&light_config)?;
     fs::write("jupyter_output/dataframe_light.html", &light_html)?;
     println!("✅ Generated light theme HTML: jupyter_output/dataframe_light.html");
-    
+
     // Custom color scheme
     let custom_config = JupyterConfig {
         color_scheme: JupyterColorScheme::Custom {
@@ -89,7 +92,7 @@ fn main() -> Result<()> {
         },
         ..Default::default()
     };
-    
+
     let custom_html = df.to_jupyter_html(&custom_config)?;
     fs::write("jupyter_output/dataframe_custom.html", &custom_html)?;
     println!("✅ Generated custom styled HTML: jupyter_output/dataframe_custom.html");
@@ -97,11 +100,11 @@ fn main() -> Result<()> {
     // 4. Interactive Widgets
     println!("\n4️⃣ Interactive Widgets");
     println!("----------------------");
-    
+
     let interactive_widget = df.to_interactive_widget(&default_config)?;
     fs::write("jupyter_output/dataframe_widget.html", &interactive_widget)?;
     println!("✅ Generated interactive widget: jupyter_output/dataframe_widget.html");
-    
+
     let series_widget = series.to_interactive_widget(&default_config)?;
     fs::write("jupyter_output/series_widget.html", &series_widget)?;
     println!("✅ Generated Series widget: jupyter_output/series_widget.html");
@@ -109,11 +112,11 @@ fn main() -> Result<()> {
     // 5. Summary Views
     println!("\n5️⃣ Summary Views");
     println!("----------------");
-    
+
     let df_summary = df.to_summary_html(&default_config)?;
     fs::write("jupyter_output/dataframe_summary.html", &df_summary)?;
     println!("✅ Generated DataFrame summary: jupyter_output/dataframe_summary.html");
-    
+
     let series_summary = series.to_summary_html(&default_config)?;
     fs::write("jupyter_output/series_summary.html", &series_summary)?;
     println!("✅ Generated Series summary: jupyter_output/series_summary.html");
@@ -121,7 +124,7 @@ fn main() -> Result<()> {
     // 6. Data Explorer
     println!("\n6️⃣ Data Explorer");
     println!("----------------");
-    
+
     let data_explorer = df.to_data_explorer(&default_config)?;
     fs::write("jupyter_output/data_explorer.html", &data_explorer)?;
     println!("✅ Generated data explorer: jupyter_output/data_explorer.html");
@@ -129,7 +132,7 @@ fn main() -> Result<()> {
     // 7. Configuration Management
     println!("\n7️⃣ Configuration Management");
     println!("---------------------------");
-    
+
     // Set global configuration
     let global_config = JupyterConfig {
         max_rows: 50,
@@ -145,13 +148,13 @@ fn main() -> Result<()> {
         },
         color_scheme: JupyterColorScheme::Dark,
     };
-    
+
     set_jupyter_config(global_config.clone());
     println!("✅ Set global Jupyter configuration");
     println!("   📊 Max rows: {}", global_config.max_rows);
     println!("   📋 Max columns: {}", global_config.max_columns);
     println!("   🎨 Color scheme: {:?}", global_config.color_scheme);
-    
+
     // Generate output with global config
     let global_html = df.to_jupyter_html(&global_config)?;
     fs::write("jupyter_output/dataframe_global_config.html", &global_html)?;
@@ -160,7 +163,7 @@ fn main() -> Result<()> {
     // 8. Magic Commands Support
     println!("\n8️⃣ Magic Commands Support");
     println!("-------------------------");
-    
+
     let magic_commands = JupyterMagics::register_magics();
     fs::write("jupyter_output/pandrs_magics.py", &magic_commands)?;
     println!("✅ Generated magic commands script: jupyter_output/pandrs_magics.py");
@@ -172,12 +175,15 @@ fn main() -> Result<()> {
     // 9. Advanced Display Features
     println!("\n9️⃣ Advanced Display Features");
     println!("----------------------------");
-    
+
     // Large DataFrame with truncation
     let large_df = create_large_sample_data()?;
-    println!("📊 Created large DataFrame: {} rows × {} columns", 
-             large_df.row_count(), large_df.column_names().len());
-    
+    println!(
+        "📊 Created large DataFrame: {} rows × {} columns",
+        large_df.row_count(),
+        large_df.column_names().len()
+    );
+
     let truncated_config = JupyterConfig {
         max_rows: 20,
         max_columns: 8,
@@ -188,7 +194,7 @@ fn main() -> Result<()> {
         },
         ..Default::default()
     };
-    
+
     let large_html = large_df.to_jupyter_html(&truncated_config)?;
     fs::write("jupyter_output/large_dataframe.html", &large_html)?;
     println!("✅ Generated truncated large DataFrame: jupyter_output/large_dataframe.html");
@@ -196,7 +202,7 @@ fn main() -> Result<()> {
     // 10. Complete Jupyter Notebook Template
     println!("\n🔟 Complete Jupyter Notebook Template");
     println!("--------------------------------------");
-    
+
     let notebook_template = create_jupyter_notebook_template(&df, &series)?;
     fs::write("jupyter_output/pandrs_demo.html", &notebook_template)?;
     println!("✅ Generated complete demo notebook: jupyter_output/pandrs_demo.html");
@@ -205,39 +211,69 @@ fn main() -> Result<()> {
     println!("📁 All outputs saved to 'jupyter_output/' directory");
     println!("🌐 Open the HTML files in a web browser to see the rich displays");
     println!("📔 Copy pandrs_magics.py to your Jupyter environment to enable magic commands");
-    
+
     Ok(())
 }
 
 #[allow(clippy::result_large_err)]
 fn create_sample_data() -> Result<DataFrame> {
     let mut data = HashMap::new();
-    
-    data.insert("product_id".to_string(), vec![
-        "P001".to_string(), "P002".to_string(), "P003".to_string(), 
-        "P004".to_string(), "P005".to_string()
-    ]);
-    
-    data.insert("name".to_string(), vec![
-        "Laptop".to_string(), "Mouse".to_string(), "Keyboard".to_string(),
-        "Monitor".to_string(), "Speakers".to_string()
-    ]);
-    
-    data.insert("price".to_string(), vec![
-        "1299.99".to_string(), "29.99".to_string(), "79.99".to_string(),
-        "449.99".to_string(), "129.99".to_string()
-    ]);
-    
-    data.insert("category".to_string(), vec![
-        "Computers".to_string(), "Accessories".to_string(), "Accessories".to_string(),
-        "Displays".to_string(), "Audio".to_string()
-    ]);
-    
-    data.insert("in_stock".to_string(), vec![
-        "true".to_string(), "true".to_string(), "false".to_string(),
-        "true".to_string(), "true".to_string()
-    ]);
-    
+
+    data.insert(
+        "product_id".to_string(),
+        vec![
+            "P001".to_string(),
+            "P002".to_string(),
+            "P003".to_string(),
+            "P004".to_string(),
+            "P005".to_string(),
+        ],
+    );
+
+    data.insert(
+        "name".to_string(),
+        vec![
+            "Laptop".to_string(),
+            "Mouse".to_string(),
+            "Keyboard".to_string(),
+            "Monitor".to_string(),
+            "Speakers".to_string(),
+        ],
+    );
+
+    data.insert(
+        "price".to_string(),
+        vec![
+            "1299.99".to_string(),
+            "29.99".to_string(),
+            "79.99".to_string(),
+            "449.99".to_string(),
+            "129.99".to_string(),
+        ],
+    );
+
+    data.insert(
+        "category".to_string(),
+        vec![
+            "Computers".to_string(),
+            "Accessories".to_string(),
+            "Accessories".to_string(),
+            "Displays".to_string(),
+            "Audio".to_string(),
+        ],
+    );
+
+    data.insert(
+        "in_stock".to_string(),
+        vec![
+            "true".to_string(),
+            "true".to_string(),
+            "false".to_string(),
+            "true".to_string(),
+            "true".to_string(),
+        ],
+    );
+
     DataFrame::from_map(data, None)
 }
 
@@ -250,39 +286,66 @@ fn create_sample_series() -> Result<Series<i32>> {
 #[allow(clippy::result_large_err)]
 fn create_large_sample_data() -> Result<DataFrame> {
     let mut data = HashMap::new();
-    
+
     // Generate larger dataset for truncation demonstration
     let size = 100;
-    
+
     let ids: Vec<String> = (1..=size).map(|i| format!("ID{:03}", i)).collect();
     let values: Vec<String> = (1..=size).map(|i| (i as f64 * 1.5).to_string()).collect();
     let categories: Vec<String> = (1..=size).map(|i| format!("Cat{}", i % 5 + 1)).collect();
     let flags: Vec<String> = (1..=size).map(|i| (i % 2 == 0).to_string()).collect();
-    let scores: Vec<String> = (1..=size).map(|i| (i as f64 * 0.8 + 10.0).to_string()).collect();
-    let status: Vec<String> = (1..=size).map(|i| 
-        if i % 3 == 0 { "Active" } else if i % 3 == 1 { "Pending" } else { "Inactive" }.to_string()
-    ).collect();
-    
+    let scores: Vec<String> = (1..=size)
+        .map(|i| (i as f64 * 0.8 + 10.0).to_string())
+        .collect();
+    let status: Vec<String> = (1..=size)
+        .map(|i| {
+            if i % 3 == 0 {
+                "Active"
+            } else if i % 3 == 1 {
+                "Pending"
+            } else {
+                "Inactive"
+            }
+            .to_string()
+        })
+        .collect();
+
     data.insert("id".to_string(), ids);
     data.insert("value".to_string(), values);
     data.insert("category".to_string(), categories);
     data.insert("flag".to_string(), flags);
     data.insert("score".to_string(), scores);
     data.insert("status".to_string(), status);
-    data.insert("extra_col1".to_string(), (1..=size).map(|i| format!("Extra{}", i)).collect());
-    data.insert("extra_col2".to_string(), (1..=size).map(|i| format!("Data{}", i)).collect());
-    data.insert("extra_col3".to_string(), (1..=size).map(|i| (i as f64).to_string()).collect());
-    data.insert("extra_col4".to_string(), (1..=size).map(|i| format!("Info{}", i)).collect());
-    data.insert("extra_col5".to_string(), (1..=size).map(|i| format!("Field{}", i)).collect());
-    
+    data.insert(
+        "extra_col1".to_string(),
+        (1..=size).map(|i| format!("Extra{}", i)).collect(),
+    );
+    data.insert(
+        "extra_col2".to_string(),
+        (1..=size).map(|i| format!("Data{}", i)).collect(),
+    );
+    data.insert(
+        "extra_col3".to_string(),
+        (1..=size).map(|i| (i as f64).to_string()).collect(),
+    );
+    data.insert(
+        "extra_col4".to_string(),
+        (1..=size).map(|i| format!("Info{}", i)).collect(),
+    );
+    data.insert(
+        "extra_col5".to_string(),
+        (1..=size).map(|i| format!("Field{}", i)).collect(),
+    );
+
     DataFrame::from_map(data, None)
 }
 
 #[allow(clippy::result_large_err)]
 fn create_jupyter_notebook_template(df: &DataFrame, series: &Series<i32>) -> Result<String> {
     let config = JupyterConfig::default();
-    
-    let template = format!(r#"
+
+    let template = format!(
+        r#"
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -441,7 +504,7 @@ set_jupyter_config(config);
         df.to_data_explorer(&config)?,
         df.to_summary_html(&config)?
     );
-    
+
     Ok(template)
 }
 
@@ -453,43 +516,58 @@ mod tests {
     fn test_jupyter_integration_example() {
         // Create output directory
         std::fs::create_dir_all("jupyter_output").unwrap();
-        
+
         let result = main();
-        assert!(result.is_ok(), "Jupyter integration example should complete successfully");
+        assert!(
+            result.is_ok(),
+            "Jupyter integration example should complete successfully"
+        );
     }
 
     #[test]
     fn test_sample_data_creation() {
         let df = create_sample_data();
         assert!(df.is_ok(), "Sample data creation should succeed");
-        
+
         let df = df.unwrap();
         assert!(df.row_count() > 0, "Sample data should have rows");
-        assert!(df.column_names().len() >= 5, "Sample data should have at least 5 columns");
-        
+        assert!(
+            df.column_names().len() >= 5,
+            "Sample data should have at least 5 columns"
+        );
+
         let series = create_sample_series();
         assert!(series.is_ok(), "Sample series creation should succeed");
     }
 
-    #[test] 
+    #[test]
     fn test_jupyter_html_generation() {
         let df = create_sample_data().unwrap();
         let config = JupyterConfig::default();
-        
+
         let html = df.to_jupyter_html(&config);
         assert!(html.is_ok(), "HTML generation should succeed");
-        
+
         let html_content = html.unwrap();
-        assert!(html_content.contains("pandrs-table"), "HTML should contain table class");
-        assert!(html_content.contains("product_id"), "HTML should contain column names");
+        assert!(
+            html_content.contains("pandrs-table"),
+            "HTML should contain table class"
+        );
+        assert!(
+            html_content.contains("product_id"),
+            "HTML should contain column names"
+        );
     }
 
     #[test]
     fn test_jupyter_config_modes() {
         let dark_config = jupyter_dark_mode();
         assert!(matches!(dark_config.color_scheme, JupyterColorScheme::Dark));
-        
+
         let light_config = jupyter_light_mode();
-        assert!(matches!(light_config.color_scheme, JupyterColorScheme::Light));
+        assert!(matches!(
+            light_config.color_scheme,
+            JupyterColorScheme::Light
+        ));
     }
 }

@@ -12,10 +12,13 @@
 //!   cargo run --example parquet_advanced_features_example --features "streaming"
 
 use pandrs::dataframe::base::DataFrame;
-use pandrs::series::Series;
 use pandrs::error::Result;
 #[cfg(feature = "parquet")]
-use pandrs::io::{ParquetCompression, ParquetMetadata, RowGroupInfo, ColumnStats, ParquetReadOptions, ParquetWriteOptions};
+use pandrs::io::{
+    ColumnStats, ParquetCompression, ParquetMetadata, ParquetReadOptions, ParquetWriteOptions,
+    RowGroupInfo,
+};
+use pandrs::series::Series;
 
 #[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
@@ -40,7 +43,7 @@ fn main() -> Result<()> {
     println!("\n=== 4. Streaming Read/Write Operations ===");
     #[cfg(feature = "streaming")]
     streaming_operations_example(&large_dataset)?;
-    
+
     #[cfg(not(feature = "streaming"))]
     {
         println!("Streaming features require 'streaming' feature flag to be enabled.");
@@ -82,22 +85,22 @@ fn schema_evolution_example(original_data: &DataFrame, evolved_data: &DataFrame)
         println!("    • {}: {}", col_name, col_type);
     }
 
-    // Evolved schema analysis  
+    // Evolved schema analysis
     println!("  Evolved schema (v2.0):");
     for col_name in evolved_data.column_names() {
         let col_type = match col_name.as_str() {
             "id" => "int64",
-            "name" => "string", 
+            "name" => "string",
             "price" => "double",
             "volume" => "int64",
             "date" => "timestamp",
-            "market_cap" => "double",         // New column
-            "sector" => "string",             // New column
-            "pe_ratio" => "double",           // New column
-            "dividend_yield" => "double",     // New column
+            "market_cap" => "double",     // New column
+            "sector" => "string",         // New column
+            "pe_ratio" => "double",       // New column
+            "dividend_yield" => "double", // New column
             _ => "string",
         };
-        
+
         let is_new = !original_data.column_names().contains(&col_name);
         let status = if is_new { " (NEW)" } else { "" };
         println!("    • {}: {}{}", col_name, col_type, status);
@@ -114,7 +117,10 @@ fn schema_evolution_example(original_data: &DataFrame, evolved_data: &DataFrame)
     let compatibility_scenarios = vec![
         ("v1.0 reader + v1.0 data", "✓ Full compatibility"),
         ("v1.0 reader + v2.0 data", "✓ Reads original columns only"),
-        ("v2.0 reader + v1.0 data", "✓ Uses default values for new columns"),
+        (
+            "v2.0 reader + v1.0 data",
+            "✓ Uses default values for new columns",
+        ),
         ("v2.0 reader + v2.0 data", "✓ Full feature support"),
     ];
 
@@ -164,12 +170,22 @@ fn compression_algorithms_example(df: &DataFrame) -> Result<()> {
             ParquetCompression::Brotli => (400, 80, 290, 3.45),
         };
 
-        println!("    {:12} | {:10} | {:12} | {:9} | {:.2}x",
-                 format!("{:?}", compression), 
-                 if comp_time > 0 { format!("{}ms", comp_time) } else { "0ms".to_string() },
-                 if decomp_time > 0 { format!("{}ms", decomp_time) } else { "0ms".to_string() },
-                 size_kb,
-                 ratio);
+        println!(
+            "    {:12} | {:10} | {:12} | {:9} | {:.2}x",
+            format!("{:?}", compression),
+            if comp_time > 0 {
+                format!("{}ms", comp_time)
+            } else {
+                "0ms".to_string()
+            },
+            if decomp_time > 0 {
+                format!("{}ms", decomp_time)
+            } else {
+                "0ms".to_string()
+            },
+            size_kb,
+            ratio
+        );
     }
 
     // Compression recommendations
@@ -191,9 +207,18 @@ fn compression_algorithms_example(df: &DataFrame) -> Result<()> {
 
     println!("  Optimal write configuration for analytical workloads:");
     println!("    • Compression: {:?}", write_options_zstd.compression);
-    println!("    • Row group size: {} rows", write_options_zstd.row_group_size.unwrap());
-    println!("    • Page size: {} KB", write_options_zstd.page_size.unwrap() / 1024);
-    println!("    • Dictionary encoding: {}", write_options_zstd.enable_dictionary);
+    println!(
+        "    • Row group size: {} rows",
+        write_options_zstd.row_group_size.unwrap()
+    );
+    println!(
+        "    • Page size: {} KB",
+        write_options_zstd.page_size.unwrap() / 1024
+    );
+    println!(
+        "    • Dictionary encoding: {}",
+        write_options_zstd.enable_dictionary
+    );
     println!("    • Multi-threading: {}", write_options_zstd.use_threads);
 
     Ok(())
@@ -208,10 +233,10 @@ fn predicate_pushdown_example(large_df: &DataFrame) -> Result<()> {
 
     // Various predicate pushdown scenarios
     let predicate_scenarios = vec![
-        ("price > 500.0", 0.25),              // 25% of data
-        ("sector = 'Technology'", 0.30),      // 30% of data  
-        ("volume > 5000000", 0.15),           // 15% of data
-        ("date >= '2024-01-01'", 0.80),       // 80% of data
+        ("price > 500.0", 0.25),             // 25% of data
+        ("sector = 'Technology'", 0.30),     // 30% of data
+        ("volume > 5000000", 0.15),          // 15% of data
+        ("date >= '2024-01-01'", 0.80),      // 80% of data
         ("price BETWEEN 100 AND 300", 0.40), // 40% of data
     ];
 
@@ -220,9 +245,13 @@ fn predicate_pushdown_example(large_df: &DataFrame) -> Result<()> {
         let filtered_rows = (total_rows as f64 * selectivity) as usize;
         let io_reduction = (1.0 - selectivity) * 100.0;
         let estimated_speedup = 1.0 / selectivity;
-        
+
         println!("    • Predicate: {}", predicate);
-        println!("      - Filtered rows: {} ({:.1}% of total)", filtered_rows, selectivity * 100.0);
+        println!(
+            "      - Filtered rows: {} ({:.1}% of total)",
+            filtered_rows,
+            selectivity * 100.0
+        );
         println!("      - I/O reduction: {:.1}%", io_reduction);
         println!("      - Estimated speedup: {:.1}x", estimated_speedup);
         println!();
@@ -233,12 +262,18 @@ fn predicate_pushdown_example(large_df: &DataFrame) -> Result<()> {
     let total_row_groups = 20;
     let eliminated_groups = 14;
     let elimination_rate = (eliminated_groups as f64 / total_row_groups as f64) * 100.0;
-    
+
     println!("    • Total row groups: {}", total_row_groups);
     println!("    • Eliminated row groups: {}", eliminated_groups);
     println!("    • Elimination rate: {:.1}%", elimination_rate);
-    println!("    • Row groups read: {}", total_row_groups - eliminated_groups);
-    println!("    • Performance improvement: {:.1}x faster", total_row_groups as f64 / (total_row_groups - eliminated_groups) as f64);
+    println!(
+        "    • Row groups read: {}",
+        total_row_groups - eliminated_groups
+    );
+    println!(
+        "    • Performance improvement: {:.1}x faster",
+        total_row_groups as f64 / (total_row_groups - eliminated_groups) as f64
+    );
 
     // Advanced predicate combinations
     println!("  Complex predicate combinations:");
@@ -270,21 +305,30 @@ fn streaming_operations_example(large_df: &DataFrame) -> Result<()> {
     println!("    • Dataset size: {:.1} GB", total_size_gb);
     println!("    • Memory limit: {} MB", memory_limit_mb);
     println!("    • Chunk size: {} rows", chunk_size);
-    println!("    • Estimated chunks: {}", (large_df.row_count() + chunk_size - 1) / chunk_size);
+    println!(
+        "    • Estimated chunks: {}",
+        (large_df.row_count() + chunk_size - 1) / chunk_size
+    );
 
     // Streaming write simulation
     println!("  Streaming write process:");
     let num_chunks = (large_df.row_count() + chunk_size - 1) / chunk_size;
-    
+
     for i in 0..num_chunks.min(5) {
         let start_row = i * chunk_size;
         let end_row = (start_row + chunk_size).min(large_df.row_count());
         let chunk_size_mb = (end_row - start_row) * 8 / 1024 / 1024; // Rough estimate
-        
-        println!("    • Chunk {}/{}: rows {}-{} (~{} MB)", 
-                 i + 1, num_chunks, start_row, end_row, chunk_size_mb);
+
+        println!(
+            "    • Chunk {}/{}: rows {}-{} (~{} MB)",
+            i + 1,
+            num_chunks,
+            start_row,
+            end_row,
+            chunk_size_mb
+        );
     }
-    
+
     if num_chunks > 5 {
         println!("    • ... {} more chunks processed", num_chunks - 5);
     }
@@ -294,9 +338,13 @@ fn streaming_operations_example(large_df: &DataFrame) -> Result<()> {
     println!("    • Opening Parquet file for streaming...");
     println!("    • Reading schema information...");
     println!("    • Setting up chunk iterator...");
-    
+
     for i in 0..3 {
-        println!("    • Reading chunk {}: {} rows processed", i + 1, chunk_size);
+        println!(
+            "    • Reading chunk {}: {} rows processed",
+            i + 1,
+            chunk_size
+        );
     }
     println!("    • Streaming read completed");
 
@@ -305,7 +353,7 @@ fn streaming_operations_example(large_df: &DataFrame) -> Result<()> {
     let traditional_memory = (total_size_gb * 1024.0) as i32;
     let streaming_memory = memory_limit_mb;
     let memory_reduction = (1.0 - streaming_memory as f64 / traditional_memory as f64) * 100.0;
-    
+
     println!("    • Traditional approach: {} MB", traditional_memory);
     println!("    • Streaming approach: {} MB", streaming_memory);
     println!("    • Memory reduction: {:.1}%", memory_reduction);
@@ -330,7 +378,11 @@ fn chunked_processing_example(large_df: &DataFrame) -> Result<()> {
     let chunking_strategies = vec![
         ("Fixed size", 10000, "Consistent memory usage"),
         ("Memory-based", 15000, "Adaptive to available memory"),
-        ("Row group aligned", 50000, "Optimized for Parquet structure"),
+        (
+            "Row group aligned",
+            50000,
+            "Optimized for Parquet structure",
+        ),
         ("Compression-aware", 8000, "Accounts for compression ratios"),
     ];
 
@@ -338,10 +390,10 @@ fn chunked_processing_example(large_df: &DataFrame) -> Result<()> {
     for (strategy, chunk_size, description) in chunking_strategies {
         let num_chunks = large_df.row_count().div_ceil(chunk_size);
         let memory_per_chunk = (chunk_size * 8) / 1024 / 1024; // MB estimate
-        
+
         println!("    • {}: {} rows/chunk", strategy, chunk_size);
         println!("      - Number of chunks: {}", num_chunks);
-        println!      ("      - Memory per chunk: ~{} MB", memory_per_chunk);
+        println!("      - Memory per chunk: ~{} MB", memory_per_chunk);
         println!("      - Description: {}", description);
         println!();
     }
@@ -350,29 +402,42 @@ fn chunked_processing_example(large_df: &DataFrame) -> Result<()> {
     let available_memory_mb = 1024;
     let row_size_bytes = 200;
     let optimal_chunk_size = (available_memory_mb * 1024 * 1024) / row_size_bytes;
-    
+
     println!("  Optimal chunking calculation:");
     println!("    • Available memory: {} MB", available_memory_mb);
     println!("    • Estimated row size: {} bytes", row_size_bytes);
     println!("    • Optimal chunk size: {} rows", optimal_chunk_size);
     println!("    • Safety factor: 0.8 (use 80% of available memory)");
-    println!("    • Recommended chunk size: {} rows", (optimal_chunk_size as f64 * 0.8) as usize);
+    println!(
+        "    • Recommended chunk size: {} rows",
+        (optimal_chunk_size as f64 * 0.8) as usize
+    );
 
     // Chunked processing simulation
     let recommended_chunk_size = (optimal_chunk_size as f64 * 0.8) as usize;
     let num_chunks = large_df.row_count().div_ceil(recommended_chunk_size);
-    
-    println!("  Processing {} rows in {} chunks:", large_df.row_count(), num_chunks);
-    
+
+    println!(
+        "  Processing {} rows in {} chunks:",
+        large_df.row_count(),
+        num_chunks
+    );
+
     for i in 0..num_chunks.min(4) {
         let start_row = i * recommended_chunk_size;
         let end_row = (start_row + recommended_chunk_size).min(large_df.row_count());
         let processing_time = 150 + (i * 10); // Simulate increasing processing time
-        
-        println!("    • Chunk {}/{}: rows {}-{}, processed in {}ms", 
-                 i + 1, num_chunks, start_row, end_row, processing_time);
+
+        println!(
+            "    • Chunk {}/{}: rows {}-{}, processed in {}ms",
+            i + 1,
+            num_chunks,
+            start_row,
+            end_row,
+            processing_time
+        );
     }
-    
+
     if num_chunks > 4 {
         println!("    • ... {} more chunks processed", num_chunks - 4);
     }
@@ -404,99 +469,123 @@ fn metadata_analysis_example() -> Result<()> {
         created_by: Some("pandrs 0.1.0-alpha.4".to_string()),
     };
 
-    println!("  File metadata:");
-    println!("    • Total rows: {}", file_metadata.num_rows);
-    println!("    • Row groups: {}", file_metadata.num_row_groups);
-    println!("    • File size: {:.2} MB", file_metadata.file_size.unwrap() as f64 / (1024.0 * 1024.0));
-    println!("    • Compression: {}", file_metadata.compression);
-    println!("    • Created by: {}", file_metadata.created_by.unwrap_or("Unknown".to_string()));
-    println!("    • Avg rows per group: {}", file_metadata.num_rows / file_metadata.num_row_groups as i64);
+        println!("  File metadata:");
+        println!("    • Total rows: {}", file_metadata.num_rows);
+        println!("    • Row groups: {}", file_metadata.num_row_groups);
+        println!(
+            "    • File size: {:.2} MB",
+            file_metadata.file_size.unwrap() as f64 / (1024.0 * 1024.0)
+        );
+        println!("    • Compression: {}", file_metadata.compression);
+        println!(
+            "    • Created by: {}",
+            file_metadata.created_by.unwrap_or("Unknown".to_string())
+        );
+        println!(
+            "    • Avg rows per group: {}",
+            file_metadata.num_rows / file_metadata.num_row_groups as i64
+        );
 
-    // Row group analysis
-    println!("  Row group analysis:");
-    for i in 0..file_metadata.num_row_groups.min(5) {
-        let rows_in_group = file_metadata.num_rows / file_metadata.num_row_groups as i64;
-        let size_mb = file_metadata.file_size.unwrap() / file_metadata.num_row_groups as i64 / (1024 * 1024);
-        
-        println!("    • Row group {}: {} rows, {:.1} MB", 
-                 i, rows_in_group, size_mb as f64);
-    }
-    if file_metadata.num_row_groups > 5 {
-        println!("    • ... {} more row groups", file_metadata.num_row_groups - 5);
-    }
+        // Row group analysis
+        println!("  Row group analysis:");
+        for i in 0..file_metadata.num_row_groups.min(5) {
+            let rows_in_group = file_metadata.num_rows / file_metadata.num_row_groups as i64;
+            let size_mb = file_metadata.file_size.unwrap()
+                / file_metadata.num_row_groups as i64
+                / (1024 * 1024);
 
-    // Column statistics
-    let column_stats = vec![
-        ColumnStats {
-            name: "id".to_string(),
-            data_type: "INT64".to_string(),
-            null_count: Some(0),
-            distinct_count: Some(1_000_000),
-            min_value: Some("1".to_string()),
-            max_value: Some("1000000".to_string()),
-        },
-        ColumnStats {
-            name: "price".to_string(),
-            data_type: "DOUBLE".to_string(),
-            null_count: Some(1245),
-            distinct_count: Some(45_230),
-            min_value: Some("10.50".to_string()),
-            max_value: Some("2850.75".to_string()),
-        },
-        ColumnStats {
-            name: "sector".to_string(),
-            data_type: "STRING".to_string(),
-            null_count: Some(0),
-            distinct_count: Some(11),
-            min_value: Some("Agriculture".to_string()),
-            max_value: Some("Utilities".to_string()),
-        },
-    ];
-
-    println!("  Column statistics:");
-    for stat in &column_stats {
-        println!("    • Column '{}' ({}):", stat.name, stat.data_type);
-        if let Some(null_count) = stat.null_count {
-            let null_percentage = (null_count as f64 / file_metadata.num_rows as f64) * 100.0;
-            println!("      - Null count: {} ({:.2}%)", null_count, null_percentage);
+            println!(
+                "    • Row group {}: {} rows, {:.1} MB",
+                i, rows_in_group, size_mb as f64
+            );
         }
-        if let Some(distinct_count) = stat.distinct_count {
-            let cardinality = distinct_count as f64 / file_metadata.num_rows as f64;
-            println!("      - Distinct values: {} (cardinality: {:.4})", distinct_count, cardinality);
+        if file_metadata.num_row_groups > 5 {
+            println!(
+                "    • ... {} more row groups",
+                file_metadata.num_row_groups - 5
+            );
         }
-        if let (Some(min_val), Some(max_val)) = (&stat.min_value, &stat.max_value) {
-            println!("      - Range: {} to {}", min_val, max_val);
+
+        // Column statistics
+        let column_stats = vec![
+            ColumnStats {
+                name: "id".to_string(),
+                data_type: "INT64".to_string(),
+                null_count: Some(0),
+                distinct_count: Some(1_000_000),
+                min_value: Some("1".to_string()),
+                max_value: Some("1000000".to_string()),
+            },
+            ColumnStats {
+                name: "price".to_string(),
+                data_type: "DOUBLE".to_string(),
+                null_count: Some(1245),
+                distinct_count: Some(45_230),
+                min_value: Some("10.50".to_string()),
+                max_value: Some("2850.75".to_string()),
+            },
+            ColumnStats {
+                name: "sector".to_string(),
+                data_type: "STRING".to_string(),
+                null_count: Some(0),
+                distinct_count: Some(11),
+                min_value: Some("Agriculture".to_string()),
+                max_value: Some("Utilities".to_string()),
+            },
+        ];
+
+        println!("  Column statistics:");
+        for stat in &column_stats {
+            println!("    • Column '{}' ({}):", stat.name, stat.data_type);
+            if let Some(null_count) = stat.null_count {
+                let null_percentage = (null_count as f64 / file_metadata.num_rows as f64) * 100.0;
+                println!(
+                    "      - Null count: {} ({:.2}%)",
+                    null_count, null_percentage
+                );
+            }
+            if let Some(distinct_count) = stat.distinct_count {
+                let cardinality = distinct_count as f64 / file_metadata.num_rows as f64;
+                println!(
+                    "      - Distinct values: {} (cardinality: {:.4})",
+                    distinct_count, cardinality
+                );
+            }
+            if let (Some(min_val), Some(max_val)) = (&stat.min_value, &stat.max_value) {
+                println!("      - Range: {} to {}", min_val, max_val);
+            }
         }
-    }
 
-    // Compression analysis
-    let compression_analysis = vec![
-        ("Overall", 85_000_000, 45_000_000), // Original, Compressed
-        ("id column", 8_000_000, 1_200_000),
-        ("name column", 15_000_000, 8_500_000),
-        ("price column", 8_000_000, 4_200_000),
-        ("volume column", 8_000_000, 2_800_000),
-        ("date column", 8_000_000, 3_100_000),
-        ("sector column", 12_000_000, 1_500_000),
-    ];
+        // Compression analysis
+        let compression_analysis = vec![
+            ("Overall", 85_000_000, 45_000_000), // Original, Compressed
+            ("id column", 8_000_000, 1_200_000),
+            ("name column", 15_000_000, 8_500_000),
+            ("price column", 8_000_000, 4_200_000),
+            ("volume column", 8_000_000, 2_800_000),
+            ("date column", 8_000_000, 3_100_000),
+            ("sector column", 12_000_000, 1_500_000),
+        ];
 
-    println!("  Compression analysis:");
-    for (component, original_bytes, compressed_bytes) in compression_analysis {
-        let ratio = original_bytes as f64 / compressed_bytes as f64;
-        let savings = (1.0 - compressed_bytes as f64 / original_bytes as f64) * 100.0;
-        
-        println!("    • {}: {:.1}x compression ({:.1}% savings)", 
-                 component, ratio, savings);
-    }
+        println!("  Compression analysis:");
+        for (component, original_bytes, compressed_bytes) in compression_analysis {
+            let ratio = original_bytes as f64 / compressed_bytes as f64;
+            let savings = (1.0 - compressed_bytes as f64 / original_bytes as f64) * 100.0;
 
-    // Schema evolution compatibility
-    println!("  Schema evolution compatibility:");
-    println!("    • Schema version: 2.0");
-    println!("    • Backward compatible: ✓ Yes");
-    println!("    • Forward compatible: ✓ Yes");
-    println!("    • Breaking changes: None detected");
-    println!("    • New columns since v1.0: 2 (market_cap, sector)");
-    println!("    • Deprecated columns: None");
+            println!(
+                "    • {}: {:.1}x compression ({:.1}% savings)",
+                component, ratio, savings
+            );
+        }
+
+        // Schema evolution compatibility
+        println!("  Schema evolution compatibility:");
+        println!("    • Schema version: 2.0");
+        println!("    • Backward compatible: ✓ Yes");
+        println!("    • Forward compatible: ✓ Yes");
+        println!("    • Breaking changes: None detected");
+        println!("    • New columns since v1.0: 2 (market_cap, sector)");
+        println!("    • Deprecated columns: None");
     }
 
     #[cfg(not(feature = "parquet"))]
@@ -514,10 +603,26 @@ fn performance_optimization_example(_large_df: &DataFrame) -> Result<()> {
 
     // Read optimization strategies
     let read_optimizations = vec![
-        ("Column pruning", "Read only required columns", "3-5x faster"),
-        ("Row group filtering", "Skip irrelevant row groups", "2-10x faster"),
-        ("Predicate pushdown", "Filter at storage level", "2-20x faster"),
-        ("Parallel reading", "Multi-threaded row group reads", "2-4x faster"),
+        (
+            "Column pruning",
+            "Read only required columns",
+            "3-5x faster",
+        ),
+        (
+            "Row group filtering",
+            "Skip irrelevant row groups",
+            "2-10x faster",
+        ),
+        (
+            "Predicate pushdown",
+            "Filter at storage level",
+            "2-20x faster",
+        ),
+        (
+            "Parallel reading",
+            "Multi-threaded row group reads",
+            "2-4x faster",
+        ),
         ("Memory mapping", "OS-level file caching", "1.5-2x faster"),
     ];
 
@@ -527,13 +632,33 @@ fn performance_optimization_example(_large_df: &DataFrame) -> Result<()> {
         println!("      Performance gain: {}", improvement);
     }
 
-    // Write optimization strategies  
+    // Write optimization strategies
     let write_optimizations = vec![
-        ("Row group sizing", "Optimize for query patterns", "Improved scan performance"),
-        ("Column ordering", "Place frequently-queried columns first", "Better compression"),
-        ("Compression tuning", "Algorithm selection per column", "20-50% size reduction"),
-        ("Dictionary encoding", "Automatic for low-cardinality columns", "Significant compression"),
-        ("Parallel writing", "Multi-threaded row group writes", "2-3x faster"),
+        (
+            "Row group sizing",
+            "Optimize for query patterns",
+            "Improved scan performance",
+        ),
+        (
+            "Column ordering",
+            "Place frequently-queried columns first",
+            "Better compression",
+        ),
+        (
+            "Compression tuning",
+            "Algorithm selection per column",
+            "20-50% size reduction",
+        ),
+        (
+            "Dictionary encoding",
+            "Automatic for low-cardinality columns",
+            "Significant compression",
+        ),
+        (
+            "Parallel writing",
+            "Multi-threaded row group writes",
+            "2-3x faster",
+        ),
     ];
 
     println!("  Write optimization strategies:");
@@ -547,35 +672,50 @@ fn performance_optimization_example(_large_df: &DataFrame) -> Result<()> {
         // Optimal configuration example
         let optimal_config = ParquetWriteOptions {
             compression: ParquetCompression::Zstd,
-        row_group_size: Some(100_000),
-        page_size: Some(1024 * 1024),
-        enable_dictionary: true,
-        use_threads: true,
-    };
+            row_group_size: Some(100_000),
+            page_size: Some(1024 * 1024),
+            enable_dictionary: true,
+            use_threads: true,
+        };
 
-    println!("  Optimal configuration for analytics workload:");
-    println!("    • Compression: {:?} (best ratio for cold storage)", optimal_config.compression);
-    println!("    • Row group size: {} rows (balance of scan efficiency)", optimal_config.row_group_size.unwrap());
-    println!("    • Page size: {} KB (optimize for memory efficiency)", optimal_config.page_size.unwrap() / 1024);
-    println!("    • Dictionary encoding: {} (automatic optimization)", optimal_config.enable_dictionary);
-    println!("    • Multi-threading: {} (leverage all CPU cores)", optimal_config.use_threads);
+        println!("  Optimal configuration for analytics workload:");
+        println!(
+            "    • Compression: {:?} (best ratio for cold storage)",
+            optimal_config.compression
+        );
+        println!(
+            "    • Row group size: {} rows (balance of scan efficiency)",
+            optimal_config.row_group_size.unwrap()
+        );
+        println!(
+            "    • Page size: {} KB (optimize for memory efficiency)",
+            optimal_config.page_size.unwrap() / 1024
+        );
+        println!(
+            "    • Dictionary encoding: {} (automatic optimization)",
+            optimal_config.enable_dictionary
+        );
+        println!(
+            "    • Multi-threading: {} (leverage all CPU cores)",
+            optimal_config.use_threads
+        );
 
-    // Performance benchmarks
-    println!("  Performance benchmark results (1M rows):");
-    let benchmarks = vec![
-        ("Unoptimized read", "2,850ms", "Full table scan"),
-        ("Column pruning", "950ms", "Read 3/6 columns"),
-        ("+ Predicate pushdown", "180ms", "Filter 90% of data"),
-        ("+ Parallel reading", "65ms", "4 threads"),
-        ("Fully optimized", "45ms", "All optimizations"),
-    ];
+        // Performance benchmarks
+        println!("  Performance benchmark results (1M rows):");
+        let benchmarks = vec![
+            ("Unoptimized read", "2,850ms", "Full table scan"),
+            ("Column pruning", "950ms", "Read 3/6 columns"),
+            ("+ Predicate pushdown", "180ms", "Filter 90% of data"),
+            ("+ Parallel reading", "65ms", "4 threads"),
+            ("Fully optimized", "45ms", "All optimizations"),
+        ];
 
-    for (scenario, time, description) in benchmarks {
-        println!("    • {}: {} ({})", scenario, time, description);
-    }
+        for (scenario, time, description) in benchmarks {
+            println!("    • {}: {} ({})", scenario, time, description);
+        }
 
-    let speedup = 2850.0 / 45.0;
-    println!("    • Overall speedup: {:.1}x improvement", speedup);
+        let speedup = 2850.0 / 45.0;
+        println!("    • Overall speedup: {:.1}x improvement", speedup);
     }
 
     #[cfg(not(feature = "parquet"))]
@@ -601,17 +741,25 @@ fn schema_analysis_example(_df: &DataFrame) -> Result<()> {
         ("market_cap", "double", true, "Low", "Market capitalization"),
         ("sector", "string", true, "Medium", "Industry sector"),
         ("pe_ratio", "double", true, "Low", "Price-to-earnings ratio"),
-        ("dividend_yield", "double", true, "Low", "Dividend yield percentage"),
+        (
+            "dividend_yield",
+            "double",
+            true,
+            "Low",
+            "Dividend yield percentage",
+        ),
     ];
 
     println!("  Current schema analysis:");
     println!("    Column        | Type      | Nullable | Cardinality | Description");
     println!("    --------------|-----------|----------|-------------|------------------");
-    
+
     for (name, data_type, nullable, cardinality, description) in &schema_info {
         let nullable_str = if *nullable { "Yes" } else { "No" };
-        println!("    {:12} | {:9} | {:8} | {:11} | {}", 
-                 name, data_type, nullable_str, cardinality, description);
+        println!(
+            "    {:12} | {:9} | {:8} | {:11} | {}",
+            name, data_type, nullable_str, cardinality, description
+        );
     }
 
     // Schema complexity metrics
@@ -654,8 +802,11 @@ fn schema_analysis_example(_df: &DataFrame) -> Result<()> {
 
     // Compatibility assessment
     let compatibility_score = 8.5;
-    println!("  Schema evolution compatibility score: {}/10", compatibility_score);
-    
+    println!(
+        "  Schema evolution compatibility score: {}/10",
+        compatibility_score
+    );
+
     if compatibility_score >= 8.0 {
         println!("  Assessment: Schema evolution is low-risk");
     } else if compatibility_score >= 6.0 {
@@ -674,37 +825,58 @@ fn schema_analysis_example(_df: &DataFrame) -> Result<()> {
 #[allow(clippy::result_large_err)]
 fn create_original_dataset() -> Result<DataFrame> {
     let mut df = DataFrame::new();
-    
+
     let ids = vec![1, 2, 3, 4, 5];
     let names = vec!["AAPL", "GOOGL", "MSFT", "AMZN", "TSLA"];
     let prices = vec![150.25, 2800.50, 300.75, 3200.00, 800.25];
     let volumes = vec![1500000, 800000, 1200000, 900000, 2000000];
-    let dates = vec!["2024-12-15", "2024-12-15", "2024-12-15", "2024-12-15", "2024-12-15"];
+    let dates = vec![
+        "2024-12-15",
+        "2024-12-15",
+        "2024-12-15",
+        "2024-12-15",
+        "2024-12-15",
+    ];
 
-    df.add_column("id".to_string(), Series::new(
-        ids.into_iter().map(|i| i.to_string()).collect(),
-        Some("id".to_string())
-    )?)?;
+    df.add_column(
+        "id".to_string(),
+        Series::new(
+            ids.into_iter().map(|i| i.to_string()).collect(),
+            Some("id".to_string()),
+        )?,
+    )?;
 
-    df.add_column("name".to_string(), Series::new(
-        names.into_iter().map(|s| s.to_string()).collect(),
-        Some("name".to_string())
-    )?)?;
+    df.add_column(
+        "name".to_string(),
+        Series::new(
+            names.into_iter().map(|s| s.to_string()).collect(),
+            Some("name".to_string()),
+        )?,
+    )?;
 
-    df.add_column("price".to_string(), Series::new(
-        prices.into_iter().map(|p| p.to_string()).collect(),
-        Some("price".to_string())
-    )?)?;
+    df.add_column(
+        "price".to_string(),
+        Series::new(
+            prices.into_iter().map(|p| p.to_string()).collect(),
+            Some("price".to_string()),
+        )?,
+    )?;
 
-    df.add_column("volume".to_string(), Series::new(
-        volumes.into_iter().map(|v| v.to_string()).collect(),
-        Some("volume".to_string())
-    )?)?;
+    df.add_column(
+        "volume".to_string(),
+        Series::new(
+            volumes.into_iter().map(|v| v.to_string()).collect(),
+            Some("volume".to_string()),
+        )?,
+    )?;
 
-    df.add_column("date".to_string(), Series::new(
-        dates.into_iter().map(|d| d.to_string()).collect(),
-        Some("date".to_string())
-    )?)?;
+    df.add_column(
+        "date".to_string(),
+        Series::new(
+            dates.into_iter().map(|d| d.to_string()).collect(),
+            Some("date".to_string()),
+        )?,
+    )?;
 
     Ok(df)
 }
@@ -712,32 +884,56 @@ fn create_original_dataset() -> Result<DataFrame> {
 #[allow(clippy::result_large_err)]
 fn create_evolved_dataset() -> Result<DataFrame> {
     let mut df = create_original_dataset()?;
-    
+
     // Add new columns for schema evolution
-    let market_caps = vec![2500000000i64, 1800000000i64, 2200000000i64, 1600000000i64, 800000000i64];
-    let sectors = vec!["Technology", "Technology", "Technology", "E-commerce", "Automotive"];
+    let market_caps = vec![
+        2500000000i64,
+        1800000000i64,
+        2200000000i64,
+        1600000000i64,
+        800000000i64,
+    ];
+    let sectors = vec![
+        "Technology",
+        "Technology",
+        "Technology",
+        "E-commerce",
+        "Automotive",
+    ];
     let pe_ratios = vec![28.5, 22.1, 25.3, 45.2, 85.6];
     let dividend_yields = vec![0.52, 0.0, 2.1, 0.0, 0.0];
 
-    df.add_column("market_cap".to_string(), Series::new(
-        market_caps.into_iter().map(|m| m.to_string()).collect(),
-        Some("market_cap".to_string())
-    )?)?;
+    df.add_column(
+        "market_cap".to_string(),
+        Series::new(
+            market_caps.into_iter().map(|m| m.to_string()).collect(),
+            Some("market_cap".to_string()),
+        )?,
+    )?;
 
-    df.add_column("sector".to_string(), Series::new(
-        sectors.into_iter().map(|s| s.to_string()).collect(),
-        Some("sector".to_string())
-    )?)?;
+    df.add_column(
+        "sector".to_string(),
+        Series::new(
+            sectors.into_iter().map(|s| s.to_string()).collect(),
+            Some("sector".to_string()),
+        )?,
+    )?;
 
-    df.add_column("pe_ratio".to_string(), Series::new(
-        pe_ratios.into_iter().map(|p| p.to_string()).collect(),
-        Some("pe_ratio".to_string())
-    )?)?;
+    df.add_column(
+        "pe_ratio".to_string(),
+        Series::new(
+            pe_ratios.into_iter().map(|p| p.to_string()).collect(),
+            Some("pe_ratio".to_string()),
+        )?,
+    )?;
 
-    df.add_column("dividend_yield".to_string(), Series::new(
-        dividend_yields.into_iter().map(|d| d.to_string()).collect(),
-        Some("dividend_yield".to_string())
-    )?)?;
+    df.add_column(
+        "dividend_yield".to_string(),
+        Series::new(
+            dividend_yields.into_iter().map(|d| d.to_string()).collect(),
+            Some("dividend_yield".to_string()),
+        )?,
+    )?;
 
     Ok(df)
 }
@@ -745,15 +941,22 @@ fn create_evolved_dataset() -> Result<DataFrame> {
 #[allow(clippy::result_large_err)]
 fn create_large_financial_dataset(size: usize) -> Result<DataFrame> {
     let mut df = DataFrame::new();
-    
+
     let mut ids = Vec::with_capacity(size);
     let mut names = Vec::with_capacity(size);
     let mut prices = Vec::with_capacity(size);
     let mut volumes = Vec::with_capacity(size);
     let mut sectors = Vec::with_capacity(size);
-    
-    let sector_list = ["Technology", "Finance", "Healthcare", "Energy", "Consumer", "Industrial"];
-    
+
+    let sector_list = [
+        "Technology",
+        "Finance",
+        "Healthcare",
+        "Energy",
+        "Consumer",
+        "Industrial",
+    ];
+
     for i in 0..size {
         ids.push((i + 1).to_string());
         names.push(format!("STOCK_{:06}", i));
@@ -761,12 +964,24 @@ fn create_large_financial_dataset(size: usize) -> Result<DataFrame> {
         volumes.push(((100000 + i * 1000) % 50000000).to_string());
         sectors.push(sector_list[i % sector_list.len()].to_string());
     }
-    
+
     df.add_column("id".to_string(), Series::new(ids, Some("id".to_string()))?)?;
-    df.add_column("name".to_string(), Series::new(names, Some("name".to_string()))?)?;
-    df.add_column("price".to_string(), Series::new(prices, Some("price".to_string()))?)?;
-    df.add_column("volume".to_string(), Series::new(volumes, Some("volume".to_string()))?)?;
-    df.add_column("sector".to_string(), Series::new(sectors, Some("sector".to_string()))?)?;
-    
+    df.add_column(
+        "name".to_string(),
+        Series::new(names, Some("name".to_string()))?,
+    )?;
+    df.add_column(
+        "price".to_string(),
+        Series::new(prices, Some("price".to_string()))?,
+    )?;
+    df.add_column(
+        "volume".to_string(),
+        Series::new(volumes, Some("volume".to_string()))?,
+    )?;
+    df.add_column(
+        "sector".to_string(),
+        Series::new(sectors, Some("sector".to_string()))?,
+    )?;
+
     Ok(df)
 }

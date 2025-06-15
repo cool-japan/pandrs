@@ -9,4 +9,4 @@ pub mod operations;
 pub mod transformations;
 
 // Re-export the main public API
-pub use core::{OptimizedDataFrame, ColumnView, JsonOrient};
+pub use core::{ColumnView, JsonOrient, OptimizedDataFrame};

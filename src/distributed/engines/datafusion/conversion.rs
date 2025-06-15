@@ -27,12 +27,12 @@ pub fn dataframe_to_record_batches(
     // TODO: Implement proper DataFrame to Arrow conversion
     // This requires access to DataFrame's internal column data
     // For now, return empty record batch as a placeholder
-    use arrow::record_batch::RecordBatch;
     use arrow::datatypes::Schema;
-    
+    use arrow::record_batch::RecordBatch;
+
     let schema = Arc::new(Schema::new(vec![]));
     let empty_batch = RecordBatch::new_empty(schema);
-    
+
     Ok(vec![empty_batch])
 }
 

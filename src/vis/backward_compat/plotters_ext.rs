@@ -3,12 +3,12 @@
 //! This module provides Plotters-based visualization functionality for DataFrame and Series.
 //! In addition to text-based visualization (textplots), it can generate higher quality graphs and visualizations.
 
-use std::path::Path;
-use plotters::prelude::*;
 use crate::error::{PandRSError, Result};
+use crate::temporal::TimeSeries;
 use crate::DataFrame;
 use crate::Series;
-use crate::temporal::TimeSeries;
+use plotters::prelude::*;
+use std::path::Path;
 
 /// Plot types (extended version)
 #[derive(Debug, Clone, Copy)]
@@ -74,14 +74,14 @@ impl Default for PlotSettings {
             show_legend: true,
             show_grid: true,
             color_palette: vec![
-                (0, 123, 255),    // Blue
-                (255, 99, 71),    // Red
-                (46, 204, 113),   // Green
-                (255, 193, 7),    // Yellow
-                (142, 68, 173),   // Purple
-                (52, 152, 219),   // Cyan
-                (243, 156, 18),   // Orange
-                (211, 84, 0),     // Brown
+                (0, 123, 255),  // Blue
+                (255, 99, 71),  // Red
+                (46, 204, 113), // Green
+                (255, 193, 7),  // Yellow
+                (142, 68, 173), // Purple
+                (52, 152, 219), // Cyan
+                (243, 156, 18), // Orange
+                (211, 84, 0),   // Brown
             ],
         }
     }
@@ -124,7 +124,9 @@ where
         }
 
         // Get series name (for legend)
-        let series_name = self.name().map_or_else(|| "Series".to_string(), |s| s.clone());
+        let series_name = self
+            .name()
+            .map_or_else(|| "Series".to_string(), |s| s.clone());
 
         match settings.output_type {
             OutputType::PNG => plot_series_xy_png(&indices, &values, path, &settings, &series_name),
@@ -159,7 +161,7 @@ where
         mut settings: PlotSettings,
     ) -> Result<()> {
         let values: Vec<f64> = self.values().iter().map(|v| (*v).into()).collect();
-        
+
         // Reflect series name in the title (if not set)
         if settings.title == "Plot" {
             if let Some(name) = self.name() {
@@ -170,7 +172,9 @@ where
         }
 
         // Get series name (for legend)
-        let series_name = self.name().map_or_else(|| "Series".to_string(), |s| s.clone());
+        let series_name = self
+            .name()
+            .map_or_else(|| "Series".to_string(), |s| s.clone());
 
         match settings.output_type {
             OutputType::PNG => plot_histogram_png(&values, bins, path, &settings, &series_name),
@@ -220,15 +224,16 @@ impl DataFrame {
         // Get numeric data
         let column = self.get_column(col_name).unwrap();
         let na_values = column.to_numeric_vec()?;
-        
+
         // Handle NA values (treat missing values as 0.0)
-        let values: Vec<f64> = na_values.iter()
+        let values: Vec<f64> = na_values
+            .iter()
             .map(|na_val| match na_val {
                 crate::NA::Value(val) => *val,
                 crate::NA::NA => 0.0, // Treat missing values as 0.0
             })
             .collect();
-            
+
         let indices: Vec<f64> = (0..values.len()).map(|i| i as f64).collect();
 
         // Set title
@@ -241,7 +246,7 @@ impl DataFrame {
 
         // Use column name as legend
         let series_name = col_name.to_string();
-        
+
         match settings.output_type {
             OutputType::PNG => plot_series_xy_png(&indices, &values, path, &settings, &series_name),
             OutputType::SVG => plot_series_xy_svg(&indices, &values, path, &settings, &series_name),
@@ -277,7 +282,9 @@ impl DataFrame {
         mut settings: PlotSettings,
     ) -> Result<()> {
         if col_names.is_empty() {
-            return Err(PandRSError::Empty("No columns specified for plotting".to_string()));
+            return Err(PandRSError::Empty(
+                "No columns specified for plotting".to_string(),
+            ));
         }
 
         // Check if the columns exist
@@ -300,23 +307,24 @@ impl DataFrame {
         for (i, &col_name) in col_names.iter().enumerate() {
             let column = self.get_column(col_name).unwrap();
             let na_values = column.to_numeric_vec()?;
-            
+
             // Handle NA values (treat missing values as 0.0)
-            let values: Vec<f64> = na_values.iter()
+            let values: Vec<f64> = na_values
+                .iter()
                 .map(|na_val| match na_val {
                     crate::NA::Value(val) => *val,
                     crate::NA::NA => 0.0, // Treat missing values as 0.0
                 })
                 .collect();
-                
+
             let indices: Vec<f64> = (0..values.len()).map(|i| i as f64).collect();
-            
+
             let color_idx = i % settings.color_palette.len();
             let color = settings.color_palette[color_idx];
-            
+
             series_data.push((col_name.to_string(), indices, values, color));
         }
-        
+
         match settings.output_type {
             OutputType::PNG => plot_multi_series_png(series_data, path, &settings),
             OutputType::SVG => plot_multi_series_svg(series_data, path, &settings),
@@ -372,16 +380,18 @@ impl DataFrame {
         let y_column = self.get_column(y_col).unwrap();
         let x_na_values = x_column.to_numeric_vec()?;
         let y_na_values = y_column.to_numeric_vec()?;
-        
+
         // Handle NA values (treat missing values as 0.0)
-        let x_values: Vec<f64> = x_na_values.iter()
+        let x_values: Vec<f64> = x_na_values
+            .iter()
             .map(|na_val| match na_val {
                 crate::NA::Value(val) => *val,
                 crate::NA::NA => 0.0, // Treat missing values as 0.0
             })
             .collect();
-            
-        let y_values: Vec<f64> = y_na_values.iter()
+
+        let y_values: Vec<f64> = y_na_values
+            .iter()
             .map(|na_val| match na_val {
                 crate::NA::Value(val) => *val,
                 crate::NA::NA => 0.0, // Treat missing values as 0.0
@@ -410,8 +420,12 @@ impl DataFrame {
         let series_name = format!("{} vs {}", y_col, x_col);
 
         match settings.output_type {
-            OutputType::PNG => plot_series_xy_png(&x_values, &y_values, path, &settings, &series_name),
-            OutputType::SVG => plot_series_xy_svg(&x_values, &y_values, path, &settings, &series_name),
+            OutputType::PNG => {
+                plot_series_xy_png(&x_values, &y_values, path, &settings, &series_name)
+            }
+            OutputType::SVG => {
+                plot_series_xy_svg(&x_values, &y_values, path, &settings, &series_name)
+            }
         }
     }
 
@@ -462,11 +476,16 @@ impl DataFrame {
         // Create mapping of categories and their values
         let cat_column = self.get_column(category_col).unwrap();
         let val_column = self.get_column(value_col).unwrap();
-        let categories = cat_column.values().iter().map(|v| v.to_string()).collect::<Vec<_>>();
+        let categories = cat_column
+            .values()
+            .iter()
+            .map(|v| v.to_string())
+            .collect::<Vec<_>>();
         let values = val_column.to_numeric_vec()?;
 
         // Handle NA values (treat missing values as 0.0)
-        let numeric_values: Vec<f64> = values.iter()
+        let numeric_values: Vec<f64> = values
+            .iter()
             .map(|na_val| match na_val {
                 crate::NA::Value(val) => *val,
                 crate::NA::NA => 0.0, // Treat missing values as 0.0
@@ -474,7 +493,8 @@ impl DataFrame {
             .collect();
 
         // Group values by category
-        let mut category_map: std::collections::HashMap<String, Vec<f64>> = std::collections::HashMap::new();
+        let mut category_map: std::collections::HashMap<String, Vec<f64>> =
+            std::collections::HashMap::new();
         for (cat, val) in categories.iter().zip(numeric_values.iter()) {
             let entry = category_map.entry(cat.clone()).or_insert_with(Vec::new);
             entry.push(*val);
@@ -506,30 +526,30 @@ fn plot_boxplot_png<P: AsRef<Path>>(
     settings: &PlotSettings,
 ) -> Result<()> {
     // Create PNG backend
-    let root = BitMapBackend::new(path.as_ref(), (settings.width, settings.height))
-        .into_drawing_area();
+    let root =
+        BitMapBackend::new(path.as_ref(), (settings.width, settings.height)).into_drawing_area();
     root.fill(&WHITE)?;
-    
+
     // Get and sort list of categories
     let mut categories: Vec<&String> = category_map.keys().collect();
     categories.sort();
-    
+
     // Determine axis range by finding min and max of all values
     let mut all_values = Vec::new();
     for values in category_map.values() {
         all_values.extend(values);
     }
-    
+
     if all_values.is_empty() {
         return Err(PandRSError::Empty("No data to plot".to_string()));
     }
-    
+
     let y_min = all_values.iter().cloned().fold(f64::INFINITY, f64::min);
     let y_max = all_values.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-    
+
     // Calculate margin
     let y_margin = (y_max - y_min) * 0.1;
-    
+
     // Build chart
     let mut chart = ChartBuilder::on(&root)
         .caption(&settings.title, ("sans-serif", 30).into_font())
@@ -537,12 +557,13 @@ fn plot_boxplot_png<P: AsRef<Path>>(
         .x_label_area_size(40)
         .y_label_area_size(40)
         .build_cartesian_2d(
-            (0f64)..((categories.len() as f64)),
+            (0f64)..(categories.len() as f64),
             (y_min - y_margin)..(y_max + y_margin),
         )?;
-    
+
     // Set labels
-    chart.configure_mesh()
+    chart
+        .configure_mesh()
         .x_labels(categories.len())
         .x_label_formatter(&|idx| {
             let i = *idx as usize;
@@ -555,86 +576,86 @@ fn plot_boxplot_png<P: AsRef<Path>>(
         .x_desc(&settings.x_label)
         .y_desc(&settings.y_label)
         .draw()?;
-    
+
     // Draw each element of the box plot
     for (i, category) in categories.iter().enumerate() {
         let values = &category_map[*category];
         if values.is_empty() {
             continue;
         }
-        
+
         // Calculate basic statistics
         let mut sorted_values = values.clone();
         sorted_values.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-        
+
         let min = sorted_values[0];
         let max = sorted_values[sorted_values.len() - 1];
-        
+
         let median_idx = sorted_values.len() / 2;
         let median = if sorted_values.len() % 2 == 0 {
             (sorted_values[median_idx - 1] + sorted_values[median_idx]) / 2.0
         } else {
             sorted_values[median_idx]
         };
-        
+
         let q1_idx = sorted_values.len() / 4;
         let q1 = if sorted_values.len() % 4 == 0 {
             (sorted_values[q1_idx - 1] + sorted_values[q1_idx]) / 2.0
         } else {
             sorted_values[q1_idx]
         };
-        
+
         let q3_idx = 3 * sorted_values.len() / 4;
         let q3 = if (3 * sorted_values.len()) % 4 == 0 {
             (sorted_values[q3_idx - 1] + sorted_values[q3_idx]) / 2.0
         } else {
             sorted_values[q3_idx]
         };
-        
+
         // Box width
         let box_width = 0.6;
         let x = i as f64;
-        
+
         // Get color
         let color_idx = i % settings.color_palette.len();
         let (r, g, b) = settings.color_palette[color_idx];
         let color = RGBColor(r, g, b);
-        
+
         // Draw box
         chart.draw_series(std::iter::once(Rectangle::new(
             [(x - box_width / 2.0, q1), (x + box_width / 2.0, q3)],
             color.mix(0.2).filled(),
         )))?;
-        
+
         // Draw median line
         chart.draw_series(std::iter::once(PathElement::new(
             vec![(x - box_width / 2.0, median), (x + box_width / 2.0, median)],
             color.stroke_width(2),
         )))?;
-        
+
         // Draw whiskers
         chart.draw_series(std::iter::once(PathElement::new(
             vec![(x, q3), (x, max)],
             color.stroke_width(1),
         )))?;
-        
+
         chart.draw_series(std::iter::once(PathElement::new(
             vec![(x, q1), (x, min)],
             color.stroke_width(1),
         )))?;
-        
+
         // Draw horizontal lines at the ends of the whiskers
         chart.draw_series(std::iter::once(PathElement::new(
             vec![(x - box_width / 4.0, min), (x + box_width / 4.0, min)],
             color.stroke_width(1),
         )))?;
-        
+
         chart.draw_series(std::iter::once(PathElement::new(
             vec![(x - box_width / 4.0, max), (x + box_width / 4.0, max)],
             color.stroke_width(1),
         )))?;
     }
-    
+
     root.present()?;
     Ok(())
 }
@@ -646,30 +667,30 @@ fn plot_boxplot_svg<P: AsRef<Path>>(
     settings: &PlotSettings,
 ) -> Result<()> {
     // Create SVG backend
-    let root = SVGBackend::new(path.as_ref(), (settings.width, settings.height))
-        .into_drawing_area();
+    let root =
+        SVGBackend::new(path.as_ref(), (settings.width, settings.height)).into_drawing_area();
     root.fill(&WHITE)?;
-    
+
     // Get and sort list of categories
     let mut categories: Vec<&String> = category_map.keys().collect();
     categories.sort();
-    
+
     // Determine axis range by finding min and max of all values
     let mut all_values = Vec::new();
     for values in category_map.values() {
         all_values.extend(values);
     }
-    
+
     if all_values.is_empty() {
         return Err(PandRSError::Empty("No data to plot".to_string()));
     }
-    
+
     let y_min = all_values.iter().cloned().fold(f64::INFINITY, f64::min);
     let y_max = all_values.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-    
+
     // Calculate margin
     let y_margin = (y_max - y_min) * 0.1;
-    
+
     // Build chart
     let mut chart = ChartBuilder::on(&root)
         .caption(&settings.title, ("sans-serif", 30).into_font())
@@ -677,12 +698,13 @@ fn plot_boxplot_svg<P: AsRef<Path>>(
         .x_label_area_size(40)
         .y_label_area_size(40)
         .build_cartesian_2d(
-            (0f64)..((categories.len() as f64)),
+            (0f64)..(categories.len() as f64),
             (y_min - y_margin)..(y_max + y_margin),
         )?;
-    
+
     // Set labels
-    chart.configure_mesh()
+    chart
+        .configure_mesh()
         .x_labels(categories.len())
         .x_label_formatter(&|idx| {
             let i = *idx as usize;
@@ -695,86 +717,86 @@ fn plot_boxplot_svg<P: AsRef<Path>>(
         .x_desc(&settings.x_label)
         .y_desc(&settings.y_label)
         .draw()?;
-    
+
     // Draw each element of the box plot
     for (i, category) in categories.iter().enumerate() {
         let values = &category_map[*category];
         if values.is_empty() {
             continue;
         }
-        
+
         // Calculate basic statistics
         let mut sorted_values = values.clone();
         sorted_values.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-        
+
         let min = sorted_values[0];
         let max = sorted_values[sorted_values.len() - 1];
-        
+
         let median_idx = sorted_values.len() / 2;
         let median = if sorted_values.len() % 2 == 0 {
             (sorted_values[median_idx - 1] + sorted_values[median_idx]) / 2.0
         } else {
             sorted_values[median_idx]
         };
-        
+
         let q1_idx = sorted_values.len() / 4;
         let q1 = if sorted_values.len() % 4 == 0 {
             (sorted_values[q1_idx - 1] + sorted_values[q1_idx]) / 2.0
         } else {
             sorted_values[q1_idx]
         };
-        
+
         let q3_idx = 3 * sorted_values.len() / 4;
         let q3 = if (3 * sorted_values.len()) % 4 == 0 {
             (sorted_values[q3_idx - 1] + sorted_values[q3_idx]) / 2.0
         } else {
             sorted_values[q3_idx]
         };
-        
+
         // Box width
         let box_width = 0.6;
         let x = i as f64;
-        
+
         // Get color
         let color_idx = i % settings.color_palette.len();
         let (r, g, b) = settings.color_palette[color_idx];
         let color = RGBColor(r, g, b);
-        
+
         // Draw box
         chart.draw_series(std::iter::once(Rectangle::new(
             [(x - box_width / 2.0, q1), (x + box_width / 2.0, q3)],
             color.mix(0.2).filled(),
         )))?;
-        
+
         // Draw median line
         chart.draw_series(std::iter::once(PathElement::new(
             vec![(x - box_width / 2.0, median), (x + box_width / 2.0, median)],
             color.stroke_width(2),
         )))?;
-        
+
         // Draw whiskers
         chart.draw_series(std::iter::once(PathElement::new(
             vec![(x, q3), (x, max)],
             color.stroke_width(1),
         )))?;
-        
+
         chart.draw_series(std::iter::once(PathElement::new(
             vec![(x, q1), (x, min)],
             color.stroke_width(1),
         )))?;
-        
+
         // Draw horizontal lines at the ends of the whiskers
         chart.draw_series(std::iter::once(PathElement::new(
             vec![(x - box_width / 4.0, min), (x + box_width / 4.0, min)],
             color.stroke_width(1),
         )))?;
-        
+
         chart.draw_series(std::iter::once(PathElement::new(
             vec![(x - box_width / 4.0, max), (x + box_width / 4.0, max)],
             color.stroke_width(1),
         )))?;
     }
-    
+
     root.present()?;
     Ok(())
 }
@@ -808,8 +830,8 @@ fn plot_series_xy_png<P: AsRef<Path>>(
     let y_margin = (y_max - y_min) * 0.05;
 
     // Create PNG backend
-    let root = BitMapBackend::new(path.as_ref(), (settings.width, settings.height))
-        .into_drawing_area();
+    let root =
+        BitMapBackend::new(path.as_ref(), (settings.width, settings.height)).into_drawing_area();
     root.fill(&WHITE)?;
 
     let mut chart = ChartBuilder::on(&root)
@@ -824,14 +846,16 @@ fn plot_series_xy_png<P: AsRef<Path>>(
 
     // Add grid lines
     if settings.show_grid {
-        chart.configure_mesh()
+        chart
+            .configure_mesh()
             .x_labels(10)
             .y_labels(10)
             .x_desc(&settings.x_label)
             .y_desc(&settings.y_label)
             .draw()?;
     } else {
-        chart.configure_mesh()
+        chart
+            .configure_mesh()
             .x_labels(10)
             .y_labels(10)
             .x_desc(&settings.x_label)
@@ -849,15 +873,23 @@ fn plot_series_xy_png<P: AsRef<Path>>(
     match settings.plot_kind {
         PlotKind::Line => {
             let series = LineSeries::new(points.iter().map(|&(x, y)| (x, y)), color);
-            chart.draw_series(series)?
+            chart
+                .draw_series(series)?
                 .label(series_name.to_owned())
-                .legend(move |(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], RGBColor(rgb.0, rgb.1, rgb.2)));
+                .legend(move |(x, y)| {
+                    PathElement::new(vec![(x, y), (x + 20, y)], RGBColor(rgb.0, rgb.1, rgb.2))
+                });
         }
         PlotKind::Scatter => {
-            let series = points.iter().map(|&(x, y)| Circle::new((x, y), 3, color.filled()));
-            chart.draw_series(series)?
+            let series = points
+                .iter()
+                .map(|&(x, y)| Circle::new((x, y), 3, color.filled()));
+            chart
+                .draw_series(series)?
                 .label(series_name.to_owned())
-                .legend(move |(x, y)| Circle::new((x + 10, y), 3, RGBColor(rgb.0, rgb.1, rgb.2).filled()));
+                .legend(move |(x, y)| {
+                    Circle::new((x + 10, y), 3, RGBColor(rgb.0, rgb.1, rgb.2).filled())
+                });
         }
         PlotKind::Bar => {
             let y_baseline = 0.0f64.max(y_min - y_margin);
@@ -873,40 +905,35 @@ fn plot_series_xy_png<P: AsRef<Path>>(
                 }
                 min_diff * 0.8
             };
-            
+
             let series = points.iter().map(|&(x, y)| {
                 Rectangle::new(
                     [(x - bar_width / 2.0, y_baseline), (x + bar_width / 2.0, y)],
                     color.filled(),
                 )
             });
-            
-            chart.draw_series(series)?
+
+            chart
+                .draw_series(series)?
                 .label(series_name.to_owned())
                 .legend(move |(x, y)| {
                     Rectangle::new(
-                        [(x, y - 5), (x + 20, y + 5)], 
-                        RGBColor(rgb.0, rgb.1, rgb.2).filled()
+                        [(x, y - 5), (x + 20, y + 5)],
+                        RGBColor(rgb.0, rgb.1, rgb.2).filled(),
                     )
                 });
         }
         PlotKind::Area => {
             let baseline = y_min.min(0.0);
             let area_color = RGBColor(rgb.0, rgb.1, rgb.2).mix(0.2);
-            
-            let series = AreaSeries::new(
-                points.iter().map(|&(x, y)| (x, y)),
-                baseline,
-                area_color,
-            );
-            
-            chart.draw_series(series)?
+
+            let series = AreaSeries::new(points.iter().map(|&(x, y)| (x, y)), baseline, area_color);
+
+            chart
+                .draw_series(series)?
                 .label(series_name.to_owned())
                 .legend(move |(x, y)| {
-                    PathElement::new(
-                        vec![(x, y), (x + 20, y)], 
-                        RGBColor(rgb.0, rgb.1, rgb.2)
-                    )
+                    PathElement::new(vec![(x, y), (x + 20, y)], RGBColor(rgb.0, rgb.1, rgb.2))
                 });
         }
         _ => {
@@ -918,7 +945,8 @@ fn plot_series_xy_png<P: AsRef<Path>>(
 
     // Show legend
     if settings.show_legend {
-        chart.configure_series_labels()
+        chart
+            .configure_series_labels()
             .background_style(&WHITE.mix(0.8))
             .border_style(&BLACK)
             .position(SeriesLabelPosition::UpperRight)
@@ -958,8 +986,8 @@ fn plot_series_xy_svg<P: AsRef<Path>>(
     let y_margin = (y_max - y_min) * 0.05;
 
     // Create SVG backend
-    let root = SVGBackend::new(path.as_ref(), (settings.width, settings.height))
-        .into_drawing_area();
+    let root =
+        SVGBackend::new(path.as_ref(), (settings.width, settings.height)).into_drawing_area();
     root.fill(&WHITE)?;
 
     let mut chart = ChartBuilder::on(&root)
@@ -974,14 +1002,16 @@ fn plot_series_xy_svg<P: AsRef<Path>>(
 
     // Add grid lines
     if settings.show_grid {
-        chart.configure_mesh()
+        chart
+            .configure_mesh()
             .x_labels(10)
             .y_labels(10)
             .x_desc(&settings.x_label)
             .y_desc(&settings.y_label)
             .draw()?;
     } else {
-        chart.configure_mesh()
+        chart
+            .configure_mesh()
             .x_labels(10)
             .y_labels(10)
             .x_desc(&settings.x_label)
@@ -999,15 +1029,23 @@ fn plot_series_xy_svg<P: AsRef<Path>>(
     match settings.plot_kind {
         PlotKind::Line => {
             let series = LineSeries::new(points.iter().map(|&(x, y)| (x, y)), color);
-            chart.draw_series(series)?
+            chart
+                .draw_series(series)?
                 .label(series_name.to_owned())
-                .legend(move |(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], RGBColor(rgb.0, rgb.1, rgb.2)));
+                .legend(move |(x, y)| {
+                    PathElement::new(vec![(x, y), (x + 20, y)], RGBColor(rgb.0, rgb.1, rgb.2))
+                });
         }
         PlotKind::Scatter => {
-            let series = points.iter().map(|&(x, y)| Circle::new((x, y), 3, color.filled()));
-            chart.draw_series(series)?
+            let series = points
+                .iter()
+                .map(|&(x, y)| Circle::new((x, y), 3, color.filled()));
+            chart
+                .draw_series(series)?
                 .label(series_name.to_owned())
-                .legend(move |(x, y)| Circle::new((x + 10, y), 3, RGBColor(rgb.0, rgb.1, rgb.2).filled()));
+                .legend(move |(x, y)| {
+                    Circle::new((x + 10, y), 3, RGBColor(rgb.0, rgb.1, rgb.2).filled())
+                });
         }
         PlotKind::Bar => {
             let y_baseline = 0.0f64.max(y_min - y_margin);
@@ -1023,40 +1061,35 @@ fn plot_series_xy_svg<P: AsRef<Path>>(
                 }
                 min_diff * 0.8
             };
-            
+
             let series = points.iter().map(|&(x, y)| {
                 Rectangle::new(
                     [(x - bar_width / 2.0, y_baseline), (x + bar_width / 2.0, y)],
                     color.filled(),
                 )
             });
-            
-            chart.draw_series(series)?
+
+            chart
+                .draw_series(series)?
                 .label(series_name.to_owned())
                 .legend(move |(x, y)| {
                     Rectangle::new(
-                        [(x, y - 5), (x + 20, y + 5)], 
-                        RGBColor(rgb.0, rgb.1, rgb.2).filled()
+                        [(x, y - 5), (x + 20, y + 5)],
+                        RGBColor(rgb.0, rgb.1, rgb.2).filled(),
                     )
                 });
         }
         PlotKind::Area => {
             let baseline = y_min.min(0.0);
             let area_color = RGBColor(rgb.0, rgb.1, rgb.2).mix(0.2);
-            
-            let series = AreaSeries::new(
-                points.iter().map(|&(x, y)| (x, y)),
-                baseline,
-                area_color,
-            );
-            
-            chart.draw_series(series)?
+
+            let series = AreaSeries::new(points.iter().map(|&(x, y)| (x, y)), baseline, area_color);
+
+            chart
+                .draw_series(series)?
                 .label(series_name.to_owned())
                 .legend(move |(x, y)| {
-                    PathElement::new(
-                        vec![(x, y), (x + 20, y)], 
-                        RGBColor(rgb.0, rgb.1, rgb.2)
-                    )
+                    PathElement::new(vec![(x, y), (x + 20, y)], RGBColor(rgb.0, rgb.1, rgb.2))
                 });
         }
         _ => {
@@ -1068,7 +1101,8 @@ fn plot_series_xy_svg<P: AsRef<Path>>(
 
     // Show legend
     if settings.show_legend {
-        chart.configure_series_labels()
+        chart
+            .configure_series_labels()
             .background_style(&WHITE.mix(0.8))
             .border_style(&BLACK)
             .position(SeriesLabelPosition::UpperRight)
@@ -1094,22 +1128,22 @@ fn plot_histogram_png<P: AsRef<Path>>(
     // Calculate histogram bins
     let min_val = values.iter().cloned().fold(f64::INFINITY, f64::min);
     let max_val = values.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-    
+
     let bin_width = (max_val - min_val) / (bins as f64);
     let mut histogram = vec![0; bins];
-    
+
     for &val in values {
         let bin_idx = ((val - min_val) / bin_width).floor() as usize;
         let bin_idx = if bin_idx >= bins { bins - 1 } else { bin_idx };
         histogram[bin_idx] += 1;
     }
-    
+
     // Find maximum frequency
     let max_freq = *histogram.iter().max().unwrap_or(&0);
-    
+
     // Create PNG backend
-    let root = BitMapBackend::new(path.as_ref(), (settings.width, settings.height))
-        .into_drawing_area();
+    let root =
+        BitMapBackend::new(path.as_ref(), (settings.width, settings.height)).into_drawing_area();
     root.fill(&WHITE)?;
 
     let mut chart = ChartBuilder::on(&root)
@@ -1124,14 +1158,16 @@ fn plot_histogram_png<P: AsRef<Path>>(
 
     // Add grid lines
     if settings.show_grid {
-        chart.configure_mesh()
+        chart
+            .configure_mesh()
             .x_labels(10)
             .y_labels(10)
             .x_desc(&settings.x_label)
             .y_desc("Frequency")
             .draw()?;
     } else {
-        chart.configure_mesh()
+        chart
+            .configure_mesh()
             .x_labels(10)
             .y_labels(10)
             .x_desc(&settings.x_label)
@@ -1144,28 +1180,27 @@ fn plot_histogram_png<P: AsRef<Path>>(
     let (r, g, b) = settings.color_palette[0];
     let rgb = (r, g, b);
     let color = RGBColor(r, g, b);
-    
+
     let bars = histogram.iter().enumerate().map(|(i, &count)| {
         let x0 = min_val + (i as f64) * bin_width;
         let x1 = x0 + bin_width;
-        Rectangle::new(
-            [(x0, 0.0), (x1, count as f64)],
-            color.mix(0.7).filled(),
-        )
+        Rectangle::new([(x0, 0.0), (x1, count as f64)], color.mix(0.7).filled())
     });
-    
-    chart.draw_series(bars)?
+
+    chart
+        .draw_series(bars)?
         .label(series_name.to_owned())
         .legend(move |(x, y)| {
             Rectangle::new(
-                [(x, y - 5), (x + 20, y + 5)], 
-                RGBColor(rgb.0, rgb.1, rgb.2).mix(0.7).filled()
+                [(x, y - 5), (x + 20, y + 5)],
+                RGBColor(rgb.0, rgb.1, rgb.2).mix(0.7).filled(),
             )
         });
 
     // Show legend
     if settings.show_legend {
-        chart.configure_series_labels()
+        chart
+            .configure_series_labels()
             .background_style(&WHITE.mix(0.8))
             .border_style(&BLACK)
             .position(SeriesLabelPosition::UpperRight)
@@ -1191,22 +1226,22 @@ fn plot_histogram_svg<P: AsRef<Path>>(
     // Calculate histogram bins
     let min_val = values.iter().cloned().fold(f64::INFINITY, f64::min);
     let max_val = values.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-    
+
     let bin_width = (max_val - min_val) / (bins as f64);
     let mut histogram = vec![0; bins];
-    
+
     for &val in values {
         let bin_idx = ((val - min_val) / bin_width).floor() as usize;
         let bin_idx = if bin_idx >= bins { bins - 1 } else { bin_idx };
         histogram[bin_idx] += 1;
     }
-    
+
     // Find maximum frequency
     let max_freq = *histogram.iter().max().unwrap_or(&0);
-    
+
     // Create SVG backend
-    let root = SVGBackend::new(path.as_ref(), (settings.width, settings.height))
-        .into_drawing_area();
+    let root =
+        SVGBackend::new(path.as_ref(), (settings.width, settings.height)).into_drawing_area();
     root.fill(&WHITE)?;
 
     let mut chart = ChartBuilder::on(&root)
@@ -1221,14 +1256,16 @@ fn plot_histogram_svg<P: AsRef<Path>>(
 
     // Add grid lines
     if settings.show_grid {
-        chart.configure_mesh()
+        chart
+            .configure_mesh()
             .x_labels(10)
             .y_labels(10)
             .x_desc(&settings.x_label)
             .y_desc("Frequency")
             .draw()?;
     } else {
-        chart.configure_mesh()
+        chart
+            .configure_mesh()
             .x_labels(10)
             .y_labels(10)
             .x_desc(&settings.x_label)
@@ -1241,28 +1278,27 @@ fn plot_histogram_svg<P: AsRef<Path>>(
     let (r, g, b) = settings.color_palette[0];
     let rgb = (r, g, b);
     let color = RGBColor(r, g, b);
-    
+
     let bars = histogram.iter().enumerate().map(|(i, &count)| {
         let x0 = min_val + (i as f64) * bin_width;
         let x1 = x0 + bin_width;
-        Rectangle::new(
-            [(x0, 0.0), (x1, count as f64)],
-            color.mix(0.7).filled(),
-        )
+        Rectangle::new([(x0, 0.0), (x1, count as f64)], color.mix(0.7).filled())
     });
-    
-    chart.draw_series(bars)?
+
+    chart
+        .draw_series(bars)?
         .label(series_name.to_owned())
         .legend(move |(x, y)| {
             Rectangle::new(
-                [(x, y - 5), (x + 20, y + 5)], 
-                RGBColor(rgb.0, rgb.1, rgb.2).mix(0.7).filled()
+                [(x, y - 5), (x + 20, y + 5)],
+                RGBColor(rgb.0, rgb.1, rgb.2).mix(0.7).filled(),
             )
         });
 
     // Show legend
     if settings.show_legend {
-        chart.configure_series_labels()
+        chart
+            .configure_series_labels()
             .background_style(&WHITE.mix(0.8))
             .border_style(&BLACK)
             .position(SeriesLabelPosition::UpperRight)
@@ -1288,30 +1324,30 @@ fn plot_multi_series_png<P: AsRef<Path>>(
     let mut x_max = f64::NEG_INFINITY;
     let mut y_min = f64::INFINITY;
     let mut y_max = f64::NEG_INFINITY;
-    
+
     for (_, x, y, _) in &series_data {
         if x.is_empty() {
             continue;
         }
-        
+
         let x_min_val = x.iter().cloned().fold(f64::INFINITY, f64::min);
         let x_max_val = x.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
         let y_min_val = y.iter().cloned().fold(f64::INFINITY, f64::min);
         let y_max_val = y.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-        
+
         x_min = x_min.min(x_min_val);
         x_max = x_max.max(x_max_val);
         y_min = y_min.min(y_min_val);
         y_max = y_max.max(y_max_val);
     }
-    
+
     // Calculate margin
     let x_margin = (x_max - x_min) * 0.05;
     let y_margin = (y_max - y_min) * 0.05;
 
     // Create PNG backend
-    let root = BitMapBackend::new(path.as_ref(), (settings.width, settings.height))
-        .into_drawing_area();
+    let root =
+        BitMapBackend::new(path.as_ref(), (settings.width, settings.height)).into_drawing_area();
     root.fill(&WHITE)?;
 
     let mut chart = ChartBuilder::on(&root)
@@ -1326,14 +1362,16 @@ fn plot_multi_series_png<P: AsRef<Path>>(
 
     // Add grid lines
     if settings.show_grid {
-        chart.configure_mesh()
+        chart
+            .configure_mesh()
             .x_labels(10)
             .y_labels(10)
             .x_desc(&settings.x_label)
             .y_desc(&settings.y_label)
             .draw()?;
     } else {
-        chart.configure_mesh()
+        chart
+            .configure_mesh()
             .x_labels(10)
             .y_labels(10)
             .x_desc(&settings.x_label)
@@ -1346,19 +1384,27 @@ fn plot_multi_series_png<P: AsRef<Path>>(
     for (name, x, y, rgb) in series_data {
         let points: Vec<(f64, f64)> = x.iter().zip(y.iter()).map(|(x, y)| (*x, *y)).collect();
         let color = RGBColor(rgb.0, rgb.1, rgb.2);
-        
+
         match settings.plot_kind {
             PlotKind::Line => {
                 let series = LineSeries::new(points.iter().map(|&(x, y)| (x, y)), color);
-                chart.draw_series(series)?
+                chart
+                    .draw_series(series)?
                     .label(name)
-                    .legend(move |(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], RGBColor(rgb.0, rgb.1, rgb.2)));
+                    .legend(move |(x, y)| {
+                        PathElement::new(vec![(x, y), (x + 20, y)], RGBColor(rgb.0, rgb.1, rgb.2))
+                    });
             }
             PlotKind::Scatter => {
-                let series = points.iter().map(|&(x, y)| Circle::new((x, y), 3, color.filled()));
-                chart.draw_series(series)?
+                let series = points
+                    .iter()
+                    .map(|&(x, y)| Circle::new((x, y), 3, color.filled()));
+                chart
+                    .draw_series(series)?
                     .label(name)
-                    .legend(move |(x, y)| Circle::new((x + 10, y), 3, RGBColor(rgb.0, rgb.1, rgb.2).filled()));
+                    .legend(move |(x, y)| {
+                        Circle::new((x + 10, y), 3, RGBColor(rgb.0, rgb.1, rgb.2).filled())
+                    });
             }
             PlotKind::Bar => {
                 return Err(PandRSError::NotImplemented(
@@ -1368,20 +1414,15 @@ fn plot_multi_series_png<P: AsRef<Path>>(
             PlotKind::Area => {
                 let baseline = y_min.min(0.0);
                 let area_color = RGBColor(rgb.0, rgb.1, rgb.2).mix(0.2);
-                
-                let series = AreaSeries::new(
-                    points.iter().map(|&(x, y)| (x, y)),
-                    baseline,
-                    area_color,
-                );
-                
-                chart.draw_series(series)?
+
+                let series =
+                    AreaSeries::new(points.iter().map(|&(x, y)| (x, y)), baseline, area_color);
+
+                chart
+                    .draw_series(series)?
                     .label(name)
                     .legend(move |(x, y)| {
-                        PathElement::new(
-                            vec![(x, y), (x + 20, y)], 
-                            RGBColor(rgb.0, rgb.1, rgb.2)
-                        )
+                        PathElement::new(vec![(x, y), (x + 20, y)], RGBColor(rgb.0, rgb.1, rgb.2))
                     });
             }
             _ => {
@@ -1394,7 +1435,8 @@ fn plot_multi_series_png<P: AsRef<Path>>(
 
     // Show legend
     if settings.show_legend {
-        chart.configure_series_labels()
+        chart
+            .configure_series_labels()
             .background_style(&WHITE.mix(0.8))
             .border_style(&BLACK)
             .position(SeriesLabelPosition::UpperRight)
@@ -1420,30 +1462,30 @@ fn plot_multi_series_svg<P: AsRef<Path>>(
     let mut x_max = f64::NEG_INFINITY;
     let mut y_min = f64::INFINITY;
     let mut y_max = f64::NEG_INFINITY;
-    
+
     for (_, x, y, _) in &series_data {
         if x.is_empty() {
             continue;
         }
-        
+
         let x_min_val = x.iter().cloned().fold(f64::INFINITY, f64::min);
         let x_max_val = x.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
         let y_min_val = y.iter().cloned().fold(f64::INFINITY, f64::min);
         let y_max_val = y.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-        
+
         x_min = x_min.min(x_min_val);
         x_max = x_max.max(x_max_val);
         y_min = y_min.min(y_min_val);
         y_max = y_max.max(y_max_val);
     }
-    
+
     // Calculate margin
     let x_margin = (x_max - x_min) * 0.05;
     let y_margin = (y_max - y_min) * 0.05;
 
     // Create SVG backend
-    let root = SVGBackend::new(path.as_ref(), (settings.width, settings.height))
-        .into_drawing_area();
+    let root =
+        SVGBackend::new(path.as_ref(), (settings.width, settings.height)).into_drawing_area();
     root.fill(&WHITE)?;
 
     let mut chart = ChartBuilder::on(&root)
@@ -1458,14 +1500,16 @@ fn plot_multi_series_svg<P: AsRef<Path>>(
 
     // Add grid lines
     if settings.show_grid {
-        chart.configure_mesh()
+        chart
+            .configure_mesh()
             .x_labels(10)
             .y_labels(10)
             .x_desc(&settings.x_label)
             .y_desc(&settings.y_label)
             .draw()?;
     } else {
-        chart.configure_mesh()
+        chart
+            .configure_mesh()
             .x_labels(10)
             .y_labels(10)
             .x_desc(&settings.x_label)
@@ -1478,19 +1522,27 @@ fn plot_multi_series_svg<P: AsRef<Path>>(
     for (name, x, y, rgb) in series_data {
         let points: Vec<(f64, f64)> = x.iter().zip(y.iter()).map(|(x, y)| (*x, *y)).collect();
         let color = RGBColor(rgb.0, rgb.1, rgb.2);
-        
+
         match settings.plot_kind {
             PlotKind::Line => {
                 let series = LineSeries::new(points.iter().map(|&(x, y)| (x, y)), color);
-                chart.draw_series(series)?
+                chart
+                    .draw_series(series)?
                     .label(name)
-                    .legend(move |(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], RGBColor(rgb.0, rgb.1, rgb.2)));
+                    .legend(move |(x, y)| {
+                        PathElement::new(vec![(x, y), (x + 20, y)], RGBColor(rgb.0, rgb.1, rgb.2))
+                    });
             }
             PlotKind::Scatter => {
-                let series = points.iter().map(|&(x, y)| Circle::new((x, y), 3, color.filled()));
-                chart.draw_series(series)?
+                let series = points
+                    .iter()
+                    .map(|&(x, y)| Circle::new((x, y), 3, color.filled()));
+                chart
+                    .draw_series(series)?
                     .label(name)
-                    .legend(move |(x, y)| Circle::new((x + 10, y), 3, RGBColor(rgb.0, rgb.1, rgb.2).filled()));
+                    .legend(move |(x, y)| {
+                        Circle::new((x + 10, y), 3, RGBColor(rgb.0, rgb.1, rgb.2).filled())
+                    });
             }
             PlotKind::Bar => {
                 return Err(PandRSError::NotImplemented(
@@ -1500,20 +1552,15 @@ fn plot_multi_series_svg<P: AsRef<Path>>(
             PlotKind::Area => {
                 let baseline = y_min.min(0.0);
                 let area_color = RGBColor(rgb.0, rgb.1, rgb.2).mix(0.2);
-                
-                let series = AreaSeries::new(
-                    points.iter().map(|&(x, y)| (x, y)),
-                    baseline,
-                    area_color,
-                );
-                
-                chart.draw_series(series)?
+
+                let series =
+                    AreaSeries::new(points.iter().map(|&(x, y)| (x, y)), baseline, area_color);
+
+                chart
+                    .draw_series(series)?
                     .label(name)
                     .legend(move |(x, y)| {
-                        PathElement::new(
-                            vec![(x, y), (x + 20, y)], 
-                            RGBColor(rgb.0, rgb.1, rgb.2)
-                        )
+                        PathElement::new(vec![(x, y), (x + 20, y)], RGBColor(rgb.0, rgb.1, rgb.2))
                     });
             }
             _ => {
@@ -1526,7 +1573,8 @@ fn plot_multi_series_svg<P: AsRef<Path>>(
 
     // Show legend
     if settings.show_legend {
-        chart.configure_series_labels()
+        chart
+            .configure_series_labels()
             .background_style(&WHITE.mix(0.8))
             .border_style(&BLACK)
             .position(SeriesLabelPosition::UpperRight)

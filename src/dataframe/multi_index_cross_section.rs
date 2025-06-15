@@ -3,10 +3,12 @@
 //! This module provides cross-section selection capabilities for DataFrames with MultiIndex,
 //! including partial indexing, level slicing, boolean indexing, and hierarchical navigation.
 
-use crate::core::advanced_multi_index::{AdvancedMultiIndex, IndexValue, CrossSectionResult, SelectionCriteria};
+use crate::column::{Column, ColumnTrait};
+use crate::core::advanced_multi_index::{
+    AdvancedMultiIndex, CrossSectionResult, IndexValue, SelectionCriteria,
+};
 use crate::core::error::{Error, Result};
 use crate::dataframe::DataFrame;
-use crate::column::{Column, ColumnTrait};
 use std::collections::HashMap;
 
 /// DataFrame with advanced MultiIndex cross-section support
@@ -51,11 +53,18 @@ impl MultiIndexDataFrame {
     }
 
     /// Cross-section selection: select rows with specific value at given level
-    pub fn xs(&mut self, key: IndexValue, level: usize, drop_level: bool) -> Result<CrossSectionDataFrame> {
+    pub fn xs(
+        &mut self,
+        key: IndexValue,
+        level: usize,
+        drop_level: bool,
+    ) -> Result<CrossSectionDataFrame> {
         let xs_result = self.index.xs(key, level, drop_level)?;
-        
+
         if xs_result.indices.is_empty() {
-            return Err(Error::InvalidOperation("No matching rows found for cross-section".to_string()));
+            return Err(Error::InvalidOperation(
+                "No matching rows found for cross-section".to_string(),
+            ));
         }
 
         // Create new DataFrame with selected rows
@@ -87,9 +96,11 @@ impl MultiIndexDataFrame {
     /// Advanced selection using multiple criteria
     pub fn select(&self, criteria: SelectionCriteria) -> Result<CrossSectionDataFrame> {
         let selected_indices = self.index.select(criteria)?;
-        
+
         if selected_indices.is_empty() {
-            return Err(Error::InvalidOperation("No matching rows found for selection criteria".to_string()));
+            return Err(Error::InvalidOperation(
+                "No matching rows found for selection criteria".to_string(),
+            ));
         }
 
         let selected_dataframe = self.select_rows(&selected_indices)?;
@@ -122,7 +133,7 @@ impl MultiIndexDataFrame {
 
         // Get unique group keys
         let group_keys = self.index.get_group_keys(levels)?;
-        
+
         // Build groups: group_key -> row_indices
         let mut groups = HashMap::new();
         for group_key in group_keys {
@@ -153,13 +164,19 @@ impl MultiIndexDataFrame {
         let mut new_tuples = Vec::with_capacity(self.index.len());
         for i in 0..self.index.len() {
             let original_tuple = self.index.get_tuple(i)?;
-            let new_tuple: Vec<IndexValue> = levels.iter().map(|&level| original_tuple[level].clone()).collect();
+            let new_tuple: Vec<IndexValue> = levels
+                .iter()
+                .map(|&level| original_tuple[level].clone())
+                .collect();
             new_tuples.push(new_tuple);
         }
 
         // Create new level names
         let original_names = self.index.level_names();
-        let new_names: Vec<Option<String>> = levels.iter().map(|&level| original_names[level].clone()).collect();
+        let new_names: Vec<Option<String>> = levels
+            .iter()
+            .map(|&level| original_names[level].clone())
+            .collect();
 
         let new_index = AdvancedMultiIndex::new(new_tuples, Some(new_names))?;
 
@@ -202,22 +219,34 @@ impl MultiIndexDataFrame {
     }
 
     /// Sort by index levels
-    pub fn sort_index(&self, levels: Option<&[usize]>, ascending: bool) -> Result<MultiIndexDataFrame> {
+    pub fn sort_index(
+        &self,
+        levels: Option<&[usize]>,
+        ascending: bool,
+    ) -> Result<MultiIndexDataFrame> {
         let default_levels: Vec<usize> = (0..self.index.n_levels()).collect();
         let sort_levels = levels.unwrap_or(&default_levels);
-        
+
         // Create sortable tuples with original indices
-        let mut indexed_tuples: Vec<(usize, Vec<IndexValue>)> = Vec::with_capacity(self.index.len());
+        let mut indexed_tuples: Vec<(usize, Vec<IndexValue>)> =
+            Vec::with_capacity(self.index.len());
         for i in 0..self.index.len() {
             let tuple = self.index.get_tuple(i)?;
-            let sort_tuple: Vec<IndexValue> = sort_levels.iter().map(|&level| tuple[level].clone()).collect();
+            let sort_tuple: Vec<IndexValue> = sort_levels
+                .iter()
+                .map(|&level| tuple[level].clone())
+                .collect();
             indexed_tuples.push((i, sort_tuple));
         }
 
         // Sort tuples
         indexed_tuples.sort_by(|a, b| {
             let comparison = a.1.cmp(&b.1);
-            if ascending { comparison } else { comparison.reverse() }
+            if ascending {
+                comparison
+            } else {
+                comparison.reverse()
+            }
         });
 
         // Extract sorted indices
@@ -274,10 +303,11 @@ impl MultiIndexDataFrame {
     }
 
     fn select_index_rows(&self, indices: &[usize]) -> Result<AdvancedMultiIndex> {
-        let selected_tuples: Result<Vec<Vec<IndexValue>>> = indices.iter()
+        let selected_tuples: Result<Vec<Vec<IndexValue>>> = indices
+            .iter()
             .map(|&i| self.index.get_tuple(i).map(|t| t.to_vec()))
             .collect();
-        
+
         AdvancedMultiIndex::new(selected_tuples?, Some(self.index.level_names().to_vec()))
     }
 }
@@ -298,16 +328,18 @@ impl MultiIndexGroupBy {
 
     /// Get group sizes
     pub fn size(&self) -> HashMap<Vec<IndexValue>, usize> {
-        self.groups.iter()
+        self.groups
+            .iter()
             .map(|(key, indices)| (key.clone(), indices.len()))
             .collect()
     }
 
     /// Get group by key
     pub fn get_group(&self, key: &[IndexValue]) -> Result<MultiIndexDataFrame> {
-        let indices = self.groups.get(key).ok_or_else(|| {
-            Error::InvalidOperation(format!("Group key {:?} not found", key))
-        })?;
+        let indices = self
+            .groups
+            .get(key)
+            .ok_or_else(|| Error::InvalidOperation(format!("Group key {:?} not found", key)))?;
 
         let selected_dataframe = self.dataframe.select_rows(indices)?;
         let selected_index = self.dataframe.select_index_rows(indices)?;
@@ -341,7 +373,9 @@ impl MultiIndexGroupBy {
         }
 
         // Create result index with only group levels
-        let group_level_names: Vec<Option<String>> = self.group_levels.iter()
+        let group_level_names: Vec<Option<String>> = self
+            .group_levels
+            .iter()
             .map(|&level| self.dataframe.index.level_names()[level].clone())
             .collect();
 
@@ -374,7 +408,9 @@ impl MultiIndexGroupBy {
         if let Some((_, first_result)) = result_parts.first() {
             Ok(first_result.clone()) // Placeholder
         } else {
-            Err(Error::InvalidOperation("No groups to apply function to".to_string()))
+            Err(Error::InvalidOperation(
+                "No groups to apply function to".to_string(),
+            ))
         }
     }
 
@@ -417,22 +453,24 @@ impl AggregationFunction {
             AggregationFunction::Min => values.iter().fold(f64::INFINITY, |a, &b| a.min(b)),
             AggregationFunction::Max => values.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b)),
             AggregationFunction::Std => {
-                if values.len() <= 1 { 
-                    0.0 
+                if values.len() <= 1 {
+                    0.0
                 } else {
                     let mean = values.iter().sum::<f64>() / values.len() as f64;
-                    let variance = values.iter().map(|&x| (x - mean).powi(2)).sum::<f64>() / (values.len() - 1) as f64;
+                    let variance = values.iter().map(|&x| (x - mean).powi(2)).sum::<f64>()
+                        / (values.len() - 1) as f64;
                     variance.sqrt()
                 }
-            },
+            }
             AggregationFunction::Var => {
-                if values.len() <= 1 { 
-                    0.0 
+                if values.len() <= 1 {
+                    0.0
                 } else {
                     let mean = values.iter().sum::<f64>() / values.len() as f64;
-                    values.iter().map(|&x| (x - mean).powi(2)).sum::<f64>() / (values.len() - 1) as f64
+                    values.iter().map(|&x| (x - mean).powi(2)).sum::<f64>()
+                        / (values.len() - 1) as f64
                 }
-            },
+            }
             AggregationFunction::First => values[0],
             AggregationFunction::Last => values[values.len() - 1],
         }
@@ -454,7 +492,7 @@ mod tests {
         ];
 
         let index = AdvancedMultiIndex::new(tuples, None).unwrap();
-        
+
         // This test would require a proper DataFrame implementation
         // For now, we'll test the index operations
         assert_eq!(index.len(), 4);
@@ -464,28 +502,48 @@ mod tests {
     #[test]
     fn test_groupby_level() {
         let tuples = vec![
-            vec![IndexValue::from("A"), IndexValue::from("X"), IndexValue::from(1)],
-            vec![IndexValue::from("A"), IndexValue::from("Y"), IndexValue::from(2)],
-            vec![IndexValue::from("B"), IndexValue::from("X"), IndexValue::from(3)],
-            vec![IndexValue::from("B"), IndexValue::from("Y"), IndexValue::from(4)],
+            vec![
+                IndexValue::from("A"),
+                IndexValue::from("X"),
+                IndexValue::from(1),
+            ],
+            vec![
+                IndexValue::from("A"),
+                IndexValue::from("Y"),
+                IndexValue::from(2),
+            ],
+            vec![
+                IndexValue::from("B"),
+                IndexValue::from("X"),
+                IndexValue::from(3),
+            ],
+            vec![
+                IndexValue::from("B"),
+                IndexValue::from("Y"),
+                IndexValue::from(4),
+            ],
         ];
 
         let index = AdvancedMultiIndex::new(tuples, None).unwrap();
         let group_keys = index.get_group_keys(&[0]).unwrap();
-        
+
         assert_eq!(group_keys.len(), 2); // "A" and "B"
-        
-        let indices_a = index.get_group_indices(&[0], &[IndexValue::from("A")]).unwrap();
+
+        let indices_a = index
+            .get_group_indices(&[0], &[IndexValue::from("A")])
+            .unwrap();
         assert_eq!(indices_a, vec![0, 1]);
-        
-        let indices_b = index.get_group_indices(&[0], &[IndexValue::from("B")]).unwrap();
+
+        let indices_b = index
+            .get_group_indices(&[0], &[IndexValue::from("B")])
+            .unwrap();
         assert_eq!(indices_b, vec![2, 3]);
     }
 
     #[test]
     fn test_aggregation_functions() {
         let values = vec![1.0, 2.0, 3.0, 4.0, 5.0];
-        
+
         assert_eq!(AggregationFunction::Sum.apply(&values), 15.0);
         assert_eq!(AggregationFunction::Mean.apply(&values), 3.0);
         assert_eq!(AggregationFunction::Count.apply(&values), 5.0);
@@ -493,7 +551,7 @@ mod tests {
         assert_eq!(AggregationFunction::Max.apply(&values), 5.0);
         assert_eq!(AggregationFunction::First.apply(&values), 1.0);
         assert_eq!(AggregationFunction::Last.apply(&values), 5.0);
-        
+
         // Test std and var
         let std_val = AggregationFunction::Std.apply(&values);
         let var_val = AggregationFunction::Var.apply(&values);
@@ -504,17 +562,35 @@ mod tests {
     #[test]
     fn test_level_selection() {
         let tuples = vec![
-            vec![IndexValue::from("A"), IndexValue::from("X"), IndexValue::from(1)],
-            vec![IndexValue::from("B"), IndexValue::from("Y"), IndexValue::from(2)],
+            vec![
+                IndexValue::from("A"),
+                IndexValue::from("X"),
+                IndexValue::from(1),
+            ],
+            vec![
+                IndexValue::from("B"),
+                IndexValue::from("Y"),
+                IndexValue::from(2),
+            ],
         ];
 
         let index = AdvancedMultiIndex::new(tuples, None).unwrap();
-        
+
         // Test getting level values
-        let level_0_values = (0..index.len()).map(|i| index.get_tuple(i).unwrap()[0].clone()).collect::<Vec<_>>();
-        assert_eq!(level_0_values, vec![IndexValue::from("A"), IndexValue::from("B")]);
-        
-        let level_2_values = (0..index.len()).map(|i| index.get_tuple(i).unwrap()[2].clone()).collect::<Vec<_>>();
-        assert_eq!(level_2_values, vec![IndexValue::from(1), IndexValue::from(2)]);
+        let level_0_values = (0..index.len())
+            .map(|i| index.get_tuple(i).unwrap()[0].clone())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            level_0_values,
+            vec![IndexValue::from("A"), IndexValue::from("B")]
+        );
+
+        let level_2_values = (0..index.len())
+            .map(|i| index.get_tuple(i).unwrap()[2].clone())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            level_2_values,
+            vec![IndexValue::from(1), IndexValue::from(2)]
+        );
     }
 }

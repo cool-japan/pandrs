@@ -1,5 +1,8 @@
 use crate::core::error::{Error, Result};
-use crate::storage::traits::{StorageEngine, AccessPattern, PerformanceProfile, Speed, Efficiency, StorageStatistics, DataChunk, StorageConfig};
+use crate::storage::traits::{
+    AccessPattern, DataChunk, Efficiency, PerformanceProfile, Speed, StorageConfig, StorageEngine,
+    StorageStatistics,
+};
 use std::collections::HashMap;
 use std::ops::Range;
 use std::sync::{Arc, RwLock};
@@ -39,10 +42,7 @@ pub enum CompressedColumnData {
         indices: Vec<u32>,
     },
     /// Bit-packed data for low cardinality integers
-    BitPacked {
-        data: Vec<u8>,
-        bits_per_value: u8,
-    },
+    BitPacked { data: Vec<u8>, bits_per_value: u8 },
 }
 
 impl CompressedColumnData {
@@ -53,9 +53,10 @@ impl CompressedColumnData {
             CompressedColumnData::RunLength(runs) => {
                 runs.iter().map(|(value, _)| value.len() + 8).sum()
             }
-            CompressedColumnData::Dictionary { dictionary, indices } => {
-                dictionary.iter().map(|v| v.len()).sum::<usize>() + indices.len() * 4
-            }
+            CompressedColumnData::Dictionary {
+                dictionary,
+                indices,
+            } => dictionary.iter().map(|v| v.len()).sum::<usize>() + indices.len() * 4,
             CompressedColumnData::BitPacked { data, .. } => data.len(),
         }
     }
@@ -73,7 +74,10 @@ impl CompressedColumnData {
                 }
                 result
             }
-            CompressedColumnData::Dictionary { dictionary, indices } => {
+            CompressedColumnData::Dictionary {
+                dictionary,
+                indices,
+            } => {
                 let mut result = Vec::new();
                 for &index in indices {
                     if let Some(value) = dictionary.get(index as usize) {
@@ -82,7 +86,10 @@ impl CompressedColumnData {
                 }
                 result
             }
-            CompressedColumnData::BitPacked { data, bits_per_value } => {
+            CompressedColumnData::BitPacked {
+                data,
+                bits_per_value,
+            } => {
                 // Simple decompression for demonstration
                 // In production, this would be more sophisticated
                 data.clone()
@@ -139,10 +146,10 @@ impl ColumnStore {
 
         // Choose optimal compression strategy
         let compression = self.select_compression_strategy(data);
-        
+
         // Compress the data
         let compressed_data = self.compress_data(data, compression)?;
-        
+
         // Calculate metadata
         let metadata = ColumnMetadata {
             name: name.clone(),
@@ -164,7 +171,7 @@ impl ColumnStore {
             let size_bytes = metadata.size_bytes; // Extract before moving
             columns.insert(name.clone(), compressed_data);
             metadata_map.insert(name, metadata);
-            
+
             // Update statistics
             stats.total_columns += 1;
             stats.total_size_bytes += size_bytes;
@@ -244,20 +251,20 @@ impl ColumnStore {
     /// Optimize storage by recompressing all columns
     pub fn optimize(&self) -> Result<()> {
         let column_names: Vec<String> = self.column_names();
-        
+
         for name in column_names {
             let data = self.get_column(&name)?;
             let metadata = self.get_metadata(&name)?;
-            
+
             // Remove and re-add with potentially better compression
             self.remove_column(&name)?;
-            
+
             // For now, just re-add the raw data as a single chunk
             // In a production system, this would intelligently reconstruct the original format
             let single_chunk = vec![data.as_slice()];
             self.add_column(name, &single_chunk, metadata.data_type)?;
         }
-        
+
         Ok(())
     }
 
@@ -268,13 +275,9 @@ impl ColumnStore {
             return 1.0;
         }
 
-        let compressed_size: usize = columns.values()
-            .map(|data| data.size_bytes())
-            .sum();
-        
-        let uncompressed_size: usize = columns.values()
-            .map(|data| data.decompress().len())
-            .sum();
+        let compressed_size: usize = columns.values().map(|data| data.size_bytes()).sum();
+
+        let uncompressed_size: usize = columns.values().map(|data| data.decompress().len()).sum();
 
         if compressed_size == 0 {
             1.0
@@ -284,7 +287,7 @@ impl ColumnStore {
     }
 
     // Private helper methods
-    
+
     fn select_compression_strategy<T: AsRef<[u8]>>(&self, data: &[T]) -> CompressionType {
         if data.len() < 10 {
             return CompressionType::None;
@@ -293,9 +296,9 @@ impl ColumnStore {
         // Check for run-length encoding potential
         let mut consecutive_count = 1;
         let mut max_consecutive = 1;
-        
+
         for i in 1..data.len() {
-            if data[i].as_ref() == data[i-1].as_ref() {
+            if data[i].as_ref() == data[i - 1].as_ref() {
                 consecutive_count += 1;
                 max_consecutive = max_consecutive.max(consecutive_count);
             } else {
@@ -376,7 +379,10 @@ impl ColumnStore {
                     }
                 }
 
-                Ok(CompressedColumnData::Dictionary { dictionary, indices })
+                Ok(CompressedColumnData::Dictionary {
+                    dictionary,
+                    indices,
+                })
             }
             CompressionType::BitPacked => {
                 // Simplified bit-packing implementation
@@ -425,7 +431,7 @@ impl StorageEngine for ColumnStore {
         use std::sync::atomic::{AtomicUsize, Ordering};
         static NEXT_ID: AtomicUsize = AtomicUsize::new(1);
         let id = NEXT_ID.fetch_add(1, Ordering::SeqCst);
-        
+
         Ok(ColumnStoreHandle::new(id, Arc::new(ColumnStore::new())))
     }
 
@@ -434,7 +440,7 @@ impl StorageEngine for ColumnStore {
         let columns = handle.store.columns.read().unwrap();
         let mut chunk_data = Vec::new();
         let mut total_rows = 0;
-        
+
         for (_name, compressed_data) in columns.iter() {
             let decompressed = compressed_data.decompress();
             // Apply range if applicable
@@ -460,14 +466,16 @@ impl StorageEngine for ColumnStore {
     fn write_chunk(&mut self, handle: &Self::Handle, chunk: DataChunk) -> Result<()> {
         // For simplicity, we'll add this as a new column with a generated name
         let column_name = format!("chunk_{}", chunk.metadata.row_count);
-        
+
         // Convert chunk data to the format expected by add_column
         let data: Vec<Vec<u8>> = chunk.data
             .chunks(8) // Assume 8 bytes per value
             .map(|chunk| chunk.to_vec())
             .collect();
-        
-        handle.store.add_column(column_name, &data, "bytes".to_string())?;
+
+        handle
+            .store
+            .add_column(column_name, &data, "bytes".to_string())?;
         Ok(())
     }
 

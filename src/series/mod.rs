@@ -16,7 +16,7 @@ pub use categorical::{Categorical, CategoricalOrder, StringCategorical};
 pub use datetime_accessor::{DateTimeAccessor, DateTimeAccessorTz};
 pub use na::NASeries;
 pub use string_accessor::StringAccessor;
-pub use window::{Rolling, Expanding, EWM, WindowOps, WindowExt, WindowClosed};
+pub use window::{Expanding, Rolling, WindowClosed, WindowExt, WindowOps, EWM};
 
 // Optional feature re-exports
 #[cfg(feature = "cuda")]

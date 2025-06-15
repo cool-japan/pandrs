@@ -20,7 +20,7 @@ use std::cmp::Ordering;
 pub fn simd_add_f64(left: &[f64], right: &[f64], result: &mut [f64]) -> Result<()> {
     if left.len() != right.len() || left.len() != result.len() {
         return Err(Error::InvalidOperation(
-            "Vector lengths must match for element-wise operations".to_string()
+            "Vector lengths must match for element-wise operations".to_string(),
         ));
     }
 
@@ -44,7 +44,7 @@ pub fn simd_add_f64(left: &[f64], right: &[f64], result: &mut [f64]) -> Result<(
 pub fn simd_subtract_f64(left: &[f64], right: &[f64], result: &mut [f64]) -> Result<()> {
     if left.len() != right.len() || left.len() != result.len() {
         return Err(Error::InvalidOperation(
-            "Vector lengths must match for element-wise operations".to_string()
+            "Vector lengths must match for element-wise operations".to_string(),
         ));
     }
 
@@ -68,7 +68,7 @@ pub fn simd_subtract_f64(left: &[f64], right: &[f64], result: &mut [f64]) -> Res
 pub fn simd_multiply_f64(left: &[f64], right: &[f64], result: &mut [f64]) -> Result<()> {
     if left.len() != right.len() || left.len() != result.len() {
         return Err(Error::InvalidOperation(
-            "Vector lengths must match for element-wise operations".to_string()
+            "Vector lengths must match for element-wise operations".to_string(),
         ));
     }
 
@@ -92,7 +92,7 @@ pub fn simd_multiply_f64(left: &[f64], right: &[f64], result: &mut [f64]) -> Res
 pub fn simd_divide_f64(left: &[f64], right: &[f64], result: &mut [f64]) -> Result<()> {
     if left.len() != right.len() || left.len() != result.len() {
         return Err(Error::InvalidOperation(
-            "Vector lengths must match for element-wise operations".to_string()
+            "Vector lengths must match for element-wise operations".to_string(),
         ));
     }
 
@@ -120,7 +120,7 @@ pub fn simd_divide_f64(left: &[f64], right: &[f64], result: &mut [f64]) -> Resul
 pub fn simd_add_scalar_f64(data: &[f64], scalar: f64, result: &mut [f64]) -> Result<()> {
     if data.len() != result.len() {
         return Err(Error::InvalidOperation(
-            "Input and output vectors must have same length".to_string()
+            "Input and output vectors must have same length".to_string(),
         ));
     }
 
@@ -144,7 +144,7 @@ pub fn simd_add_scalar_f64(data: &[f64], scalar: f64, result: &mut [f64]) -> Res
 pub fn simd_multiply_scalar_f64(data: &[f64], scalar: f64, result: &mut [f64]) -> Result<()> {
     if data.len() != result.len() {
         return Err(Error::InvalidOperation(
-            "Input and output vectors must have same length".to_string()
+            "Input and output vectors must have same length".to_string(),
         ));
     }
 
@@ -168,7 +168,7 @@ pub fn simd_multiply_scalar_f64(data: &[f64], scalar: f64, result: &mut [f64]) -
 pub fn simd_abs_f64(data: &[f64], result: &mut [f64]) -> Result<()> {
     if data.len() != result.len() {
         return Err(Error::InvalidOperation(
-            "Input and output vectors must have same length".to_string()
+            "Input and output vectors must have same length".to_string(),
         ));
     }
 
@@ -192,7 +192,7 @@ pub fn simd_abs_f64(data: &[f64], result: &mut [f64]) -> Result<()> {
 pub fn simd_sqrt_f64(data: &[f64], result: &mut [f64]) -> Result<()> {
     if data.len() != result.len() {
         return Err(Error::InvalidOperation(
-            "Input and output vectors must have same length".to_string()
+            "Input and output vectors must have same length".to_string(),
         ));
     }
 
@@ -217,10 +217,15 @@ pub fn simd_sqrt_f64(data: &[f64], result: &mut [f64]) -> Result<()> {
 }
 
 /// SIMD-optimized comparison operations for f64 vectors
-pub fn simd_compare_f64(left: &[f64], right: &[f64], op: ComparisonOp, result: &mut [bool]) -> Result<()> {
+pub fn simd_compare_f64(
+    left: &[f64],
+    right: &[f64],
+    op: ComparisonOp,
+    result: &mut [bool],
+) -> Result<()> {
     if left.len() != right.len() || left.len() != result.len() {
         return Err(Error::InvalidOperation(
-            "Vector lengths must match for comparison operations".to_string()
+            "Vector lengths must match for comparison operations".to_string(),
         ));
     }
 
@@ -263,7 +268,7 @@ pub enum ComparisonOp {
 pub fn simd_add_i64(left: &[i64], right: &[i64], result: &mut [i64]) -> Result<()> {
     if left.len() != right.len() || left.len() != result.len() {
         return Err(Error::InvalidOperation(
-            "Vector lengths must match for element-wise operations".to_string()
+            "Vector lengths must match for element-wise operations".to_string(),
         ));
     }
 
@@ -287,7 +292,7 @@ pub fn simd_add_i64(left: &[i64], right: &[i64], result: &mut [i64]) -> Result<(
 pub fn simd_subtract_i64(left: &[i64], right: &[i64], result: &mut [i64]) -> Result<()> {
     if left.len() != right.len() || left.len() != result.len() {
         return Err(Error::InvalidOperation(
-            "Vector lengths must match for element-wise operations".to_string()
+            "Vector lengths must match for element-wise operations".to_string(),
         ));
     }
 
@@ -311,7 +316,7 @@ pub fn simd_subtract_i64(left: &[i64], right: &[i64], result: &mut [i64]) -> Res
 pub fn simd_multiply_i64(left: &[i64], right: &[i64], result: &mut [i64]) -> Result<()> {
     if left.len() != right.len() || left.len() != result.len() {
         return Err(Error::InvalidOperation(
-            "Vector lengths must match for element-wise operations".to_string()
+            "Vector lengths must match for element-wise operations".to_string(),
         ));
     }
 
@@ -327,7 +332,7 @@ pub fn simd_multiply_i64(left: &[i64], right: &[i64], result: &mut [i64]) -> Res
 pub fn simd_add_scalar_i64(data: &[i64], scalar: i64, result: &mut [i64]) -> Result<()> {
     if data.len() != result.len() {
         return Err(Error::InvalidOperation(
-            "Input and output vectors must have same length".to_string()
+            "Input and output vectors must have same length".to_string(),
         ));
     }
 
@@ -351,7 +356,7 @@ pub fn simd_add_scalar_i64(data: &[i64], scalar: i64, result: &mut [i64]) -> Res
 pub fn simd_abs_i64(data: &[i64], result: &mut [i64]) -> Result<()> {
     if data.len() != result.len() {
         return Err(Error::InvalidOperation(
-            "Input and output vectors must have same length".to_string()
+            "Input and output vectors must have same length".to_string(),
         ));
     }
 
@@ -363,10 +368,15 @@ pub fn simd_abs_i64(data: &[i64], result: &mut [i64]) -> Result<()> {
 }
 
 /// SIMD-optimized comparison operations for i64 vectors
-pub fn simd_compare_i64(left: &[i64], right: &[i64], op: ComparisonOp, result: &mut [bool]) -> Result<()> {
+pub fn simd_compare_i64(
+    left: &[i64],
+    right: &[i64],
+    op: ComparisonOp,
+    result: &mut [bool],
+) -> Result<()> {
     if left.len() != right.len() || left.len() != result.len() {
         return Err(Error::InvalidOperation(
-            "Vector lengths must match for comparison operations".to_string()
+            "Vector lengths must match for comparison operations".to_string(),
         ));
     }
 
@@ -477,7 +487,11 @@ unsafe fn simd_divide_f64_avx2(left: &[f64], right: &[f64], result: &mut [f64]) 
 
     // Handle remainder
     for i in (chunks * 4)..left.len() {
-        result[i] = if right[i] != 0.0 { left[i] / right[i] } else { f64::NAN };
+        result[i] = if right[i] != 0.0 {
+            left[i] / right[i]
+        } else {
+            f64::NAN
+        };
     }
 
     Ok(())
@@ -506,7 +520,11 @@ unsafe fn simd_add_scalar_f64_avx2(data: &[f64], scalar: f64, result: &mut [f64]
 }
 
 #[cfg(target_arch = "x86_64")]
-unsafe fn simd_multiply_scalar_f64_avx2(data: &[f64], scalar: f64, result: &mut [f64]) -> Result<()> {
+unsafe fn simd_multiply_scalar_f64_avx2(
+    data: &[f64],
+    scalar: f64,
+    result: &mut [f64],
+) -> Result<()> {
     use std::arch::x86_64::*;
 
     let scalar_vec = _mm256_set1_pd(scalar);
@@ -565,14 +583,23 @@ unsafe fn simd_sqrt_f64_avx2(data: &[f64], result: &mut [f64]) -> Result<()> {
 
     // Handle remainder
     for i in (chunks * 4)..data.len() {
-        result[i] = if data[i] >= 0.0 { data[i].sqrt() } else { f64::NAN };
+        result[i] = if data[i] >= 0.0 {
+            data[i].sqrt()
+        } else {
+            f64::NAN
+        };
     }
 
     Ok(())
 }
 
 #[cfg(target_arch = "x86_64")]
-unsafe fn simd_compare_f64_avx2(left: &[f64], right: &[f64], op: ComparisonOp, result: &mut [bool]) -> Result<()> {
+unsafe fn simd_compare_f64_avx2(
+    left: &[f64],
+    right: &[f64],
+    op: ComparisonOp,
+    result: &mut [bool],
+) -> Result<()> {
     use std::arch::x86_64::*;
 
     let chunks = left.len() / 4;
@@ -581,7 +608,7 @@ unsafe fn simd_compare_f64_avx2(left: &[f64], right: &[f64], op: ComparisonOp, r
         let offset = i * 4;
         let left_vec = _mm256_loadu_pd(left.as_ptr().add(offset));
         let right_vec = _mm256_loadu_pd(right.as_ptr().add(offset));
-        
+
         let cmp_result = match op {
             ComparisonOp::Equal => _mm256_cmp_pd(left_vec, right_vec, _CMP_EQ_OQ),
             ComparisonOp::NotEqual => _mm256_cmp_pd(left_vec, right_vec, _CMP_NEQ_OQ),
@@ -594,7 +621,7 @@ unsafe fn simd_compare_f64_avx2(left: &[f64], right: &[f64], op: ComparisonOp, r
         // Extract results to boolean array
         let mut temp_result = [0.0; 4];
         _mm256_storeu_pd(temp_result.as_mut_ptr(), cmp_result);
-        
+
         for j in 0..4 {
             result[offset + j] = temp_result[j].to_bits() != 0;
         }
@@ -698,7 +725,11 @@ unsafe fn simd_divide_f64_sse2(left: &[f64], right: &[f64], result: &mut [f64]) 
 
     // Handle remainder
     for i in (chunks * 2)..left.len() {
-        result[i] = if right[i] != 0.0 { left[i] / right[i] } else { f64::NAN };
+        result[i] = if right[i] != 0.0 {
+            left[i] / right[i]
+        } else {
+            f64::NAN
+        };
     }
 
     Ok(())
@@ -727,7 +758,11 @@ unsafe fn simd_add_scalar_f64_sse2(data: &[f64], scalar: f64, result: &mut [f64]
 }
 
 #[cfg(target_arch = "x86_64")]
-unsafe fn simd_multiply_scalar_f64_sse2(data: &[f64], scalar: f64, result: &mut [f64]) -> Result<()> {
+unsafe fn simd_multiply_scalar_f64_sse2(
+    data: &[f64],
+    scalar: f64,
+    result: &mut [f64],
+) -> Result<()> {
     use std::arch::x86_64::*;
 
     let scalar_vec = _mm_set1_pd(scalar);
@@ -785,14 +820,23 @@ unsafe fn simd_sqrt_f64_sse2(data: &[f64], result: &mut [f64]) -> Result<()> {
 
     // Handle remainder
     for i in (chunks * 2)..data.len() {
-        result[i] = if data[i] >= 0.0 { data[i].sqrt() } else { f64::NAN };
+        result[i] = if data[i] >= 0.0 {
+            data[i].sqrt()
+        } else {
+            f64::NAN
+        };
     }
 
     Ok(())
 }
 
 #[cfg(target_arch = "x86_64")]
-unsafe fn simd_compare_f64_sse2(left: &[f64], right: &[f64], op: ComparisonOp, result: &mut [bool]) -> Result<()> {
+unsafe fn simd_compare_f64_sse2(
+    left: &[f64],
+    right: &[f64],
+    op: ComparisonOp,
+    result: &mut [bool],
+) -> Result<()> {
     use std::arch::x86_64::*;
 
     let chunks = left.len() / 2;
@@ -801,7 +845,7 @@ unsafe fn simd_compare_f64_sse2(left: &[f64], right: &[f64], op: ComparisonOp, r
         let offset = i * 2;
         let left_vec = _mm_loadu_pd(left.as_ptr().add(offset));
         let right_vec = _mm_loadu_pd(right.as_ptr().add(offset));
-        
+
         let cmp_result = match op {
             ComparisonOp::Equal => _mm_cmpeq_pd(left_vec, right_vec),
             ComparisonOp::NotEqual => _mm_cmpneq_pd(left_vec, right_vec),
@@ -814,7 +858,7 @@ unsafe fn simd_compare_f64_sse2(left: &[f64], right: &[f64], op: ComparisonOp, r
         // Extract results
         let mut temp_result = [0.0; 2];
         _mm_storeu_pd(temp_result.as_mut_ptr(), cmp_result);
-        
+
         for j in 0..2 {
             result[offset + j] = temp_result[j].to_bits() != 0;
         }
@@ -903,7 +947,12 @@ unsafe fn simd_add_scalar_i64_avx2(data: &[i64], scalar: i64, result: &mut [i64]
 }
 
 #[cfg(target_arch = "x86_64")]
-unsafe fn simd_compare_i64_avx2(left: &[i64], right: &[i64], op: ComparisonOp, result: &mut [bool]) -> Result<()> {
+unsafe fn simd_compare_i64_avx2(
+    left: &[i64],
+    right: &[i64],
+    op: ComparisonOp,
+    result: &mut [bool],
+) -> Result<()> {
     use std::arch::x86_64::*;
 
     let chunks = left.len() / 4;
@@ -912,7 +961,7 @@ unsafe fn simd_compare_i64_avx2(left: &[i64], right: &[i64], op: ComparisonOp, r
         let offset = i * 4;
         let left_vec = _mm256_loadu_si256(left.as_ptr().add(offset) as *const __m256i);
         let right_vec = _mm256_loadu_si256(right.as_ptr().add(offset) as *const __m256i);
-        
+
         let cmp_result = match op {
             ComparisonOp::Equal => _mm256_cmpeq_epi64(left_vec, right_vec),
             ComparisonOp::GreaterThan => _mm256_cmpgt_epi64(left_vec, right_vec),
@@ -938,7 +987,7 @@ unsafe fn simd_compare_i64_avx2(left: &[i64], right: &[i64], op: ComparisonOp, r
         if matches!(op, ComparisonOp::Equal | ComparisonOp::GreaterThan) {
             let mut temp_result = [0i64; 4];
             _mm256_storeu_si256(temp_result.as_mut_ptr() as *mut __m256i, cmp_result);
-            
+
             for j in 0..4 {
                 result[offset + j] = temp_result[j] != 0;
             }
@@ -1028,7 +1077,12 @@ unsafe fn simd_add_scalar_i64_sse2(data: &[i64], scalar: i64, result: &mut [i64]
 }
 
 #[cfg(target_arch = "x86_64")]
-unsafe fn simd_compare_i64_sse2(left: &[i64], right: &[i64], op: ComparisonOp, result: &mut [bool]) -> Result<()> {
+unsafe fn simd_compare_i64_sse2(
+    left: &[i64],
+    right: &[i64],
+    op: ComparisonOp,
+    result: &mut [bool],
+) -> Result<()> {
     let chunks = left.len() / 2;
 
     // SSE2 has limited i64 comparison support, so we use scalar fallback
@@ -1055,9 +1109,9 @@ mod tests {
         let left = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
         let right = vec![1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0];
         let mut result = vec![0.0; 8];
-        
+
         simd_add_f64(&left, &right, &mut result).unwrap();
-        
+
         let expected = vec![2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0];
         for i in 0..8 {
             assert!((result[i] - expected[i]).abs() < 1e-10);
@@ -1068,9 +1122,9 @@ mod tests {
     fn test_simd_multiply_scalar_f64() {
         let data = vec![1.0, 2.0, 3.0, 4.0, 5.0];
         let mut result = vec![0.0; 5];
-        
+
         simd_multiply_scalar_f64(&data, 2.0, &mut result).unwrap();
-        
+
         let expected = vec![2.0, 4.0, 6.0, 8.0, 10.0];
         for i in 0..5 {
             assert!((result[i] - expected[i]).abs() < 1e-10);
@@ -1081,9 +1135,9 @@ mod tests {
     fn test_simd_abs_f64() {
         let data = vec![-1.0, 2.0, -3.0, 4.0, -5.0];
         let mut result = vec![0.0; 5];
-        
+
         simd_abs_f64(&data, &mut result).unwrap();
-        
+
         let expected = vec![1.0, 2.0, 3.0, 4.0, 5.0];
         for i in 0..5 {
             assert!((result[i] - expected[i]).abs() < 1e-10);
@@ -1095,9 +1149,9 @@ mod tests {
         let left = vec![1.0, 2.0, 3.0, 4.0, 5.0];
         let right = vec![1.0, 1.0, 4.0, 4.0, 6.0];
         let mut result = vec![false; 5];
-        
+
         simd_compare_f64(&left, &right, ComparisonOp::GreaterThan, &mut result).unwrap();
-        
+
         let expected = vec![false, true, false, false, false];
         assert_eq!(result, expected);
     }
@@ -1107,9 +1161,9 @@ mod tests {
         let left = vec![1i64, 2, 3, 4, 5, 6, 7, 8];
         let right = vec![1i64, 1, 1, 1, 1, 1, 1, 1];
         let mut result = vec![0i64; 8];
-        
+
         simd_add_i64(&left, &right, &mut result).unwrap();
-        
+
         let expected = vec![2i64, 3, 4, 5, 6, 7, 8, 9];
         assert_eq!(result, expected);
     }
@@ -1119,9 +1173,9 @@ mod tests {
         let left = vec![1i64, 2, 3, 4, 5];
         let right = vec![1i64, 1, 4, 4, 6];
         let mut result = vec![false; 5];
-        
+
         simd_compare_i64(&left, &right, ComparisonOp::Equal, &mut result).unwrap();
-        
+
         let expected = vec![true, false, false, true, false];
         assert_eq!(result, expected);
     }
@@ -1131,7 +1185,7 @@ mod tests {
         let left = vec![1.0, 2.0];
         let right = vec![1.0];
         let mut result = vec![0.0; 2];
-        
+
         let err = simd_add_f64(&left, &right, &mut result);
         assert!(err.is_err());
     }

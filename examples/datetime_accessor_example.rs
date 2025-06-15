@@ -1,21 +1,33 @@
-use pandrs::{DataFrame, Series};
+use chrono::NaiveDate;
 use pandrs::error::Result;
 use pandrs::series::datetime_accessor::datetime_constructors;
-use chrono::NaiveDate;
+use pandrs::{DataFrame, Series};
 
 #[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     println!("=== DateTime Accessor Example ===");
 
     // Create datetime data
-    let dt1 = NaiveDate::from_ymd_opt(2023, 12, 25).unwrap().and_hms_opt(14, 30, 45).unwrap();
-    let dt2 = NaiveDate::from_ymd_opt(2024, 6, 15).unwrap().and_hms_opt(9, 15, 30).unwrap();
-    let dt3 = NaiveDate::from_ymd_opt(2024, 1, 1).unwrap().and_hms_opt(0, 0, 0).unwrap();
-    let dt4 = NaiveDate::from_ymd_opt(2023, 12, 23).unwrap().and_hms_opt(10, 20, 30).unwrap(); // Saturday
-    
+    let dt1 = NaiveDate::from_ymd_opt(2023, 12, 25)
+        .unwrap()
+        .and_hms_opt(14, 30, 45)
+        .unwrap();
+    let dt2 = NaiveDate::from_ymd_opt(2024, 6, 15)
+        .unwrap()
+        .and_hms_opt(9, 15, 30)
+        .unwrap();
+    let dt3 = NaiveDate::from_ymd_opt(2024, 1, 1)
+        .unwrap()
+        .and_hms_opt(0, 0, 0)
+        .unwrap();
+    let dt4 = NaiveDate::from_ymd_opt(2023, 12, 23)
+        .unwrap()
+        .and_hms_opt(10, 20, 30)
+        .unwrap(); // Saturday
+
     let datetime_data = vec![dt1, dt2, dt3, dt4];
     let datetime_series = Series::new(datetime_data, Some("timestamps".to_string()))?;
-    
+
     println!("Original DateTime Series:");
     for (i, dt) in datetime_series.values().iter().enumerate() {
         println!("  [{}]: {}", i, dt);
@@ -100,43 +112,43 @@ fn main() -> Result<()> {
     }
 
     println!("\n=== Parse DateTime from Strings ===");
-    
+
     // Parse datetime from strings
     let datetime_strings = vec![
         "2023-12-25 14:30:45".to_string(),
         "2024-06-15 09:15:30".to_string(),
         "2024-01-01 00:00:00".to_string(),
     ];
-    
+
     let parsed_series = datetime_constructors::parse_datetime_series(
-        datetime_strings, 
+        datetime_strings,
         Some("%Y-%m-%d %H:%M:%S"),
-        Some("parsed_datetimes".to_string())
+        Some("parsed_datetimes".to_string()),
     )?;
-    
+
     println!("Parsed from strings:");
     for (i, dt) in parsed_series.values().iter().enumerate() {
         println!("  [{}]: {}", i, dt);
     }
 
     println!("\n=== Date Range ===");
-    
+
     // Create date range
     let start_date = NaiveDate::from_ymd_opt(2024, 1, 1).unwrap();
     let end_date = NaiveDate::from_ymd_opt(2024, 1, 7).unwrap();
     let date_range = datetime_constructors::date_range(start_date, end_date, "D")?;
-    
+
     println!("Daily date range:");
     for (i, dt) in date_range.values().iter().enumerate() {
         println!("  [{}]: {}", i, dt);
     }
 
     println!("\n=== DataFrame with DateTime Column ===");
-    
+
     // Create DataFrame with datetime column
     let mut df = DataFrame::new();
     df.add_column("datetime".to_string(), datetime_series)?;
-    
+
     println!("DataFrame created successfully with datetime column!");
 
     Ok(())

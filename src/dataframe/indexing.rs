@@ -96,7 +96,9 @@ impl MultiLevelIndex {
         }
 
         if levels.is_empty() {
-            return Err(Error::InvalidValue("At least one level required".to_string()));
+            return Err(Error::InvalidValue(
+                "At least one level required".to_string(),
+            ));
         }
 
         let row_count = levels[0].len();
@@ -210,7 +212,7 @@ impl<'a> ILocIndexer<'a> {
 
         let col_name = &col_names[col];
         let values = self.dataframe.get_column_string_values(col_name)?;
-        
+
         if row >= values.len() {
             return Err(Error::IndexOutOfBounds {
                 index: row,
@@ -233,7 +235,7 @@ impl<'a> ILocIndexer<'a> {
     pub fn get_slice(&self, rows: Range<usize>, cols: Range<usize>) -> Result<DataFrame> {
         let result = self.get_range(rows)?;
         let col_names = self.dataframe.column_names();
-        
+
         // Select only the specified column range
         let selected_cols: Vec<String> = col_names
             .into_iter()
@@ -272,13 +274,16 @@ impl<'a> ILocIndexer<'a> {
                 (start..end.min(self.dataframe.row_count())).collect()
             }
             RowSelector::Positions(positions) => positions,
-            RowSelector::Boolean(mask) => {
-                mask.iter()
-                    .enumerate()
-                    .filter_map(|(i, &include)| if include { Some(i) } else { None })
-                    .collect()
+            RowSelector::Boolean(mask) => mask
+                .iter()
+                .enumerate()
+                .filter_map(|(i, &include)| if include { Some(i) } else { None })
+                .collect(),
+            _ => {
+                return Err(Error::InvalidValue(
+                    "Unsupported selector for iloc".to_string(),
+                ))
             }
-            _ => return Err(Error::InvalidValue("Unsupported selector for iloc".to_string())),
         };
 
         // Create filtered columns
@@ -335,7 +340,7 @@ impl<'a> LocIndexer<'a> {
     pub fn get_at(&self, label: &str, column: &str) -> Result<String> {
         let position = self.find_label_position(label)?;
         let values = self.dataframe.get_column_string_values(column)?;
-        
+
         if position >= values.len() {
             return Err(Error::IndexOutOfBounds {
                 index: position,
@@ -348,10 +353,11 @@ impl<'a> LocIndexer<'a> {
 
     /// Select by multiple labels
     pub fn get_labels(&self, labels: &[String]) -> Result<DataFrame> {
-        let positions: Result<Vec<usize>> = labels.iter()
+        let positions: Result<Vec<usize>> = labels
+            .iter()
             .map(|label| self.find_label_position(label))
             .collect();
-        
+
         let iloc = ILocIndexer::new(self.dataframe);
         iloc.get_positions(&positions?)
     }
@@ -366,7 +372,9 @@ impl<'a> LocIndexer<'a> {
             let iloc = ILocIndexer::new(self.dataframe);
             iloc.get_positions(&positions)
         } else {
-            Err(Error::InvalidValue("Multi-level index required for tuple selection".to_string()))
+            Err(Error::InvalidValue(
+                "Multi-level index required for tuple selection".to_string(),
+            ))
         }
     }
 
@@ -374,9 +382,9 @@ impl<'a> LocIndexer<'a> {
     fn find_label_position(&self, label: &str) -> Result<usize> {
         // For now, assume simple integer-based labels
         // This would be enhanced with proper index support
-        label.parse::<usize>().map_err(|_| {
-            Error::InvalidValue(format!("Label '{}' not found in index", label))
-        })
+        label
+            .parse::<usize>()
+            .map_err(|_| Error::InvalidValue(format!("Label '{}' not found in index", label)))
     }
 }
 
@@ -400,10 +408,12 @@ impl<'a> AtIndexer<'a> {
     pub fn set(&self, label: &str, column: &str, value: String) -> Result<DataFrame> {
         // For immutable operations, return a new DataFrame with the value set
         let _result = self.dataframe.clone();
-        
+
         // This would require mutable operations on DataFrame
         // For now, return an error indicating not implemented
-        Err(Error::NotImplemented("Mutable .at operations not yet implemented".to_string()))
+        Err(Error::NotImplemented(
+            "Mutable .at operations not yet implemented".to_string(),
+        ))
     }
 }
 
@@ -427,10 +437,12 @@ impl<'a> IAtIndexer<'a> {
     pub fn set(&self, row: usize, col: usize, value: String) -> Result<DataFrame> {
         // For immutable operations, return a new DataFrame with the value set
         let _result = self.dataframe.clone();
-        
+
         // This would require mutable operations on DataFrame
         // For now, return an error indicating not implemented
-        Err(Error::NotImplemented("Mutable .iat operations not yet implemented".to_string()))
+        Err(Error::NotImplemented(
+            "Mutable .iat operations not yet implemented".to_string(),
+        ))
     }
 }
 
@@ -580,11 +592,11 @@ impl IndexAligner {
     /// Reindex DataFrame with new index
     pub fn reindex(df: &DataFrame, new_index: &[String]) -> Result<DataFrame> {
         let mut result = DataFrame::new();
-        
+
         for col_name in df.column_names() {
             let current_values = df.get_column_string_values(&col_name)?;
             let mut reindexed_values = Vec::with_capacity(new_index.len());
-            
+
             for index_val in new_index {
                 // For simple implementation, try to parse as position
                 if let Ok(pos) = index_val.parse::<usize>() {
@@ -597,11 +609,11 @@ impl IndexAligner {
                     reindexed_values.push("NaN".to_string());
                 }
             }
-            
+
             let reindexed_series = Series::new(reindexed_values, Some(col_name.clone()))?;
             result.add_column(col_name, reindexed_series)?;
         }
-        
+
         Ok(result)
     }
 }
@@ -610,40 +622,40 @@ impl IndexAligner {
 pub trait AdvancedIndexingExt {
     /// Get position-based indexer (.iloc)
     fn iloc(&self) -> ILocIndexer;
-    
+
     /// Get label-based indexer (.loc)
     fn loc(&self) -> LocIndexer;
-    
+
     /// Get scalar indexer (.at)
     fn at(&self) -> AtIndexer;
-    
+
     /// Get scalar position indexer (.iat)
     fn iat(&self) -> IAtIndexer;
-    
+
     /// Get selection builder
     fn select(&self) -> SelectionBuilder;
-    
+
     /// Reset index to default range index
     fn reset_index(&self) -> Result<DataFrame>;
-    
+
     /// Set a column as the index
     fn set_index(&self, column: &str) -> Result<DataFrame>;
-    
+
     /// Create a multi-level index from multiple columns
     fn set_multi_index(&self, columns: &[String]) -> Result<(DataFrame, MultiLevelIndex)>;
-    
+
     /// Select columns by name
     fn select_columns(&self, columns: &[String]) -> Result<DataFrame>;
-    
+
     /// Drop columns by name
     fn drop_columns(&self, columns: &[String]) -> Result<DataFrame>;
-    
+
     /// Sample random rows
     fn sample(&self, n: usize) -> Result<DataFrame>;
-    
+
     /// Get head (first n rows)
     fn head(&self, n: usize) -> Result<DataFrame>;
-    
+
     /// Get tail (last n rows)
     fn tail(&self, n: usize) -> Result<DataFrame>;
 }
@@ -652,96 +664,96 @@ impl AdvancedIndexingExt for DataFrame {
     fn iloc(&self) -> ILocIndexer {
         ILocIndexer::new(self)
     }
-    
+
     fn loc(&self) -> LocIndexer {
         LocIndexer::new(self)
     }
-    
+
     fn at(&self) -> AtIndexer {
         AtIndexer::new(self)
     }
-    
+
     fn iat(&self) -> IAtIndexer {
         IAtIndexer::new(self)
     }
-    
+
     fn select(&self) -> SelectionBuilder {
         SelectionBuilder::new(self)
     }
-    
+
     fn reset_index(&self) -> Result<DataFrame> {
         // Return the DataFrame as-is since we don't store explicit index
         Ok(self.clone())
     }
-    
+
     fn set_index(&self, column: &str) -> Result<DataFrame> {
         // For now, just remove the column and return the rest
         self.drop_columns(&[column.to_string()])
     }
-    
+
     fn set_multi_index(&self, columns: &[String]) -> Result<(DataFrame, MultiLevelIndex)> {
         let mut level_values = Vec::new();
         let names = columns.to_vec();
-        
+
         for col_name in columns {
             let values = self.get_column_string_values(col_name)?;
             level_values.push(values);
         }
-        
+
         let multi_index = MultiLevelIndex::new(names.clone(), level_values)?;
         let result_df = self.drop_columns(columns)?;
-        
+
         Ok((result_df, multi_index))
     }
-    
+
     fn select_columns(&self, columns: &[String]) -> Result<DataFrame> {
         let column_refs: Vec<&str> = columns.iter().map(|s| s.as_str()).collect();
         let mut result = DataFrame::new();
-        
+
         for col_name in &column_refs {
             if !self.contains_column(col_name) {
                 return Err(Error::ColumnNotFound(col_name.to_string()));
             }
-            
+
             let values = self.get_column_string_values(col_name)?;
             let series = Series::new(values, Some(col_name.to_string()))?;
             result.add_column(col_name.to_string(), series)?;
         }
-        
+
         Ok(result)
     }
-    
+
     fn drop_columns(&self, columns: &[String]) -> Result<DataFrame> {
         let all_columns: HashSet<String> = self.column_names().into_iter().collect();
         let to_drop: HashSet<String> = columns.iter().cloned().collect();
         let to_keep: Vec<String> = all_columns.difference(&to_drop).cloned().collect();
         let to_keep_refs: Vec<&str> = to_keep.iter().map(|s| s.as_str()).collect();
-        
+
         self.select_columns(&to_keep_refs)
     }
-    
+
     fn sample(&self, n: usize) -> Result<DataFrame> {
-        use rand::seq::SliceRandom;
         use rand::rng;
-        
+        use rand::seq::SliceRandom;
+
         let row_count = self.row_count();
         if n >= row_count {
             return Ok(self.clone());
         }
-        
+
         let mut indices: Vec<usize> = (0..row_count).collect();
         indices.shuffle(&mut rng());
         indices.truncate(n);
-        
+
         let iloc = self.iloc();
         iloc.get_positions(&indices)
     }
-    
+
     fn head(&self, n: usize) -> Result<DataFrame> {
         let iloc = self.iloc();
         iloc.get_range(0..n.min(self.row_count()))
     }
-    
+
     fn tail(&self, n: usize) -> Result<DataFrame> {
         let row_count = self.row_count();
         let start = if n >= row_count { 0 } else { row_count - n };

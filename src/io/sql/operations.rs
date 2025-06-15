@@ -325,7 +325,13 @@ pub fn write_to_sql<P: AsRef<Path>>(
                         crate::column::ColumnType::Boolean => {
                             if let Some(bool_col) = column.as_boolean() {
                                 match bool_col.get(row_idx) {
-                                    Ok(Some(val)) => if val { "1".to_string() } else { "0".to_string() },
+                                    Ok(Some(val)) => {
+                                        if val {
+                                            "1".to_string()
+                                        } else {
+                                            "0".to_string()
+                                        }
+                                    }
                                     Ok(None) => "NULL".to_string(),
                                     Err(_) => "NULL".to_string(),
                                 }
@@ -400,15 +406,13 @@ pub fn read_sql_advanced(
     options: SqlReadOptions,
 ) -> Result<DataFrame> {
     match connection.connection_type() {
-        DatabaseConnection::Sqlite(path) => {
-            read_sql_sqlite_advanced(sql, path, options)
-        }
+        DatabaseConnection::Sqlite(path) => read_sql_sqlite_advanced(sql, path, options),
         #[cfg(feature = "sql")]
         _ => {
             // For now, fall back to basic implementation for other databases
             // Full sqlx implementation would go here
             Err(Error::IoError(
-                "Advanced SQL features not yet implemented for non-SQLite databases".to_string()
+                "Advanced SQL features not yet implemented for non-SQLite databases".to_string(),
             ))
         }
     }
@@ -488,14 +492,18 @@ pub fn write_sql_advanced(
         _ => {
             // For now, fall back to basic implementation for other databases
             Err(Error::IoError(
-                "Advanced SQL features not yet implemented for non-SQLite databases".to_string()
+                "Advanced SQL features not yet implemented for non-SQLite databases".to_string(),
             ))
         }
     }
 }
 
 /// Internal helper function to create a new table from an OptimizedDataFrame
-fn create_table_from_df(conn: &SqliteConnection, df: &OptimizedDataFrame, table_name: &str) -> Result<()> {
+fn create_table_from_df(
+    conn: &SqliteConnection,
+    df: &OptimizedDataFrame,
+    table_name: &str,
+) -> Result<()> {
     // Create list of column names and types
     let mut columns = Vec::new();
 
@@ -544,11 +552,17 @@ fn get_row_value(row: &Row, idx: usize) -> Result<String> {
     if let Ok(value) = row.get::<_, Option<String>>(idx) {
         Ok(value.unwrap_or_else(|| "NULL".to_string()))
     } else if let Ok(value) = row.get::<_, Option<i64>>(idx) {
-        Ok(value.map(|v| v.to_string()).unwrap_or_else(|| "NULL".to_string()))
+        Ok(value
+            .map(|v| v.to_string())
+            .unwrap_or_else(|| "NULL".to_string()))
     } else if let Ok(value) = row.get::<_, Option<f64>>(idx) {
-        Ok(value.map(|v| v.to_string()).unwrap_or_else(|| "NULL".to_string()))
+        Ok(value
+            .map(|v| v.to_string())
+            .unwrap_or_else(|| "NULL".to_string()))
     } else if let Ok(value) = row.get::<_, Option<bool>>(idx) {
-        Ok(value.map(|v| v.to_string()).unwrap_or_else(|| "NULL".to_string()))
+        Ok(value
+            .map(|v| v.to_string())
+            .unwrap_or_else(|| "NULL".to_string()))
     } else {
         // Fallback: try to get as raw value and convert to string
         match row.get_ref(idx) {
@@ -562,7 +576,10 @@ fn get_row_value(row: &Row, idx: usize) -> Result<String> {
                     ValueRef::Blob(_) => Ok("BLOB".to_string()),
                 }
             }
-            Err(e) => Err(Error::IoError(format!("Failed to retrieve row data: {}", e))),
+            Err(e) => Err(Error::IoError(format!(
+                "Failed to retrieve row data: {}",
+                e
+            ))),
         }
     }
 }
@@ -657,36 +674,36 @@ fn read_sql_sqlite_advanced(
 ) -> Result<DataFrame> {
     let conn = SqliteConnection::open(db_path)
         .map_err(|e| Error::IoError(format!("Failed to connect to database: {}", e)))?;
-    
+
     // Prepare statement
     let mut stmt = conn
         .prepare(sql)
         .map_err(|e| Error::IoError(format!("Failed to prepare SQL query: {}", e)))?;
-    
+
     // Get column names
     let column_names: Vec<String> = stmt
         .column_names()
         .iter()
         .map(|&name| name.to_string())
         .collect();
-    
+
     // Execute query with parameters if provided
     let param_values: Vec<&dyn rusqlite::ToSql> = if let Some(ref params) = options.params {
         params.iter().map(|p| p as &dyn rusqlite::ToSql).collect()
     } else {
         Vec::new()
     };
-    
+
     let mut rows = stmt
         .query(param_values.as_slice())
         .map_err(|e| Error::IoError(format!("Failed to execute SQL query: {}", e)))?;
-    
+
     // Collect data
     let mut column_data: HashMap<String, Vec<String>> = HashMap::new();
     for name in &column_names {
         column_data.insert(name.clone(), Vec::new());
     }
-    
+
     let mut row_count = 0;
     while let Some(row) = rows
         .next()
@@ -698,7 +715,7 @@ fn read_sql_sqlite_advanced(
                 break;
             }
         }
-        
+
         for (idx, name) in column_names.iter().enumerate() {
             let value = get_row_value(row, idx)?;
             if let Some(data) = column_data.get_mut(name) {
@@ -707,35 +724,34 @@ fn read_sql_sqlite_advanced(
         }
         row_count += 1;
     }
-    
+
     // Create DataFrame with enhanced type inference
     let mut df = DataFrame::new();
-    
+
     for name in column_names {
         if let Some(data) = column_data.get(&name) {
             // Check if this column should be parsed as date
-            let is_date_column = options.parse_dates
+            let is_date_column = options
+                .parse_dates
                 .as_ref()
                 .map(|dates| dates.contains(&name))
                 .unwrap_or(false);
-            
+
             // Check for explicit dtype
-            let explicit_dtype = options.dtype
-                .as_ref()
-                .and_then(|dtypes| dtypes.get(&name));
-            
+            let explicit_dtype = options.dtype.as_ref().and_then(|dtypes| dtypes.get(&name));
+
             if let Some(series) = infer_series_from_strings_advanced(
-                &name, 
-                data, 
-                is_date_column, 
+                &name,
+                data,
+                is_date_column,
                 explicit_dtype,
-                options.coerce_float
+                options.coerce_float,
             )? {
                 df.add_column(name.clone(), series)?;
             }
         }
     }
-    
+
     Ok(df)
 }
 
@@ -748,14 +764,14 @@ fn write_sql_sqlite_advanced(
 ) -> Result<usize> {
     let mut conn = SqliteConnection::open(db_path)
         .map_err(|e| Error::IoError(format!("Failed to connect to database: {}", e)))?;
-    
+
     // Check if table exists
     let table_exists = conn
         .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name=?")
         .map_err(|e| Error::IoError(format!("Failed to prepare table verification query: {}", e)))?
         .exists(&[&table_name])
         .map_err(|e| Error::IoError(format!("Failed to verify table existence: {}", e)))?;
-    
+
     // Handle existing table based on if_exists option
     if table_exists {
         match options.if_exists {
@@ -777,24 +793,18 @@ fn write_sql_sqlite_advanced(
     } else {
         create_table_from_df_advanced(&conn, df, table_name, &options)?;
     }
-    
+
     // Insert data with chunking
     let chunk_size = options.chunksize.unwrap_or(df.row_count());
     let mut total_inserted = 0;
-    
+
     for chunk_start in (0..df.row_count()).step_by(chunk_size) {
         let chunk_end = (chunk_start + chunk_size).min(df.row_count());
-        let rows_inserted = insert_data_chunk(
-            &mut conn,
-            df,
-            table_name,
-            chunk_start,
-            chunk_end,
-            &options
-        )?;
+        let rows_inserted =
+            insert_data_chunk(&mut conn, df, table_name, chunk_start, chunk_end, &options)?;
         total_inserted += rows_inserted;
     }
-    
+
     Ok(total_inserted)
 }
 
@@ -806,21 +816,23 @@ fn create_table_from_df_advanced(
     options: &SqlWriteOptions,
 ) -> Result<()> {
     let mut columns = Vec::new();
-    
+
     // Add index column if requested
     if options.index {
-        let index_name = options.index_label
+        let index_name = options
+            .index_label
             .as_ref()
             .map(|s| s.as_str())
             .unwrap_or("index");
         columns.push(format!("{} INTEGER", index_name));
     }
-    
+
     // Add data columns
     for col_name in df.column_names() {
         if let Ok(column) = df.column(col_name) {
             let sql_type = if let Some(ref dtype_map) = options.dtype {
-                dtype_map.get(col_name)
+                dtype_map
+                    .get(col_name)
                     .map(|s| s.as_str())
                     .unwrap_or_else(|| match column.column_type() {
                         crate::column::ColumnType::Int64 => "INTEGER",
@@ -839,11 +851,11 @@ fn create_table_from_df_advanced(
             columns.push(format!("{} {}", col_name, sql_type));
         }
     }
-    
+
     let create_sql = format!("CREATE TABLE {} ({})", table_name, columns.join(", "));
     conn.execute(&create_sql, [])
         .map_err(|e| Error::IoError(format!("Failed to create table: {}", e)))?;
-    
+
     Ok(())
 }
 
@@ -858,27 +870,48 @@ fn insert_data_chunk(
 ) -> Result<usize> {
     let column_names = df.column_names();
     let mut all_columns = Vec::new();
-    
+
     // Add index column if requested
     if options.index {
-        let index_name = options.index_label
+        let index_name = options
+            .index_label
             .as_ref()
             .map(|s| s.as_str())
             .unwrap_or("index");
         all_columns.push(index_name.to_string());
     }
     all_columns.extend(column_names.iter().cloned());
-    
+
     match options.method {
-        InsertMethod::Single => {
-            insert_single_rows(conn, df, table_name, start_row, end_row, &all_columns, options)
-        }
-        InsertMethod::Multi => {
-            insert_multi_rows(conn, df, table_name, start_row, end_row, &all_columns, options)
-        }
+        InsertMethod::Single => insert_single_rows(
+            conn,
+            df,
+            table_name,
+            start_row,
+            end_row,
+            &all_columns,
+            options,
+        ),
+        InsertMethod::Multi => insert_multi_rows(
+            conn,
+            df,
+            table_name,
+            start_row,
+            end_row,
+            &all_columns,
+            options,
+        ),
         InsertMethod::Custom => {
             // For now, fall back to multi-row insertion
-            insert_multi_rows(conn, df, table_name, start_row, end_row, &all_columns, options)
+            insert_multi_rows(
+                conn,
+                df,
+                table_name,
+                start_row,
+                end_row,
+                &all_columns,
+                options,
+            )
         }
     }
 }
@@ -896,20 +929,24 @@ fn insert_single_rows(
     let columns = all_columns.join(", ");
     let placeholders: Vec<String> = (0..all_columns.len()).map(|_| "?".to_string()).collect();
     let placeholders = placeholders.join(", ");
-    let insert_sql = format!("INSERT INTO {} ({}) VALUES ({})", table_name, columns, placeholders);
-    
-    let tx = conn.transaction()
+    let insert_sql = format!(
+        "INSERT INTO {} ({}) VALUES ({})",
+        table_name, columns, placeholders
+    );
+
+    let tx = conn
+        .transaction()
         .map_err(|e| Error::IoError(format!("Failed to start transaction: {}", e)))?;
-    
+
     let mut inserted = 0;
     for row_idx in start_row..end_row {
         let mut row_values: Vec<String> = Vec::new();
-        
+
         // Add index value if requested
         if options.index {
             row_values.push(row_idx.to_string());
         }
-        
+
         // Add data values
         for col_name in df.column_names().iter() {
             if let Ok(column) = df.column(col_name) {
@@ -919,21 +956,21 @@ fn insert_single_rows(
                 row_values.push("NULL".to_string());
             }
         }
-        
+
         let params: Vec<&dyn rusqlite::ToSql> = row_values
             .iter()
             .map(|s| s as &dyn rusqlite::ToSql)
             .collect();
-        
+
         tx.execute(&insert_sql, params.as_slice())
             .map_err(|e| Error::IoError(format!("Failed to insert data: {}", e)))?;
-        
+
         inserted += 1;
     }
-    
+
     tx.commit()
         .map_err(|e| Error::IoError(format!("Failed to commit transaction: {}", e)))?;
-    
+
     Ok(inserted)
 }
 
@@ -948,19 +985,19 @@ fn insert_multi_rows(
     options: &SqlWriteOptions,
 ) -> Result<usize> {
     let columns = all_columns.join(", ");
-    
+
     // Build values for all rows
     let mut all_values = Vec::new();
     let mut all_params = Vec::new();
-    
+
     for row_idx in start_row..end_row {
         let mut row_values = Vec::new();
-        
+
         // Add index value if requested
         if options.index {
             row_values.push(row_idx.to_string());
         }
-        
+
         // Add data values
         for col_name in df.column_names().iter() {
             if let Ok(column) = df.column(col_name) {
@@ -970,38 +1007,36 @@ fn insert_multi_rows(
                 row_values.push("NULL".to_string());
             }
         }
-        
+
         let placeholders: Vec<String> = (0..row_values.len()).map(|_| "?".to_string()).collect();
         all_values.push(format!("({})", placeholders.join(", ")));
-        
+
         for value in row_values {
             all_params.push(value);
         }
     }
-    
+
     let insert_sql = format!(
         "INSERT INTO {} ({}) VALUES {}",
         table_name,
         columns,
         all_values.join(", ")
     );
-    
+
     let params: Vec<&dyn rusqlite::ToSql> = all_params
         .iter()
         .map(|s| s as &dyn rusqlite::ToSql)
         .collect();
-    
-    let inserted = conn.execute(&insert_sql, params.as_slice())
+
+    let inserted = conn
+        .execute(&insert_sql, params.as_slice())
         .map_err(|e| Error::IoError(format!("Failed to insert data: {}", e)))?;
-    
+
     Ok(inserted)
 }
 
 /// Extract value from column at specific row index
-fn extract_column_value(
-    column: crate::optimized::ColumnView,
-    row_idx: usize,
-) -> Result<String> {
+fn extract_column_value(column: crate::optimized::ColumnView, row_idx: usize) -> Result<String> {
     match column.column_type() {
         crate::column::ColumnType::Int64 => {
             if let Some(int_col) = column.as_int64() {
@@ -1028,7 +1063,11 @@ fn extract_column_value(
         crate::column::ColumnType::Boolean => {
             if let Some(bool_col) = column.as_boolean() {
                 match bool_col.get(row_idx) {
-                    Ok(Some(val)) => Ok(if val { "1".to_string() } else { "0".to_string() }),
+                    Ok(Some(val)) => Ok(if val {
+                        "1".to_string()
+                    } else {
+                        "0".to_string()
+                    }),
                     Ok(None) => Ok("NULL".to_string()),
                     Err(_) => Ok("NULL".to_string()),
                 }
@@ -1061,23 +1100,17 @@ fn infer_series_from_strings_advanced(
     if data.is_empty() {
         return Ok(None);
     }
-    
+
     // Handle explicit data type specification
     if let Some(dtype) = explicit_dtype {
         return match dtype.to_lowercase().as_str() {
             "int64" | "integer" => {
-                let values: Vec<i64> = data
-                    .iter()
-                    .map(|s| s.parse().unwrap_or(0))
-                    .collect();
+                let values: Vec<i64> = data.iter().map(|s| s.parse().unwrap_or(0)).collect();
                 let series = Series::new(values, Some(name.to_string()))?;
                 Ok(Some(series.to_string_series()?))
             }
             "float64" | "float" => {
-                let values: Vec<f64> = data
-                    .iter()
-                    .map(|s| s.parse().unwrap_or(0.0))
-                    .collect();
+                let values: Vec<f64> = data.iter().map(|s| s.parse().unwrap_or(0.0)).collect();
                 let series = Series::new(values, Some(name.to_string()))?;
                 Ok(Some(series.to_string_series()?))
             }
@@ -1098,13 +1131,13 @@ fn infer_series_from_strings_advanced(
             }
         };
     }
-    
+
     // Handle date parsing
     if is_date_column {
         // For now, keep as strings but could parse to date types in future
         return Ok(Some(Series::new(data.to_vec(), Some(name.to_string()))?));
     }
-    
+
     // Automatic type inference (existing logic enhanced)
     infer_series_from_strings(name, data)
 }

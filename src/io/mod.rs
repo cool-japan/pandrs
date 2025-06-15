@@ -1,6 +1,7 @@
 pub mod csv;
 #[cfg(feature = "excel")]
 pub mod excel;
+pub mod format_traits;
 pub mod json;
 #[cfg(feature = "parquet")]
 pub mod parquet;
@@ -8,51 +9,47 @@ pub mod parquet;
 pub mod sql;
 #[cfg(feature = "streaming")]
 pub mod streaming;
-pub mod format_traits;
 
 // Re-export commonly used functions
 pub use csv::{read_csv, write_csv};
 #[cfg(feature = "excel")]
 pub use excel::{
-    read_excel, write_excel, list_sheet_names, get_workbook_info, get_sheet_info,
-    read_excel_sheets, read_excel_with_info, write_excel_sheets,
-    read_excel_enhanced, write_excel_enhanced, optimize_excel_file, analyze_excel_file,
-    ExcelWorkbookInfo, ExcelSheetInfo, ExcelCell, ExcelCellFormat, NamedRange,
-    ExcelReadOptions, ExcelWriteOptions, ExcelFileAnalysis
+    analyze_excel_file, get_sheet_info, get_workbook_info, list_sheet_names, optimize_excel_file,
+    read_excel, read_excel_enhanced, read_excel_sheets, read_excel_with_info, write_excel,
+    write_excel_enhanced, write_excel_sheets, ExcelCell, ExcelCellFormat, ExcelFileAnalysis,
+    ExcelReadOptions, ExcelSheetInfo, ExcelWorkbookInfo, ExcelWriteOptions, NamedRange,
+};
+pub use format_traits::{
+    ColumnConstraint, ColumnDefinition as FormatColumnDefinition, DataDestination, DataOperations,
+    DataSource, FileFormat, ForeignKeyConstraint, FormatCapabilities, FormatDataType,
+    FormatRegistry, IndexDefinition, IndexType, JoinType, ReferentialAction, SerializationFormat,
+    SqlCapabilities, SqlDataType, SqlOps, SqlStandard, StreamingCapabilities, StreamingOps,
+    TableSchema as FormatTableSchema, TransformPipeline, TransformStage,
 };
 pub use json::{read_json, write_json};
 #[cfg(feature = "parquet")]
 pub use parquet::{
-    read_parquet, write_parquet, read_parquet_advanced, write_parquet_advanced,
-    get_parquet_metadata, get_row_group_info, get_column_statistics,
-    read_parquet_enhanced, read_parquet_with_schema_evolution, read_parquet_with_predicates,
-    write_parquet_streaming, analyze_parquet_schema, StreamingParquetReader,
-    ParquetCompression, ParquetMetadata, RowGroupInfo, ColumnStats,
-    ParquetReadOptions, ParquetWriteOptions, SchemaEvolution, PredicateFilter,
-    AdvancedParquetReadOptions, ParquetSchemaAnalysis
+    analyze_parquet_schema, get_column_statistics, get_parquet_metadata, get_row_group_info,
+    read_parquet, read_parquet_advanced, read_parquet_enhanced, read_parquet_with_predicates,
+    read_parquet_with_schema_evolution, write_parquet, write_parquet_advanced,
+    write_parquet_streaming, AdvancedParquetReadOptions, ColumnStats, ParquetCompression,
+    ParquetMetadata, ParquetReadOptions, ParquetSchemaAnalysis, ParquetWriteOptions,
+    PredicateFilter, RowGroupInfo, SchemaEvolution, StreamingParquetReader,
 };
 #[cfg(feature = "sql")]
 pub use sql::{
-    execute_sql, read_sql, write_to_sql, read_sql_advanced, read_sql_table, write_sql_advanced,
-    has_table, list_tables, get_table_schema, get_create_table_sql,
-    SqlConnection, DatabaseConnection, PoolConfig, SqlReadOptions, SqlWriteOptions,
-    WriteMode, InsertMethod, SqlValue, TableSchema, ColumnDefinition, ForeignKey,
-    AsyncDatabasePool, ConnectionStats, TransactionManager, IsolationLevel, DatabaseOperation,
-    QueryBuilder, SchemaIntrospector
+    execute_sql, get_create_table_sql, get_table_schema, has_table, list_tables, read_sql,
+    read_sql_advanced, read_sql_table, write_sql_advanced, write_to_sql, AsyncDatabasePool,
+    ColumnDefinition, ConnectionStats, DatabaseConnection, DatabaseOperation, ForeignKey,
+    InsertMethod, IsolationLevel, PoolConfig, QueryBuilder, SchemaIntrospector, SqlConnection,
+    SqlReadOptions, SqlValue, SqlWriteOptions, TableSchema, TransactionManager, WriteMode,
 };
 #[cfg(feature = "streaming")]
 pub use streaming::{
-    StreamingDataSource, StreamingDataSink, StreamProcessor, StreamingPipeline, DataFrameStreaming,
-    StreamMetadata, SinkMetadata, StreamSchema, StreamField, StreamDataType, StreamType, SinkType,
-    ProcessorMetadata, ProcessorType, ProcessorConfig, ProcessorStats, PipelineConfig, PipelineStats,
-    StreamWindow, WindowType, WindowStats, ErrorStrategy, ErrorHandler, ErrorAction, ErrorStats,
-    MemoryStreamSource, MemoryStreamSink, StageStats, PipelineStage,
-};
-pub use format_traits::{
-    FileFormat, SqlOps, StreamingOps, DataOperations, FormatRegistry,
-    FormatCapabilities, SqlCapabilities, StreamingCapabilities,
-    DataSource, DataDestination, TransformPipeline, TransformStage, JoinType,
-    TableSchema as FormatTableSchema, ColumnDefinition as FormatColumnDefinition, 
-    SqlDataType, ColumnConstraint, ForeignKeyConstraint, ReferentialAction, 
-    IndexDefinition, IndexType, FormatDataType, SqlStandard, SerializationFormat,
+    DataFrameStreaming, ErrorAction, ErrorHandler, ErrorStats, ErrorStrategy, MemoryStreamSink,
+    MemoryStreamSource, PipelineConfig, PipelineStage, PipelineStats, ProcessorConfig,
+    ProcessorMetadata, ProcessorStats, ProcessorType, SinkMetadata, SinkType, StageStats,
+    StreamDataType, StreamField, StreamMetadata, StreamProcessor, StreamSchema, StreamType,
+    StreamWindow, StreamingDataSink, StreamingDataSource, StreamingPipeline, WindowStats,
+    WindowType,
 };

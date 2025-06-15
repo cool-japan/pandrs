@@ -165,7 +165,11 @@ impl Hash for ExpressionNode {
                 // Hash the numeric value as bits
                 value.to_f64().to_bits().hash(state);
             }
-            ExpressionNode::Variable { name, var_type, index } => {
+            ExpressionNode::Variable {
+                name,
+                var_type,
+                index,
+            } => {
                 name.hash(state);
                 var_type.hash(state);
                 index.hash(state);
@@ -174,7 +178,11 @@ impl Hash for ExpressionNode {
                 array.hash(state);
                 index.hash(state);
             }
-            ExpressionNode::BinaryOp { left, right, operator } => {
+            ExpressionNode::BinaryOp {
+                left,
+                right,
+                operator,
+            } => {
                 left.hash(state);
                 right.hash(state);
                 operator.hash(state);
@@ -183,18 +191,29 @@ impl Hash for ExpressionNode {
                 operand.hash(state);
                 operator.hash(state);
             }
-            ExpressionNode::FunctionCall { function, arguments } => {
+            ExpressionNode::FunctionCall {
+                function,
+                arguments,
+            } => {
                 function.hash(state);
                 for arg in arguments {
                     arg.hash(state);
                 }
             }
-            ExpressionNode::Reduction { array, operation, axis } => {
+            ExpressionNode::Reduction {
+                array,
+                operation,
+                axis,
+            } => {
                 array.hash(state);
                 operation.hash(state);
                 axis.hash(state);
             }
-            ExpressionNode::Conditional { condition, true_expr, false_expr } => {
+            ExpressionNode::Conditional {
+                condition,
+                true_expr,
+                false_expr,
+            } => {
                 condition.hash(state);
                 true_expr.hash(state);
                 false_expr.hash(state);
@@ -282,7 +301,7 @@ impl ExpressionTree {
                 optimizations: Vec::new(),
             },
         };
-        
+
         tree.analyze();
         tree
     }
@@ -326,7 +345,11 @@ impl ExpressionTree {
             ExpressionNode::ArrayAccess { array, index } => {
                 self.calculate_node_complexity(array) + self.calculate_node_complexity(index) + 2
             }
-            ExpressionNode::BinaryOp { left, right, operator } => {
+            ExpressionNode::BinaryOp {
+                left,
+                right,
+                operator,
+            } => {
                 let left_complexity = self.calculate_node_complexity(left);
                 let right_complexity = self.calculate_node_complexity(right);
                 let op_complexity = match operator {
@@ -351,12 +374,15 @@ impl ExpressionTree {
                 operand_complexity + op_complexity
             }
             ExpressionNode::FunctionCall { arguments, .. } => {
-                let args_complexity: u64 = arguments.iter()
+                let args_complexity: u64 = arguments
+                    .iter()
                     .map(|arg| self.calculate_node_complexity(arg))
                     .sum();
                 args_complexity + 10 // Function call overhead
             }
-            ExpressionNode::Reduction { array, operation, .. } => {
+            ExpressionNode::Reduction {
+                array, operation, ..
+            } => {
                 let array_complexity = self.calculate_node_complexity(array);
                 let reduction_complexity = match operation {
                     ReductionOperation::Sum | ReductionOperation::Count => 1,
@@ -367,7 +393,11 @@ impl ExpressionTree {
                 };
                 array_complexity * reduction_complexity
             }
-            ExpressionNode::Conditional { condition, true_expr, false_expr } => {
+            ExpressionNode::Conditional {
+                condition,
+                true_expr,
+                false_expr,
+            } => {
                 let condition_complexity = self.calculate_node_complexity(condition);
                 let true_complexity = self.calculate_node_complexity(true_expr);
                 let false_complexity = self.calculate_node_complexity(false_expr);
@@ -387,16 +417,20 @@ impl ExpressionTree {
             ExpressionNode::Constant(_) => true,
             ExpressionNode::Variable { .. } => true,
             ExpressionNode::ArrayAccess { .. } => true,
-            ExpressionNode::BinaryOp { left, right, operator } => {
+            ExpressionNode::BinaryOp {
+                left,
+                right,
+                operator,
+            } => {
                 let vectorizable_ops = [
                     BinaryOperator::Add,
                     BinaryOperator::Subtract,
                     BinaryOperator::Multiply,
                     BinaryOperator::Divide,
                 ];
-                vectorizable_ops.contains(operator) &&
-                self.is_node_vectorizable(left) &&
-                self.is_node_vectorizable(right)
+                vectorizable_ops.contains(operator)
+                    && self.is_node_vectorizable(left)
+                    && self.is_node_vectorizable(right)
             }
             ExpressionNode::UnaryOp { operand, operator } => {
                 let vectorizable_ops = [
@@ -425,9 +459,7 @@ impl ExpressionTree {
             ExpressionNode::BinaryOp { left, right, .. } => {
                 self.is_node_parallelizable(left) && self.is_node_parallelizable(right)
             }
-            ExpressionNode::UnaryOp { operand, .. } => {
-                self.is_node_parallelizable(operand)
-            }
+            ExpressionNode::UnaryOp { operand, .. } => self.is_node_parallelizable(operand),
             ExpressionNode::Reduction { .. } => true, // Reductions can be parallelized
             ExpressionNode::FunctionCall { arguments, .. } => {
                 // Function calls can be parallelized if all arguments are parallelizable
@@ -456,7 +488,7 @@ impl ExpressionTree {
                     "i32" => 4,
                     _ => 8,
                 };
-                
+
                 if let Some(var_info) = self.variables.get(&format!("{}", var_type)) {
                     if let Some(shape) = &var_info.shape {
                         let total_elements: usize = shape.iter().product();
@@ -474,18 +506,26 @@ impl ExpressionTree {
             ExpressionNode::BinaryOp { left, right, .. } => {
                 self.estimate_node_memory(left) + self.estimate_node_memory(right) + 8
             }
-            ExpressionNode::UnaryOp { operand, .. } => {
-                self.estimate_node_memory(operand) + 8
-            }
+            ExpressionNode::UnaryOp { operand, .. } => self.estimate_node_memory(operand) + 8,
             ExpressionNode::FunctionCall { arguments, .. } => {
-                arguments.iter().map(|arg| self.estimate_node_memory(arg)).sum::<usize>() + 64
+                arguments
+                    .iter()
+                    .map(|arg| self.estimate_node_memory(arg))
+                    .sum::<usize>()
+                    + 64
             }
             ExpressionNode::Reduction { array, .. } => {
                 self.estimate_node_memory(array) + 64 // Extra space for reduction state
             }
-            ExpressionNode::Conditional { condition, true_expr, false_expr } => {
-                self.estimate_node_memory(condition) +
-                self.estimate_node_memory(true_expr).max(self.estimate_node_memory(false_expr))
+            ExpressionNode::Conditional {
+                condition,
+                true_expr,
+                false_expr,
+            } => {
+                self.estimate_node_memory(condition)
+                    + self
+                        .estimate_node_memory(true_expr)
+                        .max(self.estimate_node_memory(false_expr))
             }
         }
     }
@@ -508,7 +548,7 @@ impl ExpressionTree {
                 node_path: path.clone(),
             });
         }
-        
+
         // Look for algebraic simplifications
         if self.can_algebraic_simplify(node) {
             self.metadata.optimizations.push(OptimizationOpportunity {
@@ -518,7 +558,7 @@ impl ExpressionTree {
                 node_path: path.clone(),
             });
         }
-        
+
         // Look for vectorization opportunities
         if self.metadata.is_vectorizable && self.can_vectorize(node) {
             self.metadata.optimizations.push(OptimizationOpportunity {
@@ -528,7 +568,7 @@ impl ExpressionTree {
                 node_path: path.clone(),
             });
         }
-        
+
         // Recursively analyze child nodes
         match node {
             ExpressionNode::ArrayAccess { array, index } => {
@@ -564,7 +604,11 @@ impl ExpressionTree {
                 self.find_node_optimizations(array, path);
                 path.pop();
             }
-            ExpressionNode::Conditional { condition, true_expr, false_expr } => {
+            ExpressionNode::Conditional {
+                condition,
+                true_expr,
+                false_expr,
+            } => {
                 path.push(0);
                 self.find_node_optimizations(condition, path);
                 path.pop();
@@ -583,8 +627,8 @@ impl ExpressionTree {
     fn can_constant_fold(&self, node: &ExpressionNode) -> bool {
         match node {
             ExpressionNode::BinaryOp { left, right, .. } => {
-                matches!(**left, ExpressionNode::Constant(_)) &&
-                matches!(**right, ExpressionNode::Constant(_))
+                matches!(**left, ExpressionNode::Constant(_))
+                    && matches!(**right, ExpressionNode::Constant(_))
             }
             ExpressionNode::UnaryOp { operand, .. } => {
                 matches!(**operand, ExpressionNode::Constant(_))
@@ -596,15 +640,21 @@ impl ExpressionTree {
     /// Check if a node can be algebraically simplified
     fn can_algebraic_simplify(&self, node: &ExpressionNode) -> bool {
         match node {
-            ExpressionNode::BinaryOp { left, right, operator } => {
+            ExpressionNode::BinaryOp {
+                left,
+                right,
+                operator,
+            } => {
                 // Look for patterns like x + 0, x * 1, x * 0, etc.
                 match operator {
                     BinaryOperator::Add => {
                         self.is_zero_constant(left) || self.is_zero_constant(right)
                     }
                     BinaryOperator::Multiply => {
-                        self.is_zero_constant(left) || self.is_zero_constant(right) ||
-                        self.is_one_constant(left) || self.is_one_constant(right)
+                        self.is_zero_constant(left)
+                            || self.is_zero_constant(right)
+                            || self.is_one_constant(left)
+                            || self.is_one_constant(right)
                     }
                     BinaryOperator::Power => {
                         self.is_zero_constant(right) || self.is_one_constant(right)
@@ -621,13 +671,17 @@ impl ExpressionTree {
         // For now, simple heuristic: vectorize arithmetic operations on arrays
         match node {
             ExpressionNode::BinaryOp { operator, .. } => {
-                matches!(operator, 
-                    BinaryOperator::Add | BinaryOperator::Subtract |
-                    BinaryOperator::Multiply | BinaryOperator::Divide
+                matches!(
+                    operator,
+                    BinaryOperator::Add
+                        | BinaryOperator::Subtract
+                        | BinaryOperator::Multiply
+                        | BinaryOperator::Divide
                 )
             }
             ExpressionNode::UnaryOp { operator, .. } => {
-                matches!(operator,
+                matches!(
+                    operator,
                     UnaryOperator::Negate | UnaryOperator::Abs | UnaryOperator::Sqrt
                 )
             }
@@ -654,26 +708,32 @@ impl ExpressionTree {
     /// Generate optimized expression tree
     pub fn optimize(&self) -> Result<ExpressionTree> {
         let mut optimized_root = self.root.clone();
-        
+
         // Apply optimizations in order of importance
         optimized_root = self.apply_constant_folding(optimized_root)?;
         optimized_root = self.apply_algebraic_simplification(optimized_root)?;
         optimized_root = self.apply_common_subexpression_elimination(optimized_root)?;
-        
+
         let mut optimized_tree = ExpressionTree::new(optimized_root);
         optimized_tree.variables = self.variables.clone();
-        
+
         Ok(optimized_tree)
     }
 
     /// Apply constant folding optimization
     fn apply_constant_folding(&self, node: ExpressionNode) -> Result<ExpressionNode> {
         match node {
-            ExpressionNode::BinaryOp { left, right, operator } => {
+            ExpressionNode::BinaryOp {
+                left,
+                right,
+                operator,
+            } => {
                 let left = self.apply_constant_folding(*left)?;
                 let right = self.apply_constant_folding(*right)?;
-                
-                if let (ExpressionNode::Constant(l_val), ExpressionNode::Constant(r_val)) = (&left, &right) {
+
+                if let (ExpressionNode::Constant(l_val), ExpressionNode::Constant(r_val)) =
+                    (&left, &right)
+                {
                     // Evaluate the constant expression
                     let result = self.evaluate_binary_constant_op(l_val, r_val, operator)?;
                     Ok(ExpressionNode::Constant(result))
@@ -687,7 +747,7 @@ impl ExpressionTree {
             }
             ExpressionNode::UnaryOp { operand, operator } => {
                 let operand = self.apply_constant_folding(*operand)?;
-                
+
                 if let ExpressionNode::Constant(val) = &operand {
                     let result = self.evaluate_unary_constant_op(val, operator)?;
                     Ok(ExpressionNode::Constant(result))
@@ -705,10 +765,14 @@ impl ExpressionTree {
     /// Apply algebraic simplification
     fn apply_algebraic_simplification(&self, node: ExpressionNode) -> Result<ExpressionNode> {
         match node {
-            ExpressionNode::BinaryOp { left, right, operator } => {
+            ExpressionNode::BinaryOp {
+                left,
+                right,
+                operator,
+            } => {
                 let left = self.apply_algebraic_simplification(*left)?;
                 let right = self.apply_algebraic_simplification(*right)?;
-                
+
                 // Apply simplification rules
                 match operator {
                     BinaryOperator::Add => {
@@ -740,7 +804,7 @@ impl ExpressionTree {
                     }
                     _ => {}
                 }
-                
+
                 Ok(ExpressionNode::BinaryOp {
                     left: Box::new(left),
                     right: Box::new(right),
@@ -752,7 +816,10 @@ impl ExpressionTree {
     }
 
     /// Apply common subexpression elimination
-    fn apply_common_subexpression_elimination(&self, node: ExpressionNode) -> Result<ExpressionNode> {
+    fn apply_common_subexpression_elimination(
+        &self,
+        node: ExpressionNode,
+    ) -> Result<ExpressionNode> {
         // This is a simplified implementation - a full CSE would require
         // building a hash table of all subexpressions and their frequencies
         Ok(node)
@@ -767,7 +834,7 @@ impl ExpressionTree {
     ) -> Result<NumericValue> {
         let l_val = left.to_f64();
         let r_val = right.to_f64();
-        
+
         let result = match operator {
             BinaryOperator::Add => l_val + r_val,
             BinaryOperator::Subtract => l_val - r_val,
@@ -779,9 +846,14 @@ impl ExpressionTree {
                 l_val / r_val
             }
             BinaryOperator::Power => l_val.powf(r_val),
-            _ => return Err(Error::NotImplemented(format!("Constant evaluation for {:?}", operator))),
+            _ => {
+                return Err(Error::NotImplemented(format!(
+                    "Constant evaluation for {:?}",
+                    operator
+                )))
+            }
         };
-        
+
         Ok(NumericValue::F64(result))
     }
 
@@ -792,13 +864,15 @@ impl ExpressionTree {
         operator: UnaryOperator,
     ) -> Result<NumericValue> {
         let val = operand.to_f64();
-        
+
         let result = match operator {
             UnaryOperator::Negate => -val,
             UnaryOperator::Abs => val.abs(),
             UnaryOperator::Sqrt => {
                 if val < 0.0 {
-                    return Err(Error::InvalidOperation("Square root of negative number".to_string()));
+                    return Err(Error::InvalidOperation(
+                        "Square root of negative number".to_string(),
+                    ));
                 }
                 val.sqrt()
             }
@@ -807,7 +881,9 @@ impl ExpressionTree {
             UnaryOperator::Tan => val.tan(),
             UnaryOperator::Log => {
                 if val <= 0.0 {
-                    return Err(Error::InvalidOperation("Logarithm of non-positive number".to_string()));
+                    return Err(Error::InvalidOperation(
+                        "Logarithm of non-positive number".to_string(),
+                    ));
                 }
                 val.ln()
             }
@@ -815,9 +891,14 @@ impl ExpressionTree {
             UnaryOperator::Floor => val.floor(),
             UnaryOperator::Ceil => val.ceil(),
             UnaryOperator::Round => val.round(),
-            _ => return Err(Error::NotImplemented(format!("Constant evaluation for {:?}", operator))),
+            _ => {
+                return Err(Error::NotImplemented(format!(
+                    "Constant evaluation for {:?}",
+                    operator
+                )))
+            }
         };
-        
+
         Ok(NumericValue::F64(result))
     }
 
@@ -832,21 +913,42 @@ impl ExpressionTree {
             ExpressionNode::Constant(value) => format!("{}", value.to_f64()),
             ExpressionNode::Variable { name, .. } => name.clone(),
             ExpressionNode::ArrayAccess { array, index } => {
-                format!("{}[{}]", self.node_to_string(array), self.node_to_string(index))
+                format!(
+                    "{}[{}]",
+                    self.node_to_string(array),
+                    self.node_to_string(index)
+                )
             }
-            ExpressionNode::BinaryOp { left, right, operator } => {
-                format!("({} {} {})", self.node_to_string(left), operator, self.node_to_string(right))
+            ExpressionNode::BinaryOp {
+                left,
+                right,
+                operator,
+            } => {
+                format!(
+                    "({} {} {})",
+                    self.node_to_string(left),
+                    operator,
+                    self.node_to_string(right)
+                )
             }
             ExpressionNode::UnaryOp { operand, operator } => {
                 format!("{}({})", operator, self.node_to_string(operand))
             }
-            ExpressionNode::FunctionCall { function, arguments } => {
-                let args: Vec<String> = arguments.iter()
+            ExpressionNode::FunctionCall {
+                function,
+                arguments,
+            } => {
+                let args: Vec<String> = arguments
+                    .iter()
                     .map(|arg| self.node_to_string(arg))
                     .collect();
                 format!("{}({})", function, args.join(", "))
             }
-            ExpressionNode::Reduction { array, operation, axis } => {
+            ExpressionNode::Reduction {
+                array,
+                operation,
+                axis,
+            } => {
                 let axis_str = if let Some(axis) = axis {
                     format!(", axis={})", axis)
                 } else {
@@ -854,8 +956,13 @@ impl ExpressionTree {
                 };
                 format!("{:?}({}{}", operation, self.node_to_string(array), axis_str)
             }
-            ExpressionNode::Conditional { condition, true_expr, false_expr } => {
-                format!("if {} then {} else {}", 
+            ExpressionNode::Conditional {
+                condition,
+                true_expr,
+                false_expr,
+            } => {
+                format!(
+                    "if {} then {} else {}",
                     self.node_to_string(condition),
                     self.node_to_string(true_expr),
                     self.node_to_string(false_expr)
@@ -876,15 +983,15 @@ mod tests {
             var_type: "f64".to_string(),
             index: 0,
         };
-        
+
         let constant = ExpressionNode::Constant(NumericValue::F64(2.0));
-        
+
         let expr = ExpressionNode::BinaryOp {
             left: Box::new(x),
             right: Box::new(constant),
             operator: BinaryOperator::Multiply,
         };
-        
+
         let tree = ExpressionTree::new(expr);
         assert!(tree.metadata.complexity > 0);
     }
@@ -893,16 +1000,16 @@ mod tests {
     fn test_constant_folding() {
         let left = ExpressionNode::Constant(NumericValue::F64(2.0));
         let right = ExpressionNode::Constant(NumericValue::F64(3.0));
-        
+
         let expr = ExpressionNode::BinaryOp {
             left: Box::new(left),
             right: Box::new(right),
             operator: BinaryOperator::Add,
         };
-        
+
         let tree = ExpressionTree::new(expr);
         let optimized = tree.optimize().unwrap();
-        
+
         // Should have folded to a constant 5.0
         if let ExpressionNode::Constant(value) = optimized.root {
             assert_eq!(value.to_f64(), 5.0);
@@ -918,18 +1025,18 @@ mod tests {
             var_type: "f64".to_string(),
             index: 0,
         };
-        
+
         let zero = ExpressionNode::Constant(NumericValue::F64(0.0));
-        
+
         let expr = ExpressionNode::BinaryOp {
             left: Box::new(x.clone()),
             right: Box::new(zero),
             operator: BinaryOperator::Add,
         };
-        
+
         let tree = ExpressionTree::new(expr);
         let optimized = tree.optimize().unwrap();
-        
+
         // Should have simplified to just x
         if let ExpressionNode::Variable { name, .. } = optimized.root {
             assert_eq!(name, "x");
@@ -945,18 +1052,18 @@ mod tests {
             var_type: "f64".to_string(),
             index: 0,
         };
-        
+
         let constant = ExpressionNode::Constant(NumericValue::F64(2.0));
-        
+
         let expr = ExpressionNode::BinaryOp {
             left: Box::new(x),
             right: Box::new(constant),
             operator: BinaryOperator::Multiply,
         };
-        
+
         let tree = ExpressionTree::new(expr);
         let string_repr = tree.to_string();
-        
+
         assert_eq!(string_repr, "(x * 2)");
     }
 }

@@ -4,15 +4,18 @@
 //! GroupBy functionality with advanced window operations for sophisticated time series
 //! and grouped analytics operations.
 
-use std::collections::HashMap;
-use std::any::Any;
 use crate::core::error::{Error, Result};
 use crate::dataframe::base::DataFrame;
+use crate::dataframe::enhanced_window::{
+    DataFrameEWM, DataFrameExpanding, DataFrameRolling,
+    DataFrameWindowExt as EnhancedDataFrameWindowExt,
+};
 use crate::dataframe::groupby::{DataFrameGroupBy, GroupByExt};
-use crate::dataframe::enhanced_window::{DataFrameRolling, DataFrameExpanding, DataFrameEWM, DataFrameWindowExt as EnhancedDataFrameWindowExt};
+use crate::series::window::{Expanding, Rolling, WindowClosed, EWM};
 use crate::series::{Series, WindowExt, WindowOps};
-use crate::series::window::{WindowClosed, Rolling, Expanding, EWM};
-use chrono::{NaiveDateTime, Duration};
+use chrono::{Duration, NaiveDateTime};
+use std::any::Any;
+use std::collections::HashMap;
 
 /// Group-wise rolling window configuration
 #[derive(Debug, Clone)]
@@ -36,22 +39,22 @@ impl GroupWiseRolling {
             group_columns,
         }
     }
-    
+
     pub fn min_periods(mut self, min_periods: usize) -> Self {
         self.min_periods = Some(min_periods);
         self
     }
-    
+
     pub fn center(mut self, center: bool) -> Self {
         self.center = center;
         self
     }
-    
+
     pub fn closed(mut self, closed: WindowClosed) -> Self {
         self.closed = closed;
         self
     }
-    
+
     pub fn columns(mut self, columns: Vec<String>) -> Self {
         self.columns = Some(columns);
         self
@@ -74,7 +77,7 @@ impl GroupWiseExpanding {
             group_columns,
         }
     }
-    
+
     pub fn columns(mut self, columns: Vec<String>) -> Self {
         self.columns = Some(columns);
         self
@@ -105,41 +108,43 @@ impl GroupWiseEWM {
             group_columns,
         }
     }
-    
+
     pub fn alpha(mut self, alpha: f64) -> Result<Self> {
         if alpha <= 0.0 || alpha > 1.0 {
-            return Err(Error::InvalidValue("Alpha must be between 0 and 1".to_string()));
+            return Err(Error::InvalidValue(
+                "Alpha must be between 0 and 1".to_string(),
+            ));
         }
         self.alpha = Some(alpha);
         self.span = None;
         self.halflife = None;
         Ok(self)
     }
-    
+
     pub fn span(mut self, span: usize) -> Self {
         self.span = Some(span);
         self.alpha = None;
         self.halflife = None;
         self
     }
-    
+
     pub fn halflife(mut self, halflife: f64) -> Self {
         self.halflife = Some(halflife);
         self.alpha = None;
         self.span = None;
         self
     }
-    
+
     pub fn adjust(mut self, adjust: bool) -> Self {
         self.adjust = adjust;
         self
     }
-    
+
     pub fn ignore_na(mut self, ignore_na: bool) -> Self {
         self.ignore_na = ignore_na;
         self
     }
-    
+
     pub fn columns(mut self, columns: Vec<String>) -> Self {
         self.columns = Some(columns);
         self
@@ -164,7 +169,7 @@ impl GroupWiseTimeRolling {
             group_columns,
         }
     }
-    
+
     pub fn columns(mut self, columns: Vec<String>) -> Self {
         self.columns = Some(columns);
         self
@@ -175,27 +180,45 @@ impl GroupWiseTimeRolling {
 pub trait GroupWiseWindowExt {
     /// Create a group-wise rolling window configuration
     fn rolling_by_group(&self, group_columns: Vec<String>, window_size: usize) -> GroupWiseRolling;
-    
+
     /// Create a group-wise expanding window configuration
-    fn expanding_by_group(&self, group_columns: Vec<String>, min_periods: usize) -> GroupWiseExpanding;
-    
+    fn expanding_by_group(
+        &self,
+        group_columns: Vec<String>,
+        min_periods: usize,
+    ) -> GroupWiseExpanding;
+
     /// Create a group-wise EWM configuration
     fn ewm_by_group(&self, group_columns: Vec<String>) -> GroupWiseEWM;
-    
+
     /// Create a group-wise time-based rolling window configuration
-    fn rolling_time_by_group(&self, group_columns: Vec<String>, window: Duration, datetime_column: String) -> GroupWiseTimeRolling;
-    
+    fn rolling_time_by_group(
+        &self,
+        group_columns: Vec<String>,
+        window: Duration,
+        datetime_column: String,
+    ) -> GroupWiseTimeRolling;
+
     /// Apply group-wise rolling operations
-    fn apply_rolling_by_group<'a>(&'a self, config: &'a GroupWiseRolling) -> Result<GroupWiseRollingOps<'a>>;
-    
+    fn apply_rolling_by_group<'a>(
+        &'a self,
+        config: &'a GroupWiseRolling,
+    ) -> Result<GroupWiseRollingOps<'a>>;
+
     /// Apply group-wise expanding operations
-    fn apply_expanding_by_group<'a>(&'a self, config: &'a GroupWiseExpanding) -> Result<GroupWiseExpandingOps<'a>>;
-    
+    fn apply_expanding_by_group<'a>(
+        &'a self,
+        config: &'a GroupWiseExpanding,
+    ) -> Result<GroupWiseExpandingOps<'a>>;
+
     /// Apply group-wise EWM operations
     fn apply_ewm_by_group<'a>(&'a self, config: &'a GroupWiseEWM) -> Result<GroupWiseEWMOps<'a>>;
-    
+
     /// Apply group-wise time-based rolling operations
-    fn apply_rolling_time_by_group<'a>(&'a self, config: &'a GroupWiseTimeRolling) -> Result<GroupWiseTimeRollingOps<'a>>;
+    fn apply_rolling_time_by_group<'a>(
+        &'a self,
+        config: &'a GroupWiseTimeRolling,
+    ) -> Result<GroupWiseTimeRollingOps<'a>>;
 }
 
 /// Group-wise rolling operations
@@ -226,79 +249,99 @@ impl GroupWiseWindowExt for DataFrame {
     fn rolling_by_group(&self, group_columns: Vec<String>, window_size: usize) -> GroupWiseRolling {
         GroupWiseRolling::new(group_columns, window_size)
     }
-    
-    fn expanding_by_group(&self, group_columns: Vec<String>, min_periods: usize) -> GroupWiseExpanding {
+
+    fn expanding_by_group(
+        &self,
+        group_columns: Vec<String>,
+        min_periods: usize,
+    ) -> GroupWiseExpanding {
         GroupWiseExpanding::new(group_columns, min_periods)
     }
-    
+
     fn ewm_by_group(&self, group_columns: Vec<String>) -> GroupWiseEWM {
         GroupWiseEWM::new(group_columns)
     }
-    
-    fn rolling_time_by_group(&self, group_columns: Vec<String>, window: Duration, datetime_column: String) -> GroupWiseTimeRolling {
+
+    fn rolling_time_by_group(
+        &self,
+        group_columns: Vec<String>,
+        window: Duration,
+        datetime_column: String,
+    ) -> GroupWiseTimeRolling {
         GroupWiseTimeRolling::new(group_columns, window, datetime_column)
     }
-    
-    fn apply_rolling_by_group<'a>(&'a self, config: &'a GroupWiseRolling) -> Result<GroupWiseRollingOps<'a>> {
+
+    fn apply_rolling_by_group<'a>(
+        &'a self,
+        config: &'a GroupWiseRolling,
+    ) -> Result<GroupWiseRollingOps<'a>> {
         // Validate group columns exist
         for col in &config.group_columns {
             if !self.column_names().contains(col) {
                 return Err(Error::ColumnNotFound(col.clone()));
             }
         }
-        
+
         Ok(GroupWiseRollingOps {
             dataframe: self,
             config,
         })
     }
-    
-    fn apply_expanding_by_group<'a>(&'a self, config: &'a GroupWiseExpanding) -> Result<GroupWiseExpandingOps<'a>> {
+
+    fn apply_expanding_by_group<'a>(
+        &'a self,
+        config: &'a GroupWiseExpanding,
+    ) -> Result<GroupWiseExpandingOps<'a>> {
         // Validate group columns exist
         for col in &config.group_columns {
             if !self.column_names().contains(col) {
                 return Err(Error::ColumnNotFound(col.clone()));
             }
         }
-        
+
         Ok(GroupWiseExpandingOps {
             dataframe: self,
             config,
         })
     }
-    
+
     fn apply_ewm_by_group<'a>(&'a self, config: &'a GroupWiseEWM) -> Result<GroupWiseEWMOps<'a>> {
         // Validate EWM configuration
         if config.alpha.is_none() && config.span.is_none() && config.halflife.is_none() {
-            return Err(Error::InvalidValue("Must specify either alpha, span, or halflife for EWM".to_string()));
+            return Err(Error::InvalidValue(
+                "Must specify either alpha, span, or halflife for EWM".to_string(),
+            ));
         }
-        
+
         // Validate group columns exist
         for col in &config.group_columns {
             if !self.column_names().contains(col) {
                 return Err(Error::ColumnNotFound(col.clone()));
             }
         }
-        
+
         Ok(GroupWiseEWMOps {
             dataframe: self,
             config,
         })
     }
-    
-    fn apply_rolling_time_by_group<'a>(&'a self, config: &'a GroupWiseTimeRolling) -> Result<GroupWiseTimeRollingOps<'a>> {
+
+    fn apply_rolling_time_by_group<'a>(
+        &'a self,
+        config: &'a GroupWiseTimeRolling,
+    ) -> Result<GroupWiseTimeRollingOps<'a>> {
         // Validate datetime column exists
         if !self.column_names().contains(&config.datetime_column) {
             return Err(Error::ColumnNotFound(config.datetime_column.clone()));
         }
-        
+
         // Validate group columns exist
         for col in &config.group_columns {
             if !self.column_names().contains(col) {
                 return Err(Error::ColumnNotFound(col.clone()));
             }
         }
-        
+
         Ok(GroupWiseTimeRollingOps {
             dataframe: self,
             config,
@@ -312,47 +355,47 @@ impl<'a> GroupWiseRollingOps<'a> {
     pub fn mean(&self) -> Result<DataFrame> {
         self.apply_operation("mean")
     }
-    
+
     /// Apply group-wise rolling sum
     pub fn sum(&self) -> Result<DataFrame> {
         self.apply_operation("sum")
     }
-    
+
     /// Apply group-wise rolling standard deviation
     pub fn std(&self, ddof: usize) -> Result<DataFrame> {
         self.apply_operation_with_param("std", ddof)
     }
-    
+
     /// Apply group-wise rolling variance
     pub fn var(&self, ddof: usize) -> Result<DataFrame> {
         self.apply_operation_with_param("var", ddof)
     }
-    
+
     /// Apply group-wise rolling minimum
     pub fn min(&self) -> Result<DataFrame> {
         self.apply_operation("min")
     }
-    
+
     /// Apply group-wise rolling maximum
     pub fn max(&self) -> Result<DataFrame> {
         self.apply_operation("max")
     }
-    
+
     /// Apply group-wise rolling count
     pub fn count(&self) -> Result<DataFrame> {
         self.apply_operation("count")
     }
-    
+
     /// Apply group-wise rolling median
     pub fn median(&self) -> Result<DataFrame> {
         self.apply_operation("median")
     }
-    
+
     /// Apply group-wise rolling quantile
     pub fn quantile(&self, q: f64) -> Result<DataFrame> {
         self.apply_operation_with_param("quantile", q)
     }
-    
+
     /// Apply custom aggregation function within groups
     pub fn apply<F>(&self, func: F) -> Result<DataFrame>
     where
@@ -364,33 +407,35 @@ impl<'a> GroupWiseRollingOps<'a> {
         let mut result_df = self.dataframe.clone();
         for column_name in &target_columns {
             let column = self.dataframe.get_column_as_f64(column_name)?;
-                let rolling = column.rolling(self.config.window_size)?
-                    .min_periods(self.config.min_periods.unwrap_or(self.config.window_size))
-                    .center(self.config.center)
-                    .closed(self.config.closed);
-                
-                let result_series = rolling.apply(func)?;
-                let result_column_name = format!("{}_{}", column_name, "custom");
-                result_df.add_column(result_column_name, result_series.to_string_series()?)?;
-        }
-        
-        Ok(result_df)
-    }
-    
-    fn apply_operation(&self, operation: &str) -> Result<DataFrame> {
-        let target_columns = self.get_target_columns()?;
-        
-        // For simplified implementation, apply rolling operations to the entire DataFrame
-        // In a full implementation, you would group by the specified columns and apply operations within each group
-        let mut result_df = self.dataframe.clone();
-        
-        for column_name in &target_columns {
-            let column = self.dataframe.get_column_as_f64(column_name)?;
-            let rolling = column.rolling(self.config.window_size)?
+            let rolling = column
+                .rolling(self.config.window_size)?
                 .min_periods(self.config.min_periods.unwrap_or(self.config.window_size))
                 .center(self.config.center)
                 .closed(self.config.closed);
-            
+
+            let result_series = rolling.apply(func)?;
+            let result_column_name = format!("{}_{}", column_name, "custom");
+            result_df.add_column(result_column_name, result_series.to_string_series()?)?;
+        }
+
+        Ok(result_df)
+    }
+
+    fn apply_operation(&self, operation: &str) -> Result<DataFrame> {
+        let target_columns = self.get_target_columns()?;
+
+        // For simplified implementation, apply rolling operations to the entire DataFrame
+        // In a full implementation, you would group by the specified columns and apply operations within each group
+        let mut result_df = self.dataframe.clone();
+
+        for column_name in &target_columns {
+            let column = self.dataframe.get_column_as_f64(column_name)?;
+            let rolling = column
+                .rolling(self.config.window_size)?
+                .min_periods(self.config.min_periods.unwrap_or(self.config.window_size))
+                .center(self.config.center)
+                .closed(self.config.closed);
+
             let result_series = match operation {
                 "mean" => rolling.mean()?,
                 "sum" => rolling.sum()?,
@@ -399,19 +444,25 @@ impl<'a> GroupWiseRollingOps<'a> {
                 "median" => rolling.median()?,
                 "count" => {
                     let count_series = rolling.count()?;
-                    let f64_values: Vec<f64> = count_series.values().iter().map(|&v| v as f64).collect();
+                    let f64_values: Vec<f64> =
+                        count_series.values().iter().map(|&v| v as f64).collect();
                     Series::new(f64_values, count_series.name().cloned())?
-                },
-                _ => return Err(Error::InvalidValue(format!("Unsupported operation: {}", operation))),
+                }
+                _ => {
+                    return Err(Error::InvalidValue(format!(
+                        "Unsupported operation: {}",
+                        operation
+                    )))
+                }
             };
-            
+
             let result_column_name = format!("{}_{}_groupwise", column_name, operation);
             result_df.add_column(result_column_name, result_series.to_string_series()?)?;
         }
-        
+
         Ok(result_df)
     }
-    
+
     fn apply_operation_with_param<T>(&self, operation: &str, param: T) -> Result<DataFrame>
     where
         T: Copy + 'static,
@@ -422,43 +473,51 @@ impl<'a> GroupWiseRollingOps<'a> {
         let mut result_df = self.dataframe.clone();
         for column_name in &target_columns {
             let column = self.dataframe.get_column_as_f64(column_name)?;
-                let rolling = column.rolling(self.config.window_size)?
-                    .min_periods(self.config.min_periods.unwrap_or(self.config.window_size))
-                    .center(self.config.center)
-                    .closed(self.config.closed);
-                
-                let result_series = match operation {
-                    "std" => {
-                        if let Some(ddof) = (&param as &dyn Any).downcast_ref::<usize>() {
-                            rolling.std(*ddof)?
-                        } else {
-                            rolling.std(1)?
-                        }
-                    },
-                    "var" => {
-                        if let Some(ddof) = (&param as &dyn Any).downcast_ref::<usize>() {
-                            rolling.var(*ddof)?
-                        } else {
-                            rolling.var(1)?
-                        }
-                    },
-                    "quantile" => {
-                        if let Some(q) = (&param as &dyn Any).downcast_ref::<f64>() {
-                            rolling.quantile(*q)?
-                        } else {
-                            return Err(Error::InvalidValue("Invalid quantile parameter".to_string()));
-                        }
-                    },
-                    _ => return Err(Error::InvalidValue(format!("Unsupported operation: {}", operation))),
-                };
-                
-                let result_column_name = format!("{}_{}", column_name, operation);
-                result_df.add_column(result_column_name, result_series.to_string_series()?)?;
+            let rolling = column
+                .rolling(self.config.window_size)?
+                .min_periods(self.config.min_periods.unwrap_or(self.config.window_size))
+                .center(self.config.center)
+                .closed(self.config.closed);
+
+            let result_series = match operation {
+                "std" => {
+                    if let Some(ddof) = (&param as &dyn Any).downcast_ref::<usize>() {
+                        rolling.std(*ddof)?
+                    } else {
+                        rolling.std(1)?
+                    }
+                }
+                "var" => {
+                    if let Some(ddof) = (&param as &dyn Any).downcast_ref::<usize>() {
+                        rolling.var(*ddof)?
+                    } else {
+                        rolling.var(1)?
+                    }
+                }
+                "quantile" => {
+                    if let Some(q) = (&param as &dyn Any).downcast_ref::<f64>() {
+                        rolling.quantile(*q)?
+                    } else {
+                        return Err(Error::InvalidValue(
+                            "Invalid quantile parameter".to_string(),
+                        ));
+                    }
+                }
+                _ => {
+                    return Err(Error::InvalidValue(format!(
+                        "Unsupported operation: {}",
+                        operation
+                    )))
+                }
+            };
+
+            let result_column_name = format!("{}_{}", column_name, operation);
+            result_df.add_column(result_column_name, result_series.to_string_series()?)?;
         }
-        
+
         Ok(result_df)
     }
-    
+
     fn get_target_columns(&self) -> Result<Vec<String>> {
         if let Some(ref columns) = self.config.columns {
             for col in columns {
@@ -474,12 +533,12 @@ impl<'a> GroupWiseRollingOps<'a> {
             Ok(numeric_columns)
         }
     }
-    
+
     fn concatenate_group_results(&self, group_results: Vec<DataFrame>) -> Result<DataFrame> {
         if group_results.is_empty() {
             return Ok(self.dataframe.clone());
         }
-        
+
         // For simplicity, return the first group result
         // In a full implementation, you would concatenate all groups
         Ok(group_results.into_iter().next().unwrap())
@@ -492,47 +551,47 @@ impl<'a> GroupWiseExpandingOps<'a> {
     pub fn mean(&self) -> Result<DataFrame> {
         self.apply_operation("mean")
     }
-    
+
     /// Apply group-wise expanding sum
     pub fn sum(&self) -> Result<DataFrame> {
         self.apply_operation("sum")
     }
-    
+
     /// Apply group-wise expanding standard deviation
     pub fn std(&self, ddof: usize) -> Result<DataFrame> {
         self.apply_operation_with_param("std", ddof)
     }
-    
+
     /// Apply group-wise expanding variance
     pub fn var(&self, ddof: usize) -> Result<DataFrame> {
         self.apply_operation_with_param("var", ddof)
     }
-    
+
     /// Apply group-wise expanding minimum
     pub fn min(&self) -> Result<DataFrame> {
         self.apply_operation("min")
     }
-    
+
     /// Apply group-wise expanding maximum
     pub fn max(&self) -> Result<DataFrame> {
         self.apply_operation("max")
     }
-    
+
     /// Apply group-wise expanding count
     pub fn count(&self) -> Result<DataFrame> {
         self.apply_operation("count")
     }
-    
+
     /// Apply group-wise expanding median
     pub fn median(&self) -> Result<DataFrame> {
         self.apply_operation("median")
     }
-    
+
     /// Apply group-wise expanding quantile
     pub fn quantile(&self, q: f64) -> Result<DataFrame> {
         self.apply_operation_with_param("quantile", q)
     }
-    
+
     fn apply_operation(&self, operation: &str) -> Result<DataFrame> {
         let target_columns = self.get_target_columns()?;
         // Simplified implementation - apply operations to entire DataFrame
@@ -540,29 +599,35 @@ impl<'a> GroupWiseExpandingOps<'a> {
         let mut result_df = self.dataframe.clone();
         for column_name in &target_columns {
             let column = self.dataframe.get_column_as_f64(column_name)?;
-                let expanding = column.expanding(self.config.min_periods)?;
-                
-                let result_series = match operation {
-                    "mean" => expanding.mean()?,
-                    "sum" => expanding.sum()?,
-                    "min" => expanding.min()?,
-                    "max" => expanding.max()?,
-                    "median" => expanding.median()?,
-                    "count" => {
-                        let count_series = expanding.count()?;
-                        let f64_values: Vec<f64> = count_series.values().iter().map(|&v| v as f64).collect();
-                        Series::new(f64_values, count_series.name().cloned())?
-                    },
-                    _ => return Err(Error::InvalidValue(format!("Unsupported operation: {}", operation))),
-                };
-                
-                let result_column_name = format!("{}_{}", column_name, operation);
-                result_df.add_column(result_column_name, result_series.to_string_series()?)?;
+            let expanding = column.expanding(self.config.min_periods)?;
+
+            let result_series = match operation {
+                "mean" => expanding.mean()?,
+                "sum" => expanding.sum()?,
+                "min" => expanding.min()?,
+                "max" => expanding.max()?,
+                "median" => expanding.median()?,
+                "count" => {
+                    let count_series = expanding.count()?;
+                    let f64_values: Vec<f64> =
+                        count_series.values().iter().map(|&v| v as f64).collect();
+                    Series::new(f64_values, count_series.name().cloned())?
+                }
+                _ => {
+                    return Err(Error::InvalidValue(format!(
+                        "Unsupported operation: {}",
+                        operation
+                    )))
+                }
+            };
+
+            let result_column_name = format!("{}_{}", column_name, operation);
+            result_df.add_column(result_column_name, result_series.to_string_series()?)?;
         }
-        
+
         Ok(result_df)
     }
-    
+
     fn apply_operation_with_param<T>(&self, operation: &str, param: T) -> Result<DataFrame>
     where
         T: Copy + 'static,
@@ -573,40 +638,47 @@ impl<'a> GroupWiseExpandingOps<'a> {
         let mut result_df = self.dataframe.clone();
         for column_name in &target_columns {
             let column = self.dataframe.get_column_as_f64(column_name)?;
-                let expanding = column.expanding(self.config.min_periods)?;
-                
-                let result_series = match operation {
-                    "std" => {
-                        if let Some(ddof) = (&param as &dyn Any).downcast_ref::<usize>() {
-                            expanding.std(*ddof)?
-                        } else {
-                            expanding.std(1)?
-                        }
-                    },
-                    "var" => {
-                        if let Some(ddof) = (&param as &dyn Any).downcast_ref::<usize>() {
-                            expanding.var(*ddof)?
-                        } else {
-                            expanding.var(1)?
-                        }
-                    },
-                    "quantile" => {
-                        if let Some(q) = (&param as &dyn Any).downcast_ref::<f64>() {
-                            expanding.quantile(*q)?
-                        } else {
-                            return Err(Error::InvalidValue("Invalid quantile parameter".to_string()));
-                        }
-                    },
-                    _ => return Err(Error::InvalidValue(format!("Unsupported operation: {}", operation))),
-                };
-                
-                let result_column_name = format!("{}_{}", column_name, operation);
-                result_df.add_column(result_column_name, result_series.to_string_series()?)?;
+            let expanding = column.expanding(self.config.min_periods)?;
+
+            let result_series = match operation {
+                "std" => {
+                    if let Some(ddof) = (&param as &dyn Any).downcast_ref::<usize>() {
+                        expanding.std(*ddof)?
+                    } else {
+                        expanding.std(1)?
+                    }
+                }
+                "var" => {
+                    if let Some(ddof) = (&param as &dyn Any).downcast_ref::<usize>() {
+                        expanding.var(*ddof)?
+                    } else {
+                        expanding.var(1)?
+                    }
+                }
+                "quantile" => {
+                    if let Some(q) = (&param as &dyn Any).downcast_ref::<f64>() {
+                        expanding.quantile(*q)?
+                    } else {
+                        return Err(Error::InvalidValue(
+                            "Invalid quantile parameter".to_string(),
+                        ));
+                    }
+                }
+                _ => {
+                    return Err(Error::InvalidValue(format!(
+                        "Unsupported operation: {}",
+                        operation
+                    )))
+                }
+            };
+
+            let result_column_name = format!("{}_{}", column_name, operation);
+            result_df.add_column(result_column_name, result_series.to_string_series()?)?;
         }
-        
+
         Ok(result_df)
     }
-    
+
     fn get_target_columns(&self) -> Result<Vec<String>> {
         if let Some(ref columns) = self.config.columns {
             for col in columns {
@@ -621,7 +693,7 @@ impl<'a> GroupWiseExpandingOps<'a> {
             Ok(numeric_columns)
         }
     }
-    
+
     fn concatenate_group_results(&self, group_results: Vec<DataFrame>) -> Result<DataFrame> {
         if group_results.is_empty() {
             return Ok(self.dataframe.clone());
@@ -636,17 +708,17 @@ impl<'a> GroupWiseEWMOps<'a> {
     pub fn mean(&self) -> Result<DataFrame> {
         self.apply_operation("mean")
     }
-    
+
     /// Apply group-wise EWM standard deviation
     pub fn std(&self, ddof: usize) -> Result<DataFrame> {
         self.apply_operation_with_param("std", ddof)
     }
-    
+
     /// Apply group-wise EWM variance
     pub fn var(&self, ddof: usize) -> Result<DataFrame> {
         self.apply_operation_with_param("var", ddof)
     }
-    
+
     fn apply_operation(&self, operation: &str) -> Result<DataFrame> {
         let target_columns = self.get_target_columns()?;
         // Simplified implementation - apply operations to entire DataFrame
@@ -654,30 +726,36 @@ impl<'a> GroupWiseEWMOps<'a> {
         let mut result_df = self.dataframe.clone();
         for column_name in &target_columns {
             let column = self.dataframe.get_column_as_f64(column_name)?;
-                let mut ewm = column.ewm()
-                    .adjust(self.config.adjust)
-                    .ignore_na(self.config.ignore_na);
-                
-                if let Some(alpha) = self.config.alpha {
-                    ewm = ewm.alpha(alpha)?;
-                } else if let Some(span) = self.config.span {
-                    ewm = ewm.span(span);
-                } else if let Some(halflife) = self.config.halflife {
-                    ewm = ewm.halflife(halflife);
+            let mut ewm = column
+                .ewm()
+                .adjust(self.config.adjust)
+                .ignore_na(self.config.ignore_na);
+
+            if let Some(alpha) = self.config.alpha {
+                ewm = ewm.alpha(alpha)?;
+            } else if let Some(span) = self.config.span {
+                ewm = ewm.span(span);
+            } else if let Some(halflife) = self.config.halflife {
+                ewm = ewm.halflife(halflife);
+            }
+
+            let result_series = match operation {
+                "mean" => ewm.mean()?,
+                _ => {
+                    return Err(Error::InvalidValue(format!(
+                        "Unsupported EWM operation: {}",
+                        operation
+                    )))
                 }
-                
-                let result_series = match operation {
-                    "mean" => ewm.mean()?,
-                    _ => return Err(Error::InvalidValue(format!("Unsupported EWM operation: {}", operation))),
-                };
-                
-                let result_column_name = format!("{}_{}", column_name, operation);
-                result_df.add_column(result_column_name, result_series.to_string_series()?)?;
+            };
+
+            let result_column_name = format!("{}_{}", column_name, operation);
+            result_df.add_column(result_column_name, result_series.to_string_series()?)?;
         }
-        
+
         Ok(result_df)
     }
-    
+
     fn apply_operation_with_param<T>(&self, operation: &str, param: T) -> Result<DataFrame>
     where
         T: Copy + 'static,
@@ -688,43 +766,49 @@ impl<'a> GroupWiseEWMOps<'a> {
         let mut result_df = self.dataframe.clone();
         for column_name in &target_columns {
             let column = self.dataframe.get_column_as_f64(column_name)?;
-                let mut ewm = column.ewm()
-                    .adjust(self.config.adjust)
-                    .ignore_na(self.config.ignore_na);
-                
-                if let Some(alpha) = self.config.alpha {
-                    ewm = ewm.alpha(alpha)?;
-                } else if let Some(span) = self.config.span {
-                    ewm = ewm.span(span);
-                } else if let Some(halflife) = self.config.halflife {
-                    ewm = ewm.halflife(halflife);
+            let mut ewm = column
+                .ewm()
+                .adjust(self.config.adjust)
+                .ignore_na(self.config.ignore_na);
+
+            if let Some(alpha) = self.config.alpha {
+                ewm = ewm.alpha(alpha)?;
+            } else if let Some(span) = self.config.span {
+                ewm = ewm.span(span);
+            } else if let Some(halflife) = self.config.halflife {
+                ewm = ewm.halflife(halflife);
+            }
+
+            let result_series = match operation {
+                "std" => {
+                    if let Some(ddof) = (&param as &dyn Any).downcast_ref::<usize>() {
+                        ewm.std(*ddof)?
+                    } else {
+                        ewm.std(1)?
+                    }
                 }
-                
-                let result_series = match operation {
-                    "std" => {
-                        if let Some(ddof) = (&param as &dyn Any).downcast_ref::<usize>() {
-                            ewm.std(*ddof)?
-                        } else {
-                            ewm.std(1)?
-                        }
-                    },
-                    "var" => {
-                        if let Some(ddof) = (&param as &dyn Any).downcast_ref::<usize>() {
-                            ewm.var(*ddof)?
-                        } else {
-                            ewm.var(1)?
-                        }
-                    },
-                    _ => return Err(Error::InvalidValue(format!("Unsupported EWM operation: {}", operation))),
-                };
-                
-                let result_column_name = format!("{}_{}", column_name, operation);
-                result_df.add_column(result_column_name, result_series.to_string_series()?)?;
+                "var" => {
+                    if let Some(ddof) = (&param as &dyn Any).downcast_ref::<usize>() {
+                        ewm.var(*ddof)?
+                    } else {
+                        ewm.var(1)?
+                    }
+                }
+                _ => {
+                    return Err(Error::InvalidValue(format!(
+                        "Unsupported EWM operation: {}",
+                        operation
+                    )))
+                }
+            };
+
+            let result_column_name = format!("{}_{}", column_name, operation);
+            result_df.add_column(result_column_name, result_series.to_string_series()?)?;
         }
-        
+
         Ok(result_df)
     }
-    
+
     fn get_target_columns(&self) -> Result<Vec<String>> {
         if let Some(ref columns) = self.config.columns {
             for col in columns {
@@ -739,7 +823,7 @@ impl<'a> GroupWiseEWMOps<'a> {
             Ok(numeric_columns)
         }
     }
-    
+
     fn concatenate_group_results(&self, group_results: Vec<DataFrame>) -> Result<DataFrame> {
         if group_results.is_empty() {
             return Ok(self.dataframe.clone());
@@ -754,41 +838,55 @@ impl<'a> GroupWiseTimeRollingOps<'a> {
     pub fn mean(&self) -> Result<DataFrame> {
         self.apply_time_operation("mean")
     }
-    
+
     /// Apply group-wise time-based rolling sum
     pub fn sum(&self) -> Result<DataFrame> {
         self.apply_time_operation("sum")
     }
-    
+
     /// Apply group-wise time-based rolling count
     pub fn count(&self) -> Result<DataFrame> {
         self.apply_time_operation("count")
     }
-    
+
     fn apply_time_operation(&self, operation: &str) -> Result<DataFrame> {
         let target_columns = self.get_target_columns()?;
-        
+
         // Get datetime column
-        let datetime_series = self.dataframe.get_column::<NaiveDateTime>(&self.config.datetime_column)
-            .map_err(|_| Error::InvalidValue(format!("Column '{}' is not a datetime column", self.config.datetime_column)))?;
-        
+        let datetime_series = self
+            .dataframe
+            .get_column::<NaiveDateTime>(&self.config.datetime_column)
+            .map_err(|_| {
+                Error::InvalidValue(format!(
+                    "Column '{}' is not a datetime column",
+                    self.config.datetime_column
+                ))
+            })?;
+
         let mut result_df = self.dataframe.clone();
-        
+
         for column_name in &target_columns {
             if column_name == &self.config.datetime_column {
                 continue;
             }
-            
+
             let column = self.dataframe.get_column_as_f64(column_name)?;
-            let result_values = self.calculate_time_window_operation(&datetime_series, &column, operation)?;
-            
-            let result_series = Series::new(result_values, Some(format!("{}_{}_groupwise", column_name, operation)))?;
-            result_df.add_column(format!("{}_{}_groupwise", column_name, operation), result_series.to_string_series()?)?;
+            let result_values =
+                self.calculate_time_window_operation(&datetime_series, &column, operation)?;
+
+            let result_series = Series::new(
+                result_values,
+                Some(format!("{}_{}_groupwise", column_name, operation)),
+            )?;
+            result_df.add_column(
+                format!("{}_{}_groupwise", column_name, operation),
+                result_series.to_string_series()?,
+            )?;
         }
-        
+
         Ok(result_df)
     }
-    
+
     fn calculate_time_window_operation(
         &self,
         datetime_series: &Series<NaiveDateTime>,
@@ -796,10 +894,10 @@ impl<'a> GroupWiseTimeRollingOps<'a> {
         operation: &str,
     ) -> Result<Vec<f64>> {
         let mut result = Vec::with_capacity(datetime_series.len());
-        
+
         for (i, current_time) in datetime_series.values().iter().enumerate() {
             let window_start = *current_time - self.config.window;
-            
+
             // Collect values within the time window
             let mut window_values = Vec::new();
             for (j, time) in datetime_series.values().iter().enumerate() {
@@ -807,7 +905,7 @@ impl<'a> GroupWiseTimeRollingOps<'a> {
                     window_values.push(value_series.values()[j]);
                 }
             }
-            
+
             let result_value = match operation {
                 "mean" => {
                     if window_values.is_empty() {
@@ -815,18 +913,23 @@ impl<'a> GroupWiseTimeRollingOps<'a> {
                     } else {
                         window_values.iter().sum::<f64>() / window_values.len() as f64
                     }
-                },
+                }
                 "sum" => window_values.iter().sum::<f64>(),
                 "count" => window_values.len() as f64,
-                _ => return Err(Error::InvalidValue(format!("Unsupported time operation: {}", operation))),
+                _ => {
+                    return Err(Error::InvalidValue(format!(
+                        "Unsupported time operation: {}",
+                        operation
+                    )))
+                }
             };
-            
+
             result.push(result_value);
         }
-        
+
         Ok(result)
     }
-    
+
     fn get_target_columns(&self) -> Result<Vec<String>> {
         if let Some(ref columns) = self.config.columns {
             for col in columns {
@@ -837,11 +940,13 @@ impl<'a> GroupWiseTimeRollingOps<'a> {
             Ok(columns.clone())
         } else {
             let mut numeric_columns = self.dataframe.get_numeric_column_names();
-            numeric_columns.retain(|col| !self.config.group_columns.contains(col) && col != &self.config.datetime_column);
+            numeric_columns.retain(|col| {
+                !self.config.group_columns.contains(col) && col != &self.config.datetime_column
+            });
             Ok(numeric_columns)
         }
     }
-    
+
     fn concatenate_group_results(&self, group_results: Vec<DataFrame>) -> Result<DataFrame> {
         if group_results.is_empty() {
             return Ok(self.dataframe.clone());

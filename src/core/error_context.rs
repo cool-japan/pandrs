@@ -108,34 +108,37 @@ impl ErrorContext {
 
     /// Generate human-readable error summary
     pub fn summary(&self) -> String {
-        let mut summary = format!("Error in operation '{}' at {:?}\n", self.operation, self.timestamp);
-        
+        let mut summary = format!(
+            "Error in operation '{}' at {:?}\n",
+            self.operation, self.timestamp
+        );
+
         if let Some(shape) = self.dataframe_shape {
             summary.push_str(&format!("DataFrame shape: {:?}\n", shape));
         }
-        
+
         if !self.column_names.is_empty() {
             summary.push_str(&format!("Columns involved: {:?}\n", self.column_names));
         }
-        
+
         if !self.suggested_fixes.is_empty() {
             summary.push_str("\nSuggested fixes:\n");
             for (i, fix) in self.suggested_fixes.iter().enumerate() {
                 summary.push_str(&format!("  {}. {}\n", i + 1, fix));
             }
         }
-        
+
         if let Some(ref hint) = self.performance_hint {
             summary.push_str(&format!("\nPerformance hint: {}\n", hint));
         }
-        
+
         if !self.metadata.is_empty() {
             summary.push_str("\nAdditional context:\n");
             for (key, value) in &self.metadata {
                 summary.push_str(&format!("  {}: {}\n", key, value));
             }
         }
-        
+
         summary
     }
 }
@@ -150,13 +153,15 @@ impl Default for ErrorContext {
 pub trait ErrorRecovery {
     /// Suggest fixes for the error
     fn suggest_fixes(&self) -> Vec<String>;
-    
+
     /// Check if error can be automatically recovered
     fn can_auto_recover(&self) -> bool;
-    
+
     /// Attempt automatic recovery (returns recovered data or new error)
-    fn attempt_recovery(&self) -> std::result::Result<Option<Box<dyn std::any::Any>>, crate::core::error::Error>;
-    
+    fn attempt_recovery(
+        &self,
+    ) -> std::result::Result<Option<Box<dyn std::any::Any>>, crate::core::error::Error>;
+
     /// Get error context
     fn error_context(&self) -> Option<&ErrorContext>;
 }
@@ -167,14 +172,14 @@ pub struct ErrorRecoveryHelper;
 impl ErrorRecoveryHelper {
     /// Generate suggestions for column not found errors
     pub fn column_not_found_suggestions(
-        missing_column: &str, 
-        available_columns: &[String]
+        missing_column: &str,
+        available_columns: &[String],
     ) -> Vec<String> {
         let mut suggestions = Vec::new();
-        
+
         suggestions.push(format!("Column '{}' not found", missing_column));
         suggestions.push(format!("Available columns: {:?}", available_columns));
-        
+
         // Find similar column names (simple similarity)
         let similar_columns: Vec<&String> = available_columns
             .iter()
@@ -183,26 +188,26 @@ impl ErrorRecoveryHelper {
                 similarity > 0.5
             })
             .collect();
-        
+
         if !similar_columns.is_empty() {
             suggestions.push(format!("Did you mean one of: {:?}", similar_columns));
         }
-        
+
         suggestions.push("Use .columns() to list all available columns".to_string());
         suggestions.push("Check for typos in column name".to_string());
-        
+
         suggestions
     }
 
     /// Generate suggestions for shape mismatch errors
     pub fn shape_mismatch_suggestions(
         expected: (usize, usize),
-        actual: (usize, usize)
+        actual: (usize, usize),
     ) -> Vec<String> {
         let mut suggestions = Vec::new();
-        
+
         suggestions.push(format!("Expected shape {:?}, got {:?}", expected, actual));
-        
+
         if expected.0 != actual.0 {
             suggestions.push("Row count mismatch - check data alignment".to_string());
             if actual.0 > expected.0 {
@@ -211,29 +216,28 @@ impl ErrorRecoveryHelper {
                 suggestions.push("Data may be incomplete - check data source".to_string());
             }
         }
-        
+
         if expected.1 != actual.1 {
             suggestions.push("Column count mismatch - check column selection".to_string());
             suggestions.push("Use .select() to choose specific columns".to_string());
         }
-        
+
         suggestions.push("Use .shape() to check DataFrame dimensions".to_string());
-        
+
         suggestions
     }
 
     /// Generate suggestions for type mismatch errors
-    pub fn type_mismatch_suggestions(
-        column: &str,
-        expected: &str,
-        found: &str
-    ) -> Vec<String> {
+    pub fn type_mismatch_suggestions(column: &str, expected: &str, found: &str) -> Vec<String> {
         let mut suggestions = vec![
-            format!("Column '{}' type mismatch: expected {}, found {}", column, expected, found),
+            format!(
+                "Column '{}' type mismatch: expected {}, found {}",
+                column, expected, found
+            ),
             format!("Use .dtypes() to check column types"),
             format!("Consider type conversion with .astype()"),
         ];
-        
+
         // Specific suggestions based on types
         match (expected, found) {
             ("int64", "float64") => {
@@ -246,11 +250,12 @@ impl ErrorRecoveryHelper {
                 suggestions.push("Use .astype('string') to convert to string type".to_string());
             }
             (_, "string") => {
-                suggestions.push("Parse string data with appropriate conversion functions".to_string());
+                suggestions
+                    .push("Parse string data with appropriate conversion functions".to_string());
             }
             _ => {}
         }
-        
+
         suggestions
     }
 
@@ -258,7 +263,7 @@ impl ErrorRecoveryHelper {
     pub fn performance_hints(
         operation: &str,
         data_size: Option<usize>,
-        column_count: Option<usize>
+        column_count: Option<usize>,
     ) -> Option<String> {
         match operation {
             "groupby" => {
@@ -298,14 +303,14 @@ impl ErrorRecoveryHelper {
     fn string_similarity(s1: &str, s2: &str) -> f64 {
         let len1 = s1.len();
         let len2 = s2.len();
-        
+
         if len1 == 0 || len2 == 0 {
             return 0.0;
         }
-        
+
         let max_len = len1.max(len2);
         let distance = Self::levenshtein_distance(s1, s2);
-        
+
         1.0 - (distance as f64 / max_len as f64)
     }
 
@@ -313,35 +318,39 @@ impl ErrorRecoveryHelper {
     fn levenshtein_distance(s1: &str, s2: &str) -> usize {
         let len1 = s1.len();
         let len2 = s2.len();
-        
+
         if len1 == 0 {
             return len2;
         }
         if len2 == 0 {
             return len1;
         }
-        
+
         let mut matrix = vec![vec![0; len2 + 1]; len1 + 1];
-        
+
         for i in 0..=len1 {
             matrix[i][0] = i;
         }
         for j in 0..=len2 {
             matrix[0][j] = j;
         }
-        
+
         let s1_chars: Vec<char> = s1.chars().collect();
         let s2_chars: Vec<char> = s2.chars().collect();
-        
+
         for i in 1..=len1 {
             for j in 1..=len2 {
-                let cost = if s1_chars[i - 1] == s2_chars[j - 1] { 0 } else { 1 };
+                let cost = if s1_chars[i - 1] == s2_chars[j - 1] {
+                    0
+                } else {
+                    1
+                };
                 matrix[i][j] = (matrix[i - 1][j] + 1)
                     .min(matrix[i][j - 1] + 1)
                     .min(matrix[i - 1][j - 1] + cost);
             }
         }
-        
+
         matrix[len1][len2]
     }
 }
@@ -385,7 +394,9 @@ impl ErrorContextBuilder {
 
     /// Add metadata
     pub fn meta(mut self, key: &str, value: &str) -> Self {
-        self.context.metadata.insert(key.to_string(), value.to_string());
+        self.context
+            .metadata
+            .insert(key.to_string(), value.to_string());
         self
     }
 
@@ -428,7 +439,7 @@ mod tests {
     fn test_column_not_found_suggestions() {
         let available = vec!["name".to_string(), "age".to_string(), "salary".to_string()];
         let suggestions = ErrorRecoveryHelper::column_not_found_suggestions("nam", &available);
-        
+
         assert!(!suggestions.is_empty());
         assert!(suggestions.iter().any(|s| s.contains("nam")));
         assert!(suggestions.iter().any(|s| s.contains("name")));

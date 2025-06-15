@@ -57,15 +57,9 @@ pub enum Expr {
         right: Box<Expr>,
     },
     /// Unary operations
-    Unary {
-        op: UnaryOp,
-        operand: Box<Expr>,
-    },
+    Unary { op: UnaryOp, operand: Box<Expr> },
     /// Function calls
-    Function {
-        name: String,
-        args: Vec<Expr>,
-    },
+    Function { name: String, args: Vec<Expr> },
 }
 
 /// Literal value types

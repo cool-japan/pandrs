@@ -358,14 +358,16 @@ impl DataStream {
         for record in batch {
             for header in &self.headers {
                 let value = record.fields.get(header).cloned().unwrap_or_default();
-
                 columns.get_mut(header).unwrap().push(value);
             }
         }
 
-        // Create DataFrame using the original DataFrame implementation
-        // Create a basic DataFrame as we can't use add_column directly with the new API
-        df = DataFrame::new();
+        // Create DataFrame using add_column method
+        for header in &self.headers {
+            let column_data = columns.get(header).unwrap().clone();
+            let series = crate::series::Series::new(column_data, Some(header.clone()))?;
+            df.add_column(header.clone(), series)?;
+        }
 
         Ok(df)
     }
@@ -438,87 +440,24 @@ impl StreamAggregator {
 
     /// Process the stream and compute aggregates
     pub fn process(&mut self) -> Result<HashMap<String, f64>> {
-        // Clone what we need outside the closure to avoid self capture issues
-        let aggregates = self.aggregators.clone();
-        let mut current_values = self.current_values.clone();
-
-        let mut update_fn = move |record: &StreamRecord| -> Result<()> {
-            for (column, agg_type) in &aggregates {
-                let value = match record.fields.get(column) {
-                    Some(val) => val
-                        .parse::<f64>()
-                        .map_err(|_| Error::Cast(format!("Could not parse '{}' as number", val)))?,
-                    None => continue,
-                };
-
-                // Update the appropriate aggregate
-                match agg_type {
-                    AggregationType::Sum => {
-                        // This was likely meant to use a mutex, but current_values is a HashMap
-                        // Update directly on the HashMap
-                        *current_values.entry(column.clone()).or_insert(0.0) += value;
-                    }
-                    AggregationType::Count => {
-                        // This was likely meant to use a mutex, but current_values is a HashMap
-                        // Update directly on the HashMap
-                        *current_values.entry(column.clone()).or_insert(0.0) += 1.0;
-                    }
-                    AggregationType::Min => {
-                        // This was likely meant to use a mutex, but current_values is a HashMap
-                        // Update directly on the HashMap
-                        let current = current_values.entry(column.clone()).or_insert(f64::MAX);
-                        if value < *current {
-                            *current = value;
-                        }
-                    }
-                    AggregationType::Max => {
-                        // This was likely meant to use a mutex, but current_values is a HashMap
-                        // Update directly on the HashMap
-                        let current = current_values.entry(column.clone()).or_insert(f64::MIN);
-                        if value > *current {
-                            *current = value;
-                        }
-                    }
-                    AggregationType::Average => {
-                        // For average, we need to track sum and count separately
-                        let tracking_sum_key = format!("{}_sum", column);
-                        let tracking_count_key = format!("{}_count", column);
-
-                        // This was likely meant to use a mutex, but current_values is a HashMap
-                        // Update directly on the HashMap
-                        *current_values
-                            .entry(tracking_sum_key.clone())
-                            .or_insert(0.0) += value;
-                        *current_values
-                            .entry(tracking_count_key.clone())
-                            .or_insert(0.0) += 1.0;
-
-                        let sum = current_values[&tracking_sum_key];
-                        let count = current_values[&tracking_count_key];
-
-                        if count > 0.0 {
-                            current_values.insert(column.clone(), sum / count);
-                        }
-                    }
-                }
-            }
-
-            Ok(())
-        };
-
+        // Collect all records from the stream first
+        let mut all_records = Vec::new();
         self.stream.process(
             |batch| {
                 for record in batch {
-                    update_fn(record)?;
+                    all_records.push(record.clone());
                 }
                 Ok(())
             },
             None,
         )?;
 
-        // Return a clone of the current values
-        let result = self.current_values.clone();
-        Ok(result)
+        // Now process all records to update aggregates
+        for record in &all_records {
+            self.update_aggregates(record)?;
+        }
+
+        Ok(self.current_values.clone())
     }
 
     /// Update aggregates with a new record
@@ -625,72 +564,53 @@ impl StreamProcessor {
 
     /// Process the stream and transform data
     pub fn process(&mut self) -> Result<Vec<DataFrame>> {
-        // We can't clone the function boxes, so we'll use a reference to self
-        let transformers = &self.transformers;
-        let filter_fn = &self.filter;
-
-        // We need to pass stream by reference instead of capturing it in the closure
-        // We'll define a temporary function to transform the batch
-        let transform_batch =
-            |batch: &[StreamRecord],
-             transformers: &HashMap<String, Box<dyn Fn(&str) -> Result<String> + Send>>,
-             filter_fn: &Option<Box<dyn Fn(&StreamRecord) -> bool + Send>>|
-             -> Result<Vec<StreamRecord>> {
-                let mut transformed_batch = Vec::new();
-
-                for record in batch {
-                    // Apply filter if any
-                    if let Some(filter) = filter_fn {
-                        if !filter(record) {
-                            continue;
-                        }
-                    }
-
-                    // Apply transformations
-                    let mut new_fields = HashMap::new();
-
-                    for (column, value) in &record.fields {
-                        if let Some(transformer) = transformers.get(column) {
-                            let new_value = transformer(value)?;
-                            new_fields.insert(column.clone(), new_value);
-                        } else {
-                            new_fields.insert(column.clone(), value.clone());
-                        }
-                    }
-
-                    transformed_batch.push(StreamRecord {
-                        fields: new_fields,
-                        timestamp: record.timestamp,
-                    });
-                }
-
-                Ok(transformed_batch)
-            };
-
-        // Use a mutable reference to collect results
-        let mut results = Vec::new();
-
-        // Now use a simpler closure that doesn't capture stream_ref
-        let process_result = self.stream.process(
-            move |batch| {
-                // Process the transformed batch as needed
-                let transformed_batch = transform_batch(batch, transformers, filter_fn)?;
-
-                // Create a DataFrame from the batch
-                let df = DataFrame::new();
-
-                // Return a single DataFrame for this batch
-                Ok(df)
+        // Collect all records from the stream first
+        let mut all_batches = Vec::new();
+        self.stream.process(
+            |batch| {
+                all_batches.push(batch.to_vec());
+                Ok(())
             },
             None,
         )?;
 
-        // Collect all DataFrames from batches
-        for df in process_result {
+        let mut results = Vec::new();
+
+        // Process each batch
+        for batch in all_batches {
+            let mut transformed_batch = Vec::new();
+
+            for record in &batch {
+                // Apply filter if any
+                if let Some(filter) = &self.filter {
+                    if !filter(record) {
+                        continue;
+                    }
+                }
+
+                // Apply transformations
+                let mut new_fields = HashMap::new();
+
+                for (column, value) in &record.fields {
+                    if let Some(transformer) = self.transformers.get(column) {
+                        let new_value = transformer(value)?;
+                        new_fields.insert(column.clone(), new_value);
+                    } else {
+                        new_fields.insert(column.clone(), value.clone());
+                    }
+                }
+
+                transformed_batch.push(StreamRecord {
+                    fields: new_fields,
+                    timestamp: record.timestamp,
+                });
+            }
+
+            // Convert transformed batch to DataFrame
+            let df = self.stream.batch_to_dataframe(&transformed_batch)?;
             results.push(df);
         }
 
-        // Return the vector of DataFrames
         Ok(results)
     }
 }

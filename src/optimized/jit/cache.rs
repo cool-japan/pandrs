@@ -93,9 +93,10 @@ impl CachedFunctionMetadata {
     pub fn record_execution(&mut self, execution_time_ns: u64) {
         self.execution_count += 1;
         self.total_execution_time_ns += execution_time_ns;
-        self.avg_execution_time_ns = self.total_execution_time_ns as f64 / self.execution_count as f64;
+        self.avg_execution_time_ns =
+            self.total_execution_time_ns as f64 / self.execution_count as f64;
         self.last_accessed = Instant::now();
-        
+
         // Mark as hot if executed frequently
         if self.execution_count > 100 && self.avg_execution_time_ns < 1_000_000.0 {
             self.is_hot = true;
@@ -107,11 +108,12 @@ impl CachedFunctionMetadata {
         if self.execution_count == 0 {
             return 0.0;
         }
-        
+
         // Benefit = (compilation cost amortized over executions) * effectiveness
-        let amortized_compilation_cost = self.compilation_time_ns as f64 / self.execution_count as f64;
+        let amortized_compilation_cost =
+            self.compilation_time_ns as f64 / self.execution_count as f64;
         let avg_execution_savings = amortized_compilation_cost * self.effectiveness_score;
-        
+
         avg_execution_savings
     }
 
@@ -119,7 +121,7 @@ impl CachedFunctionMetadata {
     pub fn should_evict(&self, cache_pressure: f64) -> bool {
         let time_since_access = self.last_accessed.elapsed().as_secs_f64();
         let cache_benefit = self.cache_benefit();
-        
+
         // Evict if:
         // 1. High cache pressure and low benefit
         // 2. Not accessed for a long time
@@ -160,11 +162,11 @@ impl FunctionSignature {
             is_variadic,
         }
     }
-    
+
     /// Check if this signature matches another
     pub fn matches(&self, other: &FunctionSignature) -> bool {
-        self.output_type == other.output_type &&
-        (self.is_variadic || self.input_types == other.input_types)
+        self.output_type == other.output_type
+            && (self.is_variadic || self.input_types == other.input_types)
     }
 }
 
@@ -229,24 +231,24 @@ impl JitFunctionCache {
     ) -> Result<()> {
         // Check if we need to evict functions to make space
         self.evict_if_needed(metadata.function_size_bytes)?;
-        
+
         let cached_function = CachedFunction {
             metadata,
             function,
             signature,
         };
-        
+
         let mut cache = self.cache.write().unwrap();
         let mut current_size = self.current_cache_size_bytes.write().unwrap();
-        
+
         // Remove old function if it exists
         if let Some(old_function) = cache.remove(&function_id) {
             *current_size -= old_function.metadata.function_size_bytes;
         }
-        
+
         *current_size += cached_function.metadata.function_size_bytes;
         cache.insert(function_id, cached_function);
-        
+
         Ok(())
     }
 
@@ -265,13 +267,13 @@ impl JitFunctionCache {
         let evictions = *self.cache_evictions.read().unwrap();
         let cache_size = *self.current_cache_size_bytes.read().unwrap();
         let cache_entries = self.cache.read().unwrap().len();
-        
+
         let hit_rate = if hits + misses > 0 {
             hits as f64 / (hits + misses) as f64
         } else {
             0.0
         };
-        
+
         CacheStats {
             hit_rate,
             hits,
@@ -287,7 +289,7 @@ impl JitFunctionCache {
     pub fn clear(&self) {
         let mut cache = self.cache.write().unwrap();
         let mut current_size = self.current_cache_size_bytes.write().unwrap();
-        
+
         cache.clear();
         *current_size = 0;
     }
@@ -295,18 +297,18 @@ impl JitFunctionCache {
     /// Evict functions if cache is full
     fn evict_if_needed(&self, new_function_size: usize) -> Result<()> {
         let current_size = *self.current_cache_size_bytes.read().unwrap();
-        
+
         if current_size + new_function_size <= self.max_cache_size_bytes {
             return Ok(()); // No eviction needed
         }
-        
+
         let mut cache = self.cache.write().unwrap();
         let mut size = self.current_cache_size_bytes.write().unwrap();
         let mut evictions = self.cache_evictions.write().unwrap();
-        
+
         // Calculate cache pressure
         let cache_pressure = (*size + new_function_size) as f64 / self.max_cache_size_bytes as f64;
-        
+
         // Find functions to evict based on their benefit and access patterns
         let mut to_evict = Vec::new();
         for (id, cached_function) in cache.iter() {
@@ -314,35 +316,37 @@ impl JitFunctionCache {
                 to_evict.push((id.clone(), cached_function.metadata.function_size_bytes));
             }
         }
-        
+
         // Sort by cache benefit (evict least beneficial first)
         to_evict.sort_by(|a, b| {
             let a_benefit = cache.get(&a.0).unwrap().metadata.cache_benefit();
             let b_benefit = cache.get(&b.0).unwrap().metadata.cache_benefit();
-            a_benefit.partial_cmp(&b_benefit).unwrap_or(std::cmp::Ordering::Equal)
+            a_benefit
+                .partial_cmp(&b_benefit)
+                .unwrap_or(std::cmp::Ordering::Equal)
         });
-        
+
         // Evict functions until we have enough space
         let needed_space = (*size + new_function_size).saturating_sub(self.max_cache_size_bytes);
         let mut freed_space = 0;
-        
+
         for (function_id, function_size) in to_evict {
             if freed_space >= needed_space {
                 break;
             }
-            
+
             cache.remove(&function_id);
             *size -= function_size;
             freed_space += function_size;
             *evictions += 1;
         }
-        
+
         if *size + new_function_size > self.max_cache_size_bytes {
             return Err(Error::InvalidOperation(
-                "Unable to free enough cache space for new function".to_string()
+                "Unable to free enough cache space for new function".to_string(),
             ));
         }
-        
+
         Ok(())
     }
 }
@@ -375,7 +379,7 @@ impl CacheStats {
             0.0
         }
     }
-    
+
     /// Get average function size in bytes
     pub fn avg_function_size_bytes(&self) -> f64 {
         if self.cache_entries > 0 {
@@ -396,7 +400,8 @@ pub fn get_global_cache() -> &'static JitFunctionCache {
 
 /// Initialize the global cache with a specific size
 pub fn init_global_cache(max_size_mb: usize) -> Result<()> {
-    GLOBAL_CACHE.set(JitFunctionCache::new(max_size_mb))
+    GLOBAL_CACHE
+        .set(JitFunctionCache::new(max_size_mb))
         .map_err(|_| Error::InvalidOperation("Global cache already initialized".to_string()))
 }
 
@@ -417,7 +422,7 @@ mod tests {
     fn test_cache_metadata() {
         let mut metadata = CachedFunctionMetadata::new(1_000_000, 1024);
         assert_eq!(metadata.execution_count, 0);
-        
+
         metadata.record_execution(500_000);
         assert_eq!(metadata.execution_count, 1);
         assert_eq!(metadata.avg_execution_time_ns, 500_000.0);
@@ -428,7 +433,7 @@ mod tests {
         let sig1 = FunctionSignature::new(vec!["f64".to_string()], "f64".to_string(), false);
         let sig2 = FunctionSignature::new(vec!["f64".to_string()], "f64".to_string(), false);
         let sig3 = FunctionSignature::new(vec!["i64".to_string()], "f64".to_string(), false);
-        
+
         assert!(sig1.matches(&sig2));
         assert!(!sig1.matches(&sig3));
     }
@@ -437,10 +442,10 @@ mod tests {
     fn test_cache_operations() {
         let cache = JitFunctionCache::new(1); // 1MB cache
         let function_id = FunctionId::new("test", "f64", "f64", "test_op", 1);
-        
+
         // Initially, function should not be in cache
         assert!(cache.get(&function_id).is_none());
-        
+
         let stats = cache.get_stats();
         assert_eq!(stats.misses, 1);
         assert_eq!(stats.hits, 0);

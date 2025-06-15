@@ -12,11 +12,14 @@
 //!   cargo run --example database_integration_example --features "sql"
 
 use pandrs::dataframe::base::DataFrame;
-use pandrs::series::Series;
 use pandrs::error::Result;
+use pandrs::series::Series;
 
 #[cfg(feature = "sql")]
-use pandrs::io::sql::{DatabaseConnection, PoolConfig, SqlReadOptions, SqlWriteOptions, WriteMode, InsertMethod, SqlValue, TableSchema, ColumnDefinition};
+use pandrs::io::sql::{
+    ColumnDefinition, DatabaseConnection, InsertMethod, PoolConfig, SqlReadOptions, SqlValue,
+    SqlWriteOptions, TableSchema, WriteMode,
+};
 
 #[cfg(feature = "sql")]
 use std::collections::HashMap;
@@ -71,24 +74,33 @@ fn connection_pool_example(df: &DataFrame) -> Result<()> {
 
     // Connection pool configuration
     let pool_configs = vec![
-        ("Development", PoolConfig {
-            max_connections: 5,
-            min_connections: 1,
-            connect_timeout: Duration::from_secs(10),
-            idle_timeout: Some(Duration::from_secs(300)),
-        }),
-        ("Production", PoolConfig {
-            max_connections: 50,
-            min_connections: 10,
-            connect_timeout: Duration::from_secs(30),
-            idle_timeout: Some(Duration::from_secs(600)),
-        }),
-        ("High-Load", PoolConfig {
-            max_connections: 100,
-            min_connections: 25,
-            connect_timeout: Duration::from_secs(15),
-            idle_timeout: Some(Duration::from_secs(300)),
-        }),
+        (
+            "Development",
+            PoolConfig {
+                max_connections: 5,
+                min_connections: 1,
+                connect_timeout: Duration::from_secs(10),
+                idle_timeout: Some(Duration::from_secs(300)),
+            },
+        ),
+        (
+            "Production",
+            PoolConfig {
+                max_connections: 50,
+                min_connections: 10,
+                connect_timeout: Duration::from_secs(30),
+                idle_timeout: Some(Duration::from_secs(600)),
+            },
+        ),
+        (
+            "High-Load",
+            PoolConfig {
+                max_connections: 100,
+                min_connections: 25,
+                connect_timeout: Duration::from_secs(15),
+                idle_timeout: Some(Duration::from_secs(300)),
+            },
+        ),
     ];
 
     println!("  Connection pool configurations:");
@@ -97,13 +109,16 @@ fn connection_pool_example(df: &DataFrame) -> Result<()> {
         println!("      - Max connections: {}", config.max_connections);
         println!("      - Min connections: {}", config.min_connections);
         println!("      - Connect timeout: {:?}", config.connect_timeout);
-        println!("      - Idle timeout: {:?}", config.idle_timeout.unwrap_or_default());
+        println!(
+            "      - Idle timeout: {:?}",
+            config.idle_timeout.unwrap_or_default()
+        );
     }
 
     // Simulate async operations
     println!("  Async operation simulation:");
     let operations = vec![
-        ("Query execution", 45),      // milliseconds
+        ("Query execution", 45), // milliseconds
         ("Bulk insert", 150),
         ("Complex aggregation", 230),
         ("Schema introspection", 80),
@@ -190,9 +205,21 @@ fn transaction_management_example(_df: &DataFrame) -> Result<()> {
     // Rollback scenarios
     println!("  Rollback scenarios and handling:");
     let rollback_scenarios = vec![
-        ("Constraint violation", "UNIQUE constraint failed", "Automatic rollback"),
-        ("Business rule failure", "Insufficient funds", "Conditional rollback"),
-        ("Deadlock detection", "Resource conflict", "Retry with backoff"),
+        (
+            "Constraint violation",
+            "UNIQUE constraint failed",
+            "Automatic rollback",
+        ),
+        (
+            "Business rule failure",
+            "Insufficient funds",
+            "Conditional rollback",
+        ),
+        (
+            "Deadlock detection",
+            "Resource conflict",
+            "Retry with backoff",
+        ),
         ("Connection timeout", "Network issue", "Full rollback"),
         ("Manual rollback", "User cancellation", "Explicit rollback"),
     ];
@@ -239,10 +266,26 @@ fn query_builder_example(_df: &DataFrame) -> Result<()> {
     // Parameterized queries with type safety
     println!("  Parameterized queries with type safety:");
     let parameterized_queries = vec![
-        ("Price range filter", "WHERE price BETWEEN ? AND ?", vec!["100.0", "500.0"]),
-        ("Date range", "WHERE date >= ? AND date < ?", vec!["2024-01-01", "2024-12-31"]),
-        ("Multiple symbols", "WHERE symbol IN (?, ?, ?)", vec!["AAPL", "GOOGL", "MSFT"]),
-        ("Complex condition", "WHERE (price > ? OR volume > ?) AND sector_id = ?", vec!["200.0", "1000000", "1"]),
+        (
+            "Price range filter",
+            "WHERE price BETWEEN ? AND ?",
+            vec!["100.0", "500.0"],
+        ),
+        (
+            "Date range",
+            "WHERE date >= ? AND date < ?",
+            vec!["2024-01-01", "2024-12-31"],
+        ),
+        (
+            "Multiple symbols",
+            "WHERE symbol IN (?, ?, ?)",
+            vec!["AAPL", "GOOGL", "MSFT"],
+        ),
+        (
+            "Complex condition",
+            "WHERE (price > ? OR volume > ?) AND sector_id = ?",
+            vec!["200.0", "1000000", "1"],
+        ),
     ];
 
     for (description, where_clause, params) in parameterized_queries {
@@ -306,141 +349,178 @@ fn schema_introspection_example() -> Result<()> {
         // Database schema overview
         let database_schema = vec![
             TableSchema {
-            name: "financial_data".to_string(),
-            columns: vec![
-                ColumnDefinition {
-                    name: "id".to_string(),
-                    data_type: "BIGSERIAL PRIMARY KEY".to_string(),
-                    nullable: false,
-                    default_value: Some("nextval('financial_data_id_seq')".to_string()),
-                },
-                ColumnDefinition {
-                    name: "symbol".to_string(),
-                    data_type: "VARCHAR(10)".to_string(),
-                    nullable: false,
-                    default_value: None,
-                },
-                ColumnDefinition {
-                    name: "price".to_string(),
-                    data_type: "DECIMAL(10,2)".to_string(),
-                    nullable: true,
-                    default_value: Some("0.00".to_string()),
-                },
-                ColumnDefinition {
-                    name: "volume".to_string(),
-                    data_type: "BIGINT".to_string(),
-                    nullable: true,
-                    default_value: Some("0".to_string()),
-                },
-                ColumnDefinition {
-                    name: "updated_at".to_string(),
-                    data_type: "TIMESTAMP WITH TIME ZONE".to_string(),
-                    nullable: false,
-                    default_value: Some("CURRENT_TIMESTAMP".to_string()),
-                },
-            ],
-            primary_keys: vec!["id".to_string()],
-            foreign_keys: vec![],
-        },
-        TableSchema {
-            name: "sectors".to_string(),
-            columns: vec![
-                ColumnDefinition {
-                    name: "id".to_string(),
-                    data_type: "SERIAL PRIMARY KEY".to_string(),
-                    nullable: false,
-                    default_value: Some("nextval('sectors_id_seq')".to_string()),
-                },
-                ColumnDefinition {
-                    name: "name".to_string(),
-                    data_type: "VARCHAR(50)".to_string(),
-                    nullable: false,
-                    default_value: None,
-                },
-                ColumnDefinition {
-                    name: "description".to_string(),
-                    data_type: "TEXT".to_string(),
-                    nullable: true,
-                    default_value: None,
-                },
-            ],
-            primary_keys: vec!["id".to_string()],
-            foreign_keys: vec![],
-        },
-    ];
+                name: "financial_data".to_string(),
+                columns: vec![
+                    ColumnDefinition {
+                        name: "id".to_string(),
+                        data_type: "BIGSERIAL PRIMARY KEY".to_string(),
+                        nullable: false,
+                        default_value: Some("nextval('financial_data_id_seq')".to_string()),
+                    },
+                    ColumnDefinition {
+                        name: "symbol".to_string(),
+                        data_type: "VARCHAR(10)".to_string(),
+                        nullable: false,
+                        default_value: None,
+                    },
+                    ColumnDefinition {
+                        name: "price".to_string(),
+                        data_type: "DECIMAL(10,2)".to_string(),
+                        nullable: true,
+                        default_value: Some("0.00".to_string()),
+                    },
+                    ColumnDefinition {
+                        name: "volume".to_string(),
+                        data_type: "BIGINT".to_string(),
+                        nullable: true,
+                        default_value: Some("0".to_string()),
+                    },
+                    ColumnDefinition {
+                        name: "updated_at".to_string(),
+                        data_type: "TIMESTAMP WITH TIME ZONE".to_string(),
+                        nullable: false,
+                        default_value: Some("CURRENT_TIMESTAMP".to_string()),
+                    },
+                ],
+                primary_keys: vec!["id".to_string()],
+                foreign_keys: vec![],
+            },
+            TableSchema {
+                name: "sectors".to_string(),
+                columns: vec![
+                    ColumnDefinition {
+                        name: "id".to_string(),
+                        data_type: "SERIAL PRIMARY KEY".to_string(),
+                        nullable: false,
+                        default_value: Some("nextval('sectors_id_seq')".to_string()),
+                    },
+                    ColumnDefinition {
+                        name: "name".to_string(),
+                        data_type: "VARCHAR(50)".to_string(),
+                        nullable: false,
+                        default_value: None,
+                    },
+                    ColumnDefinition {
+                        name: "description".to_string(),
+                        data_type: "TEXT".to_string(),
+                        nullable: true,
+                        default_value: None,
+                    },
+                ],
+                primary_keys: vec!["id".to_string()],
+                foreign_keys: vec![],
+            },
+        ];
 
-    println!("  Database schema analysis:");
-    for table in &database_schema {
-        println!("    • Table: {}", table.name);
-        println!("      - Columns: {}", table.columns.len());
-        println!("      - Primary keys: {:?}", table.primary_keys);
-        
-        for column in &table.columns {
-            let nullable_str = if column.nullable { "NULL" } else { "NOT NULL" };
-            let default_str = column.default_value.as_ref()
-                .map(|d| format!(" DEFAULT {}", d))
-                .unwrap_or_default();
-            
-            println!("        - {} {} {}{}", 
-                     column.name, column.data_type, nullable_str, default_str);
+        println!("  Database schema analysis:");
+        for table in &database_schema {
+            println!("    • Table: {}", table.name);
+            println!("      - Columns: {}", table.columns.len());
+            println!("      - Primary keys: {:?}", table.primary_keys);
+
+            for column in &table.columns {
+                let nullable_str = if column.nullable { "NULL" } else { "NOT NULL" };
+                let default_str = column
+                    .default_value
+                    .as_ref()
+                    .map(|d| format!(" DEFAULT {}", d))
+                    .unwrap_or_default();
+
+                println!(
+                    "        - {} {} {}{}",
+                    column.name, column.data_type, nullable_str, default_str
+                );
+            }
+            println!();
         }
-        println!();
-    }
 
-    // Index analysis
-    println!("  Index analysis:");
-    let indexes = vec![
-        ("financial_data_pkey", "financial_data", "PRIMARY KEY (id)", "BTREE"),
-        ("idx_symbol", "financial_data", "symbol", "BTREE"),
-        ("idx_price_volume", "financial_data", "price, volume", "BTREE"),
-        ("idx_updated_at", "financial_data", "updated_at", "BTREE"),
-        ("sectors_pkey", "sectors", "PRIMARY KEY (id)", "BTREE"),
-        ("idx_sector_name", "sectors", "name", "BTREE"),
-    ];
+        // Index analysis
+        println!("  Index analysis:");
+        let indexes = vec![
+            (
+                "financial_data_pkey",
+                "financial_data",
+                "PRIMARY KEY (id)",
+                "BTREE",
+            ),
+            ("idx_symbol", "financial_data", "symbol", "BTREE"),
+            (
+                "idx_price_volume",
+                "financial_data",
+                "price, volume",
+                "BTREE",
+            ),
+            ("idx_updated_at", "financial_data", "updated_at", "BTREE"),
+            ("sectors_pkey", "sectors", "PRIMARY KEY (id)", "BTREE"),
+            ("idx_sector_name", "sectors", "name", "BTREE"),
+        ];
 
-    for (index_name, table_name, columns, index_type) in indexes {
-        println!("    • {}: {} ON {} ({})", index_name, index_type, table_name, columns);
-    }
-
-    // Constraint analysis
-    println!("  Constraint analysis:");
-    let constraints = vec![
-        ("financial_data", "CHECK", "price >= 0", "Ensure non-negative prices"),
-        ("financial_data", "CHECK", "volume >= 0", "Ensure non-negative volume"),
-        ("financial_data", "UNIQUE", "symbol, updated_at", "Prevent duplicate entries"),
-        ("sectors", "UNIQUE", "name", "Unique sector names"),
-    ];
-
-    for (table, constraint_type, definition, description) in constraints {
-        println!("    • {} ({}): {} - {}", table, constraint_type, definition, description);
-    }
-
-    // Database statistics
-    println!("  Database statistics:");
-    let db_stats = vec![
-        ("Total tables", 15),
-        ("Total indexes", 28),
-        ("Total constraints", 12),
-        ("Foreign key relationships", 8),
-        ("Views", 5),
-        ("Stored procedures", 3),
-        ("Database size", 250), // MB
-        ("Largest table", 45),  // MB
-    ];
-
-    for (metric, value) in db_stats {
-        if metric.contains("size") || metric == "Largest table" {
-            println!("    • {}: {} MB", metric, value);
-        } else {
-            println!("    • {}: {}", metric, value);
+        for (index_name, table_name, columns, index_type) in indexes {
+            println!(
+                "    • {}: {} ON {} ({})",
+                index_name, index_type, table_name, columns
+            );
         }
-    }
+
+        // Constraint analysis
+        println!("  Constraint analysis:");
+        let constraints = vec![
+            (
+                "financial_data",
+                "CHECK",
+                "price >= 0",
+                "Ensure non-negative prices",
+            ),
+            (
+                "financial_data",
+                "CHECK",
+                "volume >= 0",
+                "Ensure non-negative volume",
+            ),
+            (
+                "financial_data",
+                "UNIQUE",
+                "symbol, updated_at",
+                "Prevent duplicate entries",
+            ),
+            ("sectors", "UNIQUE", "name", "Unique sector names"),
+        ];
+
+        for (table, constraint_type, definition, description) in constraints {
+            println!(
+                "    • {} ({}): {} - {}",
+                table, constraint_type, definition, description
+            );
+        }
+
+        // Database statistics
+        println!("  Database statistics:");
+        let db_stats = vec![
+            ("Total tables", 15),
+            ("Total indexes", 28),
+            ("Total constraints", 12),
+            ("Foreign key relationships", 8),
+            ("Views", 5),
+            ("Stored procedures", 3),
+            ("Database size", 250), // MB
+            ("Largest table", 45),  // MB
+        ];
+
+        for (metric, value) in db_stats {
+            if metric.contains("size") || metric == "Largest table" {
+                println!("    • {}: {} MB", metric, value);
+            } else {
+                println!("    • {}: {}", metric, value);
+            }
+        }
     } // Close the #[cfg(feature = "sql")] block
 
     #[cfg(not(feature = "sql"))]
     {
         println!("SQL features require 'sql' feature flag to be enabled.");
-        println!("Compile with: cargo run --example database_integration_example --features \"sql\"");
+        println!(
+            "Compile with: cargo run --example database_integration_example --features \"sql\""
+        );
     }
 
     Ok(())
@@ -466,14 +546,17 @@ fn bulk_insert_example(df: &DataFrame) -> Result<()> {
     for (strategy, batch_size, description) in &insert_strategies {
         let num_batches = (total_rows + batch_size - 1) / batch_size;
         let estimated_time = match *strategy {
-            "Single INSERT" => total_rows * 2,      // 2ms per row
-            "Batch INSERT" => num_batches * 50,     // 50ms per batch
-            "Bulk INSERT" => num_batches * 200,     // 200ms per batch
-            "COPY command" => num_batches * 100,    // 100ms per batch
+            "Single INSERT" => total_rows * 2,   // 2ms per row
+            "Batch INSERT" => num_batches * 50,  // 50ms per batch
+            "Bulk INSERT" => num_batches * 200,  // 200ms per batch
+            "COPY command" => num_batches * 100, // 100ms per batch
             _ => 1000,
         };
 
-        println!("    • {}: {} batches, ~{}ms total", strategy, num_batches, estimated_time);
+        println!(
+            "    • {}: {} batches, ~{}ms total",
+            strategy, num_batches, estimated_time
+        );
         println!("      Description: {}", description);
     }
 
@@ -487,7 +570,10 @@ fn bulk_insert_example(df: &DataFrame) -> Result<()> {
     };
 
     println!("  Optimal bulk insert configuration:");
-    println!("    • Chunk size: {} rows", write_options.chunksize.unwrap());
+    println!(
+        "    • Chunk size: {} rows",
+        write_options.chunksize.unwrap()
+    );
     println!("    • Insert method: {:?}", write_options.method);
     println!("    • Write mode: {:?}", write_options.if_exists);
     println!("    • Include index: {}", write_options.index);
@@ -506,8 +592,15 @@ fn bulk_insert_example(df: &DataFrame) -> Result<()> {
         let end_row = (start_row + chunk_size).min(total_rows);
         let chunk_time = 180 + (i * 10); // Simulate increasing time
 
-        println!("    4.{} Inserting chunk {}/{}: rows {}-{} ({}ms)", 
-                 i + 1, i + 1, num_chunks, start_row, end_row, chunk_time);
+        println!(
+            "    4.{} Inserting chunk {}/{}: rows {}-{} ({}ms)",
+            i + 1,
+            i + 1,
+            num_chunks,
+            start_row,
+            end_row,
+            chunk_time
+        );
     }
 
     if num_chunks > 3 {
@@ -526,7 +619,10 @@ fn bulk_insert_example(df: &DataFrame) -> Result<()> {
     println!("  Performance metrics:");
     println!("    • Total time: {}ms", total_time);
     println!("    • Throughput: {} rows/second", rows_per_second);
-    println!("    • Memory usage: Peak {} MB", chunk_size * 8 / 1024 / 1024);
+    println!(
+        "    • Memory usage: Peak {} MB",
+        chunk_size * 8 / 1024 / 1024
+    );
     println!("    • Success rate: 100%");
 
     // Error handling and recovery
@@ -548,98 +644,142 @@ fn multi_database_example(_financial_data: &DataFrame, _user_data: &DataFrame) -
     {
         // Database configurations
         let databases = vec![
-            ("PostgreSQL Production", DatabaseConnection::PostgreSQL("postgresql://user:pass@prod.example.com/financial".to_string())),
-        ("MySQL Analytics", DatabaseConnection::MySQL("mysql://user:pass@analytics.example.com/reports".to_string())),
-        ("SQLite Local Cache", DatabaseConnection::Sqlite("cache.db".to_string())),
-    ];
+            (
+                "PostgreSQL Production",
+                DatabaseConnection::PostgreSQL(
+                    "postgresql://user:pass@prod.example.com/financial".to_string(),
+                ),
+            ),
+            (
+                "MySQL Analytics",
+                DatabaseConnection::MySQL(
+                    "mysql://user:pass@analytics.example.com/reports".to_string(),
+                ),
+            ),
+            (
+                "SQLite Local Cache",
+                DatabaseConnection::Sqlite("cache.db".to_string()),
+            ),
+        ];
 
-    println!("  Connected databases:");
-    for (i, (name, connection)) in databases.iter().enumerate() {
-        match connection {
-            DatabaseConnection::Sqlite(path) => {
-                println!("    {}. {}: SQLite at {}", i + 1, name, path);
-            },
-            #[cfg(feature = "sql")]
-            DatabaseConnection::PostgreSQL(_) => {
-                println!("    {}. {}: PostgreSQL (production)", i + 1, name);
-            },
-            #[cfg(feature = "sql")]
-            DatabaseConnection::MySQL(_) => {
-                println!("    {}. {}: MySQL (analytics)", i + 1, name);
-            },
-            #[cfg(feature = "sql")]
-            DatabaseConnection::Generic(_) => {
-                println!("    {}. {}: Generic database", i + 1, name);
-            },
+        println!("  Connected databases:");
+        for (i, (name, connection)) in databases.iter().enumerate() {
+            match connection {
+                DatabaseConnection::Sqlite(path) => {
+                    println!("    {}. {}: SQLite at {}", i + 1, name, path);
+                }
+                #[cfg(feature = "sql")]
+                DatabaseConnection::PostgreSQL(_) => {
+                    println!("    {}. {}: PostgreSQL (production)", i + 1, name);
+                }
+                #[cfg(feature = "sql")]
+                DatabaseConnection::MySQL(_) => {
+                    println!("    {}. {}: MySQL (analytics)", i + 1, name);
+                }
+                #[cfg(feature = "sql")]
+                DatabaseConnection::Generic(_) => {
+                    println!("    {}. {}: Generic database", i + 1, name);
+                }
+            }
         }
-    }
 
-    // Cross-database operations
-    println!("  Cross-database operations:");
-    let cross_db_operations = vec![
-        ("Data synchronization", "PostgreSQL → MySQL", "Sync financial data to analytics DB"),
-        ("Local caching", "PostgreSQL → SQLite", "Cache frequently accessed data locally"),
-        ("Aggregation pipeline", "MySQL → PostgreSQL", "Move aggregated reports to production"),
-        ("Backup and restore", "PostgreSQL → SQLite", "Create local backup copies"),
-        ("Data migration", "SQLite → PostgreSQL", "Import historical data"),
-    ];
+        // Cross-database operations
+        println!("  Cross-database operations:");
+        let cross_db_operations = vec![
+            (
+                "Data synchronization",
+                "PostgreSQL → MySQL",
+                "Sync financial data to analytics DB",
+            ),
+            (
+                "Local caching",
+                "PostgreSQL → SQLite",
+                "Cache frequently accessed data locally",
+            ),
+            (
+                "Aggregation pipeline",
+                "MySQL → PostgreSQL",
+                "Move aggregated reports to production",
+            ),
+            (
+                "Backup and restore",
+                "PostgreSQL → SQLite",
+                "Create local backup copies",
+            ),
+            (
+                "Data migration",
+                "SQLite → PostgreSQL",
+                "Import historical data",
+            ),
+        ];
 
-    for (operation, direction, description) in cross_db_operations {
-        println!("    • {}: {} - {}", operation, direction, description);
-    }
-
-    // Database-specific optimizations
-    println!("  Database-specific optimizations:");
-    let optimizations = vec![
-        ("PostgreSQL", vec![
-            "VACUUM ANALYZE for statistics",
-            "Parallel query execution",
-            "Partial indexes for performance",
-            "Connection pooling with pgbouncer",
-        ]),
-        ("MySQL", vec![
-            "InnoDB buffer pool tuning",
-            "Query cache optimization",
-            "Partitioning for large tables",
-            "Read/write splitting",
-        ]),
-        ("SQLite", vec![
-            "WAL mode for concurrency",
-            "PRAGMA optimizations",
-            "Memory-mapped I/O",
-            "Prepared statement caching",
-        ]),
-    ];
-
-    for (db_type, opts) in optimizations {
-        println!("    • {} optimizations:", db_type);
-        for opt in opts {
-            println!("      - {}", opt);
+        for (operation, direction, description) in cross_db_operations {
+            println!("    • {}: {} - {}", operation, direction, description);
         }
-    }
 
-    // Multi-database query coordination
-    println!("  Multi-database query coordination:");
-    println!("    1. Query planning across databases");
-    println!("    2. Data locality optimization");
-    println!("    3. Cross-database JOIN operations");
-    println!("    4. Transaction coordination (2PC)");
-    println!("    5. Result set consolidation");
-    println!("    6. Distributed query caching");
+        // Database-specific optimizations
+        println!("  Database-specific optimizations:");
+        let optimizations = vec![
+            (
+                "PostgreSQL",
+                vec![
+                    "VACUUM ANALYZE for statistics",
+                    "Parallel query execution",
+                    "Partial indexes for performance",
+                    "Connection pooling with pgbouncer",
+                ],
+            ),
+            (
+                "MySQL",
+                vec![
+                    "InnoDB buffer pool tuning",
+                    "Query cache optimization",
+                    "Partitioning for large tables",
+                    "Read/write splitting",
+                ],
+            ),
+            (
+                "SQLite",
+                vec![
+                    "WAL mode for concurrency",
+                    "PRAGMA optimizations",
+                    "Memory-mapped I/O",
+                    "Prepared statement caching",
+                ],
+            ),
+        ];
 
-    // Federation example
-    println!("  Database federation example:");
-    println!("    • Financial data: PostgreSQL (source of truth)");
-    println!("    • User profiles: MySQL (CRM system)");
-    println!("    • Local cache: SQLite (performance layer)");
-    println!("    • Federated query: JOIN across all three databases");
-    println!("    • Result: Unified view of user financial portfolios");
+        for (db_type, opts) in optimizations {
+            println!("    • {} optimizations:", db_type);
+            for opt in opts {
+                println!("      - {}", opt);
+            }
+        }
+
+        // Multi-database query coordination
+        println!("  Multi-database query coordination:");
+        println!("    1. Query planning across databases");
+        println!("    2. Data locality optimization");
+        println!("    3. Cross-database JOIN operations");
+        println!("    4. Transaction coordination (2PC)");
+        println!("    5. Result set consolidation");
+        println!("    6. Distributed query caching");
+
+        // Federation example
+        println!("  Database federation example:");
+        println!("    • Financial data: PostgreSQL (source of truth)");
+        println!("    • User profiles: MySQL (CRM system)");
+        println!("    • Local cache: SQLite (performance layer)");
+        println!("    • Federated query: JOIN across all three databases");
+        println!("    • Result: Unified view of user financial portfolios");
     }
 
     #[cfg(not(feature = "sql"))]
     {
         println!("SQL features require 'sql' feature flag to be enabled.");
-        println!("Compile with: cargo run --example database_integration_example --features \"sql\"");
+        println!(
+            "Compile with: cargo run --example database_integration_example --features \"sql\""
+        );
     }
 
     Ok(())
@@ -674,7 +814,10 @@ fn advanced_query_example(_df: &DataFrame) -> Result<()> {
         )
         SELECT * FROM sector_hierarchy ORDER BY level, name
     "#;
-    println!("    • Hierarchical data: {}", recursive_query.trim().replace('\n', " "));
+    println!(
+        "    • Hierarchical data: {}",
+        recursive_query.trim().replace('\n', " ")
+    );
 
     // Performance optimization techniques
     println!("  Query performance optimization:");
@@ -745,11 +888,20 @@ fn performance_monitoring_example() -> Result<()> {
         match metric {
             "Cache efficiency" => {
                 if let (min, max) = value {
-                    println!("    • {}: {} ({})", metric, timing, format!("range {}%-{}%", min, max));
+                    println!(
+                        "    • {}: {} ({})",
+                        metric,
+                        timing,
+                        format!("range {}%-{}%", min, max)
+                    );
                 }
-            },
+            }
             _ => {
-                let unit = if metric.contains("time") || metric.contains("wait") { "ms" } else { "" };
+                let unit = if metric.contains("time") || metric.contains("wait") {
+                    "ms"
+                } else {
+                    ""
+                };
                 println!("    • {}: {}{} ({})", metric, value, unit, timing);
             }
         }
@@ -758,27 +910,76 @@ fn performance_monitoring_example() -> Result<()> {
     // Performance alerts and thresholds
     println!("  Performance alerts and thresholds:");
     let alerts = vec![
-        ("High CPU usage", "> 80%", "Warning", "Scale up recommendation"),
-        ("Slow queries", "> 5 seconds", "Critical", "Query optimization needed"),
-        ("Connection limit", "> 90%", "Warning", "Pool size increase needed"),
-        ("Deadlock rate", "> 1%", "Critical", "Transaction review required"),
-        ("Disk space", "< 10% free", "Critical", "Cleanup or expansion needed"),
-        ("Cache hit ratio", "< 85%", "Warning", "Memory tuning recommended"),
+        (
+            "High CPU usage",
+            "> 80%",
+            "Warning",
+            "Scale up recommendation",
+        ),
+        (
+            "Slow queries",
+            "> 5 seconds",
+            "Critical",
+            "Query optimization needed",
+        ),
+        (
+            "Connection limit",
+            "> 90%",
+            "Warning",
+            "Pool size increase needed",
+        ),
+        (
+            "Deadlock rate",
+            "> 1%",
+            "Critical",
+            "Transaction review required",
+        ),
+        (
+            "Disk space",
+            "< 10% free",
+            "Critical",
+            "Cleanup or expansion needed",
+        ),
+        (
+            "Cache hit ratio",
+            "< 85%",
+            "Warning",
+            "Memory tuning recommended",
+        ),
     ];
 
     for (alert_type, threshold, severity, action) in alerts {
-        println!("    • {} ({}): {} → {}", alert_type, threshold, severity, action);
+        println!(
+            "    • {} ({}): {} → {}",
+            alert_type, threshold, severity, action
+        );
     }
 
     // Automated optimization recommendations
     println!("  Automated optimization recommendations:");
     let recommendations = vec![
-        ("Create index on financial_data.symbol", "High", "Improve WHERE clause performance"),
-        ("Increase connection pool size", "Medium", "Reduce connection wait times"),
-        ("Partition large tables by date", "High", "Improve query performance"),
+        (
+            "Create index on financial_data.symbol",
+            "High",
+            "Improve WHERE clause performance",
+        ),
+        (
+            "Increase connection pool size",
+            "Medium",
+            "Reduce connection wait times",
+        ),
+        (
+            "Partition large tables by date",
+            "High",
+            "Improve query performance",
+        ),
         ("Update table statistics", "Low", "Better query plans"),
         ("Consider read replicas", "Medium", "Distribute read load"),
-        ("Optimize slow query #1247", "High", "Rewrite complex subquery"),
+        (
+            "Optimize slow query #1247",
+            "High",
+            "Rewrite complex subquery",
+        ),
     ];
 
     for (recommendation, priority, benefit) in recommendations {
@@ -794,11 +995,23 @@ fn performance_monitoring_example() -> Result<()> {
         ("Backup status", 9.5),
     ];
 
-    let overall_health = health_components.iter().map(|(_, score)| score).sum::<f64>() / health_components.len() as f64;
+    let overall_health = health_components
+        .iter()
+        .map(|(_, score)| score)
+        .sum::<f64>()
+        / health_components.len() as f64;
 
     println!("  Database health score:");
     for (component, score) in health_components {
-        let status = if score >= 9.0 { "Excellent" } else if score >= 8.0 { "Good" } else if score >= 7.0 { "Fair" } else { "Poor" };
+        let status = if score >= 9.0 {
+            "Excellent"
+        } else if score >= 8.0 {
+            "Good"
+        } else if score >= 7.0 {
+            "Fair"
+        } else {
+            "Poor"
+        };
         println!("    • {}: {:.1}/10 ({})", component, score, status);
     }
     println!("    • Overall health: {:.1}/10", overall_health);
@@ -813,31 +1026,58 @@ fn performance_monitoring_example() -> Result<()> {
 #[allow(clippy::result_large_err)]
 fn create_financial_dataset() -> Result<DataFrame> {
     let mut df = DataFrame::new();
-    
-    let symbols = vec!["AAPL", "GOOGL", "MSFT", "AMZN", "TSLA", "META", "NVDA", "JPM"];
-    let prices = vec![150.25, 2800.50, 300.75, 3200.00, 800.25, 350.80, 450.60, 140.90];
-    let volumes = vec![1500000, 800000, 1200000, 900000, 2000000, 1100000, 1300000, 950000];
-    let sectors = vec!["Technology", "Technology", "Technology", "E-commerce", "Automotive", "Technology", "Technology", "Finance"];
 
-    df.add_column("symbol".to_string(), Series::new(
-        symbols.into_iter().map(|s| s.to_string()).collect(),
-        Some("symbol".to_string())
-    )?)?;
+    let symbols = vec![
+        "AAPL", "GOOGL", "MSFT", "AMZN", "TSLA", "META", "NVDA", "JPM",
+    ];
+    let prices = vec![
+        150.25, 2800.50, 300.75, 3200.00, 800.25, 350.80, 450.60, 140.90,
+    ];
+    let volumes = vec![
+        1500000, 800000, 1200000, 900000, 2000000, 1100000, 1300000, 950000,
+    ];
+    let sectors = vec![
+        "Technology",
+        "Technology",
+        "Technology",
+        "E-commerce",
+        "Automotive",
+        "Technology",
+        "Technology",
+        "Finance",
+    ];
 
-    df.add_column("price".to_string(), Series::new(
-        prices.into_iter().map(|p| p.to_string()).collect(),
-        Some("price".to_string())
-    )?)?;
+    df.add_column(
+        "symbol".to_string(),
+        Series::new(
+            symbols.into_iter().map(|s| s.to_string()).collect(),
+            Some("symbol".to_string()),
+        )?,
+    )?;
 
-    df.add_column("volume".to_string(), Series::new(
-        volumes.into_iter().map(|v| v.to_string()).collect(),
-        Some("volume".to_string())
-    )?)?;
+    df.add_column(
+        "price".to_string(),
+        Series::new(
+            prices.into_iter().map(|p| p.to_string()).collect(),
+            Some("price".to_string()),
+        )?,
+    )?;
 
-    df.add_column("sector".to_string(), Series::new(
-        sectors.into_iter().map(|s| s.to_string()).collect(),
-        Some("sector".to_string())
-    )?)?;
+    df.add_column(
+        "volume".to_string(),
+        Series::new(
+            volumes.into_iter().map(|v| v.to_string()).collect(),
+            Some("volume".to_string()),
+        )?,
+    )?;
+
+    df.add_column(
+        "sector".to_string(),
+        Series::new(
+            sectors.into_iter().map(|s| s.to_string()).collect(),
+            Some("sector".to_string()),
+        )?,
+    )?;
 
     Ok(df)
 }
@@ -845,31 +1085,49 @@ fn create_financial_dataset() -> Result<DataFrame> {
 #[allow(clippy::result_large_err)]
 fn create_user_dataset() -> Result<DataFrame> {
     let mut df = DataFrame::new();
-    
+
     let user_ids = vec![1001, 1002, 1003, 1004, 1005];
     let usernames = vec!["alice", "bob", "charlie", "diana", "eve"];
-    let emails = vec!["alice@example.com", "bob@example.com", "charlie@example.com", "diana@example.com", "eve@example.com"];
+    let emails = vec![
+        "alice@example.com",
+        "bob@example.com",
+        "charlie@example.com",
+        "diana@example.com",
+        "eve@example.com",
+    ];
     let account_types = vec!["Premium", "Basic", "Premium", "Enterprise", "Basic"];
 
-    df.add_column("user_id".to_string(), Series::new(
-        user_ids.into_iter().map(|id| id.to_string()).collect(),
-        Some("user_id".to_string())
-    )?)?;
+    df.add_column(
+        "user_id".to_string(),
+        Series::new(
+            user_ids.into_iter().map(|id| id.to_string()).collect(),
+            Some("user_id".to_string()),
+        )?,
+    )?;
 
-    df.add_column("username".to_string(), Series::new(
-        usernames.into_iter().map(|s| s.to_string()).collect(),
-        Some("username".to_string())
-    )?)?;
+    df.add_column(
+        "username".to_string(),
+        Series::new(
+            usernames.into_iter().map(|s| s.to_string()).collect(),
+            Some("username".to_string()),
+        )?,
+    )?;
 
-    df.add_column("email".to_string(), Series::new(
-        emails.into_iter().map(|s| s.to_string()).collect(),
-        Some("email".to_string())
-    )?)?;
+    df.add_column(
+        "email".to_string(),
+        Series::new(
+            emails.into_iter().map(|s| s.to_string()).collect(),
+            Some("email".to_string()),
+        )?,
+    )?;
 
-    df.add_column("account_type".to_string(), Series::new(
-        account_types.into_iter().map(|s| s.to_string()).collect(),
-        Some("account_type".to_string())
-    )?)?;
+    df.add_column(
+        "account_type".to_string(),
+        Series::new(
+            account_types.into_iter().map(|s| s.to_string()).collect(),
+            Some("account_type".to_string()),
+        )?,
+    )?;
 
     Ok(df)
 }
@@ -877,25 +1135,37 @@ fn create_user_dataset() -> Result<DataFrame> {
 #[allow(clippy::result_large_err)]
 fn create_large_transaction_dataset(size: usize) -> Result<DataFrame> {
     let mut df = DataFrame::new();
-    
+
     let mut transaction_ids = Vec::with_capacity(size);
     let mut user_ids = Vec::with_capacity(size);
     let mut amounts = Vec::with_capacity(size);
     let mut types = Vec::with_capacity(size);
-    
+
     let transaction_types = ["Buy", "Sell", "Dividend", "Transfer"];
-    
+
     for i in 0..size {
         transaction_ids.push(format!("TXN_{:08}", i + 1));
         user_ids.push((1000 + (i % 100)).to_string());
         amounts.push((10.0 + (i as f64 * 0.50) % 10000.0).to_string());
         types.push(transaction_types[i % transaction_types.len()].to_string());
     }
-    
-    df.add_column("transaction_id".to_string(), Series::new(transaction_ids, Some("transaction_id".to_string()))?)?;
-    df.add_column("user_id".to_string(), Series::new(user_ids, Some("user_id".to_string()))?)?;
-    df.add_column("amount".to_string(), Series::new(amounts, Some("amount".to_string()))?)?;
-    df.add_column("type".to_string(), Series::new(types, Some("type".to_string()))?)?;
-    
+
+    df.add_column(
+        "transaction_id".to_string(),
+        Series::new(transaction_ids, Some("transaction_id".to_string()))?,
+    )?;
+    df.add_column(
+        "user_id".to_string(),
+        Series::new(user_ids, Some("user_id".to_string()))?,
+    )?;
+    df.add_column(
+        "amount".to_string(),
+        Series::new(amounts, Some("amount".to_string()))?,
+    )?;
+    df.add_column(
+        "type".to_string(),
+        Series::new(types, Some("type".to_string()))?,
+    )?;
+
     Ok(df)
 }

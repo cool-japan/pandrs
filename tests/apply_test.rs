@@ -4,7 +4,6 @@ use pandrs::DataFrame;
 use std::collections::HashMap;
 
 #[test]
-#[ignore = "ApplyExt implementations are simplified stubs - functionality not implemented"]
 fn test_dataframe_apply() {
     // Create DataFrame for testing
     let mut df = DataFrame::new();
@@ -36,7 +35,6 @@ fn test_dataframe_apply() {
 }
 
 #[test]
-#[ignore = "ApplyExt implementations are simplified stubs - functionality not implemented"]
 fn test_dataframe_applymap() {
     // Create DataFrame for testing
     let mut df = DataFrame::new();
@@ -52,7 +50,9 @@ fn test_dataframe_applymap() {
     df.add_column("col2".to_string(), series2).unwrap();
 
     // Use applymap function to convert each element to an integer and double it
-    let result = df.applymap(|x| (x.parse::<i32>().unwrap_or(0) * 2).to_string()).unwrap();
+    let result = df
+        .applymap(|x| (x.parse::<i32>().unwrap_or(0) * 2).to_string())
+        .unwrap();
 
     // Verify results
     assert_eq!(result.column_names(), df.column_names());
@@ -69,7 +69,6 @@ fn test_dataframe_applymap() {
 }
 
 #[test]
-#[ignore = "ApplyExt implementations are simplified stubs - functionality not implemented"]
 fn test_dataframe_mask() {
     // Create DataFrame for testing
     let mut df = DataFrame::new();
@@ -97,7 +96,6 @@ fn test_dataframe_mask() {
 }
 
 #[test]
-#[ignore = "ApplyExt implementations are simplified stubs - functionality not implemented"]
 fn test_dataframe_where_func() {
     // Create DataFrame for testing
     let mut df = DataFrame::new();
@@ -125,7 +123,6 @@ fn test_dataframe_where_func() {
 }
 
 #[test]
-#[ignore = "ApplyExt implementations are simplified stubs - functionality not implemented"]
 fn test_dataframe_replace() {
     // Create DataFrame for testing
     let mut df = DataFrame::new();
@@ -156,7 +153,6 @@ fn test_dataframe_replace() {
 }
 
 #[test]
-#[ignore = "ApplyExt implementations are simplified stubs - functionality not implemented"]
 fn test_dataframe_duplicated() {
     // Create DataFrame for testing (with duplicate rows)
     let mut df = DataFrame::new();
@@ -199,7 +195,6 @@ fn test_dataframe_duplicated() {
 }
 
 #[test]
-#[ignore = "ApplyExt implementations are simplified stubs - functionality not implemented"]
 fn test_dataframe_drop_duplicates() {
     // Create DataFrame for testing (with duplicate rows)
     let mut df = DataFrame::new();
@@ -240,7 +235,6 @@ fn test_dataframe_drop_duplicates() {
 }
 
 #[test]
-#[ignore = "ApplyExt implementations are simplified stubs - functionality not implemented"]
 fn test_duplicated_with_subset() {
     // Create DataFrame for testing
     let mut df = DataFrame::new();

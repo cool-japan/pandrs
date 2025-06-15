@@ -400,12 +400,12 @@ impl DistributedDataFrame {
         self.lazy = lazy;
         self
     }
-    
+
     /// Check if this DataFrame is using lazy evaluation
     pub fn is_lazy(&self) -> bool {
         self.lazy
     }
-    
+
     /// Clone this DataFrame without data (empty)
     pub fn clone_empty(&self) -> Self {
         Self {
@@ -418,14 +418,18 @@ impl DistributedDataFrame {
             pending_operations: Vec::new(),
         }
     }
-    
+
     /// Add a pending operation to this DataFrame
     pub fn add_pending_operation(&mut self, operation: ExecutionPlan, _inputs: Vec<String>) {
         self.pending_operations.push(operation);
     }
-    
+
     /// Execute an operation immediately
-    pub fn execute_operation(&self, _operation: ExecutionPlan, _inputs: Vec<String>) -> Result<Self> {
+    pub fn execute_operation(
+        &self,
+        _operation: ExecutionPlan,
+        _inputs: Vec<String>,
+    ) -> Result<Self> {
         // TODO: Implement operation execution
         Ok(self.clone())
     }

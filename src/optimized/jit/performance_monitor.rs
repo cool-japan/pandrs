@@ -76,37 +76,40 @@ impl FunctionPerformanceMetrics {
     ) {
         self.execution_count += 1;
         self.total_execution_time_ns += execution_time_ns;
-        self.avg_execution_time_ns = self.total_execution_time_ns as f64 / self.execution_count as f64;
-        
+        self.avg_execution_time_ns =
+            self.total_execution_time_ns as f64 / self.execution_count as f64;
+
         self.min_execution_time_ns = self.min_execution_time_ns.min(execution_time_ns);
         self.max_execution_time_ns = self.max_execution_time_ns.max(execution_time_ns);
-        
+
         // Update recent execution times (sliding window)
         self.recent_execution_times.push_back(execution_time_ns);
         if self.recent_execution_times.len() > 100 {
             self.recent_execution_times.pop_front();
         }
-        
+
         // Update averages
-        self.avg_memory_usage_bytes = 
-            ((self.avg_memory_usage_bytes as u64 * (self.execution_count - 1)) / self.execution_count +
-             memory_usage_bytes as u64 / self.execution_count) as usize;
-        
-        self.avg_cpu_utilization = 
-            (self.avg_cpu_utilization * (self.execution_count - 1) as f64 + cpu_utilization) / self.execution_count as f64;
-        
+        self.avg_memory_usage_bytes =
+            ((self.avg_memory_usage_bytes as u64 * (self.execution_count - 1))
+                / self.execution_count
+                + memory_usage_bytes as u64 / self.execution_count) as usize;
+
+        self.avg_cpu_utilization = (self.avg_cpu_utilization * (self.execution_count - 1) as f64
+            + cpu_utilization)
+            / self.execution_count as f64;
+
         // Calculate standard deviation
         self.calculate_std_dev();
-        
+
         // Update throughput
         self.throughput_ops_per_sec = 1_000_000_000.0 / self.avg_execution_time_ns;
-        
+
         // Analyze performance trend
         self.update_performance_trend();
-        
+
         // Generate optimization suggestions
         self.update_optimization_suggestions();
-        
+
         self.last_updated = Instant::now();
     }
 
@@ -115,16 +118,19 @@ impl FunctionPerformanceMetrics {
         if self.recent_execution_times.len() < 2 {
             return;
         }
-        
-        let mean = self.recent_execution_times.iter().sum::<u64>() as f64 / self.recent_execution_times.len() as f64;
-        let variance = self.recent_execution_times
+
+        let mean = self.recent_execution_times.iter().sum::<u64>() as f64
+            / self.recent_execution_times.len() as f64;
+        let variance = self
+            .recent_execution_times
             .iter()
             .map(|&x| {
                 let diff = x as f64 - mean;
                 diff * diff
             })
-            .sum::<f64>() / (self.recent_execution_times.len() - 1) as f64;
-        
+            .sum::<f64>()
+            / (self.recent_execution_times.len() - 1) as f64;
+
         self.std_dev_execution_time_ns = variance.sqrt();
     }
 
@@ -133,24 +139,28 @@ impl FunctionPerformanceMetrics {
         if self.recent_execution_times.len() < 10 {
             return;
         }
-        
+
         let recent_count = self.recent_execution_times.len();
         let split_point = recent_count / 2;
-        
-        let first_half: f64 = self.recent_execution_times
+
+        let first_half: f64 = self
+            .recent_execution_times
             .iter()
             .take(split_point)
             .map(|&x| x as f64)
-            .sum::<f64>() / split_point as f64;
-        
-        let second_half: f64 = self.recent_execution_times
+            .sum::<f64>()
+            / split_point as f64;
+
+        let second_half: f64 = self
+            .recent_execution_times
             .iter()
             .skip(split_point)
             .map(|&x| x as f64)
-            .sum::<f64>() / (recent_count - split_point) as f64;
-        
+            .sum::<f64>()
+            / (recent_count - split_point) as f64;
+
         let improvement_ratio = first_half / second_half;
-        
+
         self.performance_trend = if improvement_ratio > 1.1 {
             PerformanceTrend::Improving
         } else if improvement_ratio < 0.9 {
@@ -163,7 +173,7 @@ impl FunctionPerformanceMetrics {
     /// Update optimization suggestions based on current metrics
     fn update_optimization_suggestions(&mut self) {
         self.optimization_suggestions.clear();
-        
+
         // High variance suggests inconsistent performance
         if self.std_dev_execution_time_ns > self.avg_execution_time_ns * 0.2 {
             self.optimization_suggestions.push(OptimizationSuggestion {
@@ -173,7 +183,7 @@ impl FunctionPerformanceMetrics {
                 estimated_improvement: 0.15,
             });
         }
-        
+
         // High memory usage suggests need for optimization
         if self.avg_memory_usage_bytes > 1024 * 1024 {
             self.optimization_suggestions.push(OptimizationSuggestion {
@@ -183,27 +193,32 @@ impl FunctionPerformanceMetrics {
                 estimated_improvement: 0.25,
             });
         }
-        
+
         // Low CPU utilization suggests underutilization
         if self.avg_cpu_utilization < 0.5 && self.execution_count > 50 {
             self.optimization_suggestions.push(OptimizationSuggestion {
                 suggestion_type: OptimizationType::IncreaseCpuUtilization,
-                description: "Low CPU utilization detected. Consider vectorization or parallelization.".to_string(),
+                description:
+                    "Low CPU utilization detected. Consider vectorization or parallelization."
+                        .to_string(),
                 priority: OptimizationPriority::Medium,
                 estimated_improvement: 0.30,
             });
         }
-        
+
         // Slow execution suggests need for algorithmic optimization
-        if self.avg_execution_time_ns > 10_000_000.0 { // 10ms
+        if self.avg_execution_time_ns > 10_000_000.0 {
+            // 10ms
             self.optimization_suggestions.push(OptimizationSuggestion {
                 suggestion_type: OptimizationType::AlgorithmicOptimization,
-                description: "Slow execution detected. Consider algorithmic improvements or caching.".to_string(),
+                description:
+                    "Slow execution detected. Consider algorithmic improvements or caching."
+                        .to_string(),
                 priority: OptimizationPriority::High,
                 estimated_improvement: 0.40,
             });
         }
-        
+
         // Performance degradation suggests need for investigation
         if matches!(self.performance_trend, PerformanceTrend::Degrading) {
             self.optimization_suggestions.push(OptimizationSuggestion {
@@ -220,17 +235,18 @@ impl FunctionPerformanceMetrics {
         if self.execution_count == 0 {
             return 0.0;
         }
-        
+
         // Score based on multiple factors
         let throughput_score = (self.throughput_ops_per_sec / 1_000_000.0).min(1.0); // Normalize to 1M ops/sec
-        let consistency_score = 1.0 - (self.std_dev_execution_time_ns / self.avg_execution_time_ns.max(1.0)).min(1.0);
+        let consistency_score =
+            1.0 - (self.std_dev_execution_time_ns / self.avg_execution_time_ns.max(1.0)).min(1.0);
         let cpu_score = self.avg_cpu_utilization;
         let trend_score = match self.performance_trend {
             PerformanceTrend::Improving => 1.0,
             PerformanceTrend::Stable => 0.8,
             PerformanceTrend::Degrading => 0.4,
         };
-        
+
         throughput_score * 0.4 + consistency_score * 0.3 + cpu_score * 0.2 + trend_score * 0.1
     }
 }
@@ -351,31 +367,49 @@ impl JitPerformanceMonitor {
             let function_metrics = metrics
                 .entry(function_id.clone())
                 .or_insert_with(|| FunctionPerformanceMetrics::new(function_id.clone()));
-            
-            function_metrics.record_execution(execution_time_ns, memory_usage_bytes, cpu_utilization);
+
+            function_metrics.record_execution(
+                execution_time_ns,
+                memory_usage_bytes,
+                cpu_utilization,
+            );
         } // Write lock is released here
-        
+
         // Update system metrics after releasing the write lock
         self.update_system_metrics();
     }
 
     /// Record compilation event
-    pub fn record_compilation(&self, function_id: &FunctionId, compilation_time_ns: u64, success: bool) {
+    pub fn record_compilation(
+        &self,
+        function_id: &FunctionId,
+        compilation_time_ns: u64,
+        success: bool,
+    ) {
         let mut system_metrics = self.system_metrics.write().unwrap();
-        
+
         system_metrics.total_compilations += 1;
         if !success {
             system_metrics.failed_compilations += 1;
         }
-        
+
         // Update average compilation time
-        let total_time = system_metrics.avg_compilation_time_ns * (system_metrics.total_compilations - 1) as f64;
-        system_metrics.avg_compilation_time_ns = (total_time + compilation_time_ns as f64) / system_metrics.total_compilations as f64;
+        let total_time =
+            system_metrics.avg_compilation_time_ns * (system_metrics.total_compilations - 1) as f64;
+        system_metrics.avg_compilation_time_ns =
+            (total_time + compilation_time_ns as f64) / system_metrics.total_compilations as f64;
     }
 
     /// Get performance metrics for a specific function
-    pub fn get_function_metrics(&self, function_id: &FunctionId) -> Option<FunctionPerformanceMetrics> {
-        self.function_metrics.read().unwrap().get(function_id).cloned()
+    pub fn get_function_metrics(
+        &self,
+        function_id: &FunctionId,
+    ) -> Option<FunctionPerformanceMetrics> {
+        self.function_metrics
+            .read()
+            .unwrap()
+            .get(function_id)
+            .cloned()
     }
 
     /// Get system-wide performance metrics
@@ -389,19 +423,22 @@ impl JitPerformanceMonitor {
     pub fn get_top_performing_functions(&self, count: usize) -> Vec<FunctionPerformanceMetrics> {
         let metrics = self.function_metrics.read().unwrap();
         let mut functions: Vec<_> = metrics.values().cloned().collect();
-        
+
         functions.sort_by(|a, b| {
-            b.get_performance_score().partial_cmp(&a.get_performance_score())
+            b.get_performance_score()
+                .partial_cmp(&a.get_performance_score())
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
-        
+
         functions.into_iter().take(count).collect()
     }
 
     /// Get functions that need optimization
-    pub fn get_functions_needing_optimization(&self) -> Vec<(FunctionId, Vec<OptimizationSuggestion>)> {
+    pub fn get_functions_needing_optimization(
+        &self,
+    ) -> Vec<(FunctionId, Vec<OptimizationSuggestion>)> {
         let metrics = self.function_metrics.read().unwrap();
-        
+
         metrics
             .iter()
             .filter_map(|(id, metrics)| {
@@ -418,7 +455,7 @@ impl JitPerformanceMonitor {
     pub fn suggest_config_optimizations(&self) -> Vec<ConfigOptimization> {
         let system_metrics = self.get_system_metrics();
         let mut suggestions = Vec::new();
-        
+
         // Suggest parallel optimization if CPU utilization is low
         if system_metrics.cpu_utilization < 0.5 {
             suggestions.push(ConfigOptimization {
@@ -428,7 +465,7 @@ impl JitPerformanceMonitor {
                 estimated_improvement: 0.25,
             });
         }
-        
+
         // Suggest SIMD optimization if applicable
         if system_metrics.jit_utilization > 0.7 {
             suggestions.push(ConfigOptimization {
@@ -438,7 +475,7 @@ impl JitPerformanceMonitor {
                 estimated_improvement: 0.30,
             });
         }
-        
+
         // Suggest cache optimization if cache effectiveness is low
         if system_metrics.cache_effectiveness < 0.6 {
             suggestions.push(ConfigOptimization {
@@ -448,7 +485,7 @@ impl JitPerformanceMonitor {
                 estimated_improvement: 0.20,
             });
         }
-        
+
         suggestions
     }
 
@@ -456,16 +493,18 @@ impl JitPerformanceMonitor {
     pub fn apply_automatic_optimizations(&self) -> Result<Vec<String>> {
         let suggestions = self.suggest_config_optimizations();
         let mut applied_optimizations = Vec::new();
-        
+
         let mut config = self.config.write().unwrap();
-        
+
         for suggestion in suggestions {
             match suggestion.config_type {
                 ConfigType::Parallel => {
                     if suggestion.estimated_improvement > 0.2 {
-                        config.parallel.min_chunk_size = (config.parallel.min_chunk_size / 2).max(100);
+                        config.parallel.min_chunk_size =
+                            (config.parallel.min_chunk_size / 2).max(100);
                         config.parallel.load_balancing = LoadBalancing::Dynamic;
-                        applied_optimizations.push("Enabled more aggressive parallelization".to_string());
+                        applied_optimizations
+                            .push("Enabled more aggressive parallelization".to_string());
                     }
                 }
                 ConfigType::SIMD => {
@@ -482,12 +521,13 @@ impl JitPerformanceMonitor {
                 ConfigType::Compilation => {
                     if config.optimization_level < 3 {
                         config.optimization_level += 1;
-                        applied_optimizations.push("Increased compilation optimization level".to_string());
+                        applied_optimizations
+                            .push("Increased compilation optimization level".to_string());
                     }
                 }
             }
         }
-        
+
         Ok(applied_optimizations)
     }
 
@@ -495,29 +535,32 @@ impl JitPerformanceMonitor {
     fn update_system_metrics(&self) {
         let function_metrics = self.function_metrics.read().unwrap();
         let mut system_metrics = self.system_metrics.write().unwrap();
-        
+
         // Calculate active functions and average performance
         system_metrics.active_functions = function_metrics.len();
-        
+
         if !function_metrics.is_empty() {
-            let avg_cpu = function_metrics.values()
+            let avg_cpu = function_metrics
+                .values()
                 .map(|m| m.avg_cpu_utilization)
-                .sum::<f64>() / function_metrics.len() as f64;
-            
+                .sum::<f64>()
+                / function_metrics.len() as f64;
+
             system_metrics.cpu_utilization = avg_cpu;
-            
+
             // Calculate JIT utilization based on hot functions
-            let hot_functions = function_metrics.values()
+            let hot_functions = function_metrics
+                .values()
                 .filter(|m| m.execution_count > 100)
                 .count();
-            
+
             system_metrics.jit_utilization = hot_functions as f64 / function_metrics.len() as f64;
         }
-        
+
         // Record performance history
         let mut history = self.performance_history.write().unwrap();
         history.push_back((Instant::now(), system_metrics.jit_utilization));
-        
+
         if history.len() > 1000 {
             history.pop_front();
         }
@@ -556,7 +599,8 @@ pub fn get_global_monitor() -> &'static JitPerformanceMonitor {
 
 /// Initialize the global monitor with a specific configuration
 pub fn init_global_monitor(config: JITConfig) -> Result<()> {
-    GLOBAL_MONITOR.set(JitPerformanceMonitor::new(config))
+    GLOBAL_MONITOR
+        .set(JitPerformanceMonitor::new(config))
         .map_err(|_| Error::InvalidOperation("Global monitor already initialized".to_string()))
 }
 
@@ -568,11 +612,11 @@ mod tests {
     fn test_function_performance_metrics() {
         let function_id = FunctionId::new("test", "f64", "f64", "test_op", 1);
         let mut metrics = FunctionPerformanceMetrics::new(function_id);
-        
+
         // Record some executions
         metrics.record_execution(1_000_000, 1024, 0.8);
         metrics.record_execution(1_200_000, 1024, 0.9);
-        
+
         assert_eq!(metrics.execution_count, 2);
         assert_eq!(metrics.avg_execution_time_ns, 1_100_000.0);
         assert!(metrics.get_performance_score() > 0.0);
@@ -582,12 +626,12 @@ mod tests {
     fn test_performance_monitor() {
         let monitor = JitPerformanceMonitor::new(JITConfig::default());
         let function_id = FunctionId::new("test", "f64", "f64", "test_op", 1);
-        
+
         monitor.record_function_execution(&function_id, 1_000_000, 1024, 0.8);
-        
+
         let metrics = monitor.get_function_metrics(&function_id);
         assert!(metrics.is_some());
-        
+
         let system_metrics = monitor.get_system_metrics();
         assert_eq!(system_metrics.active_functions, 1);
     }
@@ -596,32 +640,39 @@ mod tests {
     fn test_optimization_suggestions() {
         let function_id = FunctionId::new("slow_function", "f64", "f64", "slow_op", 1);
         let mut metrics = FunctionPerformanceMetrics::new(function_id);
-        
+
         // Record slow executions
         for _ in 0..10 {
             metrics.record_execution(50_000_000, 2_000_000, 0.3); // 50ms, 2MB, 30% CPU
         }
-        
+
         assert!(!metrics.optimization_suggestions.is_empty());
-        
+
         // Should suggest multiple optimizations
-        let suggestion_types: Vec<_> = metrics.optimization_suggestions
+        let suggestion_types: Vec<_> = metrics
+            .optimization_suggestions
             .iter()
             .map(|s| s.suggestion_type)
             .collect();
-        
+
         // Check that at least some optimizations are suggested
         assert!(!suggestion_types.is_empty());
-        
+
         // Common optimizations that should be triggered by slow performance
         let expected_optimizations = vec![
             OptimizationType::ReduceMemoryUsage,
             OptimizationType::IncreaseCpuUtilization,
             OptimizationType::AlgorithmicOptimization,
         ];
-        
+
         // At least one of the expected optimizations should be present
-        let has_expected = expected_optimizations.iter().any(|opt| suggestion_types.contains(opt));
-        assert!(has_expected, "Expected at least one of {:?}, but got {:?}", expected_optimizations, suggestion_types);
+        let has_expected = expected_optimizations
+            .iter()
+            .any(|opt| suggestion_types.contains(opt));
+        assert!(
+            has_expected,
+            "Expected at least one of {:?}, but got {:?}",
+            expected_optimizations, suggestion_types
+        );
     }
 }

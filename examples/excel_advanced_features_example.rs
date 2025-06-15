@@ -11,12 +11,14 @@
 //!   cargo run --example excel_advanced_features_example --features "excel"
 
 use pandrs::dataframe::base::DataFrame;
-use pandrs::series::Series;
 use pandrs::error::Result;
+use pandrs::series::Series;
 
 #[cfg(feature = "excel")]
-use pandrs::io::{ExcelReadOptions, ExcelWriteOptions, ExcelWorkbookInfo, ExcelSheetInfo, ExcelCell, ExcelCellFormat, NamedRange};
-
+use pandrs::io::{
+    ExcelCell, ExcelCellFormat, ExcelReadOptions, ExcelSheetInfo, ExcelWorkbookInfo,
+    ExcelWriteOptions, NamedRange,
+};
 
 fn main() -> Result<()> {
     println!("PandRS Advanced Excel Features - Phase 2 Alpha.6");
@@ -103,8 +105,12 @@ fn formula_preservation_example(df: &DataFrame) -> Result<()> {
 
     println!("  Created Excel cells with formulas:");
     for (i, cell) in excel_cells.iter().enumerate() {
-        println!("    Cell {}: Value='{}', Formula='{}'", 
-                 i + 1, cell.value, cell.formula.as_ref().unwrap_or(&"None".to_string()));
+        println!(
+            "    Cell {}: Value='{}', Formula='{}'",
+            i + 1,
+            cell.value,
+            cell.formula.as_ref().unwrap_or(&"None".to_string())
+        );
         if let Some(format) = &cell.format.number_format {
             println!("      Format: {}", format);
         }
@@ -120,12 +126,21 @@ fn formula_preservation_example(df: &DataFrame) -> Result<()> {
     };
 
     println!("  Writing Excel file with formula preservation...");
-    println!("    • Preserve formulas: {}", write_options.preserve_formulas);
+    println!(
+        "    • Preserve formulas: {}",
+        write_options.preserve_formulas
+    );
     println!("    • Apply formatting: {}", write_options.apply_formatting);
-    println!("    • Include named ranges: {}", write_options.write_named_ranges);
+    println!(
+        "    • Include named ranges: {}",
+        write_options.write_named_ranges
+    );
 
     // Simulate writing with preserved formulas
-    println!("  ✓ Excel file created with {} preserved formulas", excel_cells.len());
+    println!(
+        "  ✓ Excel file created with {} preserved formulas",
+        excel_cells.len()
+    );
     println!("  ✓ Cell formatting applied to {} cells", excel_cells.len());
 
     Ok(())
@@ -165,7 +180,10 @@ fn named_ranges_example(df: &DataFrame) -> Result<()> {
 
     println!("  Created named ranges:");
     for range in &named_ranges {
-        println!("    • {}: {} ({})", range.name, range.range, range.sheet_name);
+        println!(
+            "    • {}: {} ({})",
+            range.name, range.range, range.sheet_name
+        );
         if let Some(comment) = &range.comment {
             println!("      Comment: {}", comment);
         }
@@ -186,7 +204,7 @@ fn named_ranges_example(df: &DataFrame) -> Result<()> {
     }
 
     println!("  ✓ Named ranges enhance formula readability and maintainability");
-    
+
     Ok(())
 }
 
@@ -196,49 +214,76 @@ fn multi_sheet_example(financial_data: &DataFrame, summary_data: &DataFrame) -> 
 
     // Define workbook structure
     let sheets = vec![
-        ("RawData", financial_data, "Raw financial data from data sources"),
+        (
+            "RawData",
+            financial_data,
+            "Raw financial data from data sources",
+        ),
         ("Summary", summary_data, "Aggregated summary statistics"),
-        ("Analysis", financial_data, "Detailed analysis and calculations"),
+        (
+            "Analysis",
+            financial_data,
+            "Detailed analysis and calculations",
+        ),
         ("Charts", summary_data, "Visualizations and charts"),
-        ("Config", summary_data, "Configuration parameters and settings"),
+        (
+            "Config",
+            summary_data,
+            "Configuration parameters and settings",
+        ),
     ];
 
     println!("  Workbook structure:");
     for (sheet_name, data, description) in &sheets {
-        println!("    • Sheet '{}': {} rows, {} columns", 
-                 sheet_name, data.row_count(), data.column_count());
+        println!(
+            "    • Sheet '{}': {} rows, {} columns",
+            sheet_name,
+            data.row_count(),
+            data.column_count()
+        );
         println!("      Description: {}", description);
     }
 
     // Sheet-specific configurations
     let sheet_configs = HashMap::from([
-        ("RawData", ExcelWriteOptions {
-            preserve_formulas: false,
-            apply_formatting: false,
-            write_named_ranges: true,
-            protect_sheets: false,
-            optimize_large_files: true,
-        }),
-        ("Summary", ExcelWriteOptions {
-            preserve_formulas: true,
-            apply_formatting: true,
-            write_named_ranges: true,
-            protect_sheets: false,
-            optimize_large_files: false,
-        }),
-        ("Analysis", ExcelWriteOptions {
-            preserve_formulas: true,
-            apply_formatting: true,
-            write_named_ranges: true,
-            protect_sheets: true,  // Protect analysis formulas
-            optimize_large_files: false,
-        }),
+        (
+            "RawData",
+            ExcelWriteOptions {
+                preserve_formulas: false,
+                apply_formatting: false,
+                write_named_ranges: true,
+                protect_sheets: false,
+                optimize_large_files: true,
+            },
+        ),
+        (
+            "Summary",
+            ExcelWriteOptions {
+                preserve_formulas: true,
+                apply_formatting: true,
+                write_named_ranges: true,
+                protect_sheets: false,
+                optimize_large_files: false,
+            },
+        ),
+        (
+            "Analysis",
+            ExcelWriteOptions {
+                preserve_formulas: true,
+                apply_formatting: true,
+                write_named_ranges: true,
+                protect_sheets: true, // Protect analysis formulas
+                optimize_large_files: false,
+            },
+        ),
     ]);
 
     println!("  Sheet configurations:");
     for (sheet_name, config) in &sheet_configs {
-        println!("    • {}: Formulas={}, Formatting={}, Protected={}", 
-                 sheet_name, config.preserve_formulas, config.apply_formatting, config.protect_sheets);
+        println!(
+            "    • {}: Formulas={}, Formatting={}, Protected={}",
+            sheet_name, config.preserve_formulas, config.apply_formatting, config.protect_sheets
+        );
     }
 
     // Cross-sheet references
@@ -254,7 +299,10 @@ fn multi_sheet_example(financial_data: &DataFrame, summary_data: &DataFrame) -> 
         println!("    • {}", formula);
     }
 
-    println!("  ✓ Multi-sheet workbook created with {} sheets", sheets.len());
+    println!(
+        "  ✓ Multi-sheet workbook created with {} sheets",
+        sheets.len()
+    );
     println!("  ✓ Cross-sheet references established");
 
     Ok(())
@@ -265,8 +313,12 @@ fn large_file_optimization_example(large_df: &DataFrame) -> Result<()> {
     println!("Demonstrating large Excel file optimization...");
 
     let file_size_mb = (large_df.row_count() * large_df.column_count() * 8) / (1024 * 1024);
-    println!("  Dataset: {} rows, {} columns (~{} MB estimated)", 
-             large_df.row_count(), large_df.column_count(), file_size_mb);
+    println!(
+        "  Dataset: {} rows, {} columns (~{} MB estimated)",
+        large_df.row_count(),
+        large_df.column_count(),
+        file_size_mb
+    );
 
     // Large file optimization options
     let optimization_options = ExcelWriteOptions {
@@ -274,11 +326,14 @@ fn large_file_optimization_example(large_df: &DataFrame) -> Result<()> {
         apply_formatting: false,   // Disable for performance
         write_named_ranges: false, // Disable for performance
         protect_sheets: false,
-        optimize_large_files: true,  // Enable optimization
+        optimize_large_files: true, // Enable optimization
     };
 
     println!("  Optimization settings:");
-    println!("    • Large file optimization: {}", optimization_options.optimize_large_files);
+    println!(
+        "    • Large file optimization: {}",
+        optimization_options.optimize_large_files
+    );
     println!("    • Streaming write: enabled");
     println!("    • Memory buffering: optimized");
     println!("    • Formula caching: disabled");
@@ -300,11 +355,14 @@ fn large_file_optimization_example(large_df: &DataFrame) -> Result<()> {
     // Memory-efficient processing simulation
     let chunk_size = 5000;
     let num_chunks = (large_df.row_count() + chunk_size - 1) / chunk_size;
-    
+
     println!("  Processing in chunks:");
     println!("    • Chunk size: {} rows", chunk_size);
     println!("    • Number of chunks: {}", num_chunks);
-    println!("    • Memory per chunk: ~{} MB", (chunk_size * large_df.column_count() * 8) / (1024 * 1024));
+    println!(
+        "    • Memory per chunk: ~{} MB",
+        (chunk_size * large_df.column_count() * 8) / (1024 * 1024)
+    );
 
     for i in 0..num_chunks.min(3) {
         println!("    • Processing chunk {}/{}: completed", i + 1, num_chunks);
@@ -369,8 +427,10 @@ fn workbook_analysis_example() -> Result<()> {
 
     println!("  Sheet analysis:");
     for sheet in &sheet_info {
-        println!("    • {}: {} rows × {} columns ({})", 
-                 sheet.name, sheet.rows, sheet.columns, sheet.range);
+        println!(
+            "    • {}: {} rows × {} columns ({})",
+            sheet.name, sheet.rows, sheet.columns, sheet.range
+        );
     }
 
     // Formula and formatting analysis
@@ -403,7 +463,10 @@ fn workbook_analysis_example() -> Result<()> {
     }
 
     let overall_complexity = 6.5;
-    println!("  Overall complexity score: {}/10 (Moderate)", overall_complexity);
+    println!(
+        "  Overall complexity score: {}/10 (Moderate)",
+        overall_complexity
+    );
 
     if overall_complexity > 7.0 {
         println!("  Recommendation: Consider workbook optimization");
@@ -420,34 +483,46 @@ fn advanced_reading_example() -> Result<()> {
 
     // Various reading configurations
     let reading_scenarios = vec![
-        ("Basic reading", ExcelReadOptions {
-            preserve_formulas: false,
-            include_formatting: false,
-            read_named_ranges: false,
-            use_memory_map: true,
-            optimize_memory: true,
-        }),
-        ("Formula preservation", ExcelReadOptions {
-            preserve_formulas: true,
-            include_formatting: false,
-            read_named_ranges: true,
-            use_memory_map: true,
-            optimize_memory: true,
-        }),
-        ("Full formatting", ExcelReadOptions {
-            preserve_formulas: true,
-            include_formatting: true,
-            read_named_ranges: true,
-            use_memory_map: true,
-            optimize_memory: true,
-        }),
-        ("Memory optimized", ExcelReadOptions {
-            preserve_formulas: false,
-            include_formatting: false,
-            read_named_ranges: false,
-            use_memory_map: true,
-            optimize_memory: true,
-        }),
+        (
+            "Basic reading",
+            ExcelReadOptions {
+                preserve_formulas: false,
+                include_formatting: false,
+                read_named_ranges: false,
+                use_memory_map: true,
+                optimize_memory: true,
+            },
+        ),
+        (
+            "Formula preservation",
+            ExcelReadOptions {
+                preserve_formulas: true,
+                include_formatting: false,
+                read_named_ranges: true,
+                use_memory_map: true,
+                optimize_memory: true,
+            },
+        ),
+        (
+            "Full formatting",
+            ExcelReadOptions {
+                preserve_formulas: true,
+                include_formatting: true,
+                read_named_ranges: true,
+                use_memory_map: true,
+                optimize_memory: true,
+            },
+        ),
+        (
+            "Memory optimized",
+            ExcelReadOptions {
+                preserve_formulas: false,
+                include_formatting: false,
+                read_named_ranges: false,
+                use_memory_map: true,
+                optimize_memory: true,
+            },
+        ),
     ];
 
     println!("  Reading scenario comparisons:");
@@ -457,7 +532,7 @@ fn advanced_reading_example() -> Result<()> {
         println!("      - Formatting: {}", options.include_formatting);
         println!("      - Named ranges: {}", options.read_named_ranges);
         println!("      - Memory mapping: {}", options.use_memory_map);
-        
+
         // Simulate performance characteristics
         let read_time = match scenario {
             "Basic reading" => 100,
@@ -466,7 +541,7 @@ fn advanced_reading_example() -> Result<()> {
             "Memory optimized" => 80,
             _ => 120,
         };
-        
+
         let memory_usage = match scenario {
             "Basic reading" => 50,
             "Formula preservation" => 75,
@@ -474,7 +549,7 @@ fn advanced_reading_example() -> Result<()> {
             "Memory optimized" => 35,
             _ => 60,
         };
-        
+
         println!("      - Estimated read time: {} ms", read_time);
         println!("      - Memory usage: {} MB", memory_usage);
     }
@@ -497,41 +572,56 @@ fn cell_formatting_example(df: &DataFrame) -> Result<()> {
 
     // Define various cell formats
     let format_examples = vec![
-        ("Currency", ExcelCellFormat {
-            font_bold: false,
-            font_italic: false,
-            font_color: Some("#006600".to_string()),
-            background_color: None,
-            number_format: Some("$#,##0.00".to_string()),
-        }),
-        ("Percentage", ExcelCellFormat {
-            font_bold: false,
-            font_italic: false,
-            font_color: Some("#0066CC".to_string()),
-            background_color: Some("#E6F3FF".to_string()),
-            number_format: Some("0.00%".to_string()),
-        }),
-        ("Header", ExcelCellFormat {
-            font_bold: true,
-            font_italic: false,
-            font_color: Some("#FFFFFF".to_string()),
-            background_color: Some("#4472C4".to_string()),
-            number_format: None,
-        }),
-        ("Date", ExcelCellFormat {
-            font_bold: false,
-            font_italic: false,
-            font_color: None,
-            background_color: None,
-            number_format: Some("mm/dd/yyyy".to_string()),
-        }),
-        ("Warning", ExcelCellFormat {
-            font_bold: true,
-            font_italic: false,
-            font_color: Some("#FFFFFF".to_string()),
-            background_color: Some("#FF6B6B".to_string()),
-            number_format: None,
-        }),
+        (
+            "Currency",
+            ExcelCellFormat {
+                font_bold: false,
+                font_italic: false,
+                font_color: Some("#006600".to_string()),
+                background_color: None,
+                number_format: Some("$#,##0.00".to_string()),
+            },
+        ),
+        (
+            "Percentage",
+            ExcelCellFormat {
+                font_bold: false,
+                font_italic: false,
+                font_color: Some("#0066CC".to_string()),
+                background_color: Some("#E6F3FF".to_string()),
+                number_format: Some("0.00%".to_string()),
+            },
+        ),
+        (
+            "Header",
+            ExcelCellFormat {
+                font_bold: true,
+                font_italic: false,
+                font_color: Some("#FFFFFF".to_string()),
+                background_color: Some("#4472C4".to_string()),
+                number_format: None,
+            },
+        ),
+        (
+            "Date",
+            ExcelCellFormat {
+                font_bold: false,
+                font_italic: false,
+                font_color: None,
+                background_color: None,
+                number_format: Some("mm/dd/yyyy".to_string()),
+            },
+        ),
+        (
+            "Warning",
+            ExcelCellFormat {
+                font_bold: true,
+                font_italic: false,
+                font_color: Some("#FFFFFF".to_string()),
+                background_color: Some("#FF6B6B".to_string()),
+                number_format: None,
+            },
+        ),
     ];
 
     println!("  Cell formatting examples:");
@@ -568,7 +658,10 @@ fn cell_formatting_example(df: &DataFrame) -> Result<()> {
     println!("    • Currency columns: 2 columns formatted");
     println!("    • Percentage columns: 1 column formatted");
     println!("    • Conditional rules: 4 rules applied");
-    println!("    • Total formatted cells: {} cells", df.row_count() * 2 + df.column_count());
+    println!(
+        "    • Total formatted cells: {} cells",
+        df.row_count() * 2 + df.column_count()
+    );
 
     Ok(())
 }
@@ -580,31 +673,51 @@ fn cell_formatting_example(df: &DataFrame) -> Result<()> {
 #[cfg(feature = "excel")]
 fn create_financial_data() -> Result<DataFrame> {
     let mut df = DataFrame::new();
-    
-    let symbols = vec!["AAPL", "GOOGL", "MSFT", "AMZN", "TSLA", "META", "NVDA", "JPM"];
-    let prices = vec![150.25, 2800.50, 300.75, 3200.00, 800.25, 350.80, 450.60, 140.90];
-    let volumes = vec![1500000, 800000, 1200000, 900000, 2000000, 1100000, 1300000, 950000];
-    let sectors = vec!["Tech", "Tech", "Tech", "Tech", "Auto", "Tech", "Tech", "Finance"];
 
-    df.add_column("symbol".to_string(), Series::new(
-        symbols.into_iter().map(|s| s.to_string()).collect(),
-        Some("symbol".to_string())
-    )?)?;
+    let symbols = vec![
+        "AAPL", "GOOGL", "MSFT", "AMZN", "TSLA", "META", "NVDA", "JPM",
+    ];
+    let prices = vec![
+        150.25, 2800.50, 300.75, 3200.00, 800.25, 350.80, 450.60, 140.90,
+    ];
+    let volumes = vec![
+        1500000, 800000, 1200000, 900000, 2000000, 1100000, 1300000, 950000,
+    ];
+    let sectors = vec![
+        "Tech", "Tech", "Tech", "Tech", "Auto", "Tech", "Tech", "Finance",
+    ];
 
-    df.add_column("price".to_string(), Series::new(
-        prices.into_iter().map(|p| p.to_string()).collect(),
-        Some("price".to_string())
-    )?)?;
+    df.add_column(
+        "symbol".to_string(),
+        Series::new(
+            symbols.into_iter().map(|s| s.to_string()).collect(),
+            Some("symbol".to_string()),
+        )?,
+    )?;
 
-    df.add_column("volume".to_string(), Series::new(
-        volumes.into_iter().map(|v| v.to_string()).collect(),
-        Some("volume".to_string())
-    )?)?;
+    df.add_column(
+        "price".to_string(),
+        Series::new(
+            prices.into_iter().map(|p| p.to_string()).collect(),
+            Some("price".to_string()),
+        )?,
+    )?;
 
-    df.add_column("sector".to_string(), Series::new(
-        sectors.into_iter().map(|s| s.to_string()).collect(),
-        Some("sector".to_string())
-    )?)?;
+    df.add_column(
+        "volume".to_string(),
+        Series::new(
+            volumes.into_iter().map(|v| v.to_string()).collect(),
+            Some("volume".to_string()),
+        )?,
+    )?;
+
+    df.add_column(
+        "sector".to_string(),
+        Series::new(
+            sectors.into_iter().map(|s| s.to_string()).collect(),
+            Some("sector".to_string()),
+        )?,
+    )?;
 
     Ok(df)
 }
@@ -612,19 +725,31 @@ fn create_financial_data() -> Result<DataFrame> {
 #[cfg(feature = "excel")]
 fn create_summary_data() -> Result<DataFrame> {
     let mut df = DataFrame::new();
-    
-    let metrics = vec!["Total Volume", "Avg Price", "Max Price", "Min Price", "Volatility"];
+
+    let metrics = vec![
+        "Total Volume",
+        "Avg Price",
+        "Max Price",
+        "Min Price",
+        "Volatility",
+    ];
     let values = vec!["10,850,000", "$1,398.56", "$3,200.00", "$140.90", "15.2%"];
 
-    df.add_column("metric".to_string(), Series::new(
-        metrics.into_iter().map(|s| s.to_string()).collect(),
-        Some("metric".to_string())
-    )?)?;
+    df.add_column(
+        "metric".to_string(),
+        Series::new(
+            metrics.into_iter().map(|s| s.to_string()).collect(),
+            Some("metric".to_string()),
+        )?,
+    )?;
 
-    df.add_column("value".to_string(), Series::new(
-        values.into_iter().map(|s| s.to_string()).collect(),
-        Some("value".to_string())
-    )?)?;
+    df.add_column(
+        "value".to_string(),
+        Series::new(
+            values.into_iter().map(|s| s.to_string()).collect(),
+            Some("value".to_string()),
+        )?,
+    )?;
 
     Ok(df)
 }
@@ -632,20 +757,29 @@ fn create_summary_data() -> Result<DataFrame> {
 #[allow(dead_code)]
 fn create_large_dataset(size: usize) -> Result<DataFrame> {
     let mut df = DataFrame::new();
-    
+
     let mut symbols = Vec::with_capacity(size);
     let mut prices = Vec::with_capacity(size);
     let mut volumes = Vec::with_capacity(size);
-    
+
     for i in 0..size {
         symbols.push(format!("STOCK_{:04}", i % 1000));
         prices.push((100.0 + (i as f64 * 0.1) % 500.0).to_string());
         volumes.push(((1000000 + i * 1000) % 10000000).to_string());
     }
-    
-    df.add_column("symbol".to_string(), Series::new(symbols, Some("symbol".to_string()))?)?;
-    df.add_column("price".to_string(), Series::new(prices, Some("price".to_string()))?)?;
-    df.add_column("volume".to_string(), Series::new(volumes, Some("volume".to_string()))?)?;
-    
+
+    df.add_column(
+        "symbol".to_string(),
+        Series::new(symbols, Some("symbol".to_string()))?,
+    )?;
+    df.add_column(
+        "price".to_string(),
+        Series::new(prices, Some("price".to_string()))?,
+    )?;
+    df.add_column(
+        "volume".to_string(),
+        Series::new(volumes, Some("volume".to_string()))?,
+    )?;
+
     Ok(df)
 }

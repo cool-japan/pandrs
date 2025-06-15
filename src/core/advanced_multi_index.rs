@@ -12,7 +12,7 @@
 //! - Performance-optimized lookup and navigation
 
 use crate::core::error::{Error, Result};
-use std::collections::{HashMap, HashSet, BTreeMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt;
 use std::sync::Arc;
 
@@ -129,7 +129,9 @@ impl AdvancedMultiIndex {
             if tuple.len() != n_levels {
                 return Err(Error::InvalidInput(format!(
                     "Tuple {} has length {}, expected {}",
-                    i, tuple.len(), n_levels
+                    i,
+                    tuple.len(),
+                    n_levels
                 )));
             }
         }
@@ -203,13 +205,15 @@ impl AdvancedMultiIndex {
         }
 
         let n_rows = arrays[0].len();
-        
+
         // Validate all arrays have same length
         for (i, array) in arrays.iter().enumerate() {
             if array.len() != n_rows {
                 return Err(Error::InvalidInput(format!(
                     "Array {} has length {}, expected {}",
-                    i, array.len(), n_rows
+                    i,
+                    array.len(),
+                    n_rows
                 )));
             }
         }
@@ -270,7 +274,12 @@ impl AdvancedMultiIndex {
     }
 
     /// Cross-section selection: select rows with specific value at given level
-    pub fn xs(&mut self, key: IndexValue, level: usize, drop_level: bool) -> Result<CrossSectionResult> {
+    pub fn xs(
+        &mut self,
+        key: IndexValue,
+        level: usize,
+        drop_level: bool,
+    ) -> Result<CrossSectionResult> {
         if level >= self.n_levels() {
             return Err(Error::IndexOutOfBounds {
                 index: level,
@@ -324,24 +333,12 @@ impl AdvancedMultiIndex {
     /// Advanced selection with multiple criteria
     pub fn select(&self, criteria: SelectionCriteria) -> Result<Vec<usize>> {
         match criteria {
-            SelectionCriteria::Exact(level_values) => {
-                self.select_exact(level_values)
-            },
-            SelectionCriteria::Partial(level_values) => {
-                self.select_partial(level_values)
-            },
-            SelectionCriteria::Range(level, start, end) => {
-                self.select_range(level, start, end)
-            },
-            SelectionCriteria::Boolean(mask) => {
-                self.select_boolean(mask)
-            },
-            SelectionCriteria::Positions(positions) => {
-                self.select_positions(positions)
-            },
-            SelectionCriteria::Level(level, values) => {
-                self.select_level(level, values)
-            },
+            SelectionCriteria::Exact(level_values) => self.select_exact(level_values),
+            SelectionCriteria::Partial(level_values) => self.select_partial(level_values),
+            SelectionCriteria::Range(level, start, end) => self.select_range(level, start, end),
+            SelectionCriteria::Boolean(mask) => self.select_boolean(mask),
+            SelectionCriteria::Positions(positions) => self.select_positions(positions),
+            SelectionCriteria::Level(level, values) => self.select_level(level, values),
         }
     }
 
@@ -466,16 +463,22 @@ impl AdvancedMultiIndex {
     }
 
     /// Create a new index by dropping a level from selected rows
-    fn drop_level_from_selection(&self, indices: &[usize], drop_level: usize) -> Result<AdvancedMultiIndex> {
+    fn drop_level_from_selection(
+        &self,
+        indices: &[usize],
+        drop_level: usize,
+    ) -> Result<AdvancedMultiIndex> {
         if self.n_levels() <= 1 {
-            return Err(Error::InvalidInput("Cannot drop level from single-level index".to_string()));
+            return Err(Error::InvalidInput(
+                "Cannot drop level from single-level index".to_string(),
+            ));
         }
 
         let mut new_tuples = Vec::with_capacity(indices.len());
         for &idx in indices {
             let original_tuple = &self.tuples[idx];
             let mut new_tuple = Vec::with_capacity(original_tuple.len() - 1);
-            
+
             for (level_idx, value) in original_tuple.iter().enumerate() {
                 if level_idx != drop_level {
                     new_tuple.push(value.clone());
@@ -556,7 +559,9 @@ impl AdvancedMultiIndex {
         if start > end || end > self.len() {
             return Err(Error::InvalidInput(format!(
                 "Invalid slice range: {}..{} for length {}",
-                start, end, self.len()
+                start,
+                end,
+                self.len()
             )));
         }
 
@@ -585,11 +590,15 @@ impl AdvancedMultiIndex {
 
         let mut reordered_tuples = Vec::with_capacity(self.len());
         for tuple in &self.tuples {
-            let reordered_tuple: Vec<IndexValue> = new_order.iter().map(|&i| tuple[i].clone()).collect();
+            let reordered_tuple: Vec<IndexValue> =
+                new_order.iter().map(|&i| tuple[i].clone()).collect();
             reordered_tuples.push(reordered_tuple);
         }
 
-        let reordered_names: Vec<Option<String>> = new_order.iter().map(|&i| self.level_names[i].clone()).collect();
+        let reordered_names: Vec<Option<String>> = new_order
+            .iter()
+            .map(|&i| self.level_names[i].clone())
+            .collect();
 
         AdvancedMultiIndex::new(reordered_tuples, Some(reordered_names))
     }
@@ -623,13 +632,20 @@ impl CacheStats {
 
 impl fmt::Display for AdvancedMultiIndex {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "AdvancedMultiIndex with {} levels and {} rows", self.n_levels(), self.len())?;
-        
+        writeln!(
+            f,
+            "AdvancedMultiIndex with {} levels and {} rows",
+            self.n_levels(),
+            self.len()
+        )?;
+
         // Show level names if available
         if self.level_names.iter().any(|name| name.is_some()) {
             write!(f, "Level names: [")?;
             for (i, name) in self.level_names.iter().enumerate() {
-                if i > 0 { write!(f, ", ")?; }
+                if i > 0 {
+                    write!(f, ", ")?;
+                }
                 match name {
                     Some(n) => write!(f, "'{}'", n)?,
                     None => write!(f, "None")?,
@@ -643,7 +659,9 @@ impl fmt::Display for AdvancedMultiIndex {
         for i in 0..max_show {
             write!(f, "  (")?;
             for (j, value) in self.tuples[i].iter().enumerate() {
-                if j > 0 { write!(f, ", ")?; }
+                if j > 0 {
+                    write!(f, ", ")?;
+                }
                 write!(f, "{}", value)?;
             }
             writeln!(f, ")")?;
@@ -716,7 +734,7 @@ mod tests {
         ];
 
         let mut index = AdvancedMultiIndex::new(tuples, None).unwrap();
-        
+
         // Select all rows with 'A' at level 0
         let result = index.xs(IndexValue::from("A"), 0, false).unwrap();
         assert_eq!(result.indices, vec![0, 1]);
@@ -731,20 +749,34 @@ mod tests {
     #[test]
     fn test_exact_selection() {
         let tuples = vec![
-            vec![IndexValue::from("A"), IndexValue::from(1), IndexValue::from("X")],
-            vec![IndexValue::from("A"), IndexValue::from(2), IndexValue::from("Y")],
-            vec![IndexValue::from("B"), IndexValue::from(1), IndexValue::from("X")],
-            vec![IndexValue::from("B"), IndexValue::from(2), IndexValue::from("Z")],
+            vec![
+                IndexValue::from("A"),
+                IndexValue::from(1),
+                IndexValue::from("X"),
+            ],
+            vec![
+                IndexValue::from("A"),
+                IndexValue::from(2),
+                IndexValue::from("Y"),
+            ],
+            vec![
+                IndexValue::from("B"),
+                IndexValue::from(1),
+                IndexValue::from("X"),
+            ],
+            vec![
+                IndexValue::from("B"),
+                IndexValue::from(2),
+                IndexValue::from("Z"),
+            ],
         ];
 
         let index = AdvancedMultiIndex::new(tuples, None).unwrap();
-        
+
         // Exact match on multiple levels
-        let criteria = SelectionCriteria::Exact(vec![
-            (0, IndexValue::from("A")),
-            (1, IndexValue::from(1)),
-        ]);
-        
+        let criteria =
+            SelectionCriteria::Exact(vec![(0, IndexValue::from("A")), (1, IndexValue::from(1))]);
+
         let result = index.select(criteria).unwrap();
         assert_eq!(result, vec![0]);
     }
@@ -759,7 +791,7 @@ mod tests {
         ];
 
         let index = AdvancedMultiIndex::new(tuples, None).unwrap();
-        
+
         // Range selection on level 1 (values 2-6)
         let criteria = SelectionCriteria::Range(1, IndexValue::from(2), IndexValue::from(6));
         let result = index.select(criteria).unwrap();
@@ -776,7 +808,7 @@ mod tests {
         ];
 
         let index = AdvancedMultiIndex::new(tuples, None).unwrap();
-        
+
         let criteria = SelectionCriteria::Boolean(vec![true, false, true, false]);
         let result = index.select(criteria).unwrap();
         assert_eq!(result, vec![0, 2]);
@@ -785,28 +817,54 @@ mod tests {
     #[test]
     fn test_group_operations() {
         let tuples = vec![
-            vec![IndexValue::from("A"), IndexValue::from("X"), IndexValue::from(1)],
-            vec![IndexValue::from("A"), IndexValue::from("Y"), IndexValue::from(2)],
-            vec![IndexValue::from("B"), IndexValue::from("X"), IndexValue::from(3)],
-            vec![IndexValue::from("B"), IndexValue::from("Y"), IndexValue::from(4)],
+            vec![
+                IndexValue::from("A"),
+                IndexValue::from("X"),
+                IndexValue::from(1),
+            ],
+            vec![
+                IndexValue::from("A"),
+                IndexValue::from("Y"),
+                IndexValue::from(2),
+            ],
+            vec![
+                IndexValue::from("B"),
+                IndexValue::from("X"),
+                IndexValue::from(3),
+            ],
+            vec![
+                IndexValue::from("B"),
+                IndexValue::from("Y"),
+                IndexValue::from(4),
+            ],
         ];
 
         let index = AdvancedMultiIndex::new(tuples, None).unwrap();
-        
+
         // Get unique keys for first two levels
         let keys = index.get_group_keys(&[0, 1]).unwrap();
         assert_eq!(keys.len(), 4); // All combinations are unique
 
         // Get indices for specific group
-        let indices = index.get_group_indices(&[0], &[IndexValue::from("A")]).unwrap();
+        let indices = index
+            .get_group_indices(&[0], &[IndexValue::from("A")])
+            .unwrap();
         assert_eq!(indices, vec![0, 1]);
     }
 
     #[test]
     fn test_level_reordering() {
         let tuples = vec![
-            vec![IndexValue::from("A"), IndexValue::from(1), IndexValue::from("X")],
-            vec![IndexValue::from("B"), IndexValue::from(2), IndexValue::from("Y")],
+            vec![
+                IndexValue::from("A"),
+                IndexValue::from(1),
+                IndexValue::from("X"),
+            ],
+            vec![
+                IndexValue::from("B"),
+                IndexValue::from(2),
+                IndexValue::from("Y"),
+            ],
         ];
 
         let names = Some(vec![
@@ -816,18 +874,18 @@ mod tests {
         ]);
 
         let index = AdvancedMultiIndex::new(tuples, names).unwrap();
-        
+
         // Reorder levels: [2, 0, 1]
         let reordered = index.reorder_levels(&[2, 0, 1]).unwrap();
-        
+
         assert_eq!(reordered.level_names()[0], Some("third".to_string()));
         assert_eq!(reordered.level_names()[1], Some("first".to_string()));
         assert_eq!(reordered.level_names()[2], Some("second".to_string()));
-        
+
         // Check that data was reordered correctly
         let first_tuple = reordered.get_tuple(0).unwrap();
         assert_eq!(first_tuple[0], IndexValue::from("X")); // Originally at level 2
         assert_eq!(first_tuple[1], IndexValue::from("A")); // Originally at level 0
-        assert_eq!(first_tuple[2], IndexValue::from(1));   // Originally at level 1
+        assert_eq!(first_tuple[2], IndexValue::from(1)); // Originally at level 1
     }
 }

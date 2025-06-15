@@ -1,5 +1,5 @@
 //! I/O operations for OptimizedDataFrame
-//! 
+//!
 //! This module handles file I/O operations including:
 //! - CSV reading/writing
 //! - Excel reading/writing
@@ -9,14 +9,12 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use crate::column::{
-    BooleanColumn, Column, Float64Column, Int64Column, StringColumn,
-};
+use crate::column::{BooleanColumn, Column, Float64Column, Int64Column, StringColumn};
 use crate::error::{Error, Result};
 #[cfg(feature = "parquet")]
 use crate::optimized::split_dataframe::io::ParquetCompression;
 
-use super::core::{OptimizedDataFrame, ColumnView, JsonOrient};
+use super::core::{ColumnView, JsonOrient, OptimizedDataFrame};
 
 #[cfg(feature = "excel")]
 use simple_excel_writer::{Sheet, Workbook};

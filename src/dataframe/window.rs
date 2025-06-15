@@ -48,7 +48,7 @@ impl DataFrameWindowExt for DataFrame {
     ) -> Result<DataFrame> {
         // Get the column as a Series<f64>
         let column = self.get_column_as_f64_legacy(column_name)?;
-        
+
         // Apply the rolling operation
         let rolling = column.rolling(window_size)?;
         let result_series = match operation.to_lowercase().as_str() {
@@ -59,15 +59,23 @@ impl DataFrameWindowExt for DataFrame {
             "min" => rolling.min()?,
             "max" => rolling.max()?,
             "median" => rolling.median()?,
-            _ => return Err(Error::InvalidValue(format!("Unsupported rolling operation: {}", operation))),
+            _ => {
+                return Err(Error::InvalidValue(format!(
+                    "Unsupported rolling operation: {}",
+                    operation
+                )))
+            }
         };
 
         // Create a new DataFrame with the result
         let mut new_df = self.clone();
         let default_name = format!("{}_{}", column_name, operation);
         let result_column_name = new_column_name.unwrap_or(&default_name);
-        new_df.add_column(result_column_name.to_string(), result_series.to_string_series()?)?;
-        
+        new_df.add_column(
+            result_column_name.to_string(),
+            result_series.to_string_series()?,
+        )?;
+
         Ok(new_df)
     }
 
@@ -80,7 +88,7 @@ impl DataFrameWindowExt for DataFrame {
     ) -> Result<DataFrame> {
         // Get the column as a Series<f64>
         let column = self.get_column_as_f64_legacy(column_name)?;
-        
+
         // Apply the expanding operation
         let expanding = column.expanding(min_periods)?;
         let result_series = match operation.to_lowercase().as_str() {
@@ -91,15 +99,23 @@ impl DataFrameWindowExt for DataFrame {
             "min" => expanding.min()?,
             "max" => expanding.max()?,
             "median" => expanding.median()?,
-            _ => return Err(Error::InvalidValue(format!("Unsupported expanding operation: {}", operation))),
+            _ => {
+                return Err(Error::InvalidValue(format!(
+                    "Unsupported expanding operation: {}",
+                    operation
+                )))
+            }
         };
 
         // Create a new DataFrame with the result
         let mut new_df = self.clone();
         let default_name = format!("{}_{}", column_name, operation);
         let result_column_name = new_column_name.unwrap_or(&default_name);
-        new_df.add_column(result_column_name.to_string(), result_series.to_string_series()?)?;
-        
+        new_df.add_column(
+            result_column_name.to_string(),
+            result_series.to_string_series()?,
+        )?;
+
         Ok(new_df)
     }
 
@@ -113,7 +129,7 @@ impl DataFrameWindowExt for DataFrame {
     ) -> Result<DataFrame> {
         // Get the column as a Series<f64>
         let column = self.get_column_as_f64_legacy(column_name)?;
-        
+
         // Create EWM window
         let mut ewm = column.ewm();
         if let Some(span_val) = span {
@@ -121,23 +137,33 @@ impl DataFrameWindowExt for DataFrame {
         } else if let Some(alpha_val) = alpha {
             ewm = ewm.alpha(alpha_val)?;
         } else {
-            return Err(Error::InvalidValue("Must specify either span or alpha for EWM".to_string()));
+            return Err(Error::InvalidValue(
+                "Must specify either span or alpha for EWM".to_string(),
+            ));
         }
-        
+
         // Apply the EWM operation
         let result_series = match operation.to_lowercase().as_str() {
             "mean" => ewm.mean()?,
             "std" => ewm.std(1)?,
             "var" => ewm.var(1)?,
-            _ => return Err(Error::InvalidValue(format!("Unsupported EWM operation: {}", operation))),
+            _ => {
+                return Err(Error::InvalidValue(format!(
+                    "Unsupported EWM operation: {}",
+                    operation
+                )))
+            }
         };
 
         // Create a new DataFrame with the result
         let mut new_df = self.clone();
         let default_name = format!("{}_{}", column_name, operation);
         let result_column_name = new_column_name.unwrap_or(&default_name);
-        new_df.add_column(result_column_name.to_string(), result_series.to_string_series()?)?;
-        
+        new_df.add_column(
+            result_column_name.to_string(),
+            result_series.to_string_series()?,
+        )?;
+
         Ok(new_df)
     }
 }
@@ -152,12 +178,17 @@ impl DataFrame {
             for value in string_series.values() {
                 match value.parse::<f64>() {
                     Ok(val) => f64_values.push(val),
-                    Err(_) => return Err(Error::InvalidValue(format!("Cannot convert column '{}' to numeric", column_name))),
+                    Err(_) => {
+                        return Err(Error::InvalidValue(format!(
+                            "Cannot convert column '{}' to numeric",
+                            column_name
+                        )))
+                    }
                 }
             }
             return Series::new(f64_values, Some(column_name.to_string()));
         }
-        
+
         Err(Error::ColumnNotFound(column_name.to_string()))
     }
 }

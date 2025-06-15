@@ -89,9 +89,7 @@ where
     where
         T: std::fmt::Display,
     {
-        let string_values: Vec<String> = self.values.iter()
-            .map(|v| v.to_string())
-            .collect();
+        let string_values: Vec<String> = self.values.iter().map(|v| v.to_string()).collect();
         Series::new(string_values, self.name.clone())
     }
 }
@@ -135,8 +133,9 @@ impl Series<i32> {
 impl Series<String> {
     /// Get string accessor for string operations
     pub fn str(&self) -> Result<crate::series::string_accessor::StringAccessor> {
-        crate::series::string_accessor::StringAccessor::new(self.clone())
-            .map_err(|e| crate::core::error::Error::Type(format!("Failed to create string accessor: {:?}", e)))
+        crate::series::string_accessor::StringAccessor::new(self.clone()).map_err(|e| {
+            crate::core::error::Error::Type(format!("Failed to create string accessor: {:?}", e))
+        })
     }
 }
 
@@ -144,8 +143,9 @@ impl Series<String> {
 impl Series<chrono::NaiveDateTime> {
     /// Get datetime accessor for datetime operations
     pub fn dt(&self) -> Result<crate::series::datetime_accessor::DateTimeAccessor> {
-        crate::series::datetime_accessor::DateTimeAccessor::new(self.clone())
-            .map_err(|e| crate::core::error::Error::Type(format!("Failed to create datetime accessor: {:?}", e)))
+        crate::series::datetime_accessor::DateTimeAccessor::new(self.clone()).map_err(|e| {
+            crate::core::error::Error::Type(format!("Failed to create datetime accessor: {:?}", e))
+        })
     }
 }
 
@@ -153,7 +153,8 @@ impl Series<chrono::NaiveDateTime> {
 impl Series<chrono::DateTime<chrono::Utc>> {
     /// Get timezone-aware datetime accessor for datetime operations
     pub fn dt_tz(&self) -> Result<crate::series::datetime_accessor::DateTimeAccessorTz> {
-        crate::series::datetime_accessor::DateTimeAccessorTz::new(self.clone())
-            .map_err(|e| crate::core::error::Error::Type(format!("Failed to create datetime accessor: {:?}", e)))
+        crate::series::datetime_accessor::DateTimeAccessorTz::new(self.clone()).map_err(|e| {
+            crate::core::error::Error::Type(format!("Failed to create datetime accessor: {:?}", e))
+        })
     }
 }

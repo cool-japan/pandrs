@@ -8,12 +8,10 @@
 
 use std::collections::HashMap;
 
-use crate::column::{
-    BooleanColumn, Column, ColumnType, Float64Column, Int64Column, StringColumn,
-};
+use crate::column::{BooleanColumn, Column, ColumnType, Float64Column, Int64Column, StringColumn};
 use crate::error::{Error, Result};
 
-use super::core::{OptimizedDataFrame, ColumnView};
+use super::core::{ColumnView, OptimizedDataFrame};
 
 impl OptimizedDataFrame {
     /// Append another DataFrame vertically

@@ -14,9 +14,11 @@
 //!
 //! Run with: cargo run --example simd_column_operations_demo
 
-use pandrs::column::{Float64Column, Int64Column, Column, SIMDFloat64Ops, SIMDInt64Ops, SIMDColumnArithmetic};
-use pandrs::optimized::jit::ComparisonOp;
+use pandrs::column::{
+    Column, Float64Column, Int64Column, SIMDColumnArithmetic, SIMDFloat64Ops, SIMDInt64Ops,
+};
 use pandrs::core::error::Result;
+use pandrs::optimized::jit::ComparisonOp;
 use std::time::Instant;
 
 fn main() -> Result<()> {
@@ -27,22 +29,22 @@ fn main() -> Result<()> {
     // Demonstrate different SIMD operations
     demo_basic_arithmetic()?;
     println!();
-    
+
     demo_scalar_operations()?;
     println!();
-    
+
     demo_mathematical_functions()?;
     println!();
-    
+
     demo_comparison_operations()?;
     println!();
-    
+
     demo_mixed_type_operations()?;
     println!();
-    
+
     demo_performance_comparison()?;
     println!();
-    
+
     demo_large_scale_operations()?;
     println!();
 
@@ -58,7 +60,7 @@ fn demo_basic_arithmetic() -> Result<()> {
 
     let data1 = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
     let data2 = vec![2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0];
-    
+
     let col1 = Float64Column::new(data1);
     let col2 = Float64Column::new(data2);
 
@@ -108,11 +110,11 @@ fn demo_scalar_operations() -> Result<()> {
     // Test with i64 column
     let int_data = vec![1i64, 2, 3, 4, 5];
     let int_col = Int64Column::new(int_data);
-    
+
     println!();
     println!("Integer column operations:");
     println!("Input: {:?}", int_col.data());
-    
+
     let int_add_result = int_col.simd_add_scalar(100)?;
     println!("Add scalar 100: {:?}", int_add_result.data());
 
@@ -139,7 +141,7 @@ fn demo_mathematical_functions() -> Result<()> {
     let positive_col = Float64Column::new(positive_data);
     println!();
     println!("Input for sqrt: {:?}", positive_col.data());
-    
+
     let sqrt_result = positive_col.simd_sqrt()?;
     println!("Square root: {:?}", sqrt_result.data());
 
@@ -149,7 +151,7 @@ fn demo_mathematical_functions() -> Result<()> {
     println!();
     println!("Integer absolute value:");
     println!("Input: {:?}", int_col.data());
-    
+
     let int_abs_result = int_col.simd_abs()?;
     println!("Result: {:?}", int_abs_result.data());
 
@@ -163,7 +165,7 @@ fn demo_comparison_operations() -> Result<()> {
 
     let data1 = vec![1.0, 2.0, 3.0, 4.0, 5.0];
     let data2 = vec![1.0, 1.0, 4.0, 4.0, 6.0];
-    
+
     let col1 = Float64Column::new(data1);
     let col2 = Float64Column::new(data2);
 
@@ -236,7 +238,7 @@ fn demo_performance_comparison() -> Result<()> {
     let size = 10_000;
     let data1: Vec<f64> = (0..size).map(|i| i as f64).collect();
     let data2: Vec<f64> = (0..size).map(|i| (i % 100) as f64).collect();
-    
+
     let col1 = Float64Column::new(data1.clone());
     let col2 = Float64Column::new(data2.clone());
 
@@ -260,9 +262,15 @@ fn demo_performance_comparison() -> Result<()> {
     let scalar_time = start.elapsed();
 
     println!("Addition Performance (1000 iterations):");
-    println!("  SIMD implementation: {:.2}ms", simd_time.as_secs_f64() * 1000.0);
-    println!("  Scalar implementation: {:.2}ms", scalar_time.as_secs_f64() * 1000.0);
-    
+    println!(
+        "  SIMD implementation: {:.2}ms",
+        simd_time.as_secs_f64() * 1000.0
+    );
+    println!(
+        "  Scalar implementation: {:.2}ms",
+        scalar_time.as_secs_f64() * 1000.0
+    );
+
     let speedup = scalar_time.as_secs_f64() / simd_time.as_secs_f64();
     if speedup > 1.0 {
         println!("  SIMD speedup: {:.1}x faster", speedup);
@@ -292,9 +300,15 @@ fn demo_performance_comparison() -> Result<()> {
     let scalar_sqrt_time = start.elapsed();
 
     println!("Square Root Performance (100 iterations):");
-    println!("  SIMD sqrt: {:.2}ms", simd_sqrt_time.as_secs_f64() * 1000.0);
-    println!("  Scalar sqrt: {:.2}ms", scalar_sqrt_time.as_secs_f64() * 1000.0);
-    
+    println!(
+        "  SIMD sqrt: {:.2}ms",
+        simd_sqrt_time.as_secs_f64() * 1000.0
+    );
+    println!(
+        "  Scalar sqrt: {:.2}ms",
+        scalar_sqrt_time.as_secs_f64() * 1000.0
+    );
+
     let sqrt_speedup = scalar_sqrt_time.as_secs_f64() / simd_sqrt_time.as_secs_f64();
     if sqrt_speedup > 1.0 {
         println!("  SIMD sqrt speedup: {:.1}x faster", sqrt_speedup);
@@ -311,30 +325,38 @@ fn demo_large_scale_operations() -> Result<()> {
     println!("========================");
 
     let sizes = vec![1_000, 10_000, 100_000];
-    
+
     for &size in &sizes {
         println!("Dataset size: {} elements", size);
-        
+
         let data1: Vec<f64> = (0..size).map(|i| (i as f64) * 0.001).collect();
         let data2: Vec<f64> = (0..size).map(|i| (i % 1000) as f64).collect();
-        
+
         let col1 = Float64Column::new(data1);
         let col2 = Float64Column::new(data2);
 
         // Complex operation: (col1 + col2) * 2.0 - abs(col1)
         let start = Instant::now();
-        
+
         let step1 = col1.simd_add(&col2)?;
         let step2 = step1.simd_multiply_scalar(2.0)?;
         let step3 = col1.simd_abs()?;
         let result = step2.simd_subtract(&step3)?;
-        
+
         let operation_time = start.elapsed();
-        
-        println!("  Complex operation time: {:.3}ms", operation_time.as_secs_f64() * 1000.0);
-        println!("  Operations per second: {:.0}", size as f64 / operation_time.as_secs_f64());
-        println!("  Sample result (first 5 elements): {:?}", 
-                 &result.data()[..5.min(result.data().len())]);
+
+        println!(
+            "  Complex operation time: {:.3}ms",
+            operation_time.as_secs_f64() * 1000.0
+        );
+        println!(
+            "  Operations per second: {:.0}",
+            size as f64 / operation_time.as_secs_f64()
+        );
+        println!(
+            "  Sample result (first 5 elements): {:?}",
+            &result.data()[..5.min(result.data().len())]
+        );
         println!();
     }
 

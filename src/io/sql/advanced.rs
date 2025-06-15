@@ -1,14 +1,17 @@
 use std::time::Duration;
 
 #[cfg(feature = "sql")]
-use sqlx::{Pool, AnyPool, Row as SqlxRow, Column as SqlxColumn, Executor};
+use sqlx::{AnyPool, Column as SqlxColumn, Executor, Pool, Row as SqlxRow};
 
 use crate::dataframe::DataFrame;
 use crate::error::{Error, Result};
 use crate::optimized::OptimizedDataFrame;
 use crate::series::Series;
 
-use super::connection::{AsyncDatabasePool, ConnectionStats, DatabaseOperation, IsolationLevel, SqlValue, TransactionManager};
+use super::connection::{
+    AsyncDatabasePool, ConnectionStats, DatabaseOperation, IsolationLevel, SqlValue,
+    TransactionManager,
+};
 use super::operations::SqlWriteOptions;
 
 impl AsyncDatabasePool {
@@ -34,24 +37,28 @@ impl AsyncDatabasePool {
     /// }
     /// ```
     #[cfg(feature = "sql")]
-    pub async fn query_async(&self, query: &str, _params: Option<Vec<SqlValue>>) -> Result<DataFrame> {
+    pub async fn query_async(
+        &self,
+        query: &str,
+        _params: Option<Vec<SqlValue>>,
+    ) -> Result<DataFrame> {
         use std::time::Instant;
-        
+
         let _start_time = Instant::now();
-        
+
         // Execute query
         let rows = sqlx::query(query)
             .fetch_all(self.pool())
             .await
             .map_err(|e| Error::IoError(format!("Async query failed: {}", e)))?;
-        
+
         let _query_duration = _start_time.elapsed().as_millis() as f64;
-        
+
         // Convert rows to DataFrame
         let df = convert_sqlx_rows_to_dataframe(&rows)?;
-        
+
         // Update statistics (would need Arc<Mutex<ConnectionStats>> for thread safety)
-        
+
         Ok(df)
     }
 
@@ -79,39 +86,43 @@ impl AsyncDatabasePool {
     /// ```
     #[cfg(feature = "sql")]
     pub async fn bulk_insert_async(
-        &self, 
-        table_name: &str, 
-        df: &DataFrame, 
-        options: SqlWriteOptions
+        &self,
+        table_name: &str,
+        df: &DataFrame,
+        options: SqlWriteOptions,
     ) -> Result<u64> {
         // Begin transaction for bulk insert
-        let mut tx = self.pool().begin()
+        let mut tx = self
+            .pool()
+            .begin()
             .await
             .map_err(|e| Error::IoError(format!("Failed to begin transaction: {}", e)))?;
-        
+
         let chunk_size = options.chunksize.unwrap_or(10000);
         let mut total_inserted = 0u64;
-        
+
         // Process in chunks
         for chunk_start in (0..df.row_count()).step_by(chunk_size) {
             let chunk_end = std::cmp::min(chunk_start + chunk_size, df.row_count());
-            
+
             // Generate bulk INSERT SQL for this chunk
-            let insert_sql = generate_bulk_insert_sql(table_name, df, chunk_start, chunk_end, &options)?;
-            
+            let insert_sql =
+                generate_bulk_insert_sql(table_name, df, chunk_start, chunk_end, &options)?;
+
             // Execute bulk insert
-            let result = tx.execute(sqlx::query(&insert_sql))
+            let result = tx
+                .execute(sqlx::query(&insert_sql))
                 .await
                 .map_err(|e| Error::IoError(format!("Bulk insert failed: {}", e)))?;
-            
+
             total_inserted += result.rows_affected();
         }
-        
+
         // Commit transaction
         tx.commit()
             .await
             .map_err(|e| Error::IoError(format!("Failed to commit transaction: {}", e)))?;
-        
+
         Ok(total_inserted)
     }
 
@@ -137,7 +148,7 @@ impl AsyncDatabasePool {
     ///         SqlValue::Integer(25)
     ///     ];
     ///     let df = pool.query_with_params(
-    ///         "SELECT * FROM users WHERE name = ? AND age > ?", 
+    ///         "SELECT * FROM users WHERE name = ? AND age > ?",
     ///         params
     ///     ).await.unwrap();
     /// }
@@ -145,12 +156,12 @@ impl AsyncDatabasePool {
     #[cfg(feature = "sql")]
     pub async fn query_with_params(&self, query: &str, params: Vec<SqlValue>) -> Result<DataFrame> {
         use std::time::Instant;
-        
+
         let _start_time = Instant::now();
-        
+
         // Build parameterized query
         let mut sqlx_query = sqlx::query(query);
-        
+
         // Bind parameters (simplified - would need proper type conversion)
         for param in params {
             match param {
@@ -162,13 +173,13 @@ impl AsyncDatabasePool {
                 SqlValue::Blob(b) => sqlx_query = sqlx_query.bind(b),
             }
         }
-        
+
         // Execute query
         let rows = sqlx_query
             .fetch_all(self.pool())
             .await
             .map_err(|e| Error::IoError(format!("Parameterized query failed: {}", e)))?;
-        
+
         // Convert to DataFrame
         convert_sqlx_rows_to_dataframe(&rows)
     }
@@ -200,12 +211,12 @@ impl AsyncDatabasePool {
     #[cfg(feature = "sql")]
     pub async fn parallel_queries(&self, queries: Vec<String>) -> Result<Vec<DataFrame>> {
         use futures::future::try_join_all;
-        
+
         let futures: Vec<_> = queries
             .into_iter()
             .map(|query| self.query_async(&query, None))
             .collect();
-        
+
         try_join_all(futures).await
     }
 
@@ -235,34 +246,34 @@ impl AsyncDatabasePool {
     #[cfg(feature = "sql")]
     pub async fn stream_query(&self, query: &str, chunk_size: usize) -> Result<Vec<DataFrame>> {
         use sqlx::Row;
-        
+
         // This is a simplified implementation - real streaming would use cursors
         let mut chunks = Vec::new();
         let mut offset = 0;
-        
+
         loop {
             let chunked_query = format!("{} LIMIT {} OFFSET {}", query, chunk_size, offset);
-            
+
             let rows = sqlx::query(&chunked_query)
                 .fetch_all(self.pool())
                 .await
                 .map_err(|e| Error::IoError(format!("Stream query failed: {}", e)))?;
-            
+
             if rows.is_empty() {
                 break;
             }
-            
+
             let df = convert_sqlx_rows_to_dataframe(&rows)?;
             chunks.push(df);
-            
+
             offset += chunk_size;
-            
+
             // If we got fewer rows than chunk_size, we're done
             if rows.len() < chunk_size {
                 break;
             }
         }
-        
+
         Ok(chunks)
     }
 }
@@ -292,13 +303,18 @@ impl TransactionManager {
     /// }
     /// ```
     #[cfg(feature = "sql")]
-    pub async fn execute_transaction(&self, operations: Vec<DatabaseOperation>) -> Result<Vec<Option<DataFrame>>> {
-        let mut tx = self.pool().begin()
+    pub async fn execute_transaction(
+        &self,
+        operations: Vec<DatabaseOperation>,
+    ) -> Result<Vec<Option<DataFrame>>> {
+        let mut tx = self
+            .pool()
+            .begin()
             .await
             .map_err(|e| Error::IoError(format!("Failed to begin transaction: {}", e)))?;
-        
+
         let mut results = Vec::new();
-        
+
         for operation in operations {
             match operation {
                 DatabaseOperation::Query(sql) => {
@@ -306,23 +322,23 @@ impl TransactionManager {
                         .fetch_all(&mut *tx)
                         .await
                         .map_err(|e| Error::IoError(format!("Transaction query failed: {}", e)))?;
-                    
+
                     let df = convert_sqlx_rows_to_dataframe(&rows)?;
                     results.push(Some(df));
                 }
                 DatabaseOperation::Execute(sql) => {
-                    tx.execute(sqlx::query(&sql))
-                        .await
-                        .map_err(|e| Error::IoError(format!("Transaction execute failed: {}", e)))?;
+                    tx.execute(sqlx::query(&sql)).await.map_err(|e| {
+                        Error::IoError(format!("Transaction execute failed: {}", e))
+                    })?;
                     results.push(None);
                 }
             }
         }
-        
+
         tx.commit()
             .await
             .map_err(|e| Error::IoError(format!("Failed to commit transaction: {}", e)))?;
-        
+
         Ok(results)
     }
 
@@ -351,78 +367,79 @@ impl TransactionManager {
     /// ```
     #[cfg(feature = "sql")]
     pub async fn execute_nested_transaction(
-        &self, 
-        operation_groups: Vec<Vec<DatabaseOperation>>
+        &self,
+        operation_groups: Vec<Vec<DatabaseOperation>>,
     ) -> Result<Vec<Vec<Option<DataFrame>>>> {
-        let mut tx = self.pool().begin()
+        let mut tx = self
+            .pool()
+            .begin()
             .await
             .map_err(|e| Error::IoError(format!("Failed to begin transaction: {}", e)))?;
-        
+
         let mut all_results = Vec::new();
-        
+
         for (i, operations) in operation_groups.into_iter().enumerate() {
             let savepoint_name = format!("sp_{}", i);
-            
+
             // Create savepoint
             tx.execute(sqlx::query(&format!("SAVEPOINT {}", savepoint_name)))
                 .await
                 .map_err(|e| Error::IoError(format!("Failed to create savepoint: {}", e)))?;
-            
+
             let mut group_results = Vec::new();
             let mut savepoint_error = false;
-            
+
             for operation in operations {
                 match operation {
                     DatabaseOperation::Query(sql) => {
                         match sqlx::query(&sql).fetch_all(&mut *tx).await {
-                            Ok(rows) => {
-                                match convert_sqlx_rows_to_dataframe(&rows) {
-                                    Ok(df) => group_results.push(Some(df)),
-                                    Err(_) => {
-                                        savepoint_error = true;
-                                        break;
-                                    }
+                            Ok(rows) => match convert_sqlx_rows_to_dataframe(&rows) {
+                                Ok(df) => group_results.push(Some(df)),
+                                Err(_) => {
+                                    savepoint_error = true;
+                                    break;
                                 }
-                            }
+                            },
                             Err(_) => {
                                 savepoint_error = true;
                                 break;
                             }
                         }
                     }
-                    DatabaseOperation::Execute(sql) => {
-                        match tx.execute(sqlx::query(&sql)).await {
-                            Ok(_) => group_results.push(None),
-                            Err(_) => {
-                                savepoint_error = true;
-                                break;
-                            }
+                    DatabaseOperation::Execute(sql) => match tx.execute(sqlx::query(&sql)).await {
+                        Ok(_) => group_results.push(None),
+                        Err(_) => {
+                            savepoint_error = true;
+                            break;
                         }
-                    }
+                    },
                 }
             }
-            
+
             if savepoint_error {
                 // Rollback to savepoint
                 tx.execute(sqlx::query(&format!("ROLLBACK TO {}", savepoint_name)))
                     .await
                     .map_err(|e| Error::IoError(format!("Failed to rollback savepoint: {}", e)))?;
-                
-                return Err(Error::IoError(format!("Transaction failed at savepoint {}", savepoint_name)));
+
+                return Err(Error::IoError(format!(
+                    "Transaction failed at savepoint {}",
+                    savepoint_name
+                )));
             } else {
                 // Release savepoint (commit it)
                 tx.execute(sqlx::query(&format!("RELEASE {}", savepoint_name)))
                     .await
                     .map_err(|e| Error::IoError(format!("Failed to release savepoint: {}", e)))?;
             }
-            
+
             all_results.push(group_results);
         }
-        
+
         tx.commit()
             .await
             .map_err(|e| Error::IoError(format!("Failed to commit transaction: {}", e)))?;
-        
+
         Ok(all_results)
     }
 
@@ -449,12 +466,12 @@ impl TransactionManager {
             IsolationLevel::RepeatableRead => "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ",
             IsolationLevel::Serializable => "SET TRANSACTION ISOLATION LEVEL SERIALIZABLE",
         };
-        
+
         sqlx::query(sql)
             .execute(self.pool())
             .await
             .map_err(|e| Error::IoError(format!("Failed to set isolation level: {}", e)))?;
-        
+
         self.isolation_level = level;
         Ok(())
     }
@@ -483,30 +500,34 @@ impl TransactionManager {
     /// }
     /// ```
     #[cfg(feature = "sql")]
-    pub async fn execute_readonly_transaction(&self, queries: Vec<String>) -> Result<Vec<DataFrame>> {
-        let mut tx = self.pool().begin()
-            .await
-            .map_err(|e| Error::IoError(format!("Failed to begin readonly transaction: {}", e)))?;
-        
+    pub async fn execute_readonly_transaction(
+        &self,
+        queries: Vec<String>,
+    ) -> Result<Vec<DataFrame>> {
+        let mut tx =
+            self.pool().begin().await.map_err(|e| {
+                Error::IoError(format!("Failed to begin readonly transaction: {}", e))
+            })?;
+
         // Set transaction as read-only if supported by the database
         let _ = tx.execute(sqlx::query("SET TRANSACTION READ ONLY")).await;
-        
+
         let mut results = Vec::new();
-        
+
         for query in queries {
             let rows = sqlx::query(&query)
                 .fetch_all(&mut *tx)
                 .await
                 .map_err(|e| Error::IoError(format!("Readonly query failed: {}", e)))?;
-            
+
             let df = convert_sqlx_rows_to_dataframe(&rows)?;
             results.push(df);
         }
-        
+
         tx.commit()
             .await
             .map_err(|e| Error::IoError(format!("Failed to commit readonly transaction: {}", e)))?;
-        
+
         Ok(results)
     }
 }
@@ -655,56 +676,58 @@ impl QueryBuilder {
 
     /// Build the SQL query
     pub fn build(self) -> Result<String> {
-        let table = self.table.ok_or_else(|| Error::IoError("Table name is required".to_string()))?;
-        
+        let table = self
+            .table
+            .ok_or_else(|| Error::IoError("Table name is required".to_string()))?;
+
         let mut sql = String::new();
-        
+
         // SELECT clause
         if self.select_columns.is_empty() {
             sql.push_str("SELECT *");
         } else {
             sql.push_str(&format!("SELECT {}", self.select_columns.join(", ")));
         }
-        
+
         // FROM clause
         sql.push_str(&format!(" FROM {}", table));
-        
+
         // JOIN clauses
         for join in &self.joins {
             sql.push_str(&format!(" {}", join));
         }
-        
+
         // WHERE clause
         if !self.where_conditions.is_empty() {
             let conditions = self.where_conditions.join(" ");
             sql.push_str(&format!(" WHERE {}", conditions));
         }
-        
+
         // GROUP BY clause
         if !self.group_by.is_empty() {
             sql.push_str(&format!(" GROUP BY {}", self.group_by.join(", ")));
         }
-        
+
         // HAVING clause
         if !self.having_conditions.is_empty() {
             sql.push_str(&format!(" HAVING {}", self.having_conditions.join(" AND ")));
         }
-        
+
         // ORDER BY clause
         if !self.order_by.is_empty() {
             sql.push_str(&format!(" ORDER BY {}", self.order_by.join(", ")));
         }
-        
+
         // LIMIT clause
         if let Some(limit) = self.limit {
             sql.push_str(&format!(" LIMIT {}", limit));
         }
-        
+
         // OFFSET clause
         if let Some(offset) = self.offset {
             sql.push_str(&format!(" OFFSET {}", offset));
         }
-        
+
         Ok(sql)
     }
 }
@@ -725,24 +748,22 @@ fn generate_bulk_insert_sql(
 ) -> Result<String> {
     // Get column names
     let columns: Vec<String> = df.column_names().iter().cloned().collect();
-    
+
     // Build INSERT statement
     let mut sql = format!("INSERT INTO {} (", table_name);
     sql.push_str(&columns.join(", "));
     sql.push_str(") VALUES ");
-    
+
     // Add value placeholders (simplified implementation)
     let value_rows: Vec<String> = (start_row..end_row)
         .map(|_row_idx| {
-            let placeholders: Vec<String> = columns.iter()
-                .map(|_| "?".to_string())
-                .collect();
+            let placeholders: Vec<String> = columns.iter().map(|_| "?".to_string()).collect();
             format!("({})", placeholders.join(", "))
         })
         .collect();
-    
+
     sql.push_str(&value_rows.join(", "));
-    
+
     Ok(sql)
 }
 
@@ -750,21 +771,21 @@ fn generate_bulk_insert_sql(
 #[cfg(feature = "sql")]
 fn convert_sqlx_rows_to_dataframe(rows: &[sqlx::any::AnyRow]) -> Result<DataFrame> {
     use sqlx::Row;
-    
+
     if rows.is_empty() {
         return Ok(DataFrame::new());
     }
-    
+
     let mut df = DataFrame::new();
-    
+
     // Get column information from first row
     let first_row = &rows[0];
     let column_count = first_row.len();
-    
+
     for col_idx in 0..column_count {
         let column = first_row.column(col_idx);
         let col_name = column.name().to_string();
-        
+
         // Extract column data
         let mut values = Vec::new();
         for row in rows {
@@ -775,11 +796,11 @@ fn convert_sqlx_rows_to_dataframe(rows: &[sqlx::any::AnyRow]) -> Result<DataFram
             };
             values.push(value);
         }
-        
+
         let series = Series::new(values, Some(col_name.clone()))?;
         df.add_column(col_name, series)?;
     }
-    
+
     Ok(df)
 }
 
@@ -830,12 +851,12 @@ impl AdvancedConnectionPool {
         health_check_interval: Duration,
     ) -> Result<Self> {
         use sqlx::any::AnyPoolOptions;
-        
+
         let primary_pool = AnyPoolOptions::new()
             .connect(primary_url)
             .await
             .map_err(|e| Error::IoError(format!("Failed to connect to primary: {}", e)))?;
-        
+
         let mut read_pools = Vec::new();
         for url in read_urls {
             let pool = AnyPoolOptions::new()
@@ -844,7 +865,7 @@ impl AdvancedConnectionPool {
                 .map_err(|e| Error::IoError(format!("Failed to connect to read replica: {}", e)))?;
             read_pools.push(pool);
         }
-        
+
         Ok(Self {
             primary_pool,
             read_pools,
@@ -863,12 +884,12 @@ impl AdvancedConnectionPool {
             // In a real implementation, you'd want proper load balancing
             &self.read_pools[0]
         };
-        
+
         let rows = sqlx::query(query)
             .fetch_all(pool)
             .await
             .map_err(|e| Error::IoError(format!("Read query failed: {}", e)))?;
-        
+
         convert_sqlx_rows_to_dataframe(&rows)
     }
 
@@ -879,7 +900,7 @@ impl AdvancedConnectionPool {
             .execute(&self.primary_pool)
             .await
             .map_err(|e| Error::IoError(format!("Write query failed: {}", e)))?;
-        
+
         Ok(result.rows_affected())
     }
 
@@ -890,16 +911,16 @@ impl AdvancedConnectionPool {
             primary_healthy: false,
             replica_health: Vec::new(),
         };
-        
+
         // Check primary
         result.primary_healthy = self.check_pool_health(&self.primary_pool).await;
-        
+
         // Check replicas
         for pool in &self.read_pools {
             let healthy = self.check_pool_health(pool).await;
             result.replica_health.push(healthy);
         }
-        
+
         Ok(result)
     }
 

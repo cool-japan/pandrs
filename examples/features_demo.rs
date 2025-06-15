@@ -1,5 +1,5 @@
-use pandrs::Series;
 use pandrs::optimized::OptimizedDataFrame;
+use pandrs::Series;
 use std::collections::HashMap;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -40,13 +40,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut df = OptimizedDataFrame::new();
     df.add_int_column("sales", vec![100, 150, 200, 175, 300])?;
     df.add_float_column("margin", vec![0.15, 0.20, 0.18, 0.22, 0.25])?;
-    df.add_string_column("region", vec![
-        "North".to_string(),
-        "South".to_string(),
-        "East".to_string(),
-        "West".to_string(),
-        "Central".to_string(),
-    ])?;
+    df.add_string_column(
+        "region",
+        vec![
+            "North".to_string(),
+            "South".to_string(),
+            "East".to_string(),
+            "West".to_string(),
+            "Central".to_string(),
+        ],
+    )?;
 
     println!("Original column names: {:?}", df.column_names());
 
@@ -120,15 +123,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Create a large dataset to demonstrate string pool efficiency
     let mut large_df = OptimizedDataFrame::new();
-    
+
     // Create data with repeated string values (simulates categorical data)
     let regions: Vec<String> = (0..10000)
         .map(|i| format!("Region_{}", i % 5)) // Only 5 unique regions
         .collect();
-    
-    let sales: Vec<i64> = (0..10000)
-        .map(|i| 1000 + (i % 500) as i64)
-        .collect();
+
+    let sales: Vec<i64> = (0..10000).map(|i| 1000 + (i % 500) as i64).collect();
 
     large_df.add_string_column("region", regions)?;
     large_df.add_int_column("sales", sales)?;
@@ -152,12 +153,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     match large_df.to_csv("alpha4_demo_output.csv", true) {
         Ok(_) => {
             println!("Successfully saved DataFrame to CSV");
-            
+
             // Read it back
             match pandrs::io::read_csv("alpha4_demo_output.csv", true) {
                 Ok(loaded_df) => {
                     println!("Successfully loaded DataFrame from CSV");
-                    println!("Loaded {} rows and {} columns", loaded_df.row_count(), loaded_df.column_count());
+                    println!(
+                        "Loaded {} rows and {} columns",
+                        loaded_df.row_count(),
+                        loaded_df.column_count()
+                    );
                 }
                 Err(e) => println!("Error loading CSV: {}", e),
             }
@@ -187,7 +192,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Sales max: {:.2}", large_df.max("sales")?);
 
     println!("\n✅ Alpha 4 features demonstration completed successfully!");
-    
+
     Ok(())
 }
 
@@ -204,25 +209,25 @@ mod tests {
 
         let mut df = OptimizedDataFrame::new();
         df.add_int_column("values", vec![1, 2, 3]).unwrap();
-        
+
         let mut rename_map = HashMap::new();
         rename_map.insert("values".to_string(), "new_values".to_string());
         df.rename_columns(&rename_map).unwrap();
-        
+
         assert_eq!(df.column_names(), &["new_values"]);
     }
 
     #[test]
     fn test_error_handling() {
         let df = OptimizedDataFrame::new();
-        
+
         // Test accessing nonexistent column
         assert!(df.column("nonexistent").is_err());
-        
+
         // Test type safety
         let mut df = OptimizedDataFrame::new();
         df.add_int_column("int_col", vec![1, 2, 3]).unwrap();
-        
+
         let col_view = df.column("int_col").unwrap();
         assert!(col_view.as_int64().is_some());
         assert!(col_view.as_string().is_none());

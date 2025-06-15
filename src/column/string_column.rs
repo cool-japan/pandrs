@@ -1,8 +1,8 @@
 use std::any::Any;
 use std::sync::Arc;
 
-use crate::core::column::{Column, ColumnTrait, ColumnType};
 use crate::column::string_pool::{StringPool, GLOBAL_STRING_POOL};
+use crate::core::column::{Column, ColumnTrait, ColumnType};
 use crate::core::error::{Error, Result};
 use std::collections::HashMap;
 

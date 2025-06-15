@@ -1,7 +1,7 @@
 //! Group creation logic and parallel grouping operations
 
-use std::collections::HashMap;
 use std::collections::hash_map::Entry;
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use rayon::prelude::*;

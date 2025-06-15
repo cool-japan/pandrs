@@ -1,7 +1,7 @@
 use pandrs::dataframe::base::DataFrame;
-use pandrs::dataframe::groupby::{GroupByExt, NamedAgg, ColumnAggBuilder, AggFunc};
-use pandrs::series::base::Series;
+use pandrs::dataframe::groupby::{AggFunc, ColumnAggBuilder, GroupByExt, NamedAgg};
 use pandrs::error::Result;
+use pandrs::series::base::Series;
 use std::collections::HashMap;
 
 #[allow(clippy::result_large_err)]
@@ -11,18 +11,39 @@ fn main() -> Result<()> {
     // Create sample sales data
     println!("1. Creating Sample Sales Data:");
     let mut df = DataFrame::new();
-    
-    let regions = vec!["North", "South", "North", "East", "South", "West", "East", "North", "West", "South"];
-    let categories = vec!["A", "B", "A", "C", "B", "A", "C", "B", "A", "C"];
-    let sales = vec!["1000", "1500", "1200", "800", "1800", "1100", "900", "1300", "1400", "1600"];
-    let quantities = vec!["10", "15", "12", "8", "18", "11", "9", "13", "14", "16"];
-    let costs = vec!["600", "900", "720", "480", "1080", "660", "540", "780", "840", "960"];
 
-    let region_series = Series::new(regions.into_iter().map(|s| s.to_string()).collect(), Some("Region".to_string()))?;
-    let category_series = Series::new(categories.into_iter().map(|s| s.to_string()).collect(), Some("Category".to_string()))?;
-    let sales_series = Series::new(sales.into_iter().map(|s| s.to_string()).collect(), Some("Sales".to_string()))?;
-    let quantity_series = Series::new(quantities.into_iter().map(|s| s.to_string()).collect(), Some("Quantity".to_string()))?;
-    let cost_series = Series::new(costs.into_iter().map(|s| s.to_string()).collect(), Some("Cost".to_string()))?;
+    let regions = vec![
+        "North", "South", "North", "East", "South", "West", "East", "North", "West", "South",
+    ];
+    let categories = vec!["A", "B", "A", "C", "B", "A", "C", "B", "A", "C"];
+    let sales = vec![
+        "1000", "1500", "1200", "800", "1800", "1100", "900", "1300", "1400", "1600",
+    ];
+    let quantities = vec!["10", "15", "12", "8", "18", "11", "9", "13", "14", "16"];
+    let costs = vec![
+        "600", "900", "720", "480", "1080", "660", "540", "780", "840", "960",
+    ];
+
+    let region_series = Series::new(
+        regions.into_iter().map(|s| s.to_string()).collect(),
+        Some("Region".to_string()),
+    )?;
+    let category_series = Series::new(
+        categories.into_iter().map(|s| s.to_string()).collect(),
+        Some("Category".to_string()),
+    )?;
+    let sales_series = Series::new(
+        sales.into_iter().map(|s| s.to_string()).collect(),
+        Some("Sales".to_string()),
+    )?;
+    let quantity_series = Series::new(
+        quantities.into_iter().map(|s| s.to_string()).collect(),
+        Some("Quantity".to_string()),
+    )?;
+    let cost_series = Series::new(
+        costs.into_iter().map(|s| s.to_string()).collect(),
+        Some("Cost".to_string()),
+    )?;
 
     df.add_column("Region".to_string(), region_series)?;
     df.add_column("Category".to_string(), category_series)?;
@@ -38,7 +59,7 @@ fn main() -> Result<()> {
     // 2. Basic GroupBy operations
     println!("2. Basic GroupBy by Region:");
     let region_groupby = GroupByExt::groupby_single(&df, "Region")?;
-    
+
     // Simple aggregations
     let sales_sum = region_groupby.sum("Sales")?;
     println!("Sales Sum by Region:");
@@ -56,11 +77,15 @@ fn main() -> Result<()> {
 
     // 3. Named Aggregations (pandas-like)
     println!("3. Named Aggregations:");
-    
+
     let named_aggs = vec![
         NamedAgg::new("Sales".to_string(), AggFunc::Sum, "Total_Sales".to_string()),
         NamedAgg::new("Sales".to_string(), AggFunc::Mean, "Avg_Sales".to_string()),
-        NamedAgg::new("Quantity".to_string(), AggFunc::Sum, "Total_Quantity".to_string()),
+        NamedAgg::new(
+            "Quantity".to_string(),
+            AggFunc::Sum,
+            "Total_Quantity".to_string(),
+        ),
         NamedAgg::new("Cost".to_string(), AggFunc::Mean, "Avg_Cost".to_string()),
     ];
 
@@ -72,7 +97,7 @@ fn main() -> Result<()> {
 
     // 4. Multiple aggregations per column using builder pattern
     println!("4. Multiple Aggregations per Column:");
-    
+
     let sales_aggs = ColumnAggBuilder::new("Sales".to_string())
         .agg(AggFunc::Sum, "Sales_Total".to_string())
         .agg(AggFunc::Mean, "Sales_Average".to_string())
@@ -92,17 +117,23 @@ fn main() -> Result<()> {
 
     // 5. Dictionary-style aggregations (pandas .agg({'col': ['func1', 'func2']}) equivalent)
     println!("5. Dictionary-Style Aggregations:");
-    
+
     let mut agg_dict = HashMap::new();
-    agg_dict.insert("Sales".to_string(), vec![
-        (AggFunc::Sum, "sales_sum".to_string()),
-        (AggFunc::Mean, "sales_mean".to_string()),
-        (AggFunc::Std, "sales_std".to_string()),
-    ]);
-    agg_dict.insert("Cost".to_string(), vec![
-        (AggFunc::Sum, "cost_total".to_string()),
-        (AggFunc::Mean, "cost_avg".to_string()),
-    ]);
+    agg_dict.insert(
+        "Sales".to_string(),
+        vec![
+            (AggFunc::Sum, "sales_sum".to_string()),
+            (AggFunc::Mean, "sales_mean".to_string()),
+            (AggFunc::Std, "sales_std".to_string()),
+        ],
+    );
+    agg_dict.insert(
+        "Cost".to_string(),
+        vec![
+            (AggFunc::Sum, "cost_total".to_string()),
+            (AggFunc::Mean, "cost_avg".to_string()),
+        ],
+    );
 
     let dict_result = region_groupby.agg_dict(agg_dict)?;
     println!("Dictionary Aggregations Result:");
@@ -112,7 +143,7 @@ fn main() -> Result<()> {
 
     // 6. Custom aggregation functions
     println!("6. Custom Aggregation Functions:");
-    
+
     // Custom function: Range (max - min)
     let range_result = region_groupby.apply("Sales", "sales_range", |values| {
         let min_val = values.iter().fold(f64::INFINITY, |a, &b| a.min(b));
@@ -125,9 +156,8 @@ fn main() -> Result<()> {
     // Custom function: Coefficient of variation
     let cv_result = region_groupby.apply("Sales", "sales_cv", |values| {
         let mean = values.iter().sum::<f64>() / values.len() as f64;
-        let variance = values.iter()
-            .map(|&x| (x - mean).powi(2))
-            .sum::<f64>() / (values.len() - 1) as f64;
+        let variance =
+            values.iter().map(|&x| (x - mean).powi(2)).sum::<f64>() / (values.len() - 1) as f64;
         let std_dev = variance.sqrt();
         std_dev / mean
     })?;
@@ -138,12 +168,16 @@ fn main() -> Result<()> {
 
     // 7. Multi-column groupby
     println!("7. Multi-Column GroupBy (Region + Category):");
-    
+
     let multi_groupby = GroupByExt::groupby(&df, &["Region", "Category"])?;
-    
+
     let multi_aggs = vec![
         NamedAgg::new("Sales".to_string(), AggFunc::Sum, "Total_Sales".to_string()),
-        NamedAgg::new("Quantity".to_string(), AggFunc::Mean, "Avg_Quantity".to_string()),
+        NamedAgg::new(
+            "Quantity".to_string(),
+            AggFunc::Mean,
+            "Avg_Quantity".to_string(),
+        ),
     ];
 
     let multi_group_result = multi_groupby.agg(multi_aggs)?;
@@ -154,16 +188,28 @@ fn main() -> Result<()> {
 
     // 8. Advanced statistical aggregations
     println!("8. Advanced Statistical Aggregations:");
-    
+
     let stats_aggs = vec![
         NamedAgg::new("Sales".to_string(), AggFunc::Mean, "sales_mean".to_string()),
         NamedAgg::new("Sales".to_string(), AggFunc::Std, "sales_std".to_string()),
         NamedAgg::new("Sales".to_string(), AggFunc::Var, "sales_var".to_string()),
-        NamedAgg::new("Sales".to_string(), AggFunc::Median, "sales_median".to_string()),
+        NamedAgg::new(
+            "Sales".to_string(),
+            AggFunc::Median,
+            "sales_median".to_string(),
+        ),
         NamedAgg::new("Sales".to_string(), AggFunc::Min, "sales_min".to_string()),
         NamedAgg::new("Sales".to_string(), AggFunc::Max, "sales_max".to_string()),
-        NamedAgg::new("Sales".to_string(), AggFunc::Count, "sales_count".to_string()),
-        NamedAgg::new("Sales".to_string(), AggFunc::Nunique, "sales_nunique".to_string()),
+        NamedAgg::new(
+            "Sales".to_string(),
+            AggFunc::Count,
+            "sales_count".to_string(),
+        ),
+        NamedAgg::new(
+            "Sales".to_string(),
+            AggFunc::Nunique,
+            "sales_nunique".to_string(),
+        ),
     ];
 
     let stats_result = region_groupby.agg(stats_aggs)?;
@@ -174,9 +220,9 @@ fn main() -> Result<()> {
 
     // 9. Group information and metadata
     println!("9. Group Information:");
-    
+
     println!("Number of groups: {}", region_groupby.ngroups());
-    
+
     let group_sizes = region_groupby.size()?;
     println!("Group sizes:");
     println!("{:?}", group_sizes);
@@ -185,7 +231,7 @@ fn main() -> Result<()> {
 
     // 10. Complex example with custom functions using builder
     println!("10. Complex Custom Aggregations:");
-    
+
     let complex_aggs = ColumnAggBuilder::new("Sales".to_string())
         .agg(AggFunc::Sum, "total".to_string())
         .agg(AggFunc::Mean, "average".to_string())
@@ -206,7 +252,7 @@ fn main() -> Result<()> {
 
     // 11. Using helper macros
     println!("11. Using Helper Macros:");
-    
+
     // Using named_agg! macro
     let macro_aggs = vec![
         pandrs::named_agg!("Sales", AggFunc::Sum, "macro_sum"),
@@ -219,7 +265,8 @@ fn main() -> Result<()> {
     println!("{:?}", macro_result);
 
     // Using column_aggs! macro
-    let column_macro_agg = pandrs::column_aggs!("Cost", 
+    let column_macro_agg = pandrs::column_aggs!(
+        "Cost",
         (AggFunc::Sum, "cost_total"),
         (AggFunc::Mean, "cost_avg"),
         (AggFunc::Std, "cost_std")

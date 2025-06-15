@@ -1,18 +1,18 @@
 # PandRS
 
 [![Rust CI](https://github.com/cool-japan/pandrs/actions/workflows/rust.yml/badge.svg)](https://github.com/cool-japan/pandrs/actions/workflows/rust.yml)
-[![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+[![License: MIT OR Apache-2.0](https://img.shields.io/badge/License-MIT%20OR%20Apache--2.0-blue.svg)](https://opensource.org/licenses/MIT)
 [![Crate](https://img.shields.io/crates/v/pandrs.svg)](https://crates.io/crates/pandrs)
 
 A high-performance DataFrame library for data analysis implemented in Rust. It has features and design inspired by Python's `pandas` library, combining fast data processing with type safety and distributed computing capabilities.
 
-## 🚀 What's New in Alpha.4
+## 🚀 What's New
 
 **Enhanced DataFrame Operations:**
 - **Column Management**: New `rename_columns()` and `set_column_names()` methods for flexible column renaming
 - **Enhanced I/O**: Real data extraction in Parquet/SQL operations with improved type safety
 - **Distributed Processing**: Production-ready DataFusion integration with schema validation and fault tolerance
-- **Python Bindings**: Complete alpha.4 feature coverage with optimized string pool integration
+- **Python Bindings**: Complete feature coverage with optimized string pool integration
 
 **Performance & Reliability:**
 - **Comprehensive Testing**: 100+ integration tests covering all major features and edge cases
@@ -20,26 +20,26 @@ A high-performance DataFrame library for data analysis implemented in Rust. It h
 - **Fault Tolerance**: Checkpoint/recovery system for robust distributed processing
 - **Memory Optimization**: Advanced string pool with up to 89.8% memory reduction
 
-## 🏁 Quick Start (Alpha.4)
+## 🏁 Quick Start
 
 ```rust
 use pandrs::{DataFrame, OptimizedDataFrame, Column, StringColumn, Int64Column};
 use std::collections::HashMap;
 
-// Create DataFrame with alpha.4 column management
+// Create DataFrame with column management
 let mut df = DataFrame::new();
 df.add_column("name".to_string(), 
     pandrs::series::Series::from_vec(vec!["Alice", "Bob", "Carol"], Some("name")))?;
 
-// New in alpha.4: Rename columns with a mapping
+// Rename columns with a mapping
 let mut rename_map = HashMap::new();
 rename_map.insert("name".to_string(), "employee_name".to_string());
 df.rename_columns(&rename_map)?;
 
-// New in alpha.4: Set all column names at once
+// Set all column names at once
 df.set_column_names(vec!["person_name".to_string()])?;
 
-// Distributed processing with DataFusion (alpha.4)
+// Distributed processing with DataFusion
 use pandrs::distributed::DistributedContext;
 let mut context = DistributedContext::new_local(4)?;
 context.register_dataframe("people", &df)?;
@@ -110,7 +110,7 @@ df.to_csv("data.csv")?;
 // Load DataFrame from CSV
 let df_from_csv = DataFrame::from_csv("data.csv", true)?;
 
-// DataFrame column management (new in alpha.4)
+// DataFrame column management
 use std::collections::HashMap;
 
 // Rename specific columns using a mapping
@@ -135,7 +135,7 @@ let mean = numbers.mean()?;      // 30
 let min = numbers.min()?;        // 10
 let max = numbers.max()?;        // 50
 
-// Series name management (new in alpha.4)
+// Series name management
 numbers.set_name("updated_values".to_string());
 assert_eq!(numbers.name(), Some(&"updated_values".to_string()));
 
@@ -858,7 +858,7 @@ The implementation of optimized column-oriented storage, lazy evaluation system,
 | 100,000 rows | 1% (high duplication) | 82ms | 35ms | 2.34x | 88.6% |
 | 1,000,000 rows | 1% (high duplication) | 845ms | 254ms | 3.33x | 89.8% |
 
-## 🆕 Alpha.4 Major Improvements
+## 🆕 Major Features
 
 ### 🔧 Enhanced DataFrame API
 - **Column Management**: New `rename_columns()` and `set_column_names()` methods for flexible DataFrame schema management
@@ -878,7 +878,7 @@ The implementation of optimized column-oriented storage, lazy evaluation system,
 - **Performance**: Optimized data conversion processes for better throughput
 
 ### 🐍 Complete Python Bindings
-- **Feature Parity**: All alpha.4 features available through Python bindings
+- **Feature Parity**: All features available through Python bindings
 - **Pandas Integration**: Seamless interoperability with pandas DataFrames
 - **Memory Optimization**: String pool integration reducing Python memory overhead
 
@@ -1059,7 +1059,7 @@ cargo test --all-features
 
 ### Edge Case and Error Condition Testing
 
-Run comprehensive edge case tests (new in alpha.4):
+Run comprehensive edge case tests:
 
 ```bash
 cargo test --test edge_cases_test
@@ -1087,7 +1087,7 @@ These tests cover:
 
 ## Dependency Versions
 
-Latest dependency versions (January 2025):
+Latest dependency versions:
 
 ```toml
 [dependencies]
@@ -1130,4 +1130,9 @@ plotters-canvas = "0.4.0"    # Canvas backend for plotters
 
 ## License
 
-Available under the Apache License 2.0.
+PandRS is dual-licensed under either
+
+* MIT License (LICENSE-MIT or http://opensource.org/licenses/MIT)
+* Apache License, Version 2.0 (LICENSE-APACHE or http://www.apache.org/licenses/LICENSE-2.0)
+
+at your option.

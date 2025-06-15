@@ -7,58 +7,75 @@
 use crate::core::error::{Error, Result};
 use crate::dataframe::DataFrame;
 use std::collections::HashMap;
-use std::path::Path;
-use std::io::{Read, Write};
-use std::sync::Arc;
-use std::pin::Pin;
 use std::future::Future;
+use std::io::{Read, Write};
+use std::path::Path;
+use std::pin::Pin;
+use std::sync::Arc;
 
 /// Unified trait for all file format operations
 pub trait FileFormat: Send + Sync {
     /// Format identifier
     fn format_name(&self) -> &'static str;
-    
+
     /// Supported file extensions
     fn file_extensions(&self) -> Vec<&'static str>;
-    
+
     /// MIME types supported
     fn mime_types(&self) -> Vec<&'static str>;
-    
+
     /// Check if the format can handle the given file
     fn can_handle_file(&self, path: &Path) -> bool;
-    
+
     /// Check if the format can handle the given data
     fn can_handle_data(&self, data: &[u8]) -> bool;
-    
+
     /// Read DataFrame from a file path with generic options
-    fn read_from_path_with_options(&self, path: &Path, options: &HashMap<String, String>) -> Result<DataFrame>;
-    
+    fn read_from_path_with_options(
+        &self,
+        path: &Path,
+        options: &HashMap<String, String>,
+    ) -> Result<DataFrame>;
+
     /// Read DataFrame from bytes with generic options
-    fn read_from_bytes_with_options(&self, data: &[u8], options: &HashMap<String, String>) -> Result<DataFrame>;
-    
+    fn read_from_bytes_with_options(
+        &self,
+        data: &[u8],
+        options: &HashMap<String, String>,
+    ) -> Result<DataFrame>;
+
     /// Write DataFrame to a file path with generic options
-    fn write_to_path_with_options(&self, df: &DataFrame, path: &Path, options: &HashMap<String, String>) -> Result<()>;
-    
+    fn write_to_path_with_options(
+        &self,
+        df: &DataFrame,
+        path: &Path,
+        options: &HashMap<String, String>,
+    ) -> Result<()>;
+
     /// Write DataFrame to bytes with generic options
-    fn write_to_bytes_with_options(&self, df: &DataFrame, options: &HashMap<String, String>) -> Result<Vec<u8>>;
-    
+    fn write_to_bytes_with_options(
+        &self,
+        df: &DataFrame,
+        options: &HashMap<String, String>,
+    ) -> Result<Vec<u8>>;
+
     /// Get format metadata from file
     fn get_metadata(&self, path: &Path) -> Result<HashMap<String, String>>;
-    
+
     /// Validate format-specific options
     fn validate_options(&self, options: &HashMap<String, String>) -> Result<()>;
-    
+
     /// Get default options
     fn default_options(&self) -> HashMap<String, String>;
-    
+
     /// Get format capabilities
     fn capabilities(&self) -> FormatCapabilities;
-    
+
     /// Convenience method to read with default options
     fn read_from_path(&self, path: &Path) -> Result<DataFrame> {
         self.read_from_path_with_options(path, &self.default_options())
     }
-    
+
     /// Convenience method to write with default options
     fn write_to_path(&self, df: &DataFrame, path: &Path) -> Result<()> {
         self.write_to_path_with_options(df, path, &self.default_options())
@@ -107,29 +124,61 @@ pub enum FormatDataType {
 /// Trait for SQL-like operations
 pub trait SqlOps: Send + Sync {
     /// Connect to the database
-    fn connect(&self, connection_string: &str) -> Pin<Box<dyn Future<Output = Result<Box<dyn SqlConnection>>> + Send + '_>>;
-    
+    fn connect(
+        &self,
+        connection_string: &str,
+    ) -> Pin<Box<dyn Future<Output = Result<Box<dyn SqlConnection>>> + Send + '_>>;
+
     /// Execute a query and return results
-    fn execute_query(&self, conn: &dyn SqlConnection, query: &str) -> Pin<Box<dyn Future<Output = Result<DataFrame>> + Send + '_>>;
-    
+    fn execute_query(
+        &self,
+        conn: &dyn SqlConnection,
+        query: &str,
+    ) -> Pin<Box<dyn Future<Output = Result<DataFrame>> + Send + '_>>;
+
     /// Execute a non-query statement
-    fn execute_statement(&self, conn: &dyn SqlConnection, statement: &str) -> Pin<Box<dyn Future<Output = Result<SqlQueryResult>> + Send + '_>>;
-    
+    fn execute_statement(
+        &self,
+        conn: &dyn SqlConnection,
+        statement: &str,
+    ) -> Pin<Box<dyn Future<Output = Result<SqlQueryResult>> + Send + '_>>;
+
     /// Insert DataFrame into a table
-    fn insert_dataframe(&self, conn: &dyn SqlConnection, table_name: &str, df: &DataFrame) -> Pin<Box<dyn Future<Output = Result<()>> + Send + '_>>;
-    
+    fn insert_dataframe(
+        &self,
+        conn: &dyn SqlConnection,
+        table_name: &str,
+        df: &DataFrame,
+    ) -> Pin<Box<dyn Future<Output = Result<()>> + Send + '_>>;
+
     /// Create table from DataFrame schema
-    fn create_table_from_dataframe(&self, conn: &dyn SqlConnection, table_name: &str, df: &DataFrame) -> Pin<Box<dyn Future<Output = Result<()>> + Send + '_>>;
-    
+    fn create_table_from_dataframe(
+        &self,
+        conn: &dyn SqlConnection,
+        table_name: &str,
+        df: &DataFrame,
+    ) -> Pin<Box<dyn Future<Output = Result<()>> + Send + '_>>;
+
     /// List tables in the database
-    fn list_tables(&self, conn: &dyn SqlConnection) -> Pin<Box<dyn Future<Output = Result<Vec<String>>> + Send + '_>>;
-    
+    fn list_tables(
+        &self,
+        conn: &dyn SqlConnection,
+    ) -> Pin<Box<dyn Future<Output = Result<Vec<String>>> + Send + '_>>;
+
     /// Get table schema
-    fn get_table_schema(&self, conn: &dyn SqlConnection, table_name: &str) -> Pin<Box<dyn Future<Output = Result<TableSchema>> + Send + '_>>;
-    
+    fn get_table_schema(
+        &self,
+        conn: &dyn SqlConnection,
+        table_name: &str,
+    ) -> Pin<Box<dyn Future<Output = Result<TableSchema>> + Send + '_>>;
+
     /// Check if table exists
-    fn table_exists(&self, conn: &dyn SqlConnection, table_name: &str) -> Pin<Box<dyn Future<Output = Result<bool>> + Send + '_>>;
-    
+    fn table_exists(
+        &self,
+        conn: &dyn SqlConnection,
+        table_name: &str,
+    ) -> Pin<Box<dyn Future<Output = Result<bool>> + Send + '_>>;
+
     /// Get database capabilities
     fn capabilities(&self) -> SqlCapabilities;
 }
@@ -137,14 +186,17 @@ pub trait SqlOps: Send + Sync {
 /// SQL connection trait
 pub trait SqlConnection: Send + Sync {
     /// Execute a raw query
-    fn execute_raw(&self, query: &str) -> Pin<Box<dyn Future<Output = Result<SqlQueryResult>> + Send + '_>>;
-    
+    fn execute_raw(
+        &self,
+        query: &str,
+    ) -> Pin<Box<dyn Future<Output = Result<SqlQueryResult>> + Send + '_>>;
+
     /// Check if connection is valid
     fn is_valid(&self) -> bool;
-    
+
     /// Close the connection
     fn close(&self) -> Pin<Box<dyn Future<Output = Result<()>> + Send + '_>>;
-    
+
     /// Get connection metadata
     fn metadata(&self) -> HashMap<String, String>;
 }
@@ -324,14 +376,20 @@ pub enum IndexType {
 /// Trait for streaming operations
 pub trait StreamingOps: Send + Sync {
     /// Create a new stream
-    fn create_stream(&self, config: &HashMap<String, String>) -> Pin<Box<dyn Future<Output = Result<Box<dyn StreamHandle>>> + Send + '_>>;
-    
+    fn create_stream(
+        &self,
+        config: &HashMap<String, String>,
+    ) -> Pin<Box<dyn Future<Output = Result<Box<dyn StreamHandle>>> + Send + '_>>;
+
     /// List available streams
     fn list_streams(&self) -> Pin<Box<dyn Future<Output = Result<Vec<String>>> + Send + '_>>;
-    
+
     /// Check if stream exists
-    fn stream_exists(&self, stream_name: &str) -> Pin<Box<dyn Future<Output = Result<bool>> + Send + '_>>;
-    
+    fn stream_exists(
+        &self,
+        stream_name: &str,
+    ) -> Pin<Box<dyn Future<Output = Result<bool>> + Send + '_>>;
+
     /// Get streaming capabilities
     fn capabilities(&self) -> StreamingCapabilities;
 }
@@ -339,14 +397,17 @@ pub trait StreamingOps: Send + Sync {
 /// Stream handle trait
 pub trait StreamHandle: Send + Sync {
     /// Read from stream
-    fn read_batch(&self, batch_size: usize) -> Pin<Box<dyn Future<Output = Result<Option<DataFrame>>> + Send + '_>>;
-    
+    fn read_batch(
+        &self,
+        batch_size: usize,
+    ) -> Pin<Box<dyn Future<Output = Result<Option<DataFrame>>> + Send + '_>>;
+
     /// Write to stream
     fn write_batch(&self, df: &DataFrame) -> Pin<Box<dyn Future<Output = Result<()>> + Send + '_>>;
-    
+
     /// Close stream
     fn close(&self) -> Pin<Box<dyn Future<Output = Result<()>> + Send + '_>>;
-    
+
     /// Get stream metadata
     fn metadata(&self) -> HashMap<String, String>;
 }
@@ -403,38 +464,42 @@ impl FormatRegistry {
             streaming_providers: HashMap::new(),
         }
     }
-    
+
     /// Register a file format
     pub fn register_format<F: FileFormat + 'static>(&mut self, format: F) {
         let name = format.format_name().to_string();
         self.formats.insert(name, Arc::new(format));
     }
-    
+
     /// Register a SQL provider
     pub fn register_sql_provider<S: SqlOps + 'static>(&mut self, name: String, provider: S) {
         self.sql_providers.insert(name, Arc::new(provider));
     }
-    
+
     /// Register a streaming provider
-    pub fn register_streaming_provider<S: StreamingOps + 'static>(&mut self, name: String, provider: S) {
+    pub fn register_streaming_provider<S: StreamingOps + 'static>(
+        &mut self,
+        name: String,
+        provider: S,
+    ) {
         self.streaming_providers.insert(name, Arc::new(provider));
     }
-    
+
     /// Get format by name
     pub fn get_format(&self, name: &str) -> Option<Arc<dyn FileFormat>> {
         self.formats.get(name).cloned()
     }
-    
+
     /// Get SQL provider by name
     pub fn get_sql_provider(&self, name: &str) -> Option<Arc<dyn SqlOps>> {
         self.sql_providers.get(name).cloned()
     }
-    
+
     /// Get streaming provider by name
     pub fn get_streaming_provider(&self, name: &str) -> Option<Arc<dyn StreamingOps>> {
         self.streaming_providers.get(name).cloned()
     }
-    
+
     /// Detect format for file
     pub fn detect_format(&self, path: &Path) -> Option<Arc<dyn FileFormat>> {
         for format in self.formats.values() {
@@ -444,7 +509,7 @@ impl FormatRegistry {
         }
         None
     }
-    
+
     /// Detect format for data
     pub fn detect_format_from_data(&self, data: &[u8]) -> Option<Arc<dyn FileFormat>> {
         for format in self.formats.values() {
@@ -454,22 +519,22 @@ impl FormatRegistry {
         }
         None
     }
-    
+
     /// List all registered formats
     pub fn list_formats(&self) -> Vec<String> {
         self.formats.keys().cloned().collect()
     }
-    
+
     /// List all SQL providers
     pub fn list_sql_providers(&self) -> Vec<String> {
         self.sql_providers.keys().cloned().collect()
     }
-    
+
     /// List all streaming providers
     pub fn list_streaming_providers(&self) -> Vec<String> {
         self.streaming_providers.keys().cloned().collect()
     }
-    
+
     /// Get all format capabilities
     pub fn get_all_capabilities(&self) -> HashMap<String, FormatCapabilities> {
         self.formats
@@ -488,35 +553,85 @@ impl Default for FormatRegistry {
 /// Unified data operations trait
 pub trait DataOperations {
     /// Read data from any supported source
-    fn read_data(&self, source: &DataSource) -> Pin<Box<dyn Future<Output = Result<DataFrame>> + Send + '_>>;
-    
+    fn read_data(
+        &self,
+        source: &DataSource,
+    ) -> Pin<Box<dyn Future<Output = Result<DataFrame>> + Send + '_>>;
+
     /// Write data to any supported destination
-    fn write_data(&self, df: &DataFrame, destination: &DataDestination) -> Pin<Box<dyn Future<Output = Result<()>> + Send + '_>>;
-    
+    fn write_data(
+        &self,
+        df: &DataFrame,
+        destination: &DataDestination,
+    ) -> Pin<Box<dyn Future<Output = Result<()>> + Send + '_>>;
+
     /// Copy data between sources
-    fn copy_data(&self, source: &DataSource, destination: &DataDestination) -> Pin<Box<dyn Future<Output = Result<()>> + Send + '_>>;
-    
+    fn copy_data(
+        &self,
+        source: &DataSource,
+        destination: &DataDestination,
+    ) -> Pin<Box<dyn Future<Output = Result<()>> + Send + '_>>;
+
     /// Transform data using a pipeline
-    fn transform_data(&self, source: &DataSource, pipeline: &TransformPipeline, destination: &DataDestination) -> Pin<Box<dyn Future<Output = Result<()>> + Send + '_>>;
+    fn transform_data(
+        &self,
+        source: &DataSource,
+        pipeline: &TransformPipeline,
+        destination: &DataDestination,
+    ) -> Pin<Box<dyn Future<Output = Result<()>> + Send + '_>>;
 }
 
 /// Data source specification
 #[derive(Debug, Clone)]
 pub enum DataSource {
-    File { path: String, format: Option<String>, options: HashMap<String, String> },
-    Sql { connection: String, query: String, options: HashMap<String, String> },
-    Stream { provider: String, stream_name: String, options: HashMap<String, String> },
-    Url { url: String, format: Option<String>, options: HashMap<String, String> },
-    Memory { data: Vec<u8>, format: String },
+    File {
+        path: String,
+        format: Option<String>,
+        options: HashMap<String, String>,
+    },
+    Sql {
+        connection: String,
+        query: String,
+        options: HashMap<String, String>,
+    },
+    Stream {
+        provider: String,
+        stream_name: String,
+        options: HashMap<String, String>,
+    },
+    Url {
+        url: String,
+        format: Option<String>,
+        options: HashMap<String, String>,
+    },
+    Memory {
+        data: Vec<u8>,
+        format: String,
+    },
 }
 
 /// Data destination specification
 #[derive(Debug, Clone)]
 pub enum DataDestination {
-    File { path: String, format: Option<String>, options: HashMap<String, String> },
-    Sql { connection: String, table: String, options: HashMap<String, String> },
-    Stream { provider: String, stream_name: String, options: HashMap<String, String> },
-    Memory { format: String, options: HashMap<String, String> },
+    File {
+        path: String,
+        format: Option<String>,
+        options: HashMap<String, String>,
+    },
+    Sql {
+        connection: String,
+        table: String,
+        options: HashMap<String, String>,
+    },
+    Stream {
+        provider: String,
+        stream_name: String,
+        options: HashMap<String, String>,
+    },
+    Memory {
+        format: String,
+        options: HashMap<String, String>,
+    },
 }
 
 /// Transform pipeline specification
@@ -531,12 +646,30 @@ pub struct TransformPipeline {
 /// Transform stage
 #[derive(Debug, Clone)]
 pub enum TransformStage {
-    Filter { condition: String },
-    Map { expression: String },
-    Aggregate { group_by: Vec<String>, aggregations: HashMap<String, String> },
-    Join { other_source: DataSource, on: Vec<String>, join_type: JoinType },
-    Window { partition_by: Vec<String>, order_by: Vec<String>, window_spec: String },
-    Custom { name: String, parameters: HashMap<String, String> },
+    Filter {
+        condition: String,
+    },
+    Map {
+        expression: String,
+    },
+    Aggregate {
+        group_by: Vec<String>,
+        aggregations: HashMap<String, String>,
+    },
+    Join {
+        other_source: DataSource,
+        on: Vec<String>,
+        join_type: JoinType,
+    },
+    Window {
+        partition_by: Vec<String>,
+        order_by: Vec<String>,
+        window_spec: String,
+    },
+    Custom {
+        name: String,
+        parameters: HashMap<String, String>,
+    },
 }
 
 /// Join types
@@ -555,62 +688,87 @@ pub enum JoinType {
 mod tests {
     use super::*;
     use std::io::Cursor;
-    
+
     /// Mock file format for testing
     struct MockFormat;
-    
+
     impl FileFormat for MockFormat {
         fn format_name(&self) -> &'static str {
             "mock"
         }
-        
+
         fn file_extensions(&self) -> Vec<&'static str> {
             vec!["mock", "test"]
         }
-        
+
         fn mime_types(&self) -> Vec<&'static str> {
             vec!["application/mock"]
         }
-        
+
         fn can_handle_file(&self, path: &Path) -> bool {
             path.extension()
                 .and_then(|ext| ext.to_str())
                 .map(|ext| self.file_extensions().contains(&ext))
                 .unwrap_or(false)
         }
-        
+
         fn can_handle_data(&self, data: &[u8]) -> bool {
             data.starts_with(b"MOCK")
         }
-        
-        fn read_from_path_with_options(&self, _path: &Path, _options: &HashMap<String, String>) -> Result<DataFrame> {
-            Err(Error::InvalidOperation("Mock format read not implemented".to_string()))
+
+        fn read_from_path_with_options(
+            &self,
+            _path: &Path,
+            _options: &HashMap<String, String>,
+        ) -> Result<DataFrame> {
+            Err(Error::InvalidOperation(
+                "Mock format read not implemented".to_string(),
+            ))
         }
-        
-        fn read_from_bytes_with_options(&self, _data: &[u8], _options: &HashMap<String, String>) -> Result<DataFrame> {
-            Err(Error::InvalidOperation("Mock format read not implemented".to_string()))
+
+        fn read_from_bytes_with_options(
+            &self,
+            _data: &[u8],
+            _options: &HashMap<String, String>,
+        ) -> Result<DataFrame> {
+            Err(Error::InvalidOperation(
+                "Mock format read not implemented".to_string(),
+            ))
         }
-        
-        fn write_to_path_with_options(&self, _df: &DataFrame, _path: &Path, _options: &HashMap<String, String>) -> Result<()> {
-            Err(Error::InvalidOperation("Mock format write not implemented".to_string()))
+
+        fn write_to_path_with_options(
+            &self,
+            _df: &DataFrame,
+            _path: &Path,
+            _options: &HashMap<String, String>,
+        ) -> Result<()> {
+            Err(Error::InvalidOperation(
+                "Mock format write not implemented".to_string(),
+            ))
         }
-        
-        fn write_to_bytes_with_options(&self, _df: &DataFrame, _options: &HashMap<String, String>) -> Result<Vec<u8>> {
-            Err(Error::InvalidOperation("Mock format write not implemented".to_string()))
+
+        fn write_to_bytes_with_options(
+            &self,
+            _df: &DataFrame,
+            _options: &HashMap<String, String>,
+        ) -> Result<Vec<u8>> {
+            Err(Error::InvalidOperation(
+                "Mock format write not implemented".to_string(),
+            ))
         }
-        
+
         fn get_metadata(&self, _path: &Path) -> Result<HashMap<String, String>> {
             Ok(HashMap::new())
         }
-        
+
         fn validate_options(&self, _options: &HashMap<String, String>) -> Result<()> {
             Ok(())
         }
-        
+
         fn default_options(&self) -> HashMap<String, String> {
             HashMap::new()
         }
-        
+
         fn capabilities(&self) -> FormatCapabilities {
             FormatCapabilities {
                 can_read: true,
@@ -631,42 +789,42 @@ mod tests {
             }
         }
     }
-    
+
     #[test]
     fn test_format_registry() {
         let mut registry = FormatRegistry::new();
         registry.register_format(MockFormat);
-        
+
         assert!(registry.get_format("mock").is_some());
         assert!(registry.get_format("nonexistent").is_none());
-        
+
         let formats = registry.list_formats();
         assert!(formats.contains(&"mock".to_string()));
-        
+
         let capabilities = registry.get_all_capabilities();
         assert!(capabilities.contains_key("mock"));
     }
-    
+
     #[test]
     fn test_format_detection() {
         let mut registry = FormatRegistry::new();
         registry.register_format(MockFormat);
-        
+
         let path = Path::new("test.mock");
         let detected = registry.detect_format(path);
         assert!(detected.is_some());
         assert_eq!(detected.unwrap().format_name(), "mock");
-        
+
         let data = b"MOCK format data";
         let detected = registry.detect_format_from_data(data);
         assert!(detected.is_some());
         assert_eq!(detected.unwrap().format_name(), "mock");
-        
+
         let invalid_data = b"Not mock data";
         let detected = registry.detect_format_from_data(invalid_data);
         assert!(detected.is_none());
     }
-    
+
     #[test]
     fn test_data_source() {
         let source = DataSource::File {
@@ -674,16 +832,16 @@ mod tests {
             format: Some("csv".to_string()),
             options: HashMap::new(),
         };
-        
+
         match source {
             DataSource::File { path, format, .. } => {
                 assert_eq!(path, "test.csv");
                 assert_eq!(format, Some("csv".to_string()));
-            },
+            }
             _ => panic!("Expected File source"),
         }
     }
-    
+
     #[test]
     fn test_table_schema() {
         let schema = TableSchema {
@@ -711,7 +869,7 @@ mod tests {
             indexes: vec![],
             metadata: HashMap::new(),
         };
-        
+
         assert_eq!(schema.name, "test_table");
         assert_eq!(schema.columns.len(), 2);
         assert_eq!(schema.columns[0].name, "id");
@@ -719,7 +877,7 @@ mod tests {
         assert!(!schema.columns[0].nullable);
         assert_eq!(schema.primary_key, vec!["id"]);
     }
-    
+
     #[test]
     fn test_transform_pipeline() {
         let pipeline = TransformPipeline {
@@ -739,22 +897,25 @@ mod tests {
             ],
             options: HashMap::new(),
         };
-        
+
         assert_eq!(pipeline.stages.len(), 2);
-        
+
         match &pipeline.stages[0] {
             TransformStage::Filter { condition } => {
                 assert_eq!(condition, "age > 18");
-            },
+            }
             _ => panic!("Expected Filter stage"),
         }
-        
+
         match &pipeline.stages[1] {
-            TransformStage::Aggregate { group_by, aggregations } => {
+            TransformStage::Aggregate {
+                group_by,
+                aggregations,
+            } => {
                 assert_eq!(group_by, &vec!["department".to_string()]);
                 assert_eq!(aggregations.len(), 2);
                 assert_eq!(aggregations.get("salary"), Some(&"avg".to_string()));
-            },
+            }
             _ => panic!("Expected Aggregate stage"),
         }
     }

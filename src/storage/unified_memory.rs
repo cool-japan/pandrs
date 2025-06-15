@@ -5,11 +5,14 @@
 //! unification strategy document.
 
 use crate::core::error::{Error, Result};
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex, RwLock, atomic::{AtomicUsize, Ordering}};
-use std::time::Instant;
-use std::ops::Range;
 use std::any::Any;
+use std::collections::HashMap;
+use std::ops::Range;
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc, Mutex, RwLock,
+};
+use std::time::Instant;
 
 /// Storage type enumeration for strategy selection
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -259,30 +262,30 @@ impl DataChunk {
             data,
         }
     }
-    
+
     pub fn len(&self) -> usize {
         self.data.len()
     }
-    
+
     pub fn is_empty(&self) -> bool {
         self.data.is_empty()
     }
-    
+
     pub fn from_slice(data: &[u8]) -> Self {
         Self::new(data.to_vec())
     }
-    
+
     pub fn from_strings(strings: Vec<String>) -> Self {
         let data = strings.join("\0").into_bytes();
         Self::new(data)
     }
-    
+
     pub fn as_strings(&self) -> Result<Vec<String>> {
         let data_str = String::from_utf8(self.data.clone())
             .map_err(|e| Error::InvalidOperation(format!("Invalid UTF-8 data: {}", e)))?;
         Ok(data_str.split('\0').map(|s| s.to_string()).collect())
     }
-    
+
     pub fn new_test_data(size: usize) -> Self {
         let data = vec![0u8; size];
         Self::new(data)
@@ -337,17 +340,20 @@ impl ChunkRange {
     pub fn new(start: usize, end: usize) -> Self {
         Self { start, end }
     }
-    
+
     pub fn len(&self) -> usize {
         self.end.saturating_sub(self.start)
     }
-    
+
     pub fn is_empty(&self) -> bool {
         self.start >= self.end
     }
-    
+
     pub fn full() -> Self {
-        Self { start: 0, end: usize::MAX }
+        Self {
+            start: 0,
+            end: usize::MAX,
+        }
     }
 }
 
@@ -476,42 +482,63 @@ pub trait StorageStrategy: Send + Sync {
     type Handle;
     type Error: std::error::Error + Send + Sync + 'static;
     type Metadata: Clone + Send + Sync;
-    
+
     /// Strategy identifier for selection and monitoring
     fn name(&self) -> &'static str;
-    
+
     /// Create new storage with specific configuration
-    fn create_storage(&mut self, config: &StorageConfig) -> std::result::Result<Self::Handle, Self::Error>;
-    
+    fn create_storage(
+        &mut self,
+        config: &StorageConfig,
+    ) -> std::result::Result<Self::Handle, Self::Error>;
+
     /// Read data chunk from storage
-    fn read_chunk(&self, handle: &Self::Handle, range: ChunkRange) -> std::result::Result<DataChunk, Self::Error>;
-    
+    fn read_chunk(
+        &self,
+        handle: &Self::Handle,
+        range: ChunkRange,
+    ) -> std::result::Result<DataChunk, Self::Error>;
+
     /// Write data chunk to storage
-    fn write_chunk(&mut self, handle: &Self::Handle, chunk: DataChunk) -> std::result::Result<(), Self::Error>;
-    
+    fn write_chunk(
+        &mut self,
+        handle: &Self::Handle,
+        chunk: DataChunk,
+    ) -> std::result::Result<(), Self::Error>;
+
     /// Append data chunk to existing storage
-    fn append_chunk(&mut self, handle: &Self::Handle, chunk: DataChunk) -> std::result::Result<(), Self::Error>;
-    
+    fn append_chunk(
+        &mut self,
+        handle: &Self::Handle,
+        chunk: DataChunk,
+    ) -> std::result::Result<(), Self::Error>;
+
     /// Flush pending writes to persistent storage
     fn flush(&mut self, handle: &Self::Handle) -> std::result::Result<(), Self::Error>;
-    
+
     /// Delete storage and free resources
     fn delete_storage(&mut self, handle: &Self::Handle) -> std::result::Result<(), Self::Error>;
-    
+
     /// Check if strategy can handle specific requirements
     fn can_handle(&self, requirements: &StorageRequirements) -> StrategyCapability;
-    
+
     /// Get performance characteristics of this strategy
     fn performance_profile(&self) -> PerformanceProfile;
-    
+
     /// Get current memory and storage statistics
     fn storage_stats(&self) -> StorageStats;
-    
+
     /// Optimize strategy for specific access pattern
-    fn optimize_for_pattern(&mut self, pattern: AccessPattern) -> std::result::Result<(), Self::Error>;
-    
+    fn optimize_for_pattern(
+        &mut self,
+        pattern: AccessPattern,
+    ) -> std::result::Result<(), Self::Error>;
+
     /// Compact storage to reduce fragmentation
-    fn compact(&mut self, handle: &Self::Handle) -> std::result::Result<CompactionResult, Self::Error>;
+    fn compact(
+        &mut self,
+        handle: &Self::Handle,
+    ) -> std::result::Result<CompactionResult, Self::Error>;
 }
 
 /// Compaction result
@@ -624,17 +651,17 @@ impl PerformanceTracker {
             bytes_written: 0,
         }
     }
-    
+
     pub fn record_read(&mut self, duration: std::time::Duration, bytes: u64) {
         self.read_times.push(duration);
         self.bytes_read += bytes;
     }
-    
+
     pub fn record_write(&mut self, duration: std::time::Duration, bytes: u64) {
         self.write_times.push(duration);
         self.bytes_written += bytes;
     }
-    
+
     pub fn average_read_time(&self) -> Option<std::time::Duration> {
         if self.read_times.is_empty() {
             None
@@ -643,7 +670,7 @@ impl PerformanceTracker {
             Some(total / self.read_times.len() as u32)
         }
     }
-    
+
     pub fn average_write_time(&self) -> Option<std::time::Duration> {
         if self.write_times.is_empty() {
             None
@@ -679,17 +706,17 @@ impl AtomicMemoryStats {
             deallocation_count: AtomicUsize::new(0),
         }
     }
-    
+
     pub fn record_allocation(&self, size: usize) {
         self.total_allocated.fetch_add(size, Ordering::SeqCst);
         self.active_allocations.fetch_add(1, Ordering::SeqCst);
         self.allocation_count.fetch_add(1, Ordering::SeqCst);
-        
+
         // Update peak usage
         let current = self.total_allocated.load(Ordering::SeqCst);
         self.peak_usage.fetch_max(current, Ordering::SeqCst);
     }
-    
+
     pub fn record_deallocation(&self, size: usize) {
         self.total_allocated.fetch_sub(size, Ordering::SeqCst);
         self.active_allocations.fetch_sub(1, Ordering::SeqCst);
@@ -727,7 +754,7 @@ mod tests {
         let range = ChunkRange::new(10, 20);
         assert_eq!(range.len(), 10);
         assert!(!range.is_empty());
-        
+
         let empty_range = ChunkRange::new(20, 10);
         assert!(empty_range.is_empty());
     }
@@ -740,7 +767,7 @@ mod tests {
             Box::new(42u32),
             StorageMetadata::new(1024),
         );
-        
+
         assert_eq!(handle.ref_count.load(Ordering::SeqCst), 1);
         assert_eq!(handle.id, StorageId(1));
         assert_eq!(handle.strategy_type, StorageType::InMemory);
@@ -750,10 +777,10 @@ mod tests {
     #[test]
     fn test_performance_tracker() {
         let mut tracker = PerformanceTracker::new();
-        
+
         tracker.record_read(std::time::Duration::from_millis(10), 1024);
         tracker.record_read(std::time::Duration::from_millis(20), 2048);
-        
+
         assert_eq!(tracker.bytes_read, 3072);
         let avg_time = tracker.average_read_time().unwrap();
         assert_eq!(avg_time, std::time::Duration::from_millis(15));
@@ -762,15 +789,15 @@ mod tests {
     #[test]
     fn test_atomic_memory_stats() {
         let stats = AtomicMemoryStats::new();
-        
+
         stats.record_allocation(1024);
         assert_eq!(stats.total_allocated.load(Ordering::SeqCst), 1024);
         assert_eq!(stats.active_allocations.load(Ordering::SeqCst), 1);
-        
+
         stats.record_allocation(2048);
         assert_eq!(stats.total_allocated.load(Ordering::SeqCst), 3072);
         assert_eq!(stats.peak_usage.load(Ordering::SeqCst), 3072);
-        
+
         stats.record_deallocation(1024);
         assert_eq!(stats.total_allocated.load(Ordering::SeqCst), 2048);
         assert_eq!(stats.active_allocations.load(Ordering::SeqCst), 1);

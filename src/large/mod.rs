@@ -17,6 +17,7 @@ use tempfile::tempdir;
 use crate::dataframe::DataFrame;
 use crate::error::{Error, PandRSError, Result};
 use crate::optimized::dataframe::OptimizedDataFrame;
+use csv::ReaderBuilder;
 
 /// Configuration for disk-based processing
 #[derive(Debug, Clone)]
@@ -207,14 +208,53 @@ impl ChunkedDataFrame {
 
         // Extract chunk data
         let chunk_data = if end_pos > start_pos {
-            &mmap[start_pos..end_pos]
+            if self.chunk_index == 0 {
+                // First chunk includes header
+                &mmap[start_pos..end_pos]
+            } else {
+                // For non-first chunks, we need to prepend the header
+                let header_end = mmap.iter().position(|&b| b == b'\n').unwrap_or(0) + 1;
+                let header = &mmap[0..header_end];
+                let data = &mmap[start_pos..end_pos];
+
+                // Combine header and data
+                let mut combined = Vec::new();
+                combined.extend_from_slice(header);
+                combined.extend_from_slice(data);
+
+                // Create a temporary reader from combined data
+                let mut reader = csv::ReaderBuilder::new()
+                    .has_headers(true)
+                    .from_reader(combined.as_slice());
+
+                let df = DataFrame::from_csv_reader(&mut reader, true)?;
+
+                // Track memory usage
+                let estimated_memory = estimate_dataframe_memory(&df);
+                if !self.memory_tracker.allocate(estimated_memory) {
+                    if let Some(prev_chunk) = self.current_chunk.take() {
+                        self.spill_to_disk(prev_chunk)?;
+                        self.memory_tracker.allocate(estimated_memory);
+                    }
+                }
+
+                self.current_chunk = Some(df);
+                return Ok(());
+            }
         } else {
             &[]
         };
 
         // Parse the chunk data (assuming CSV for now)
-        let mut reader = csv::Reader::from_reader(chunk_data);
-        let df = DataFrame::from_csv_reader(&mut reader, true)?;
+        let mut reader = csv::ReaderBuilder::new()
+            .has_headers(self.chunk_index == 0) // Only first chunk has headers
+            .from_reader(chunk_data);
+
+        let df = if chunk_data.is_empty() {
+            DataFrame::new()
+        } else {
+            DataFrame::from_csv_reader(&mut reader, self.chunk_index == 0)?
+        };
 
         // Track memory usage
         let estimated_memory = estimate_dataframe_memory(&df);
@@ -236,13 +276,21 @@ impl ChunkedDataFrame {
         let file = File::open(&self.source_path)?;
         let mut reader = io::BufReader::new(file);
 
-        // Skip to the start of this chunk
-        self.skip_to_chunk(&mut reader)?;
-
         // Read the appropriate number of lines
         let mut lines = Vec::new();
         let mut line_count = 0;
         let mut line = String::new();
+
+        // If this is the first chunk, we need to include the header
+        if self.chunk_index == 0 {
+            // Read header first
+            reader.read_line(&mut line)?;
+            lines.push(line.clone());
+            line.clear();
+        } else {
+            // Skip to the start of this chunk (skip header + previous chunks)
+            self.skip_to_chunk(&mut reader)?;
+        }
 
         while line_count < self.config.chunk_size {
             line.clear();
@@ -257,8 +305,15 @@ impl ChunkedDataFrame {
 
         // Parse the chunk data (assuming CSV for now)
         let csv_data = lines.join("");
-        let mut csv_reader = csv::Reader::from_reader(csv_data.as_bytes());
-        let df = DataFrame::from_csv_reader(&mut csv_reader, true)?;
+        let mut csv_reader = csv::ReaderBuilder::new()
+            .has_headers(self.chunk_index == 0) // Only first chunk has headers
+            .from_reader(csv_data.as_bytes());
+
+        let df = if csv_data.is_empty() {
+            DataFrame::new()
+        } else {
+            DataFrame::from_csv_reader(&mut csv_reader, self.chunk_index == 0)?
+        };
 
         // Track memory usage
         let estimated_memory = estimate_dataframe_memory(&df);
@@ -279,63 +334,77 @@ impl ChunkedDataFrame {
     fn find_chunk_boundaries(&self, mmap: &Mmap) -> Result<(usize, usize)> {
         let file_size = mmap.len();
 
-        // Skip header line for first chunk
-        let start_offset = if self.chunk_index == 0 {
-            // Find the first newline
-            mmap.iter().position(|&b| b == b'\n').unwrap_or(0) + 1
+        if file_size == 0 {
+            return Ok((0, 0));
+        }
+
+        // Find the header line end
+        let header_end = mmap.iter().position(|&b| b == b'\n').unwrap_or(0) + 1;
+
+        if self.chunk_index == 0 {
+            // First chunk: include header + chunk_size data rows
+            let mut end_pos = header_end;
+            let mut lines_read = 0;
+
+            for i in header_end..file_size {
+                if mmap[i] == b'\n' {
+                    lines_read += 1;
+                    end_pos = i + 1;
+                    if lines_read == self.config.chunk_size {
+                        break;
+                    }
+                }
+            }
+
+            Ok((0, end_pos))
         } else {
-            0
-        };
+            // Find the position to start from based on chunk index
+            let mut start_pos = header_end;
+            let mut lines_skipped = 0;
+            let lines_to_skip = self.chunk_index * self.config.chunk_size;
 
-        // Find the position to start from based on chunk index
-        let mut start_pos = start_offset;
-        let mut lines_skipped = 0;
-        let lines_to_skip = self.chunk_index * self.config.chunk_size;
-
-        for i in start_offset..file_size {
-            if mmap[i] == b'\n' {
-                lines_skipped += 1;
-                if lines_skipped == lines_to_skip {
-                    start_pos = i + 1;
-                    break;
+            for i in header_end..file_size {
+                if mmap[i] == b'\n' {
+                    lines_skipped += 1;
+                    if lines_skipped == lines_to_skip {
+                        start_pos = i + 1;
+                        break;
+                    }
                 }
             }
-        }
 
-        // Find the end position for this chunk
-        let mut end_pos = start_pos;
-        let mut lines_read = 0;
+            // Find the end position for this chunk
+            let mut end_pos = start_pos;
+            let mut lines_read = 0;
 
-        for i in start_pos..file_size {
-            if mmap[i] == b'\n' {
-                lines_read += 1;
-                end_pos = i + 1;
-                if lines_read == self.config.chunk_size {
-                    break;
+            for i in start_pos..file_size {
+                if mmap[i] == b'\n' {
+                    lines_read += 1;
+                    end_pos = i + 1;
+                    if lines_read == self.config.chunk_size {
+                        break;
+                    }
                 }
             }
-        }
 
-        Ok((start_pos, end_pos))
+            // For non-first chunks, we need to prepend the header
+            Ok((start_pos, end_pos))
+        }
     }
 
     /// Skip to the start of the current chunk using a reader
     fn skip_to_chunk<R: Read + BufRead>(&self, reader: &mut R) -> Result<()> {
         let mut line = String::new();
 
-        // Skip header for first chunk
-        if self.chunk_index == 0 {
-            reader.read_line(&mut line)?;
-        }
+        // Always skip header first
+        reader.read_line(&mut line)?;
 
-        // Skip lines to get to the current chunk
+        // Skip lines to get to the current chunk (after header)
         for _ in 0..(self.chunk_index * self.config.chunk_size) {
             line.clear();
             let bytes = reader.read_line(&mut line)?;
             if bytes == 0 {
-                return Err(Error::IndexOutOfBoundsStr(
-                    "Chunk index exceeds file size".into(),
-                ));
+                break; // End of file reached
             }
         }
 

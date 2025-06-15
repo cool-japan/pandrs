@@ -1,8 +1,8 @@
 use std::any::Any;
 use std::sync::Arc;
 
-use crate::core::column::{Column, ColumnTrait, ColumnType};
 use crate::core::column::BitMask;
+use crate::core::column::{Column, ColumnTrait, ColumnType};
 use crate::core::error::{Error, Result};
 
 /// Structure representing a boolean column (optimized with BitMask)

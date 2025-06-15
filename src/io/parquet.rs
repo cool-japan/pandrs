@@ -1,23 +1,23 @@
+use std::collections::HashMap;
 use std::fs::File;
+use std::io::{BufReader, BufWriter};
 use std::path::Path;
 use std::sync::Arc;
-use std::collections::HashMap;
-use std::io::{BufReader, BufWriter};
 
 #[cfg(feature = "streaming")]
 use tokio::io::{AsyncRead, AsyncWrite};
 
 use arrow::array::{
-    Array, ArrayRef, BooleanArray, Float64Array, Int64Array, StringArray,
-    Date32Array, TimestampMicrosecondArray, Decimal128Array
+    Array, ArrayRef, BooleanArray, Date32Array, Decimal128Array, Float64Array, Int64Array,
+    StringArray, TimestampMicrosecondArray,
 };
 use arrow::datatypes::{DataType, Field, Schema, SchemaRef, TimeUnit};
 use arrow::record_batch::RecordBatch;
 use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 use parquet::arrow::arrow_writer::ArrowWriter;
 use parquet::basic::Compression;
-use parquet::file::properties::WriterProperties;
 use parquet::file::metadata::{FileMetaData, RowGroupMetaData};
+use parquet::file::properties::WriterProperties;
 use parquet::file::reader::{FileReader, SerializedFileReader};
 use parquet::schema::types::Type as ParquetType;
 
@@ -412,7 +412,7 @@ pub fn write_parquet(
                     if let Some(int_col) = col_view.as_int64() {
                         let mut values = Vec::with_capacity(df.row_count());
                         let mut validity = Vec::with_capacity(df.row_count());
-                        
+
                         for i in 0..df.row_count() {
                             match int_col.get(i) {
                                 Ok(Some(val)) => {
@@ -429,7 +429,7 @@ pub fn write_parquet(
                                 }
                             }
                         }
-                        
+
                         let array = Int64Array::new(values.into(), Some(validity.into()));
                         Some(Arc::new(array) as ArrayRef)
                     } else {
@@ -440,7 +440,7 @@ pub fn write_parquet(
                     if let Some(float_col) = col_view.as_float64() {
                         let mut values = Vec::with_capacity(df.row_count());
                         let mut validity = Vec::with_capacity(df.row_count());
-                        
+
                         for i in 0..df.row_count() {
                             match float_col.get(i) {
                                 Ok(Some(val)) => {
@@ -457,7 +457,7 @@ pub fn write_parquet(
                                 }
                             }
                         }
-                        
+
                         let array = Float64Array::new(values.into(), Some(validity.into()));
                         Some(Arc::new(array) as ArrayRef)
                     } else {
@@ -468,7 +468,7 @@ pub fn write_parquet(
                     if let Some(bool_col) = col_view.as_boolean() {
                         let mut values = Vec::with_capacity(df.row_count());
                         let mut validity = Vec::with_capacity(df.row_count());
-                        
+
                         for i in 0..df.row_count() {
                             match bool_col.get(i) {
                                 Ok(Some(val)) => {
@@ -485,7 +485,7 @@ pub fn write_parquet(
                                 }
                             }
                         }
-                        
+
                         let array = BooleanArray::new(values.into(), Some(validity.into()));
                         Some(Arc::new(array) as ArrayRef)
                     } else {
@@ -496,7 +496,7 @@ pub fn write_parquet(
                     if let Some(str_col) = col_view.as_string() {
                         let mut values = Vec::with_capacity(df.row_count());
                         let mut validity = Vec::with_capacity(df.row_count());
-                        
+
                         for i in 0..df.row_count() {
                             match str_col.get(i) {
                                 Ok(Some(val)) => {
@@ -513,9 +513,11 @@ pub fn write_parquet(
                                 }
                             }
                         }
-                        
+
                         // Convert to iterator with nulls properly handled
-                        let string_values: Vec<Option<&str>> = values.iter().zip(validity.iter())
+                        let string_values: Vec<Option<&str>> = values
+                            .iter()
+                            .zip(validity.iter())
                             .map(|(s, &is_valid)| if is_valid { Some(s.as_str()) } else { None })
                             .collect();
                         let array = StringArray::from(string_values);
@@ -580,18 +582,18 @@ pub fn write_parquet(
 pub fn get_parquet_metadata(path: impl AsRef<Path>) -> Result<ParquetMetadata> {
     let file = File::open(path.as_ref())
         .map_err(|e| Error::IoError(format!("Failed to open Parquet file: {}", e)))?;
-    
+
     let reader = SerializedFileReader::new(file)
         .map_err(|e| Error::IoError(format!("Failed to create Parquet reader: {}", e)))?;
-    
+
     let metadata = reader.metadata();
     let file_metadata = metadata.file_metadata();
-    
+
     Ok(ParquetMetadata {
         num_rows: file_metadata.num_rows(),
         num_row_groups: metadata.num_row_groups(),
         schema: format!("{:?}", file_metadata.schema()),
-        file_size: None, // Would need additional file stats
+        file_size: None,                    // Would need additional file stats
         compression: "Various".to_string(), // Row groups can have different compression
         created_by: file_metadata.created_by().map(|s| s.to_string()),
     })
@@ -620,13 +622,13 @@ pub fn get_parquet_metadata(path: impl AsRef<Path>) -> Result<ParquetMetadata> {
 pub fn get_row_group_info(path: impl AsRef<Path>) -> Result<Vec<RowGroupInfo>> {
     let file = File::open(path.as_ref())
         .map_err(|e| Error::IoError(format!("Failed to open Parquet file: {}", e)))?;
-    
+
     let reader = SerializedFileReader::new(file)
         .map_err(|e| Error::IoError(format!("Failed to create Parquet reader: {}", e)))?;
-    
+
     let metadata = reader.metadata();
     let mut row_groups = Vec::new();
-    
+
     for i in 0..metadata.num_row_groups() {
         let rg_metadata = metadata.row_group(i);
         row_groups.push(RowGroupInfo {
@@ -636,7 +638,7 @@ pub fn get_row_group_info(path: impl AsRef<Path>) -> Result<Vec<RowGroupInfo>> {
             num_columns: rg_metadata.num_columns(),
         });
     }
-    
+
     Ok(row_groups)
 }
 
@@ -657,53 +659,57 @@ pub fn get_row_group_info(path: impl AsRef<Path>) -> Result<Vec<RowGroupInfo>> {
 ///
 /// let stats = get_column_statistics("data.parquet").unwrap();
 /// for stat in stats {
-///     println!("{}: {} nulls, min={:?}, max={:?}", 
+///     println!("{}: {} nulls, min={:?}, max={:?}",
 ///              stat.name, stat.null_count.unwrap_or(0), stat.min_value, stat.max_value);
 /// }
 /// ```
 pub fn get_column_statistics(path: impl AsRef<Path>) -> Result<Vec<ColumnStats>> {
     let file = File::open(path.as_ref())
         .map_err(|e| Error::IoError(format!("Failed to open Parquet file: {}", e)))?;
-    
+
     let reader = SerializedFileReader::new(file)
         .map_err(|e| Error::IoError(format!("Failed to create Parquet reader: {}", e)))?;
-    
+
     let metadata = reader.metadata();
     let schema = metadata.file_metadata().schema_descr();
     let mut column_stats = Vec::new();
-    
+
     // Collect statistics from all row groups
     let mut null_counts: HashMap<String, u64> = HashMap::new();
     let mut min_values: HashMap<String, String> = HashMap::new();
     let mut max_values: HashMap<String, String> = HashMap::new();
-    
+
     for rg_idx in 0..metadata.num_row_groups() {
         let rg_metadata = metadata.row_group(rg_idx);
-        
+
         for col_idx in 0..rg_metadata.num_columns() {
             let col_metadata = rg_metadata.column(col_idx);
             let col_name = schema.column(col_idx).name().to_string();
-            
+
             // Aggregate null counts
             if let Some(statistics) = col_metadata.statistics() {
                 if let Some(null_count) = statistics.null_count_opt() {
                     *null_counts.entry(col_name.clone()).or_insert(0) += null_count;
                 }
-                
+
                 // Convert min/max to strings (simplified)
                 if statistics.min_bytes_opt().is_some() && statistics.max_bytes_opt().is_some() {
-                    min_values.entry(col_name.clone()).or_insert_with(|| "N/A".to_string());
-                    max_values.entry(col_name.clone()).or_insert_with(|| "N/A".to_string());
+                    min_values
+                        .entry(col_name.clone())
+                        .or_insert_with(|| "N/A".to_string());
+                    max_values
+                        .entry(col_name.clone())
+                        .or_insert_with(|| "N/A".to_string());
                 }
             }
         }
     }
-    
+
     // Create column stats
     for col_idx in 0..schema.num_columns() {
         let column = schema.column(col_idx);
         let col_name = column.name().to_string();
-        
+
         column_stats.push(ColumnStats {
             name: col_name.clone(),
             data_type: format!("{:?}", column.physical_type()),
@@ -713,7 +719,7 @@ pub fn get_column_statistics(path: impl AsRef<Path>) -> Result<Vec<ColumnStats>>
             max_value: max_values.get(&col_name).cloned(),
         });
     }
-    
+
     Ok(column_stats)
 }
 
@@ -741,28 +747,31 @@ pub fn get_column_statistics(path: impl AsRef<Path>) -> Result<Vec<ColumnStats>>
 /// };
 /// let df = read_parquet_advanced("data.parquet", options).unwrap();
 /// ```
-pub fn read_parquet_advanced(path: impl AsRef<Path>, options: ParquetReadOptions) -> Result<DataFrame> {
+pub fn read_parquet_advanced(
+    path: impl AsRef<Path>,
+    options: ParquetReadOptions,
+) -> Result<DataFrame> {
     let file = File::open(path.as_ref())
         .map_err(|e| Error::IoError(format!("Failed to open Parquet file: {}", e)))?;
-    
+
     let mut builder = ParquetRecordBatchReaderBuilder::try_new(file)
         .map_err(|e| Error::IoError(format!("Failed to parse Parquet file: {}", e)))?;
-    
+
     // Configure batch size if specified
     if let Some(batch_size) = options.batch_size {
         builder = builder.with_batch_size(batch_size);
     }
-    
+
     // Configure row groups if specified
     if let Some(row_groups) = options.row_groups {
         builder = builder.with_row_groups(row_groups);
     }
-    
+
     // Configure column projection if specified
     if let Some(columns) = &options.columns {
         let schema = builder.schema();
         let mut projection_indices = Vec::new();
-        
+
         for col_name in columns {
             for (idx, field) in schema.fields().iter().enumerate() {
                 if field.name() == col_name {
@@ -771,19 +780,19 @@ pub fn read_parquet_advanced(path: impl AsRef<Path>, options: ParquetReadOptions
                 }
             }
         }
-        
+
         if !projection_indices.is_empty() {
             use parquet::arrow::ProjectionMask;
             let mask = ProjectionMask::roots(&builder.parquet_schema(), projection_indices);
             builder = builder.with_projection(mask);
         }
     }
-    
+
     let schema = builder.schema().clone();
     let reader = builder
         .build()
         .map_err(|e| Error::IoError(format!("Failed to read Parquet file: {}", e)))?;
-    
+
     // Read all record batches
     let mut all_batches = Vec::new();
     for batch_result in reader {
@@ -791,11 +800,11 @@ pub fn read_parquet_advanced(path: impl AsRef<Path>, options: ParquetReadOptions
             .map_err(|e| Error::IoError(format!("Failed to read record batch: {}", e)))?;
         all_batches.push(batch);
     }
-    
+
     if all_batches.is_empty() {
         return Ok(DataFrame::new());
     }
-    
+
     // Convert to DataFrame with enhanced type support
     record_batches_to_dataframe_enhanced(&all_batches, schema)
 }
@@ -858,28 +867,28 @@ pub fn write_parquet_advanced(
             }
         })
         .collect();
-    
+
     let schema = Schema::new(schema_fields);
     let schema_ref = Arc::new(schema);
-    
+
     // Enhanced writer properties
-    let mut props_builder = WriterProperties::builder()
-        .set_compression(Compression::from(options.compression));
-    
+    let mut props_builder =
+        WriterProperties::builder().set_compression(Compression::from(options.compression));
+
     if let Some(row_group_size) = options.row_group_size {
         props_builder = props_builder.set_max_row_group_size(row_group_size);
     }
-    
+
     if let Some(page_size) = options.page_size {
         props_builder = props_builder.set_data_page_size_limit(page_size);
     }
-    
+
     if options.enable_dictionary {
         props_builder = props_builder.set_dictionary_enabled(true);
     }
-    
+
     let props = props_builder.build();
-    
+
     // Create arrays with the same logic as before
     let arrays: Vec<ArrayRef> = df
         .column_names()
@@ -889,14 +898,14 @@ pub fn write_parquet_advanced(
                 Ok(s) => s,
                 Err(_) => return None,
             };
-            
+
             // Use existing array creation logic
             match col_view.column_type() {
                 crate::column::ColumnType::Int64 => {
                     if let Some(int_col) = col_view.as_int64() {
                         let mut values = Vec::with_capacity(df.row_count());
                         let mut validity = Vec::with_capacity(df.row_count());
-                        
+
                         for i in 0..df.row_count() {
                             match int_col.get(i) {
                                 Ok(Some(val)) => {
@@ -913,7 +922,7 @@ pub fn write_parquet_advanced(
                                 }
                             }
                         }
-                        
+
                         let array = Int64Array::new(values.into(), Some(validity.into()));
                         Some(Arc::new(array) as ArrayRef)
                     } else {
@@ -924,7 +933,7 @@ pub fn write_parquet_advanced(
                     if let Some(float_col) = col_view.as_float64() {
                         let mut values = Vec::with_capacity(df.row_count());
                         let mut validity = Vec::with_capacity(df.row_count());
-                        
+
                         for i in 0..df.row_count() {
                             match float_col.get(i) {
                                 Ok(Some(val)) => {
@@ -941,7 +950,7 @@ pub fn write_parquet_advanced(
                                 }
                             }
                         }
-                        
+
                         let array = Float64Array::new(values.into(), Some(validity.into()));
                         Some(Arc::new(array) as ArrayRef)
                     } else {
@@ -952,7 +961,7 @@ pub fn write_parquet_advanced(
                     if let Some(bool_col) = col_view.as_boolean() {
                         let mut values = Vec::with_capacity(df.row_count());
                         let mut validity = Vec::with_capacity(df.row_count());
-                        
+
                         for i in 0..df.row_count() {
                             match bool_col.get(i) {
                                 Ok(Some(val)) => {
@@ -969,7 +978,7 @@ pub fn write_parquet_advanced(
                                 }
                             }
                         }
-                        
+
                         let array = BooleanArray::new(values.into(), Some(validity.into()));
                         Some(Arc::new(array) as ArrayRef)
                     } else {
@@ -980,7 +989,7 @@ pub fn write_parquet_advanced(
                     if let Some(str_col) = col_view.as_string() {
                         let mut values = Vec::with_capacity(df.row_count());
                         let mut validity = Vec::with_capacity(df.row_count());
-                        
+
                         for i in 0..df.row_count() {
                             match str_col.get(i) {
                                 Ok(Some(val)) => {
@@ -997,8 +1006,10 @@ pub fn write_parquet_advanced(
                                 }
                             }
                         }
-                        
-                        let string_values: Vec<Option<&str>> = values.iter().zip(validity.iter())
+
+                        let string_values: Vec<Option<&str>> = values
+                            .iter()
+                            .zip(validity.iter())
                             .map(|(s, &is_valid)| if is_valid { Some(s.as_str()) } else { None })
                             .collect();
                         let array = StringArray::from(string_values);
@@ -1010,39 +1021,42 @@ pub fn write_parquet_advanced(
             }
         })
         .collect();
-    
+
     // Create record batch
     let batch = RecordBatch::try_new(schema_ref.clone(), arrays)
         .map_err(|e| Error::Cast(format!("Failed to create record batch: {}", e)))?;
-    
+
     // Create file and writer
     let file = File::create(path.as_ref())
         .map_err(|e| Error::IoError(format!("Failed to create Parquet file: {}", e)))?;
-    
+
     let mut writer = ArrowWriter::try_new(file, schema_ref, Some(props))
         .map_err(|e| Error::IoError(format!("Failed to create Parquet writer: {}", e)))?;
-    
+
     // Write the record batch
     writer
         .write(&batch)
         .map_err(|e| Error::IoError(format!("Failed to write record batch: {}", e)))?;
-    
+
     // Close the file
     writer
         .close()
         .map_err(|e| Error::IoError(format!("Failed to close Parquet file: {}", e)))?;
-    
+
     Ok(())
 }
 
 /// Enhanced record batch to DataFrame conversion with additional data type support
-fn record_batches_to_dataframe_enhanced(batches: &[RecordBatch], schema: SchemaRef) -> Result<DataFrame> {
+fn record_batches_to_dataframe_enhanced(
+    batches: &[RecordBatch],
+    schema: SchemaRef,
+) -> Result<DataFrame> {
     let mut df = DataFrame::new();
-    
+
     for (col_idx, field) in schema.fields().iter().enumerate() {
         let col_name = field.name().clone();
         let col_type = field.data_type();
-        
+
         match col_type {
             DataType::Int64 => {
                 let mut values = Vec::new();
@@ -1051,8 +1065,13 @@ fn record_batches_to_dataframe_enhanced(batches: &[RecordBatch], schema: SchemaR
                         .column(col_idx)
                         .as_any()
                         .downcast_ref::<Int64Array>()
-                        .ok_or_else(|| Error::Cast(format!("Failed to cast column '{}' to Int64Array", col_name)))?;
-                    
+                        .ok_or_else(|| {
+                            Error::Cast(format!(
+                                "Failed to cast column '{}' to Int64Array",
+                                col_name
+                            ))
+                        })?;
+
                     for i in 0..array.len() {
                         if array.is_null(i) {
                             values.push(0);
@@ -1071,8 +1090,13 @@ fn record_batches_to_dataframe_enhanced(batches: &[RecordBatch], schema: SchemaR
                         .column(col_idx)
                         .as_any()
                         .downcast_ref::<Float64Array>()
-                        .ok_or_else(|| Error::Cast(format!("Failed to cast column '{}' to Float64Array", col_name)))?;
-                    
+                        .ok_or_else(|| {
+                            Error::Cast(format!(
+                                "Failed to cast column '{}' to Float64Array",
+                                col_name
+                            ))
+                        })?;
+
                     for i in 0..array.len() {
                         if array.is_null(i) {
                             values.push(f64::NAN);
@@ -1091,8 +1115,13 @@ fn record_batches_to_dataframe_enhanced(batches: &[RecordBatch], schema: SchemaR
                         .column(col_idx)
                         .as_any()
                         .downcast_ref::<BooleanArray>()
-                        .ok_or_else(|| Error::Cast(format!("Failed to cast column '{}' to BooleanArray", col_name)))?;
-                    
+                        .ok_or_else(|| {
+                            Error::Cast(format!(
+                                "Failed to cast column '{}' to BooleanArray",
+                                col_name
+                            ))
+                        })?;
+
                     for i in 0..array.len() {
                         if array.is_null(i) {
                             values.push(false);
@@ -1111,8 +1140,13 @@ fn record_batches_to_dataframe_enhanced(batches: &[RecordBatch], schema: SchemaR
                         .column(col_idx)
                         .as_any()
                         .downcast_ref::<StringArray>()
-                        .ok_or_else(|| Error::Cast(format!("Failed to cast column '{}' to StringArray", col_name)))?;
-                    
+                        .ok_or_else(|| {
+                            Error::Cast(format!(
+                                "Failed to cast column '{}' to StringArray",
+                                col_name
+                            ))
+                        })?;
+
                     for i in 0..array.len() {
                         if array.is_null(i) {
                             values.push("".to_string());
@@ -1131,8 +1165,13 @@ fn record_batches_to_dataframe_enhanced(batches: &[RecordBatch], schema: SchemaR
                         .column(col_idx)
                         .as_any()
                         .downcast_ref::<Date32Array>()
-                        .ok_or_else(|| Error::Cast(format!("Failed to cast column '{}' to Date32Array", col_name)))?;
-                    
+                        .ok_or_else(|| {
+                            Error::Cast(format!(
+                                "Failed to cast column '{}' to Date32Array",
+                                col_name
+                            ))
+                        })?;
+
                     for i in 0..array.len() {
                         if array.is_null(i) {
                             values.push("1970-01-01".to_string());
@@ -1153,8 +1192,13 @@ fn record_batches_to_dataframe_enhanced(batches: &[RecordBatch], schema: SchemaR
                         .column(col_idx)
                         .as_any()
                         .downcast_ref::<TimestampMicrosecondArray>()
-                        .ok_or_else(|| Error::Cast(format!("Failed to cast column '{}' to TimestampMicrosecondArray", col_name)))?;
-                    
+                        .ok_or_else(|| {
+                            Error::Cast(format!(
+                                "Failed to cast column '{}' to TimestampMicrosecondArray",
+                                col_name
+                            ))
+                        })?;
+
                     for i in 0..array.len() {
                         if array.is_null(i) {
                             values.push("1970-01-01T00:00:00".to_string());
@@ -1185,7 +1229,7 @@ fn record_batches_to_dataframe_enhanced(batches: &[RecordBatch], schema: SchemaR
             }
         }
     }
-    
+
     Ok(df)
 }
 
@@ -1308,7 +1352,7 @@ impl StreamingParquetReader {
 
         let metadata = builder.metadata().clone();
         let schema = builder.schema().clone();
-        
+
         let total_rows = metadata.file_metadata().num_rows() as usize;
         let total_chunks = (total_rows + chunk_size - 1) / chunk_size;
 
@@ -1343,7 +1387,7 @@ impl StreamingParquetReader {
         };
 
         let df = read_parquet_advanced(&self.path, options)?;
-        
+
         self.chunk_index += 1;
         self.current_position += self.chunk_size;
 
@@ -1467,7 +1511,7 @@ pub fn read_parquet_with_predicates(
 fn apply_predicate_filters(df: DataFrame, predicates: &[PredicateFilter]) -> Result<DataFrame> {
     // This is a simplified implementation
     // True predicate pushdown would happen at the Parquet reader level
-    
+
     for predicate in predicates {
         match predicate {
             PredicateFilter::Equals(column, value) => {
@@ -1476,7 +1520,10 @@ fn apply_predicate_filters(df: DataFrame, predicates: &[PredicateFilter]) -> Res
             }
             PredicateFilter::Range(column, min, max) => {
                 // Apply range filter
-                println!("Applying range filter: {} BETWEEN {} AND {}", column, min, max);
+                println!(
+                    "Applying range filter: {} BETWEEN {} AND {}",
+                    column, min, max
+                );
             }
             PredicateFilter::In(column, values) => {
                 // Apply IN filter
@@ -1549,10 +1596,7 @@ pub fn read_parquet_enhanced(
 }
 
 /// Read Parquet file in streaming mode
-fn read_parquet_streaming(
-    path: &Path,
-    options: &AdvancedParquetReadOptions,
-) -> Result<DataFrame> {
+fn read_parquet_streaming(path: &Path, options: &AdvancedParquetReadOptions) -> Result<DataFrame> {
     let mut reader = StreamingParquetReader::new(path, options.streaming_chunk_size)?;
     let mut combined_df = DataFrame::new();
     let mut total_rows = 0;
@@ -1615,7 +1659,10 @@ pub fn write_parquet_streaming(
 
     // For streaming writes, we'd need to implement chunked writing
     // This is a placeholder showing the concept
-    println!("Writing {} rows in {} chunks of size {}", total_rows, num_chunks, chunk_size);
+    println!(
+        "Writing {} rows in {} chunks of size {}",
+        total_rows, num_chunks, chunk_size
+    );
 
     // Currently, fall back to standard writing
     // True streaming would require row-by-row or chunk-by-chunk DataFrame access
@@ -1658,18 +1705,17 @@ pub struct ParquetSchemaAnalysis {
 pub fn analyze_parquet_schema(path: impl AsRef<Path>) -> Result<ParquetSchemaAnalysis> {
     let metadata = get_parquet_metadata(path.as_ref())?;
     let column_stats = get_column_statistics(path.as_ref())?;
-    
+
     let column_count = column_stats.len();
     let mut columns = HashMap::new();
-    
+
     for stat in &column_stats {
         columns.insert(stat.name.clone(), stat.data_type.clone());
     }
-    
+
     // Calculate complexity score
-    let complexity_score = (column_count as f64 * 1.0) + 
-                          (metadata.num_row_groups as f64 * 0.1);
-    
+    let complexity_score = (column_count as f64 * 1.0) + (metadata.num_row_groups as f64 * 0.1);
+
     // Determine evolution difficulty
     let evolution_difficulty = if column_count < 10 {
         "Easy".to_string()
@@ -1678,7 +1724,7 @@ pub fn analyze_parquet_schema(path: impl AsRef<Path>) -> Result<ParquetSchemaAna
     } else {
         "Hard".to_string()
     };
-    
+
     Ok(ParquetSchemaAnalysis {
         column_count,
         columns,

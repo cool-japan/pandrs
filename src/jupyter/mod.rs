@@ -7,10 +7,10 @@
 //! - Jupyter magic commands support
 //! - Better integration with Jupyter's display system
 
+use lazy_static::lazy_static;
 use std::collections::HashMap;
 use std::fmt::Write;
 use std::sync::RwLock;
-use lazy_static::lazy_static;
 
 use crate::core::error::{Error, Result};
 use crate::dataframe::base::DataFrame;
@@ -79,32 +79,45 @@ impl JupyterColorScheme {
                 .pandrs-row { background-color: #ffffff; }
                 .pandrs-row:nth-child(even) { background-color: #f8f9fa; }
                 .pandrs-border { border-color: #dee2e6; }
-            "#.to_string(),
-            
+            "#
+            .to_string(),
+
             JupyterColorScheme::Dark => r#"
                 .pandrs-table { background-color: #2d3748; color: #e2e8f0; }
                 .pandrs-header { background-color: #4a5568; color: #f7fafc; font-weight: bold; }
                 .pandrs-row { background-color: #2d3748; }
                 .pandrs-row:nth-child(even) { background-color: #4a5568; }
                 .pandrs-border { border-color: #718096; }
-            "#.to_string(),
-            
+            "#
+            .to_string(),
+
             JupyterColorScheme::Light => r#"
                 .pandrs-table { background-color: #fefefe; color: #2d3748; }
                 .pandrs-header { background-color: #edf2f7; color: #2d3748; font-weight: bold; }
                 .pandrs-row { background-color: #fefefe; }
                 .pandrs-row:nth-child(even) { background-color: #f7fafc; }
                 .pandrs-border { border-color: #cbd5e0; }
-            "#.to_string(),
-            
-            JupyterColorScheme::Custom { header_bg, header_text, row_bg, alt_row_bg, text_color, border_color } => {
-                format!(r#"
+            "#
+            .to_string(),
+
+            JupyterColorScheme::Custom {
+                header_bg,
+                header_text,
+                row_bg,
+                alt_row_bg,
+                text_color,
+                border_color,
+            } => {
+                format!(
+                    r#"
                     .pandrs-table {{ background-color: {}; color: {}; }}
                     .pandrs-header {{ background-color: {}; color: {}; font-weight: bold; }}
                     .pandrs-row {{ background-color: {}; }}
                     .pandrs-row:nth-child(even) {{ background-color: {}; }}
                     .pandrs-border {{ border-color: {}; }}
-                "#, row_bg, text_color, header_bg, header_text, row_bg, alt_row_bg, border_color)
+                "#,
+                    row_bg, text_color, header_bg, header_text, row_bg, alt_row_bg, border_color
+                )
             }
         }
     }
@@ -174,13 +187,13 @@ impl TableWidth {
 pub trait JupyterDisplay {
     /// Generate rich HTML display for Jupyter
     fn to_jupyter_html(&self, config: &JupyterConfig) -> Result<String>;
-    
+
     /// Generate interactive widget HTML
     fn to_interactive_widget(&self, config: &JupyterConfig) -> Result<String>;
-    
+
     /// Generate summary display
     fn to_summary_html(&self, config: &JupyterConfig) -> Result<String>;
-    
+
     /// Generate data explorer widget
     fn to_data_explorer(&self, config: &JupyterConfig) -> Result<String>;
 }
@@ -188,9 +201,10 @@ pub trait JupyterDisplay {
 impl JupyterDisplay for DataFrame {
     fn to_jupyter_html(&self, config: &JupyterConfig) -> Result<String> {
         let mut html = String::new();
-        
+
         // CSS styles
-        html.push_str(&format!(r#"
+        html.push_str(&format!(
+            r#"
         <style>
         .pandrs-container {{
             margin: 10px 0;
@@ -219,52 +233,56 @@ impl JupyterDisplay for DataFrame {
             font-size: 11px;
         }}
         </style>
-        "#, 
+        "#,
             config.table_style.font_family,
             config.table_style.font_size,
             config.table_style.width.to_css(),
             config.table_style.cell_padding,
-            if config.table_style.show_borders { "1px solid var(--pandrs-border-color, #ddd)" } else { "none" },
+            if config.table_style.show_borders {
+                "1px solid var(--pandrs-border-color, #ddd)"
+            } else {
+                "none"
+            },
             config.color_scheme.to_css()
         ));
-        
+
         // Container start
         html.push_str(r#"<div class="pandrs-container">"#);
-        
+
         // DataFrame info
         html.push_str(&format!(
             r#"<div class="pandrs-info">DataFrame: {} rows × {} columns</div>"#,
-            self.row_count(), 
+            self.row_count(),
             self.column_names().len()
         ));
-        
+
         // Table start
         html.push_str(r#"<table class="pandrs-table">"#);
-        
+
         // Header
         html.push_str("<thead><tr class='pandrs-header'>");
-        
+
         if config.table_style.show_index {
             html.push_str("<th></th>"); // Index column header
         }
-        
+
         let columns = self.column_names();
         let visible_columns = if columns.len() > config.max_columns {
             &columns[..config.max_columns]
         } else {
             &columns
         };
-        
+
         for col_name in visible_columns {
             html.push_str(&format!("<th>{}</th>", escape_html(col_name)));
         }
-        
+
         if columns.len() > config.max_columns {
             html.push_str("<th>...</th>");
         }
-        
+
         html.push_str("</tr>");
-        
+
         // Column types (if enabled)
         if config.table_style.show_dtypes {
             html.push_str("<tr class='pandrs-header'>");
@@ -281,41 +299,42 @@ impl JupyterDisplay for DataFrame {
             }
             html.push_str("</tr>");
         }
-        
+
         html.push_str("</thead>");
-        
+
         // Body
         html.push_str("<tbody>");
-        
+
         let row_count = self.row_count();
         let visible_rows = if row_count > config.max_rows {
             config.max_rows / 2
         } else {
             row_count
         };
-        
+
         // Display first rows
         for i in 0..visible_rows.min(row_count) {
             html.push_str(&format!("<tr class='pandrs-row'>"));
-            
+
             if config.table_style.show_index {
                 html.push_str(&format!("<td><strong>{}</strong></td>", i));
             }
-            
+
             for col_name in visible_columns {
-                let value = self.get_value_at(i, col_name)
+                let value = self
+                    .get_value_at(i, col_name)
                     .unwrap_or_else(|_| "NaN".to_string());
                 let formatted_value = format_value(&value, config.precision);
                 html.push_str(&format!("<td>{}</td>", escape_html(&formatted_value)));
             }
-            
+
             if columns.len() > config.max_columns {
                 html.push_str("<td>...</td>");
             }
-            
+
             html.push_str("</tr>");
         }
-        
+
         // Show ellipsis if there are more rows
         if row_count > config.max_rows {
             html.push_str("<tr class='pandrs-row'>");
@@ -329,36 +348,37 @@ impl JupyterDisplay for DataFrame {
                 html.push_str("<td>...</td>");
             }
             html.push_str("</tr>");
-            
+
             // Display last rows
             let remaining_rows = config.max_rows - visible_rows;
             let start_idx = row_count - remaining_rows;
-            
+
             for i in start_idx..row_count {
                 html.push_str(&format!("<tr class='pandrs-row'>"));
-                
+
                 if config.table_style.show_index {
                     html.push_str(&format!("<td><strong>{}</strong></td>", i));
                 }
-                
+
                 for col_name in visible_columns {
-                    let value = self.get_value_at(i, col_name)
+                    let value = self
+                        .get_value_at(i, col_name)
                         .unwrap_or_else(|_| "NaN".to_string());
                     let formatted_value = format_value(&value, config.precision);
                     html.push_str(&format!("<td>{}</td>", escape_html(&formatted_value)));
                 }
-                
+
                 if columns.len() > config.max_columns {
                     html.push_str("<td>...</td>");
                 }
-                
+
                 html.push_str("</tr>");
             }
         }
-        
+
         html.push_str("</tbody>");
         html.push_str("</table>");
-        
+
         // Summary info (if enabled)
         if config.table_style.show_summary {
             html.push_str(&format!(
@@ -372,17 +392,18 @@ impl JupyterDisplay for DataFrame {
                 self.get_column_types().join(", ")
             ));
         }
-        
+
         html.push_str("</div>");
-        
+
         Ok(html)
     }
-    
+
     fn to_interactive_widget(&self, config: &JupyterConfig) -> Result<String> {
         let mut html = String::new();
-        
+
         // Interactive widget with JavaScript
-        html.push_str(&format!(r#"
+        html.push_str(&format!(
+            r#"
         <div id="pandrs-widget-{}" class="pandrs-interactive-widget">
             <style>
             .pandrs-interactive-widget {{
@@ -466,7 +487,7 @@ impl JupyterDisplay for DataFrame {
             self.row_count(), // widget id
             config.table_style.font_family,
             self.row_count(), // info button
-            self.row_count(), // describe button  
+            self.row_count(), // describe button
             self.row_count(), // plot button
             self.row_count(), // search input
             self.row_count(), // content div
@@ -476,14 +497,15 @@ impl JupyterDisplay for DataFrame {
             estimate_memory_usage(self),
             self.get_column_types().join(", ")
         ));
-        
+
         Ok(html)
     }
-    
+
     fn to_summary_html(&self, config: &JupyterConfig) -> Result<String> {
         let mut html = String::new();
-        
-        html.push_str(&format!(r#"
+
+        html.push_str(&format!(
+            r#"
         <div class="pandrs-summary" style="
             font-family: {};
             padding: 15px;
@@ -514,7 +536,7 @@ impl JupyterDisplay for DataFrame {
             estimate_non_null_count(self),
             estimate_null_count(self)
         ));
-        
+
         // Column details
         for (i, col_name) in self.column_names().iter().enumerate() {
             let col_type = self.infer_column_type(col_name);
@@ -525,22 +547,24 @@ impl JupyterDisplay for DataFrame {
                 format!("col {}", i)
             ));
         }
-        
-        html.push_str(r#"
+
+        html.push_str(
+            r#"
                     </ul>
                 </div>
             </div>
         </div>
-        "#);
-        
+        "#,
+        );
+
         Ok(html)
     }
-    
+
     fn to_data_explorer(&self, config: &JupyterConfig) -> Result<String> {
         let widget_id = format!("explorer_{}", self.row_count());
-        
+
         let mut html = String::new();
-        
+
         html.push_str(&format!(r#"
         <div id="pandrs-explorer-{}" class="pandrs-data-explorer">
             <style>
@@ -664,7 +688,7 @@ impl JupyterDisplay for DataFrame {
             widget_id, // stats content div
             widget_id  // viz content div
         ));
-        
+
         Ok(html)
     }
 }
@@ -675,9 +699,10 @@ where
 {
     fn to_jupyter_html(&self, config: &JupyterConfig) -> Result<String> {
         let mut html = String::new();
-        
+
         // CSS styles
-        html.push_str(&format!(r#"
+        html.push_str(&format!(
+            r#"
         <style>
         .pandrs-series-container {{
             margin: 10px 0;
@@ -701,18 +726,22 @@ where
             color: #666;
         }}
         </style>
-        "#, 
+        "#,
             config.table_style.font_family,
             config.table_style.font_size,
             config.table_style.width.to_css(),
             config.table_style.cell_padding,
-            if config.table_style.show_borders { "1px solid var(--pandrs-border-color, #ddd)" } else { "none" },
+            if config.table_style.show_borders {
+                "1px solid var(--pandrs-border-color, #ddd)"
+            } else {
+                "none"
+            },
             config.color_scheme.to_css()
         ));
-        
+
         // Container start
         html.push_str(r#"<div class="pandrs-series-container">"#);
-        
+
         // Series info
         let series_name = self.name().map_or("Unnamed", |s| s.as_str());
         html.push_str(&format!(
@@ -720,10 +749,10 @@ where
             escape_html(series_name),
             self.len()
         ));
-        
+
         // Table start
         html.push_str(r#"<table class="pandrs-series-table">"#);
-        
+
         // Header
         html.push_str("<thead><tr class='pandrs-header'>");
         if config.table_style.show_index {
@@ -731,30 +760,30 @@ where
         }
         html.push_str(&format!("<th>{}</th>", escape_html(series_name)));
         html.push_str("</tr></thead>");
-        
+
         // Body
         html.push_str("<tbody>");
-        
+
         let values = self.values();
         let visible_count = if values.len() > config.max_rows {
             config.max_rows / 2
         } else {
             values.len()
         };
-        
+
         // Display first values
         for (i, value) in values.iter().enumerate().take(visible_count) {
             html.push_str(&format!("<tr class='pandrs-row'>"));
-            
+
             if config.table_style.show_index {
                 html.push_str(&format!("<td><strong>{}</strong></td>", i));
             }
-            
+
             let formatted_value = format!("{}", value);
             html.push_str(&format!("<td>{}</td>", escape_html(&formatted_value)));
             html.push_str("</tr>");
         }
-        
+
         // Show ellipsis if there are more values
         if values.len() > config.max_rows {
             html.push_str("<tr class='pandrs-row'>");
@@ -763,55 +792,57 @@ where
             }
             html.push_str("<td>...</td>");
             html.push_str("</tr>");
-            
+
             // Display last values
             let remaining_count = config.max_rows - visible_count;
             let start_idx = values.len() - remaining_count;
-            
+
             for (i, value) in values.iter().enumerate().skip(start_idx) {
                 html.push_str(&format!("<tr class='pandrs-row'>"));
-                
+
                 if config.table_style.show_index {
                     html.push_str(&format!("<td><strong>{}</strong></td>", i));
                 }
-                
+
                 let formatted_value = format!("{}", value);
                 html.push_str(&format!("<td>{}</td>", escape_html(&formatted_value)));
                 html.push_str("</tr>");
             }
         }
-        
+
         html.push_str("</tbody>");
         html.push_str("</table>");
         html.push_str("</div>");
-        
+
         Ok(html)
     }
-    
+
     fn to_interactive_widget(&self, config: &JupyterConfig) -> Result<String> {
         // Simplified interactive widget for Series
         let mut html = String::new();
         let series_name = self.name().map_or("Unnamed", |s| s.as_str());
-        
-        html.push_str(&format!(r#"
+
+        html.push_str(&format!(
+            r#"
         <div class="pandrs-series-widget">
             <div style="margin-bottom: 10px; font-weight: bold;">
                 Series '{}' Interactive Widget
             </div>
             {}
         </div>
-        "#, 
+        "#,
             escape_html(series_name),
             self.to_jupyter_html(config)?
         ));
-        
+
         Ok(html)
     }
-    
+
     fn to_summary_html(&self, config: &JupyterConfig) -> Result<String> {
         let series_name = self.name().map_or("Unnamed", |s| s.as_str());
-        
-        Ok(format!(r#"
+
+        Ok(format!(
+            r#"
         <div class="pandrs-series-summary" style="
             font-family: {};
             padding: 15px;
@@ -835,7 +866,7 @@ where
             std::any::type_name::<T>()
         ))
     }
-    
+
     fn to_data_explorer(&self, config: &JupyterConfig) -> Result<String> {
         // Use the summary for series data explorer
         self.to_summary_html(config)
@@ -877,7 +908,8 @@ impl JupyterMagics {
         # Register the magic class
         ip = get_ipython()
         ip.register_magic_functions(PandRSMagics)
-        "#.to_string()
+        "#
+        .to_string()
     }
 }
 
@@ -939,7 +971,7 @@ impl DataFrame {
             "unknown".to_string()
         }
     }
-    
+
     /// Get column types for all columns
     fn get_column_types(&self) -> Vec<String> {
         self.column_names()
@@ -947,14 +979,17 @@ impl DataFrame {
             .map(|col| self.infer_column_type(col))
             .collect()
     }
-    
+
     /// Get value at specific position (helper method)
     fn get_value_at(&self, row: usize, column: &str) -> Result<String> {
         let values = self.get_column_string_values(column)?;
         if row < values.len() {
             Ok(values[row].clone())
         } else {
-            Err(Error::IndexOutOfBounds { index: row, size: values.len() })
+            Err(Error::IndexOutOfBounds {
+                index: row,
+                size: values.len(),
+            })
         }
     }
 }
@@ -966,11 +1001,7 @@ lazy_static! {
 
 /// Get the current Jupyter configuration
 pub fn get_jupyter_config() -> JupyterConfig {
-    JUPYTER_CONFIG
-        .read()
-        .unwrap()
-        .clone()
-        .unwrap_or_default()
+    JUPYTER_CONFIG.read().unwrap().clone().unwrap_or_default()
 }
 
 /// Set the Jupyter configuration
@@ -981,12 +1012,12 @@ pub fn set_jupyter_config(config: JupyterConfig) {
 /// Initialize Jupyter integration with default settings
 pub fn init_jupyter() -> Result<()> {
     set_jupyter_config(JupyterConfig::default());
-    
+
     // Print initialization message
     println!("🎯 PandRS Jupyter Integration Initialized!");
     println!("📚 Enhanced DataFrame display and interactive widgets are now available.");
     println!("🔍 Use .to_jupyter_html(), .to_interactive_widget(), or .to_data_explorer() on DataFrames.");
-    
+
     Ok(())
 }
 
@@ -1030,7 +1061,7 @@ mod tests {
     fn test_table_width_css() {
         let auto_width = TableWidth::Auto;
         assert_eq!(auto_width.to_css(), "width: auto;");
-        
+
         let fixed_width = TableWidth::Fixed(800);
         assert_eq!(fixed_width.to_css(), "width: 800px;");
     }
@@ -1053,10 +1084,10 @@ mod tests {
         let mut data = HashMap::new();
         data.insert("col1".to_string(), vec!["1".to_string(), "2".to_string()]);
         data.insert("col2".to_string(), vec!["a".to_string(), "b".to_string()]);
-        
+
         let df = DataFrame::from_map(data, None).unwrap();
         let config = JupyterConfig::default();
-        
+
         let html = df.to_jupyter_html(&config).unwrap();
         assert!(html.contains("pandrs-table"));
         assert!(html.contains("col1"));

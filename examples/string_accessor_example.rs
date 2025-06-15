@@ -1,5 +1,5 @@
-use pandrs::{DataFrame, Series};
 use pandrs::error::Result;
+use pandrs::{DataFrame, Series};
 
 #[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
@@ -12,7 +12,7 @@ fn main() -> Result<()> {
         "  pandas-like  ".to_string(),
         "Data Analysis".to_string(),
     ];
-    
+
     let series = Series::new(data, Some("text_data".to_string()))?;
     println!("Original Series: {:?}", series.values());
 
@@ -29,11 +29,17 @@ fn main() -> Result<()> {
 
     // Test contains
     let contains_result = str_accessor.contains("rust", false, false)?;
-    println!("Contains 'rust' (case insensitive): {:?}", contains_result.values());
+    println!(
+        "Contains 'rust' (case insensitive): {:?}",
+        contains_result.values()
+    );
 
     // Test startswith
     let startswith_result = str_accessor.startswith("hello", false)?;
-    println!("Starts with 'hello' (case insensitive): {:?}", startswith_result.values());
+    println!(
+        "Starts with 'hello' (case insensitive): {:?}",
+        startswith_result.values()
+    );
 
     // Test string length
     let len_result = str_accessor.len()?;
@@ -49,18 +55,24 @@ fn main() -> Result<()> {
 
     // Test regex operations
     let regex_contains = str_accessor.contains(r"\b[A-Z]+\b", true, true)?;
-    println!("Contains uppercase words (regex): {:?}", regex_contains.values());
+    println!(
+        "Contains uppercase words (regex): {:?}",
+        regex_contains.values()
+    );
 
     // Test extract
     let extract_result = str_accessor.extract(r"([A-Z][a-z]+)", None)?;
-    println!("Extract first capitalized word: {:?}", extract_result.values());
+    println!(
+        "Extract first capitalized word: {:?}",
+        extract_result.values()
+    );
 
     println!("\n=== DataFrame with String Operations ===");
-    
+
     // Create a DataFrame with string column
     let mut df = DataFrame::new();
     df.add_column("text".to_string(), series)?;
-    
+
     println!("DataFrame created successfully with string column!");
 
     Ok(())

@@ -6,13 +6,13 @@
 
 use crate::core::error::{Error, Result};
 use crate::storage::unified_memory::*;
-use std::sync::{Arc, Mutex, RwLock};
 use std::collections::HashMap;
+use std::marker::PhantomData;
+use std::mem;
 use std::ops::{Deref, Range};
 use std::ptr::NonNull;
-use std::marker::PhantomData;
 use std::slice;
-use std::mem;
+use std::sync::{Arc, Mutex, RwLock};
 
 /// Cache line size for optimal memory alignment
 pub const CACHE_LINE_SIZE: usize = 64;
@@ -58,46 +58,48 @@ impl<T> ZeroCopyView<T> {
             _phantom: PhantomData,
         }
     }
-    
+
     /// Get the length of the view
     pub fn len(&self) -> usize {
         self.len
     }
-    
+
     /// Check if the view is empty
     pub fn is_empty(&self) -> bool {
         self.len == 0
     }
-    
+
     /// Get the capacity of the underlying memory
     pub fn capacity(&self) -> usize {
         self.capacity
     }
-    
+
     /// Get memory layout information
     pub fn layout(&self) -> &MemoryLayout {
         &self.layout
     }
-    
+
     /// Get a slice view of the data
     pub fn as_slice(&self) -> &[T] {
         unsafe { slice::from_raw_parts(self.data.as_ptr(), self.len) }
     }
-    
+
     /// Get a mutable slice view of the data (if exclusive access is guaranteed)
     pub unsafe fn as_mut_slice(&mut self) -> &mut [T] {
         slice::from_raw_parts_mut(self.data.as_ptr(), self.len)
     }
-    
+
     /// Create a subview of this view
     pub fn subview(&self, range: Range<usize>) -> Result<ZeroCopyView<T>> {
         if range.start > self.len || range.end > self.len || range.start > range.end {
-            return Err(Error::InvalidOperation("Invalid range for subview".to_string()));
+            return Err(Error::InvalidOperation(
+                "Invalid range for subview".to_string(),
+            ));
         }
-        
+
         let new_len = range.end - range.start;
         let new_data = unsafe { NonNull::new_unchecked(self.data.as_ptr().add(range.start)) };
-        
+
         Ok(unsafe {
             ZeroCopyView::new(
                 new_data,
@@ -108,17 +110,17 @@ impl<T> ZeroCopyView<T> {
             )
         })
     }
-    
+
     /// Get raw pointer to the data
     pub fn as_ptr(&self) -> *const T {
         self.data.as_ptr()
     }
-    
+
     /// Check if the view is cache-aligned
     pub fn is_cache_aligned(&self) -> bool {
         self.data.as_ptr() as usize % CACHE_LINE_SIZE == 0
     }
-    
+
     /// Get the memory address for debugging
     pub fn memory_address(&self) -> usize {
         self.data.as_ptr() as usize
@@ -127,7 +129,7 @@ impl<T> ZeroCopyView<T> {
 
 impl<T> Deref for ZeroCopyView<T> {
     type Target = [T];
-    
+
     fn deref(&self) -> &Self::Target {
         self.as_slice()
     }
@@ -161,13 +163,13 @@ impl MemoryLayout {
             numa_node: None,
         }
     }
-    
+
     pub fn with_cache_alignment(mut self) -> Self {
         self.cache_aligned = true;
         self.alignment = self.alignment.max(CACHE_LINE_SIZE);
         self
     }
-    
+
     pub fn with_numa_node(mut self, node: u32) -> Self {
         self.numa_node = Some(node);
         self
@@ -188,30 +190,36 @@ impl CacheAwareAllocator {
     pub fn new() -> Result<Self> {
         let cache_topology = CacheTopology::detect()?;
         let mut memory_pools = HashMap::new();
-        
+
         // Create memory pools for different cache levels
         memory_pools.insert(CacheLevel::L1, MemoryPool::new(64 * 1024)?); // 64KB for L1
         memory_pools.insert(CacheLevel::L2, MemoryPool::new(512 * 1024)?); // 512KB for L2
         memory_pools.insert(CacheLevel::L3, MemoryPool::new(4 * 1024 * 1024)?); // 4MB for L3
         memory_pools.insert(CacheLevel::Memory, MemoryPool::new(64 * 1024 * 1024)?); // 64MB for main memory
-        
+
         Ok(Self {
             cache_topology,
             memory_pools,
             stats: AllocationStats::new(),
         })
     }
-    
+
     /// Allocate cache-aligned memory
-    pub fn allocate_aligned<T>(&mut self, count: usize, cache_level: CacheLevel) -> Result<ZeroCopyView<T>> {
+    pub fn allocate_aligned<T>(
+        &mut self,
+        count: usize,
+        cache_level: CacheLevel,
+    ) -> Result<ZeroCopyView<T>> {
         let size = count * mem::size_of::<T>();
         let alignment = CACHE_LINE_SIZE.max(mem::align_of::<T>());
-        
-        let pool = self.memory_pools.get_mut(&cache_level)
+
+        let pool = self
+            .memory_pools
+            .get_mut(&cache_level)
             .ok_or_else(|| Error::InvalidOperation("Cache level not supported".to_string()))?;
-        
+
         let allocation = pool.allocate_aligned(size, alignment)?;
-        
+
         let layout = MemoryLayout {
             start_address: allocation.ptr as usize,
             element_size: mem::size_of::<T>(),
@@ -220,7 +228,7 @@ impl CacheAwareAllocator {
             cache_aligned: true,
             numa_node: self.cache_topology.numa_node,
         };
-        
+
         // Create a dummy storage handle for the allocation
         let storage_handle = Arc::new(StorageHandle::new(
             StorageId(allocation.ptr as u64),
@@ -228,13 +236,14 @@ impl CacheAwareAllocator {
             Box::new(allocation),
             StorageMetadata::new(size),
         ));
-        
+
         self.stats.record_allocation(size);
-        
+
         unsafe {
             Ok(ZeroCopyView::new(
-                NonNull::new(allocation.ptr as *mut T)
-                    .ok_or_else(|| Error::InvalidOperation("Null pointer allocation".to_string()))?,
+                NonNull::new(allocation.ptr as *mut T).ok_or_else(|| {
+                    Error::InvalidOperation("Null pointer allocation".to_string())
+                })?,
                 count,
                 count,
                 layout,
@@ -242,12 +251,12 @@ impl CacheAwareAllocator {
             ))
         }
     }
-    
+
     /// Get allocation statistics
     pub fn stats(&self) -> &AllocationStats {
         &self.stats
     }
-    
+
     /// Get cache topology information
     pub fn cache_topology(&self) -> &CacheTopology {
         &self.cache_topology
@@ -276,15 +285,15 @@ impl CacheTopology {
         // In a real implementation, this would use OS-specific APIs
         // to detect actual cache topology. For now, we use reasonable defaults.
         Ok(Self {
-            l1_cache_size: 32 * 1024,      // 32KB
-            l2_cache_size: 256 * 1024,     // 256KB
+            l1_cache_size: 32 * 1024,       // 32KB
+            l2_cache_size: 256 * 1024,      // 256KB
             l3_cache_size: 8 * 1024 * 1024, // 8MB
             cache_line_size: CACHE_LINE_SIZE,
             cpu_cores: num_cpus::get(),
             numa_node: None,
         })
     }
-    
+
     /// Determine optimal cache level for given data size
     pub fn optimal_cache_level(&self, size: usize) -> CacheLevel {
         if size <= self.l1_cache_size / 2 {
@@ -327,11 +336,11 @@ impl MemoryPool {
         // Allocate aligned memory for the pool
         let layout = std::alloc::Layout::from_size_align(size, PAGE_SIZE)
             .map_err(|_| Error::InvalidOperation("Invalid memory layout".to_string()))?;
-        
+
         let ptr = unsafe { std::alloc::alloc(layout) };
         let base_ptr = NonNull::new(ptr)
             .ok_or_else(|| Error::InvalidOperation("Memory allocation failed".to_string()))?;
-        
+
         Ok(Self {
             size,
             free_blocks: vec![MemoryBlock {
@@ -344,12 +353,12 @@ impl MemoryPool {
             current_offset: 0,
         })
     }
-    
+
     /// Allocate aligned memory from the pool
     pub fn allocate_aligned(&mut self, size: usize, alignment: usize) -> Result<MemoryBlock> {
         // Round up size to alignment
         let aligned_size = (size + alignment - 1) & !(alignment - 1);
-        
+
         // Find a suitable free block
         for (i, block) in self.free_blocks.iter().enumerate() {
             if block.size >= aligned_size {
@@ -358,7 +367,7 @@ impl MemoryPool {
                     size: aligned_size,
                     alignment,
                 };
-                
+
                 // Update the free block
                 if block.size > aligned_size {
                     self.free_blocks[i] = MemoryBlock {
@@ -369,13 +378,15 @@ impl MemoryPool {
                 } else {
                     self.free_blocks.remove(i);
                 }
-                
+
                 self.used_blocks.push(allocated_block);
                 return Ok(allocated_block);
             }
         }
-        
-        Err(Error::InvalidOperation("Not enough memory in pool".to_string()))
+
+        Err(Error::InvalidOperation(
+            "Not enough memory in pool".to_string(),
+        ))
     }
 }
 
@@ -427,7 +438,7 @@ impl AllocationStats {
             cache_hit_rate: 0.0,
         }
     }
-    
+
     pub fn record_allocation(&mut self, size: usize) {
         self.total_allocated += size;
         self.allocation_count += 1;
@@ -436,7 +447,7 @@ impl AllocationStats {
             self.peak_usage = self.current_usage;
         }
     }
-    
+
     pub fn record_deallocation(&mut self, size: usize) {
         self.current_usage = self.current_usage.saturating_sub(size);
     }
@@ -457,11 +468,11 @@ pub struct MemoryMappedView<T> {
 impl<T> MemoryMappedView<T> {
     /// Create a new memory-mapped view from a file
     pub fn from_file(file: std::fs::File, len: usize) -> Result<Self> {
-        let mmap = unsafe { 
+        let mmap = unsafe {
             memmap2::Mmap::map(&file)
                 .map_err(|e| Error::InvalidOperation(format!("Memory mapping failed: {}", e)))?
         };
-        
+
         let layout = MemoryLayout {
             start_address: mmap.as_ptr() as usize,
             element_size: mem::size_of::<T>(),
@@ -470,7 +481,7 @@ impl<T> MemoryMappedView<T> {
             cache_aligned: false,
             numa_node: None,
         };
-        
+
         Ok(Self {
             mmap,
             len,
@@ -478,27 +489,27 @@ impl<T> MemoryMappedView<T> {
             _phantom: PhantomData,
         })
     }
-    
+
     /// Get a slice view of the memory-mapped data
     pub fn as_slice(&self) -> &[T] {
         unsafe {
             slice::from_raw_parts(
                 self.mmap.as_ptr() as *const T,
-                self.len.min(self.mmap.len() / mem::size_of::<T>())
+                self.len.min(self.mmap.len() / mem::size_of::<T>()),
             )
         }
     }
-    
+
     /// Get memory layout information
     pub fn layout(&self) -> &MemoryLayout {
         &self.layout
     }
-    
+
     /// Get the length of the view
     pub fn len(&self) -> usize {
         self.len
     }
-    
+
     /// Check if the view is empty
     pub fn is_empty(&self) -> bool {
         self.len == 0
@@ -507,7 +518,7 @@ impl<T> MemoryMappedView<T> {
 
 impl<T> Deref for MemoryMappedView<T> {
     type Target = [T];
-    
+
     fn deref(&self) -> &Self::Target {
         self.as_slice()
     }
@@ -519,17 +530,17 @@ pub trait CacheAwareOps<T> {
     fn linear_scan<F>(&self, predicate: F) -> Vec<usize>
     where
         F: Fn(&T) -> bool;
-    
+
     /// Perform cache-blocked matrix operations
     fn blocked_operation<U, F>(&self, other: &[U], block_size: usize, op: F) -> Vec<T>
     where
         F: Fn(&T, &U) -> T,
         T: Clone,
         U: Clone;
-    
+
     /// Prefetch data into cache
     fn prefetch(&self, indices: &[usize]);
-    
+
     /// Get optimal block size for cache efficiency
     fn optimal_block_size(&self) -> usize;
 }
@@ -541,7 +552,7 @@ impl<T> CacheAwareOps<T> for ZeroCopyView<T> {
     {
         let mut results = Vec::new();
         let slice = self.as_slice();
-        
+
         // Process in cache-friendly blocks
         let block_size = self.optimal_block_size();
         for (block_start, chunk) in slice.chunks(block_size).enumerate() {
@@ -551,10 +562,10 @@ impl<T> CacheAwareOps<T> for ZeroCopyView<T> {
                 }
             }
         }
-        
+
         results
     }
-    
+
     fn blocked_operation<U, F>(&self, other: &[U], block_size: usize, op: F) -> Vec<T>
     where
         F: Fn(&T, &U) -> T,
@@ -563,17 +574,17 @@ impl<T> CacheAwareOps<T> for ZeroCopyView<T> {
     {
         let slice = self.as_slice();
         let mut result = Vec::with_capacity(slice.len().min(other.len()));
-        
+
         let pairs = slice.iter().zip(other.iter());
         for chunk in pairs.collect::<Vec<_>>().chunks(block_size) {
             for (a, b) in chunk {
                 result.push(op(a, b));
             }
         }
-        
+
         result
     }
-    
+
     fn prefetch(&self, indices: &[usize]) {
         let slice = self.as_slice();
         for &index in indices {
@@ -581,12 +592,15 @@ impl<T> CacheAwareOps<T> for ZeroCopyView<T> {
                 unsafe {
                     let ptr = slice.as_ptr().add(index);
                     #[cfg(target_arch = "x86_64")]
-                    std::arch::x86_64::_mm_prefetch(ptr as *const i8, std::arch::x86_64::_MM_HINT_T0);
+                    std::arch::x86_64::_mm_prefetch(
+                        ptr as *const i8,
+                        std::arch::x86_64::_MM_HINT_T0,
+                    );
                 }
             }
         }
     }
-    
+
     fn optimal_block_size(&self) -> usize {
         // Calculate optimal block size based on cache size and element size
         let cache_size = 32 * 1024; // L1 cache size
@@ -613,23 +627,26 @@ impl ZeroCopyManager {
             stats: Mutex::new(ZeroCopyStats::new()),
         })
     }
-    
+
     /// Create a zero-copy view with optimal cache placement
     pub fn create_view<T: Clone>(&self, data: Vec<T>) -> Result<ZeroCopyView<T>> {
         let len = data.len();
         let size = len * mem::size_of::<T>();
-        
+
         let cache_level = {
-            let allocator = self.allocator.lock()
-                .map_err(|_| Error::InvalidOperation("Failed to acquire allocator lock".to_string()))?;
+            let allocator = self.allocator.lock().map_err(|_| {
+                Error::InvalidOperation("Failed to acquire allocator lock".to_string())
+            })?;
             allocator.cache_topology().optimal_cache_level(size)
         };
-        
-        let mut allocator = self.allocator.lock()
+
+        let mut allocator = self
+            .allocator
+            .lock()
             .map_err(|_| Error::InvalidOperation("Failed to acquire allocator lock".to_string()))?;
-        
+
         let mut view = allocator.allocate_aligned(len, cache_level)?;
-        
+
         // Copy data into the aligned memory
         unsafe {
             let dest = view.as_mut_slice();
@@ -639,7 +656,7 @@ impl ZeroCopyManager {
                 }
             }
         }
-        
+
         // Record the view
         let view_id = view.memory_address();
         let metadata = ViewMetadata {
@@ -647,35 +664,39 @@ impl ZeroCopyManager {
             cache_level,
             creation_time: std::time::Instant::now(),
         };
-        
-        self.active_views.write()
+
+        self.active_views
+            .write()
             .map_err(|_| Error::InvalidOperation("Failed to acquire views lock".to_string()))?
             .insert(view_id, metadata);
-        
-        self.stats.lock()
+
+        self.stats
+            .lock()
             .map_err(|_| Error::InvalidOperation("Failed to acquire stats lock".to_string()))?
             .record_view_creation(size);
-        
+
         Ok(view)
     }
-    
+
     /// Create a memory-mapped view for large files
     pub fn create_mmap_view<T>(&self, file_path: &str, len: usize) -> Result<MemoryMappedView<T>> {
         let file = std::fs::File::open(file_path)
             .map_err(|e| Error::InvalidOperation(format!("Failed to open file: {}", e)))?;
-        
+
         let view = MemoryMappedView::from_file(file, len)?;
-        
-        self.stats.lock()
+
+        self.stats
+            .lock()
             .map_err(|_| Error::InvalidOperation("Failed to acquire stats lock".to_string()))?
             .record_mmap_creation(len * mem::size_of::<T>());
-        
+
         Ok(view)
     }
-    
+
     /// Get zero-copy statistics
     pub fn stats(&self) -> Result<ZeroCopyStats> {
-        self.stats.lock()
+        self.stats
+            .lock()
             .map(|stats| stats.clone())
             .map_err(|_| Error::InvalidOperation("Failed to acquire stats lock".to_string()))
     }
@@ -714,12 +735,12 @@ impl ZeroCopyStats {
             avg_view_lifetime: std::time::Duration::ZERO,
         }
     }
-    
+
     pub fn record_view_creation(&mut self, size: usize) {
         self.views_created += 1;
         self.total_memory += size;
     }
-    
+
     pub fn record_mmap_creation(&mut self, size: usize) {
         self.mmap_views_created += 1;
         self.total_memory += size;
@@ -729,7 +750,7 @@ impl ZeroCopyStats {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_cache_topology_detection() {
         let topology = CacheTopology::detect().unwrap();
@@ -738,7 +759,7 @@ mod tests {
         assert!(topology.l3_cache_size > 0);
         assert!(topology.cpu_cores > 0);
     }
-    
+
     #[test]
     fn test_memory_layout() {
         let layout = MemoryLayout::new::<i64>().with_cache_alignment();
@@ -746,41 +767,41 @@ mod tests {
         assert!(layout.cache_aligned);
         assert!(layout.alignment >= CACHE_LINE_SIZE);
     }
-    
+
     #[test]
     fn test_zero_copy_manager() {
         let manager = ZeroCopyManager::new().unwrap();
         let data = vec![1i32, 2, 3, 4, 5];
         let view = manager.create_view(data).unwrap();
-        
+
         assert_eq!(view.len(), 5);
         assert_eq!(view.as_slice(), &[1, 2, 3, 4, 5]);
-        
+
         let stats = manager.stats().unwrap();
         assert_eq!(stats.views_created, 1);
     }
-    
+
     #[test]
     fn test_cache_aware_operations() {
         let manager = ZeroCopyManager::new().unwrap();
         let data = (0..1000).collect::<Vec<i32>>();
         let view = manager.create_view(data).unwrap();
-        
+
         // Test linear scan
         let evens = view.linear_scan(|&x| x % 2 == 0);
         assert_eq!(evens.len(), 500);
-        
+
         // Test optimal block size
         let block_size = view.optimal_block_size();
         assert!(block_size > 0);
     }
-    
+
     #[test]
     fn test_subview_creation() {
         let manager = ZeroCopyManager::new().unwrap();
         let data = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
         let view = manager.create_view(data).unwrap();
-        
+
         let subview = view.subview(2..7).unwrap();
         assert_eq!(subview.len(), 5);
         assert_eq!(subview.as_slice(), &[3, 4, 5, 6, 7]);

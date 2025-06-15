@@ -235,10 +235,18 @@ pub trait StorageStrategy: Send + Sync {
     fn select_engine(&self, requirements: &StorageRequirements) -> StorageEngineId;
 
     /// Check if data should be migrated to a different engine
-    fn should_migrate(&self, handle: &StorageHandle, new_requirements: &StorageRequirements) -> bool;
+    fn should_migrate(
+        &self,
+        handle: &StorageHandle,
+        new_requirements: &StorageRequirements,
+    ) -> bool;
 
     /// Migrate data between storage engines
-    fn migrate_storage(&mut self, from: &StorageHandle, to: &StorageEngineId) -> Result<StorageHandle>;
+    fn migrate_storage(
+        &mut self,
+        from: &StorageHandle,
+        to: &StorageEngineId,
+    ) -> Result<StorageHandle>;
 }
 
 /// Requirements for storage engine selection
@@ -435,23 +443,33 @@ impl PerformanceMonitor {
     }
 
     /// Record operation performance
-    pub fn record_operation(&mut self, engine_id: StorageEngineId, operation: &Operation, latency: std::time::Duration) {
+    pub fn record_operation(
+        &mut self,
+        engine_id: StorageEngineId,
+        operation: &Operation,
+        latency: std::time::Duration,
+    ) {
         // Implementation for recording performance metrics
-        let metrics = self.engine_metrics.entry(engine_id).or_insert_with(|| EngineMetrics {
-            avg_read_latency: 0,
-            avg_write_latency: 0,
-            throughput: 0,
-            error_rate: 0.0,
-            memory_usage: 0,
-        });
+        let metrics = self
+            .engine_metrics
+            .entry(engine_id)
+            .or_insert_with(|| EngineMetrics {
+                avg_read_latency: 0,
+                avg_write_latency: 0,
+                throughput: 0,
+                error_rate: 0.0,
+                memory_usage: 0,
+            });
 
         // Update metrics based on operation type
         match operation {
             Operation::Read { .. } => {
-                metrics.avg_read_latency = (metrics.avg_read_latency + latency.as_nanos() as u64) / 2;
+                metrics.avg_read_latency =
+                    (metrics.avg_read_latency + latency.as_nanos() as u64) / 2;
             }
             Operation::Write { .. } => {
-                metrics.avg_write_latency = (metrics.avg_write_latency + latency.as_nanos() as u64) / 2;
+                metrics.avg_write_latency =
+                    (metrics.avg_write_latency + latency.as_nanos() as u64) / 2;
             }
         }
     }
@@ -465,14 +483,8 @@ impl PerformanceMonitor {
 /// Storage operation types for performance monitoring
 #[derive(Debug, Clone)]
 pub enum Operation {
-    Read {
-        size: usize,
-        range: Range<usize>,
-    },
-    Write {
-        size: usize,
-        compressed: bool,
-    },
+    Read { size: usize, range: Range<usize> },
+    Write { size: usize, compressed: bool },
 }
 
 impl Default for PerformanceMonitor {
@@ -494,10 +506,13 @@ impl UnifiedStorageManager {
     }
 
     /// Create storage using optimal engine selection
-    pub fn create_storage(&mut self, requirements: &StorageRequirements) -> Result<StorageHandleId> {
+    pub fn create_storage(
+        &mut self,
+        requirements: &StorageRequirements,
+    ) -> Result<StorageHandleId> {
         // Select optimal engine
         let engine_id = self.strategy.select_engine(requirements);
-        
+
         // For now, we only support column store
         let inner_handle = match engine_id {
             StorageEngineId::ColumnStore => {
@@ -505,14 +520,19 @@ impl UnifiedStorageManager {
                     let handle = engine.create_storage(&requirements.config)?;
                     StorageHandleInner::ColumnStore(handle)
                 } else {
-                    return Err(Error::InvalidOperation("Column store not available for create_storage".to_string()));
+                    return Err(Error::InvalidOperation(
+                        "Column store not available for create_storage".to_string(),
+                    ));
                 }
             }
             _ => {
-                return Err(Error::NotImplemented(format!("Storage engine {:?}", engine_id)));
+                return Err(Error::NotImplemented(format!(
+                    "Storage engine {:?}",
+                    engine_id
+                )));
             }
         };
-        
+
         // Create unified handle
         let handle_id = self.next_handle_id;
         self.next_handle_id += 1;
@@ -536,35 +556,47 @@ impl UnifiedStorageManager {
 
     /// Read chunk from storage
     pub fn read_chunk(&self, handle_id: StorageHandleId, range: Range<usize>) -> Result<DataChunk> {
-        let handle = self.handles.get(&handle_id)
-            .ok_or_else(|| Error::InvalidOperation("Invalid handle ID for read_chunk".to_string()))?;
+        let handle = self.handles.get(&handle_id).ok_or_else(|| {
+            Error::InvalidOperation("Invalid handle ID for read_chunk".to_string())
+        })?;
 
         match (&handle.engine_id, &handle.inner_handle) {
             (StorageEngineId::ColumnStore, StorageHandleInner::ColumnStore(cs_handle)) => {
                 if let Some(ref engine) = self.column_store {
                     engine.read_chunk(cs_handle, range)
                 } else {
-                    Err(Error::InvalidOperation("Column store not available for read_chunk".to_string()))
+                    Err(Error::InvalidOperation(
+                        "Column store not available for read_chunk".to_string(),
+                    ))
                 }
             }
-            _ => Err(Error::NotImplemented(format!("Engine {:?}", handle.engine_id))),
+            _ => Err(Error::NotImplemented(format!(
+                "Engine {:?}",
+                handle.engine_id
+            ))),
         }
     }
 
     /// Write chunk to storage
     pub fn write_chunk(&mut self, handle_id: StorageHandleId, chunk: DataChunk) -> Result<()> {
-        let handle = self.handles.get(&handle_id)
-            .ok_or_else(|| Error::InvalidOperation("Invalid handle ID for write_chunk".to_string()))?;
+        let handle = self.handles.get(&handle_id).ok_or_else(|| {
+            Error::InvalidOperation("Invalid handle ID for write_chunk".to_string())
+        })?;
 
         let result = match (&handle.engine_id, &handle.inner_handle) {
             (StorageEngineId::ColumnStore, StorageHandleInner::ColumnStore(cs_handle)) => {
                 if let Some(ref mut engine) = self.column_store {
                     engine.write_chunk(cs_handle, chunk)
                 } else {
-                    Err(Error::InvalidOperation("Column store not available for write_chunk".to_string()))
+                    Err(Error::InvalidOperation(
+                        "Column store not available for write_chunk".to_string(),
+                    ))
                 }
             }
-            _ => Err(Error::NotImplemented(format!("Engine {:?}", handle.engine_id))),
+            _ => Err(Error::NotImplemented(format!(
+                "Engine {:?}",
+                handle.engine_id
+            ))),
         };
 
         // Update handle metadata on success
@@ -609,12 +641,20 @@ impl StorageStrategy for DefaultStorageStrategy {
             .unwrap_or(StorageEngineId::ColumnStore)
     }
 
-    fn should_migrate(&self, _handle: &StorageHandle, _new_requirements: &StorageRequirements) -> bool {
+    fn should_migrate(
+        &self,
+        _handle: &StorageHandle,
+        _new_requirements: &StorageRequirements,
+    ) -> bool {
         // For now, don't migrate automatically
         false
     }
 
-    fn migrate_storage(&mut self, _from: &StorageHandle, _to: &StorageEngineId) -> Result<StorageHandle> {
+    fn migrate_storage(
+        &mut self,
+        _from: &StorageHandle,
+        _to: &StorageEngineId,
+    ) -> Result<StorageHandle> {
         // Migration not implemented yet
         Err(Error::NotImplemented("Storage migration".to_string()))
     }

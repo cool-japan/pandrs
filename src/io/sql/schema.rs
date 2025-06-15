@@ -1,11 +1,11 @@
 use std::collections::HashMap;
 
 // SQLite support
-use rusqlite::{Connection as SqliteConnection};
+use rusqlite::Connection as SqliteConnection;
 
 // Multi-database support via sqlx (optional)
 #[cfg(feature = "sql")]
-use sqlx::{Pool, AnyPool, Row as SqlxRow};
+use sqlx::{AnyPool, Pool, Row as SqlxRow};
 
 use crate::error::{Error, Result};
 use crate::optimized::OptimizedDataFrame;
@@ -106,20 +106,20 @@ pub fn has_table(
         DatabaseConnection::Sqlite(path) => {
             let conn = SqliteConnection::open(path)
                 .map_err(|e| Error::IoError(format!("Failed to connect to database: {}", e)))?;
-            
+
             let exists = conn
                 .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name=?")
                 .map_err(|e| Error::IoError(format!("Failed to prepare query: {}", e)))?
                 .exists(&[&table_name])
                 .map_err(|e| Error::IoError(format!("Failed to check table existence: {}", e)))?;
-            
+
             Ok(exists)
         }
         #[cfg(feature = "sql")]
         _ => {
             // Implementation for other databases would go here
             Err(Error::IoError(
-                "Table existence check not yet implemented for non-SQLite databases".to_string()
+                "Table existence check not yet implemented for non-SQLite databases".to_string(),
             ))
         }
     }
@@ -147,34 +147,29 @@ pub fn has_table(
 ///     println!("Table: {}", table);
 /// }
 /// ```
-pub fn list_tables(
-    connection: &SqlConnection,
-    schema: Option<&str>,
-) -> Result<Vec<String>> {
+pub fn list_tables(connection: &SqlConnection, schema: Option<&str>) -> Result<Vec<String>> {
     match connection.connection_type() {
         DatabaseConnection::Sqlite(path) => {
             let conn = SqliteConnection::open(path)
                 .map_err(|e| Error::IoError(format!("Failed to connect to database: {}", e)))?;
-            
+
             let mut stmt = conn
                 .prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
                 .map_err(|e| Error::IoError(format!("Failed to prepare query: {}", e)))?;
-            
+
             let table_names = stmt
-                .query_map([], |row| {
-                    Ok(row.get::<_, String>(0)?)
-                })
+                .query_map([], |row| Ok(row.get::<_, String>(0)?))
                 .map_err(|e| Error::IoError(format!("Failed to execute query: {}", e)))?
                 .collect::<std::result::Result<Vec<String>, _>>()
                 .map_err(|e| Error::IoError(format!("Failed to collect results: {}", e)))?;
-            
+
             Ok(table_names)
         }
         #[cfg(feature = "sql")]
         _ => {
             // Implementation for other databases would go here
             Err(Error::IoError(
-                "Table listing not yet implemented for non-SQLite databases".to_string()
+                "Table listing not yet implemented for non-SQLite databases".to_string(),
             ))
         }
     }
@@ -207,14 +202,12 @@ pub fn get_table_schema(
     schema: Option<&str>,
 ) -> Result<TableSchema> {
     match connection.connection_type() {
-        DatabaseConnection::Sqlite(path) => {
-            get_sqlite_table_schema(table_name, path)
-        }
+        DatabaseConnection::Sqlite(path) => get_sqlite_table_schema(table_name, path),
         #[cfg(feature = "sql")]
         _ => {
             // Implementation for other databases would go here
             Err(Error::IoError(
-                "Schema inspection not yet implemented for non-SQLite databases".to_string()
+                "Schema inspection not yet implemented for non-SQLite databases".to_string(),
             ))
         }
     }
@@ -247,7 +240,7 @@ pub fn get_create_table_sql(
     connection: &SqlConnection,
 ) -> Result<String> {
     let mut columns = Vec::new();
-    
+
     for col_name in df.column_names() {
         if let Ok(column) = df.column(col_name) {
             let sql_type = match column.column_type() {
@@ -267,20 +260,24 @@ pub fn get_create_table_sql(
             columns.push(format!("{} {}", col_name, sql_type));
         }
     }
-    
-    Ok(format!("CREATE TABLE {} ({})", table_name, columns.join(", ")))
+
+    Ok(format!(
+        "CREATE TABLE {} ({})",
+        table_name,
+        columns.join(", ")
+    ))
 }
 
 /// Get detailed table schema for SQLite database
 fn get_sqlite_table_schema(table_name: &str, db_path: &str) -> Result<TableSchema> {
     let conn = SqliteConnection::open(db_path)
         .map_err(|e| Error::IoError(format!("Failed to connect to database: {}", e)))?;
-    
+
     // Get column information
     let mut stmt = conn
         .prepare(&format!("PRAGMA table_info({})", table_name))
         .map_err(|e| Error::IoError(format!("Failed to prepare query: {}", e)))?;
-    
+
     let columns = stmt
         .query_map([], |row| {
             Ok(ColumnDefinition {
@@ -297,12 +294,12 @@ fn get_sqlite_table_schema(table_name: &str, db_path: &str) -> Result<TableSchem
         .map_err(|e| Error::IoError(format!("Failed to execute query: {}", e)))?
         .collect::<std::result::Result<Vec<ColumnDefinition>, _>>()
         .map_err(|e| Error::IoError(format!("Failed to collect results: {}", e)))?;
-    
+
     // Get primary key information
     let mut stmt = conn
         .prepare(&format!("PRAGMA table_info({})", table_name))
         .map_err(|e| Error::IoError(format!("Failed to prepare query: {}", e)))?;
-    
+
     let primary_keys = stmt
         .query_map([], |row| {
             let is_pk: i32 = row.get(5)?;
@@ -316,13 +313,13 @@ fn get_sqlite_table_schema(table_name: &str, db_path: &str) -> Result<TableSchem
         .filter_map(|result| result.transpose())
         .collect::<std::result::Result<Vec<String>, _>>()
         .map_err(|e| Error::IoError(format!("Failed to collect results: {}", e)))?;
-    
+
     // Get foreign key information
     let foreign_keys = get_sqlite_foreign_keys(&conn, table_name)?;
-    
+
     // Get index information
     let indexes = get_sqlite_indexes(&conn, table_name)?;
-    
+
     Ok(TableSchema {
         name: table_name.to_string(),
         columns,
@@ -337,7 +334,7 @@ fn get_sqlite_foreign_keys(conn: &SqliteConnection, table_name: &str) -> Result<
     let mut stmt = conn
         .prepare(&format!("PRAGMA foreign_key_list({})", table_name))
         .map_err(|e| Error::IoError(format!("Failed to prepare foreign key query: {}", e)))?;
-    
+
     let foreign_keys = stmt
         .query_map([], |row| {
             Ok(ForeignKey {
@@ -351,7 +348,7 @@ fn get_sqlite_foreign_keys(conn: &SqliteConnection, table_name: &str) -> Result<
         .map_err(|e| Error::IoError(format!("Failed to execute foreign key query: {}", e)))?
         .collect::<std::result::Result<Vec<ForeignKey>, _>>()
         .map_err(|e| Error::IoError(format!("Failed to collect foreign key results: {}", e)))?;
-    
+
     Ok(foreign_keys)
 }
 
@@ -361,26 +358,26 @@ fn get_sqlite_indexes(conn: &SqliteConnection, table_name: &str) -> Result<Vec<I
     let mut stmt = conn
         .prepare(&format!("PRAGMA index_list({})", table_name))
         .map_err(|e| Error::IoError(format!("Failed to prepare index list query: {}", e)))?;
-    
+
     let index_names_and_unique = stmt
         .query_map([], |row| {
             Ok((
-                row.get::<_, String>(1)?, // index name
+                row.get::<_, String>(1)?,   // index name
                 row.get::<_, i32>(2)? == 1, // unique flag
             ))
         })
         .map_err(|e| Error::IoError(format!("Failed to execute index list query: {}", e)))?
         .collect::<std::result::Result<Vec<(String, bool)>, _>>()
         .map_err(|e| Error::IoError(format!("Failed to collect index list results: {}", e)))?;
-    
+
     let mut indexes = Vec::new();
-    
+
     // Get column information for each index
     for (index_name, unique) in index_names_and_unique {
         let mut stmt = conn
             .prepare(&format!("PRAGMA index_info({})", index_name))
             .map_err(|e| Error::IoError(format!("Failed to prepare index info query: {}", e)))?;
-        
+
         let columns = stmt
             .query_map([], |row| {
                 Ok(row.get::<_, String>(2)?) // column name
@@ -388,7 +385,7 @@ fn get_sqlite_indexes(conn: &SqliteConnection, table_name: &str) -> Result<Vec<I
             .map_err(|e| Error::IoError(format!("Failed to execute index info query: {}", e)))?
             .collect::<std::result::Result<Vec<String>, _>>()
             .map_err(|e| Error::IoError(format!("Failed to collect index info results: {}", e)))?;
-        
+
         indexes.push(IndexDefinition {
             name: index_name,
             columns,
@@ -396,7 +393,7 @@ fn get_sqlite_indexes(conn: &SqliteConnection, table_name: &str) -> Result<Vec<I
             index_type: None, // SQLite doesn't provide this information easily
         });
     }
-    
+
     Ok(indexes)
 }
 
@@ -435,24 +432,24 @@ impl SchemaIntrospector {
     #[cfg(feature = "sql")]
     pub async fn list_tables(&self) -> Result<Vec<String>> {
         use sqlx::Row;
-        
+
         let query = r#"
             SELECT table_name 
             FROM information_schema.tables 
             WHERE table_schema = 'public'
         "#;
-        
+
         let rows = sqlx::query(query)
             .fetch_all(&self.pool)
             .await
             .map_err(|e| Error::IoError(format!("Failed to list tables: {}", e)))?;
-        
+
         let mut tables = Vec::new();
         for row in rows {
             let table_name: String = row.get(0);
             tables.push(table_name);
         }
-        
+
         Ok(tables)
     }
 
@@ -479,45 +476,45 @@ impl SchemaIntrospector {
     #[cfg(feature = "sql")]
     pub async fn describe_table(&self, table_name: &str) -> Result<TableSchema> {
         use sqlx::Row;
-        
+
         let query = r#"
             SELECT column_name, data_type, is_nullable, column_default
             FROM information_schema.columns 
             WHERE table_name = $1
             ORDER BY ordinal_position
         "#;
-        
+
         let rows = sqlx::query(query)
             .bind(table_name)
             .fetch_all(&self.pool)
             .await
             .map_err(|e| Error::IoError(format!("Failed to describe table: {}", e)))?;
-        
+
         let mut columns = Vec::new();
         for row in rows {
             let column_name: String = row.get(0);
             let data_type: String = row.get(1);
             let is_nullable: String = row.get(2);
             let column_default: Option<String> = row.get(3);
-            
+
             columns.push(ColumnDefinition {
                 name: column_name,
                 data_type,
                 nullable: is_nullable == "YES",
                 default_value: column_default,
-                max_length: None, // Would need additional query
-                precision: None, // Would need additional query
-                scale: None, // Would need additional query
+                max_length: None,      // Would need additional query
+                precision: None,       // Would need additional query
+                scale: None,           // Would need additional query
                 auto_increment: false, // Would need additional query
             });
         }
-        
+
         Ok(TableSchema {
             name: table_name.to_string(),
             columns,
             primary_keys: Vec::new(), // Would need additional query
             foreign_keys: Vec::new(), // Would need additional query
-            indexes: Vec::new(), // Would need additional query
+            indexes: Vec::new(),      // Would need additional query
         })
     }
 
@@ -542,24 +539,24 @@ impl SchemaIntrospector {
     #[cfg(feature = "sql")]
     pub async fn list_schemas(&self) -> Result<Vec<String>> {
         use sqlx::Row;
-        
+
         let query = r#"
             SELECT schema_name 
             FROM information_schema.schemata
             ORDER BY schema_name
         "#;
-        
+
         let rows = sqlx::query(query)
             .fetch_all(&self.pool)
             .await
             .map_err(|e| Error::IoError(format!("Failed to list schemas: {}", e)))?;
-        
+
         let mut schemas = Vec::new();
         for row in rows {
             let schema_name: String = row.get(0);
             schemas.push(schema_name);
         }
-        
+
         Ok(schemas)
     }
 
@@ -588,62 +585,65 @@ impl SchemaIntrospector {
     /// ```
     #[cfg(feature = "sql")]
     pub async fn get_column_stats(
-        &self, 
-        table_name: &str, 
-        schema_name: Option<&str>
+        &self,
+        table_name: &str,
+        schema_name: Option<&str>,
     ) -> Result<HashMap<String, ColumnStats>> {
         use sqlx::Row;
-        
+
         let full_table_name = if let Some(schema) = schema_name {
             format!("{}.{}", schema, table_name)
         } else {
             table_name.to_string()
         };
-        
+
         // Get column names first
         let column_query = r#"
             SELECT column_name 
             FROM information_schema.columns 
             WHERE table_name = $1
         "#;
-        
+
         let mut query_builder = sqlx::query(column_query).bind(table_name);
         if let Some(schema) = schema_name {
             query_builder = query_builder.bind(schema);
         }
-        
+
         let column_rows = query_builder
             .fetch_all(&self.pool)
             .await
             .map_err(|e| Error::IoError(format!("Failed to get columns: {}", e)))?;
-        
+
         let mut stats = HashMap::new();
-        
+
         for row in column_rows {
             let column_name: String = row.get(0);
-            
+
             // Get statistics for this column
             let stats_query = format!(
                 "SELECT COUNT(*), COUNT({}), MIN({}), MAX({}) FROM {}",
                 column_name, column_name, column_name, full_table_name
             );
-            
+
             if let Ok(stat_rows) = sqlx::query(&stats_query).fetch_all(&self.pool).await {
                 if let Some(stat_row) = stat_rows.first() {
                     let total_count: i64 = stat_row.try_get(0).unwrap_or(0);
                     let non_null_count: i64 = stat_row.try_get(1).unwrap_or(0);
-                    
-                    stats.insert(column_name, ColumnStats {
-                        row_count: total_count as usize,
-                        non_null_count: non_null_count as usize,
-                        null_count: (total_count - non_null_count) as usize,
-                        min_value: stat_row.try_get::<String, _>(2).ok(),
-                        max_value: stat_row.try_get::<String, _>(3).ok(),
-                    });
+
+                    stats.insert(
+                        column_name,
+                        ColumnStats {
+                            row_count: total_count as usize,
+                            non_null_count: non_null_count as usize,
+                            null_count: (total_count - non_null_count) as usize,
+                            min_value: stat_row.try_get::<String, _>(2).ok(),
+                            max_value: stat_row.try_get::<String, _>(3).ok(),
+                        },
+                    );
                 }
             }
         }
-        
+
         Ok(stats)
     }
 
@@ -670,23 +670,23 @@ impl SchemaIntrospector {
     #[cfg(feature = "sql")]
     pub async fn analyze_table(&self, table_name: &str) -> Result<TableAnalysis> {
         use sqlx::Row;
-        
+
         // Get basic table statistics
         let stats_query = format!("SELECT COUNT(*) FROM {}", table_name);
         let rows = sqlx::query(&stats_query)
             .fetch_all(&self.pool)
             .await
             .map_err(|e| Error::IoError(format!("Failed to analyze table: {}", e)))?;
-        
+
         let row_count = if let Some(row) = rows.first() {
             row.get::<i64, _>(0) as usize
         } else {
             0
         };
-        
+
         // Estimate table size (simplified calculation)
         let estimated_size_mb = (row_count as f64 * 100.0) / (1024.0 * 1024.0); // Very rough estimate
-        
+
         Ok(TableAnalysis {
             table_name: table_name.to_string(),
             row_count,
@@ -754,7 +754,7 @@ impl SchemaComparator {
     /// ```
     pub fn compare_schemas(schema1: &TableSchema, schema2: &TableSchema) -> SchemaComparison {
         let mut differences = Vec::new();
-        
+
         // Compare table names
         if schema1.name != schema2.name {
             differences.push(SchemaDifference::TableNameDifferent {
@@ -762,19 +762,19 @@ impl SchemaComparator {
                 right: schema2.name.clone(),
             });
         }
-        
+
         // Compare columns
         let mut schema1_columns: HashMap<String, &ColumnDefinition> = HashMap::new();
         let mut schema2_columns: HashMap<String, &ColumnDefinition> = HashMap::new();
-        
+
         for col in &schema1.columns {
             schema1_columns.insert(col.name.clone(), col);
         }
-        
+
         for col in &schema2.columns {
             schema2_columns.insert(col.name.clone(), col);
         }
-        
+
         // Check for missing columns
         for col_name in schema1_columns.keys() {
             if !schema2_columns.contains_key(col_name) {
@@ -784,7 +784,7 @@ impl SchemaComparator {
                 });
             }
         }
-        
+
         for col_name in schema2_columns.keys() {
             if !schema1_columns.contains_key(col_name) {
                 differences.push(SchemaDifference::ColumnMissing {
@@ -793,7 +793,7 @@ impl SchemaComparator {
                 });
             }
         }
-        
+
         // Compare existing columns
         for (col_name, col1) in &schema1_columns {
             if let Some(col2) = schema2_columns.get(col_name) {
@@ -804,7 +804,7 @@ impl SchemaComparator {
                         right_type: col2.data_type.clone(),
                     });
                 }
-                
+
                 if col1.nullable != col2.nullable {
                     differences.push(SchemaDifference::ColumnNullabilityDifferent {
                         column_name: col_name.clone(),
@@ -814,7 +814,7 @@ impl SchemaComparator {
                 }
             }
         }
-        
+
         SchemaComparison {
             are_identical: differences.is_empty(),
             differences,
@@ -842,35 +842,47 @@ impl SchemaComparator {
     ///     println!("Migration SQL: {}", sql);
     /// }
     /// ```
-    pub fn generate_migration(from_schema: &TableSchema, to_schema: &TableSchema) -> Result<Vec<String>> {
+    pub fn generate_migration(
+        from_schema: &TableSchema,
+        to_schema: &TableSchema,
+    ) -> Result<Vec<String>> {
         let comparison = Self::compare_schemas(from_schema, to_schema);
         let mut sql_statements = Vec::new();
-        
+
         for difference in &comparison.differences {
             match difference {
-                SchemaDifference::ColumnMissing { column_name, missing_from } => {
+                SchemaDifference::ColumnMissing {
+                    column_name,
+                    missing_from,
+                } => {
                     if missing_from == "right" {
                         // Column exists in left but not right - need to add it
-                        if let Some(col_def) = from_schema.columns.iter().find(|c| &c.name == column_name) {
+                        if let Some(col_def) =
+                            from_schema.columns.iter().find(|c| &c.name == column_name)
+                        {
                             let mut add_column_sql = format!(
                                 "ALTER TABLE {} ADD COLUMN {} {}",
                                 to_schema.name, col_def.name, col_def.data_type
                             );
-                            
+
                             if !col_def.nullable {
                                 add_column_sql.push_str(" NOT NULL");
                             }
-                            
+
                             if let Some(ref default) = col_def.default_value {
                                 add_column_sql.push_str(&format!(" DEFAULT {}", default));
                             }
-                            
+
                             sql_statements.push(add_column_sql);
                         }
                     }
                     // Note: Dropping columns is more complex and dangerous, so we don't auto-generate those
                 }
-                SchemaDifference::ColumnTypeDifferent { column_name, right_type, .. } => {
+                SchemaDifference::ColumnTypeDifferent {
+                    column_name,
+                    right_type,
+                    ..
+                } => {
                     // Generate ALTER COLUMN statement (syntax varies by database)
                     sql_statements.push(format!(
                         "ALTER TABLE {} ALTER COLUMN {} TYPE {}",
@@ -882,7 +894,7 @@ impl SchemaComparator {
                 }
             }
         }
-        
+
         Ok(sql_statements)
     }
 }
@@ -902,15 +914,32 @@ pub enum SchemaDifference {
     /// Table names are different
     TableNameDifferent { left: String, right: String },
     /// Column is missing from one schema
-    ColumnMissing { column_name: String, missing_from: String },
+    ColumnMissing {
+        column_name: String,
+        missing_from: String,
+    },
     /// Column types are different
-    ColumnTypeDifferent { column_name: String, left_type: String, right_type: String },
+    ColumnTypeDifferent {
+        column_name: String,
+        left_type: String,
+        right_type: String,
+    },
     /// Column nullability is different
-    ColumnNullabilityDifferent { column_name: String, left_nullable: bool, right_nullable: bool },
+    ColumnNullabilityDifferent {
+        column_name: String,
+        left_nullable: bool,
+        right_nullable: bool,
+    },
     /// Primary key differences
-    PrimaryKeyDifferent { left_keys: Vec<String>, right_keys: Vec<String> },
+    PrimaryKeyDifferent {
+        left_keys: Vec<String>,
+        right_keys: Vec<String>,
+    },
     /// Index differences
-    IndexDifferent { index_name: String, difference_type: String },
+    IndexDifferent {
+        index_name: String,
+        difference_type: String,
+    },
 }
 
 /// Estimate query time based on row count (very rough estimation)

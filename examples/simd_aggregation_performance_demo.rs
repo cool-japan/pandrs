@@ -8,11 +8,11 @@
 //!
 //! Run with: cargo run --example simd_aggregation_performance_demo
 
-use pandrs::optimized::OptimizedDataFrame;
 use pandrs::column::{Float64Column, Int64Column};
 use pandrs::core::column::Column;
 use pandrs::core::error::Result;
-use pandrs::optimized::jit::simd::{simd_capabilities, avx2_available, simd_available};
+use pandrs::optimized::jit::simd::{avx2_available, simd_available, simd_capabilities};
+use pandrs::optimized::OptimizedDataFrame;
 use std::time::Instant;
 
 fn main() -> Result<()> {
@@ -51,21 +51,27 @@ fn main() -> Result<()> {
 
 fn create_test_dataframe(size: usize, prefix: &str) -> Result<OptimizedDataFrame> {
     let mut df = OptimizedDataFrame::new();
-    
+
     // Generate float64 data with some mathematical pattern
     let float_data: Vec<f64> = (0..size)
         .map(|i| ((i as f64 * 0.123).sin() * 1000.0) + (i as f64 * 0.001))
         .collect();
     let float_column = Float64Column::new(float_data);
-    df.add_column(format!("{}_float_col", prefix.to_lowercase()), Column::Float64(float_column))?;
-    
+    df.add_column(
+        format!("{}_float_col", prefix.to_lowercase()),
+        Column::Float64(float_column),
+    )?;
+
     // Generate int64 data
     let int_data: Vec<i64> = (0..size)
         .map(|i| ((i as i64 * 7) % 10000) + (i as i64 / 100))
         .collect();
     let int_column = Int64Column::new(int_data);
-    df.add_column(format!("{}_int_col", prefix.to_lowercase()), Column::Int64(int_column))?;
-    
+    df.add_column(
+        format!("{}_int_col", prefix.to_lowercase()),
+        Column::Int64(int_column),
+    )?;
+
     Ok(df)
 }
 
@@ -75,21 +81,22 @@ fn benchmark_all_methods(test_name: &str, df: &OptimizedDataFrame) -> Result<()>
 
     let float_col_name = df.column_names()[0].clone();
     let int_col_name = df.column_names()[1].clone();
-    
+
     let num_iterations = if df.row_count() > 100_000 { 10 } else { 100 };
-    
+
     // Benchmark direct methods (baseline for comparison)
     println!("📊 Direct Methods (baseline after conversion elimination):");
-    let direct_results = benchmark_direct_methods(df, &float_col_name, &int_col_name, num_iterations)?;
-    
+    let direct_results =
+        benchmark_direct_methods(df, &float_col_name, &int_col_name, num_iterations)?;
+
     // Benchmark SIMD-enhanced methods
     println!("🚀 SIMD-Enhanced Methods:");
     let simd_results = benchmark_simd_methods(df, &float_col_name, &int_col_name, num_iterations)?;
-    
+
     // Calculate and display performance improvements
     println!("📈 Performance Improvements (SIMD vs Direct):");
     print_performance_comparison(&direct_results, &simd_results);
-    
+
     // Verify correctness
     verify_method_consistency(df, &float_col_name, &int_col_name)?;
 
@@ -105,10 +112,10 @@ struct BenchmarkResults {
 }
 
 fn benchmark_direct_methods(
-    df: &OptimizedDataFrame, 
-    float_col: &str, 
-    int_col: &str, 
-    iterations: usize
+    df: &OptimizedDataFrame,
+    float_col: &str,
+    int_col: &str,
+    iterations: usize,
 ) -> Result<BenchmarkResults> {
     // Benchmark sum operation
     let start = Instant::now();
@@ -117,7 +124,7 @@ fn benchmark_direct_methods(
         sum_result = df.sum_direct(float_col)?;
     }
     let sum_time = start.elapsed().as_secs_f64() * 1000.0 / iterations as f64;
-    
+
     // Benchmark mean operation
     let start = Instant::now();
     let mut mean_result = 0.0;
@@ -125,7 +132,7 @@ fn benchmark_direct_methods(
         mean_result = df.mean_direct(float_col)?;
     }
     let mean_time = start.elapsed().as_secs_f64() * 1000.0 / iterations as f64;
-    
+
     // Benchmark max operation
     let start = Instant::now();
     let mut max_result = 0.0;
@@ -133,7 +140,7 @@ fn benchmark_direct_methods(
         max_result = df.max_direct(int_col)?;
     }
     let max_time = start.elapsed().as_secs_f64() * 1000.0 / iterations as f64;
-    
+
     // Benchmark min operation
     let start = Instant::now();
     let mut min_result = 0.0;
@@ -142,10 +149,22 @@ fn benchmark_direct_methods(
     }
     let min_time = start.elapsed().as_secs_f64() * 1000.0 / iterations as f64;
 
-    println!("  • Sum:   {:.3}ms/op -> Result: {:.2}", sum_time, sum_result);
-    println!("  • Mean:  {:.3}ms/op -> Result: {:.2}", mean_time, mean_result);
-    println!("  • Max:   {:.3}ms/op -> Result: {:.2}", max_time, max_result);
-    println!("  • Min:   {:.3}ms/op -> Result: {:.2}", min_time, min_result);
+    println!(
+        "  • Sum:   {:.3}ms/op -> Result: {:.2}",
+        sum_time, sum_result
+    );
+    println!(
+        "  • Mean:  {:.3}ms/op -> Result: {:.2}",
+        mean_time, mean_result
+    );
+    println!(
+        "  • Max:   {:.3}ms/op -> Result: {:.2}",
+        max_time, max_result
+    );
+    println!(
+        "  • Min:   {:.3}ms/op -> Result: {:.2}",
+        min_time, min_result
+    );
 
     Ok(BenchmarkResults {
         sum_time_ms: sum_time,
@@ -156,10 +175,10 @@ fn benchmark_direct_methods(
 }
 
 fn benchmark_simd_methods(
-    df: &OptimizedDataFrame, 
-    float_col: &str, 
-    int_col: &str, 
-    iterations: usize
+    df: &OptimizedDataFrame,
+    float_col: &str,
+    int_col: &str,
+    iterations: usize,
 ) -> Result<BenchmarkResults> {
     // Benchmark SIMD sum operation
     let start = Instant::now();
@@ -168,7 +187,7 @@ fn benchmark_simd_methods(
         sum_result = df.sum_simd(float_col)?;
     }
     let sum_time = start.elapsed().as_secs_f64() * 1000.0 / iterations as f64;
-    
+
     // Benchmark SIMD mean operation
     let start = Instant::now();
     let mut mean_result = 0.0;
@@ -176,7 +195,7 @@ fn benchmark_simd_methods(
         mean_result = df.mean_simd(float_col)?;
     }
     let mean_time = start.elapsed().as_secs_f64() * 1000.0 / iterations as f64;
-    
+
     // Benchmark SIMD max operation
     let start = Instant::now();
     let mut max_result = 0.0;
@@ -184,7 +203,7 @@ fn benchmark_simd_methods(
         max_result = df.max_simd(int_col)?;
     }
     let max_time = start.elapsed().as_secs_f64() * 1000.0 / iterations as f64;
-    
+
     // Benchmark SIMD min operation
     let start = Instant::now();
     let mut min_result = 0.0;
@@ -193,10 +212,22 @@ fn benchmark_simd_methods(
     }
     let min_time = start.elapsed().as_secs_f64() * 1000.0 / iterations as f64;
 
-    println!("  • Sum:   {:.3}ms/op -> Result: {:.2}", sum_time, sum_result);
-    println!("  • Mean:  {:.3}ms/op -> Result: {:.2}", mean_time, mean_result);
-    println!("  • Max:   {:.3}ms/op -> Result: {:.2}", max_time, max_result);
-    println!("  • Min:   {:.3}ms/op -> Result: {:.2}", min_time, min_result);
+    println!(
+        "  • Sum:   {:.3}ms/op -> Result: {:.2}",
+        sum_time, sum_result
+    );
+    println!(
+        "  • Mean:  {:.3}ms/op -> Result: {:.2}",
+        mean_time, mean_result
+    );
+    println!(
+        "  • Max:   {:.3}ms/op -> Result: {:.2}",
+        max_time, max_result
+    );
+    println!(
+        "  • Min:   {:.3}ms/op -> Result: {:.2}",
+        min_time, min_result
+    );
 
     Ok(BenchmarkResults {
         sum_time_ms: sum_time,
@@ -211,46 +242,90 @@ fn print_performance_comparison(direct: &BenchmarkResults, simd: &BenchmarkResul
     let mean_speedup = direct.mean_time_ms / simd.mean_time_ms;
     let max_speedup = direct.max_time_ms / simd.max_time_ms;
     let min_speedup = direct.min_time_ms / simd.min_time_ms;
-    
-    println!("  • Sum speedup:   {:.1}x ({:.3}ms -> {:.3}ms)", sum_speedup, direct.sum_time_ms, simd.sum_time_ms);
-    println!("  • Mean speedup:  {:.1}x ({:.3}ms -> {:.3}ms)", mean_speedup, direct.mean_time_ms, simd.mean_time_ms);
-    println!("  • Max speedup:   {:.1}x ({:.3}ms -> {:.3}ms)", max_speedup, direct.max_time_ms, simd.max_time_ms);
-    println!("  • Min speedup:   {:.1}x ({:.3}ms -> {:.3}ms)", min_speedup, direct.min_time_ms, simd.min_time_ms);
-    
+
+    println!(
+        "  • Sum speedup:   {:.1}x ({:.3}ms -> {:.3}ms)",
+        sum_speedup, direct.sum_time_ms, simd.sum_time_ms
+    );
+    println!(
+        "  • Mean speedup:  {:.1}x ({:.3}ms -> {:.3}ms)",
+        mean_speedup, direct.mean_time_ms, simd.mean_time_ms
+    );
+    println!(
+        "  • Max speedup:   {:.1}x ({:.3}ms -> {:.3}ms)",
+        max_speedup, direct.max_time_ms, simd.max_time_ms
+    );
+    println!(
+        "  • Min speedup:   {:.1}x ({:.3}ms -> {:.3}ms)",
+        min_speedup, direct.min_time_ms, simd.min_time_ms
+    );
+
     let avg_speedup = (sum_speedup + mean_speedup + max_speedup + min_speedup) / 4.0;
     if avg_speedup > 1.0 {
-        println!("  • Average SIMD improvement: {:.1}x faster ✅", avg_speedup);
+        println!(
+            "  • Average SIMD improvement: {:.1}x faster ✅",
+            avg_speedup
+        );
     } else {
-        println!("  • Average SIMD impact: {:.1}x (SIMD overhead on small data)", avg_speedup);
+        println!(
+            "  • Average SIMD impact: {:.1}x (SIMD overhead on small data)",
+            avg_speedup
+        );
         println!("    Note: SIMD benefits increase with larger datasets due to vectorization");
     }
 }
 
-fn verify_method_consistency(df: &OptimizedDataFrame, float_col: &str, int_col: &str) -> Result<()> {
+fn verify_method_consistency(
+    df: &OptimizedDataFrame,
+    float_col: &str,
+    int_col: &str,
+) -> Result<()> {
     // Verify that direct and SIMD methods produce very similar results
     // (allowing for minor floating-point precision differences)
     let direct_sum = df.sum_direct(float_col)?;
     let simd_sum = df.sum_simd(float_col)?;
     let sum_diff = (direct_sum - simd_sum).abs();
     let sum_tolerance = direct_sum.abs() * 1e-12; // Relative tolerance
-    assert!(sum_diff < sum_tolerance.max(1e-6), "Sum methods inconsistent: {} vs {} (diff: {})", direct_sum, simd_sum, sum_diff);
-    
+    assert!(
+        sum_diff < sum_tolerance.max(1e-6),
+        "Sum methods inconsistent: {} vs {} (diff: {})",
+        direct_sum,
+        simd_sum,
+        sum_diff
+    );
+
     let direct_mean = df.mean_direct(float_col)?;
     let simd_mean = df.mean_simd(float_col)?;
     let mean_diff = (direct_mean - simd_mean).abs();
     let mean_tolerance = direct_mean.abs() * 1e-12;
-    assert!(mean_diff < mean_tolerance.max(1e-6), "Mean methods inconsistent: {} vs {} (diff: {})", direct_mean, simd_mean, mean_diff);
-    
+    assert!(
+        mean_diff < mean_tolerance.max(1e-6),
+        "Mean methods inconsistent: {} vs {} (diff: {})",
+        direct_mean,
+        simd_mean,
+        mean_diff
+    );
+
     let direct_max = df.max_direct(int_col)?;
     let simd_max = df.max_simd(int_col)?;
-    assert!((direct_max - simd_max).abs() < 1e-10, "Max methods inconsistent: {} vs {}", direct_max, simd_max);
-    
+    assert!(
+        (direct_max - simd_max).abs() < 1e-10,
+        "Max methods inconsistent: {} vs {}",
+        direct_max,
+        simd_max
+    );
+
     let direct_min = df.min_direct(int_col)?;
     let simd_min = df.min_simd(int_col)?;
-    assert!((direct_min - simd_min).abs() < 1e-10, "Min methods inconsistent: {} vs {}", direct_min, simd_min);
-    
+    assert!(
+        (direct_min - simd_min).abs() < 1e-10,
+        "Min methods inconsistent: {} vs {}",
+        direct_min,
+        simd_min
+    );
+
     println!("✅ Method consistency verified (within floating-point precision)");
-    
+
     Ok(())
 }
 

@@ -13,11 +13,11 @@ pub mod simd;
 pub mod simd_column_ops;
 
 // Enhanced JIT modules
-pub mod cache;
-pub mod performance_monitor;
-pub mod expression_tree;
 pub mod adaptive_optimizer;
+pub mod cache;
+pub mod expression_tree;
 pub mod jit_core;
+pub mod performance_monitor;
 pub mod types;
 
 // Integration modules
@@ -37,18 +37,20 @@ pub use simd::{
     simd_sum_f64, simd_sum_i64,
 };
 pub use simd_column_ops::{
-    simd_add_f64, simd_subtract_f64, simd_multiply_f64, simd_divide_f64,
-    simd_add_scalar_f64, simd_multiply_scalar_f64, simd_abs_f64, simd_sqrt_f64,
-    simd_compare_f64, simd_add_i64, simd_subtract_i64, simd_multiply_i64,
-    simd_add_scalar_i64, simd_abs_i64, simd_compare_i64, ComparisonOp,
+    simd_abs_f64, simd_abs_i64, simd_add_f64, simd_add_i64, simd_add_scalar_f64,
+    simd_add_scalar_i64, simd_compare_f64, simd_compare_i64, simd_divide_f64, simd_multiply_f64,
+    simd_multiply_i64, simd_multiply_scalar_f64, simd_sqrt_f64, simd_subtract_f64,
+    simd_subtract_i64, ComparisonOp,
 };
 
 // Re-export enhanced types
-pub use cache::{CachedFunction, FunctionId, JitFunctionCache};
-pub use performance_monitor::{JitPerformanceMonitor, FunctionPerformanceMetrics, OptimizationSuggestion};
-pub use expression_tree::{ExpressionTree, ExpressionNode, BinaryOperator, UnaryOperator};
 pub use adaptive_optimizer::{AdaptiveOptimizer, OptimizationReport};
+pub use cache::{CachedFunction, FunctionId, JitFunctionCache};
+pub use expression_tree::{BinaryOperator, ExpressionNode, ExpressionTree, UnaryOperator};
 pub use jit_core::{JitFunction, JitStats};
+pub use performance_monitor::{
+    FunctionPerformanceMetrics, JitPerformanceMonitor, OptimizationSuggestion,
+};
 pub use types::{JitNumeric, NumericValue, TypedVector};
 // TODO: Re-enable after fixing trait bounds
 // pub use dataframe_integration::{JitDataFrameOps, JitOptimizedDataFrame};
@@ -104,10 +106,10 @@ pub type JitResult<T> = std::result::Result<T, JitError>;
 pub fn initialize_jit_system(config: JITConfig) -> crate::core::error::Result<()> {
     // Initialize global cache
     cache::init_global_cache(128)?; // 128MB default cache size
-    
+
     // Initialize global performance monitor
     performance_monitor::init_global_monitor(config.clone())?;
-    
+
     Ok(())
 }
 
@@ -116,7 +118,7 @@ pub fn get_jit_system_stats() -> JitSystemStats {
     let cache_stats = cache::get_global_cache().get_stats();
     let monitor = performance_monitor::get_global_monitor();
     let system_metrics = monitor.get_system_metrics();
-    
+
     JitSystemStats {
         cache_hit_rate: cache_stats.hit_rate,
         cache_utilization: cache_stats.utilization_percent(),

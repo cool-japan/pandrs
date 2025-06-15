@@ -1,5 +1,5 @@
-use thiserror::Error;
 use crate::core::error_context::{ErrorContext, ErrorRecovery, ErrorRecoveryHelper};
+use thiserror::Error;
 
 /// Error type definitions
 #[derive(Error, Debug)]
@@ -202,9 +202,15 @@ impl ErrorRecovery for Error {
                     "Check for typos in column name".to_string(),
                 ]
             }
-            Error::ColumnTypeMismatch { name, expected, found } => {
-                ErrorRecoveryHelper::type_mismatch_suggestions(name, &format!("{:?}", expected), &format!("{:?}", found))
-            }
+            Error::ColumnTypeMismatch {
+                name,
+                expected,
+                found,
+            } => ErrorRecoveryHelper::type_mismatch_suggestions(
+                name,
+                &format!("{:?}", expected),
+                &format!("{:?}", found),
+            ),
             Error::InconsistentRowCount { expected, found } => {
                 ErrorRecoveryHelper::shape_mismatch_suggestions((*expected, 0), (*found, 0))
             }
@@ -230,8 +236,8 @@ impl ErrorRecovery for Error {
     fn can_auto_recover(&self) -> bool {
         match self {
             Error::ColumnTypeMismatch { .. } => true, // Could auto-convert types
-            Error::IndexOutOfBounds { .. } => false, // Cannot auto-fix bounds
-            Error::ColumnNotFound(_) => false, // Cannot guess column names
+            Error::IndexOutOfBounds { .. } => false,  // Cannot auto-fix bounds
+            Error::ColumnNotFound(_) => false,        // Cannot guess column names
             Error::Enhanced { context, .. } => {
                 // Could implement more sophisticated recovery logic
                 !context.suggested_fixes.is_empty()
@@ -244,7 +250,9 @@ impl ErrorRecovery for Error {
         match self {
             Error::ColumnTypeMismatch { .. } => {
                 // In a real implementation, this would attempt type conversion
-                Err(Error::NotImplemented("Auto-recovery for type mismatch".to_string()))
+                Err(Error::NotImplemented(
+                    "Auto-recovery for type mismatch".to_string(),
+                ))
             }
             _ => Err(Error::NotImplemented("Auto-recovery".to_string())),
         }

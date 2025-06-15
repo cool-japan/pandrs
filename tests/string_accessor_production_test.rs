@@ -1,13 +1,17 @@
-use pandrs::Series;
 use pandrs::core::error::Result;
+use pandrs::Series;
 
 /// Test all new string validation methods  
 #[test]
 fn test_string_validation_methods() -> Result<()> {
     // Test each method individually to avoid confusion
-    
+
     // Test isalpha
-    let alpha_data = vec!["hello".to_string(), "123".to_string(), "hello123".to_string()];
+    let alpha_data = vec![
+        "hello".to_string(),
+        "123".to_string(),
+        "hello123".to_string(),
+    ];
     let alpha_series = Series::new(alpha_data, Some("test".to_string()))?;
     let alpha_result = alpha_series.str()?.isalpha()?;
     assert_eq!(alpha_result.values(), &[true, false, false]);
@@ -19,7 +23,12 @@ fn test_string_validation_methods() -> Result<()> {
     assert_eq!(digit_result.values(), &[false, true, false]);
 
     // Test isalnum
-    let alnum_data = vec!["hello".to_string(), "123".to_string(), "hello123".to_string(), "hello world".to_string()];
+    let alnum_data = vec![
+        "hello".to_string(),
+        "123".to_string(),
+        "hello123".to_string(),
+        "hello world".to_string(),
+    ];
     let alnum_series = Series::new(alnum_data, Some("test".to_string()))?;
     let alnum_result = alnum_series.str()?.isalnum()?;
     assert_eq!(alnum_result.values(), &[true, true, true, false]); // "hello world" has space
@@ -70,15 +79,15 @@ fn test_swapcase() -> Result<()> {
 }
 
 /// Test Unicode character length calculation
-#[test] 
+#[test]
 fn test_unicode_length() -> Result<()> {
     let data = vec![
         "hello".to_string(),      // 5 ASCII chars
         "café".to_string(),       // 4 Unicode chars (é is 1 char, 2 bytes)
-        "🦀".to_string(),          // 1 Unicode char (4 bytes)
-        "🦀🦀🦀".to_string(),        // 3 Unicode chars (12 bytes)
+        "🦀".to_string(),         // 1 Unicode char (4 bytes)
+        "🦀🦀🦀".to_string(),     // 3 Unicode chars (12 bytes)
         "".to_string(),           // 0 chars
-        "Hello 世界".to_string(),   // 8 chars (mixed ASCII + Chinese)
+        "Hello 世界".to_string(), // 8 chars (mixed ASCII + Chinese)
     ];
     let series = Series::new(data, Some("unicode_test".to_string()))?;
     let str_accessor = series.str()?;
@@ -90,13 +99,13 @@ fn test_unicode_length() -> Result<()> {
     Ok(())
 }
 
-/// Test Unicode padding operations 
+/// Test Unicode padding operations
 #[test]
 fn test_unicode_padding() -> Result<()> {
     let data = vec![
-        "café".to_string(),       // 4 Unicode chars
-        "🦀".to_string(),          // 1 Unicode char
-        "world".to_string(),      // 5 ASCII chars
+        "café".to_string(),  // 4 Unicode chars
+        "🦀".to_string(),    // 1 Unicode char
+        "world".to_string(), // 5 ASCII chars
     ];
     let series = Series::new(data, Some("unicode_pad_test".to_string()))?;
     let str_accessor = series.str()?;
@@ -123,7 +132,7 @@ fn test_input_validation() -> Result<()> {
     // Test invalid side parameter for padding
     let result = str_accessor.pad(10, "invalid", '*');
     assert!(result.is_err());
-    
+
     if let Err(err) = result {
         let error_msg = format!("{:?}", err);
         assert!(error_msg.contains("Invalid side parameter"));
@@ -154,7 +163,7 @@ fn test_regex_caching_performance() -> Result<()> {
 
     // Cache should make second call faster (though this might not always be true due to CPU caching)
     println!("First call: {:?}, Second call: {:?}", duration1, duration2);
-    
+
     // Both should complete quickly
     assert!(duration1 < std::time::Duration::from_millis(100));
     assert!(duration2 < std::time::Duration::from_millis(100));
@@ -163,7 +172,7 @@ fn test_regex_caching_performance() -> Result<()> {
 }
 
 /// Test error handling with contextual information
-#[test] 
+#[test]
 fn test_contextual_error_handling() -> Result<()> {
     let data = vec!["test".to_string()];
     let series = Series::new(data, Some("error_test".to_string()))?;
@@ -172,7 +181,7 @@ fn test_contextual_error_handling() -> Result<()> {
     // Test invalid regex pattern
     let result = str_accessor.contains("[invalid", true, true);
     assert!(result.is_err());
-    
+
     if let Err(err) = result {
         let error_msg = format!("{:?}", err);
         assert!(error_msg.contains("Invalid regex pattern"));
@@ -193,15 +202,15 @@ fn test_large_dataset_performance() -> Result<()> {
 
     // Test various operations for performance
     let start = std::time::Instant::now();
-    
+
     let _upper = str_accessor.upper()?;
     let _contains = str_accessor.contains("test", false, false)?;
     let _lengths = str_accessor.len()?;
     let _alpha = str_accessor.isalpha()?;
-    
+
     let total_duration = start.elapsed();
-    
-    // Should complete within reasonable time 
+
+    // Should complete within reasonable time
     assert!(total_duration < std::time::Duration::from_millis(1000));
     println!("Large dataset operations took: {:?}", total_duration);
 
@@ -215,7 +224,7 @@ fn test_edge_cases() -> Result<()> {
     let empty_data: Vec<String> = vec![];
     let empty_series = Series::new(empty_data, Some("empty".to_string()))?;
     let empty_accessor = empty_series.str()?;
-    
+
     let empty_result = empty_accessor.upper()?;
     assert_eq!(empty_result.len(), 0);
 
@@ -224,7 +233,7 @@ fn test_edge_cases() -> Result<()> {
     let long_data = vec![long_string];
     let long_series = Series::new(long_data, Some("long".to_string()))?;
     let long_accessor = long_series.str()?;
-    
+
     let long_result = long_accessor.upper()?;
     assert_eq!(long_result.values()[0].len(), 10_000);
     assert!(long_result.values()[0].chars().all(|c| c == 'A'));
@@ -233,7 +242,7 @@ fn test_edge_cases() -> Result<()> {
     let special_data = vec!["!@#$%^&*()".to_string(), "[]{}".to_string()];
     let special_series = Series::new(special_data, Some("special".to_string()))?;
     let special_accessor = special_series.str()?;
-    
+
     let special_alpha = special_accessor.isalpha()?;
     assert_eq!(special_alpha.values(), &[false, false]);
 
@@ -243,24 +252,21 @@ fn test_edge_cases() -> Result<()> {
 /// Test method chaining behavior
 #[test]
 fn test_method_chaining() -> Result<()> {
-    let data = vec![
-        "  Hello World  ".to_string(),
-        "  TEST DATA  ".to_string(),
-    ];
+    let data = vec!["  Hello World  ".to_string(), "  TEST DATA  ".to_string()];
     let series = Series::new(data, Some("chain_test".to_string()))?;
 
     // Chain multiple operations: strip -> lower -> contains
     let stripped = series.str()?.strip(None)?;
     let lowered = stripped.str()?.lower()?;
     let contains_result = lowered.str()?.contains("hello", true, false)?;
-    
+
     assert_eq!(contains_result.values(), &[true, false]);
 
-    // Chain: strip -> title -> length  
+    // Chain: strip -> title -> length
     let stripped2 = series.str()?.strip(None)?;
     let titled = stripped2.str()?.title()?;
     let lengths = titled.str()?.len()?;
-    
+
     assert_eq!(lengths.values(), &[11i64, 9i64]);
 
     Ok(())
@@ -292,7 +298,7 @@ fn test_all_regex_methods() -> Result<()> {
     assert_eq!(extract_regex.values()[0], "123"); // First capture group
     assert_eq!(extract_regex.values()[2], "123");
 
-    // Test count with regex  
+    // Test count with regex
     let count_regex = str_accessor.count(r"\d", None)?;
     assert_eq!(count_regex.values(), &[6i64, 0i64, 3i64, 0i64]);
 

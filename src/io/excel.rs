@@ -4,7 +4,7 @@ use std::io::BufReader;
 use std::path::Path;
 
 #[cfg(feature = "excel")]
-use calamine::{open_workbook, Reader, Xlsx, DataType as CellType, Range};
+use calamine::{open_workbook, DataType as CellType, Range, Reader, Xlsx};
 #[cfg(feature = "excel")]
 use simple_excel_writer::{Sheet, Workbook};
 
@@ -480,7 +480,7 @@ pub fn write_excel<P: AsRef<Path>>(
 pub fn list_sheet_names<P: AsRef<Path>>(path: P) -> Result<Vec<String>> {
     let workbook: Xlsx<BufReader<File>> = open_workbook(path.as_ref())
         .map_err(|e| Error::IoError(format!("Could not open Excel file: {}", e)))?;
-    
+
     Ok(workbook.sheet_names().clone())
 }
 
@@ -507,17 +507,17 @@ pub fn list_sheet_names<P: AsRef<Path>>(path: P) -> Result<Vec<String>> {
 pub fn get_workbook_info<P: AsRef<Path>>(path: P) -> Result<ExcelWorkbookInfo> {
     let mut workbook: Xlsx<BufReader<File>> = open_workbook(path.as_ref())
         .map_err(|e| Error::IoError(format!("Could not open Excel file: {}", e)))?;
-    
+
     let sheet_names = workbook.sheet_names().clone();
     let sheet_count = sheet_names.len();
-    
+
     let mut total_cells = 0;
     for sheet_name in &sheet_names {
         if let Ok(range) = workbook.worksheet_range(sheet_name) {
             total_cells += range.get_size().0 * range.get_size().1;
         }
     }
-    
+
     Ok(ExcelWorkbookInfo {
         sheet_names,
         sheet_count,
@@ -548,17 +548,18 @@ pub fn get_workbook_info<P: AsRef<Path>>(path: P) -> Result<ExcelWorkbookInfo> {
 pub fn get_sheet_info<P: AsRef<Path>>(path: P, sheet_name: &str) -> Result<ExcelSheetInfo> {
     let mut workbook: Xlsx<BufReader<File>> = open_workbook(path.as_ref())
         .map_err(|e| Error::IoError(format!("Could not open Excel file: {}", e)))?;
-    
+
     let range = workbook
         .worksheet_range(sheet_name)
         .map_err(|e| Error::IoError(format!("Could not read sheet '{}': {}", sheet_name, e)))?;
-    
+
     let (rows, cols) = range.get_size();
-    let range_str = format!("A1:{}{}", 
+    let range_str = format!(
+        "A1:{}{}",
         std::char::from_u32((b'A' as u32) + (cols as u32) - 1).unwrap_or('Z'),
         rows
     );
-    
+
     Ok(ExcelSheetInfo {
         name: sheet_name.to_string(),
         rows,
@@ -594,10 +595,10 @@ pub fn get_sheet_info<P: AsRef<Path>>(path: P, sheet_name: &str) -> Result<Excel
 ///
 /// // Read specific sheets
 /// let specific_sheets = read_excel_sheets(
-///     "data.xlsx", 
-///     Some(&["Sheet1", "Summary"]), 
-///     true, 
-///     0, 
+///     "data.xlsx",
+///     Some(&["Sheet1", "Summary"]),
+///     true,
+///     0,
 ///     None
 /// ).unwrap();
 /// ```
@@ -611,15 +612,15 @@ pub fn read_excel_sheets<P: AsRef<Path>>(
 ) -> Result<HashMap<String, DataFrame>> {
     let workbook: Xlsx<BufReader<File>> = open_workbook(path.as_ref())
         .map_err(|e| Error::IoError(format!("Could not open Excel file: {}", e)))?;
-    
+
     let available_sheets = workbook.sheet_names().clone();
-    
+
     let sheets_to_read = if let Some(names) = sheet_names {
         // Validate that all requested sheets exist
         for &name in names {
             if !available_sheets.contains(&name.to_string()) {
                 return Err(Error::IoError(format!(
-                    "Sheet '{}' not found. Available sheets: {:?}", 
+                    "Sheet '{}' not found. Available sheets: {:?}",
                     name, available_sheets
                 )));
             }
@@ -628,9 +629,9 @@ pub fn read_excel_sheets<P: AsRef<Path>>(
     } else {
         available_sheets
     };
-    
+
     let mut result = HashMap::new();
-    
+
     for sheet_name in sheets_to_read {
         // Read this sheet using the existing function
         let df = read_excel(
@@ -640,10 +641,10 @@ pub fn read_excel_sheets<P: AsRef<Path>>(
             skip_rows,
             use_cols,
         )?;
-        
+
         result.insert(sheet_name, df);
     }
-    
+
     Ok(result)
 }
 
@@ -703,7 +704,7 @@ pub fn read_excel_with_info<P: AsRef<Path>>(
 /// let mut sheets = HashMap::new();
 /// sheets.insert("Data".to_string(), &df1);
 /// sheets.insert("Summary".to_string(), &df2);
-/// 
+///
 /// write_excel_sheets(&sheets, "output.xlsx", false).unwrap();
 /// ```
 #[cfg(feature = "excel")]
@@ -718,32 +719,32 @@ pub fn write_excel_sheets<P: AsRef<Path>>(
             .to_str()
             .ok_or_else(|| Error::IoError("Could not convert file path to string".to_string()))?,
     );
-    
+
     for (sheet_name, df) in sheets {
         // Validate sheet name
         if sheet_name.is_empty() || sheet_name.len() > 31 {
             return Err(Error::IoError(format!(
-                "Invalid sheet name '{}': must be 1-31 characters", 
+                "Invalid sheet name '{}': must be 1-31 characters",
                 sheet_name
             )));
         }
-        
+
         // Create sheet
         let mut sheet = workbook.create_sheet(sheet_name);
-        
+
         // Create header row
         let mut headers = Vec::new();
-        
+
         // Include index if specified
         if index {
             headers.push("Index".to_string());
         }
-        
+
         // Add column names
         for col_name in df.column_names() {
             headers.push(col_name.clone());
         }
-        
+
         // Write data to this sheet
         workbook.write_sheet(&mut sheet, |sheet_writer| {
             // Add header row
@@ -752,16 +753,16 @@ pub fn write_excel_sheets<P: AsRef<Path>>(
                 let row = simple_excel_writer::Row::from_iter(header_row.iter().cloned());
                 sheet_writer.append_row(row)?;
             }
-            
+
             // Write data rows
             for row_idx in 0..df.row_count() {
                 let mut row_values = Vec::new();
-                
+
                 // Include index if specified
                 if index {
                     row_values.push(row_idx.to_string());
                 }
-                
+
                 // Add data for each column
                 for col_name in df.column_names() {
                     if let Ok(_column) = df.column(col_name) {
@@ -769,22 +770,22 @@ pub fn write_excel_sheets<P: AsRef<Path>>(
                         row_values.push(format!("row_{}_col_{}", row_idx, col_name));
                     }
                 }
-                
+
                 // Add row to Excel
                 let row_str_refs: Vec<&str> = row_values.iter().map(|s| s.as_str()).collect();
                 let row = simple_excel_writer::Row::from_iter(row_str_refs.iter().cloned());
                 sheet_writer.append_row(row)?;
             }
-            
+
             Ok(())
         })?;
     }
-    
+
     // Close and save workbook
     workbook
         .close()
         .map_err(|e| Error::IoError(format!("Could not save Excel file: {}", e)))?;
-    
+
     Ok(())
 }
 
@@ -840,14 +841,14 @@ pub fn read_excel_enhanced<P: AsRef<Path>>(
 
     // Create DataFrame using existing logic
     let df = create_dataframe_from_range(&range, true, 0, None)?;
-    
+
     // Extract enhanced cell information if requested
     let cells = if options.include_formatting || options.preserve_formulas {
         extract_cell_details(&range, &options)?
     } else {
         Vec::new()
     };
-    
+
     // Extract named ranges if requested
     let named_ranges = if options.read_named_ranges {
         extract_named_ranges(&workbook, &sheet_name)?
@@ -955,9 +956,12 @@ fn create_dataframe_from_range(
 }
 
 /// Extract detailed cell information including formulas and formatting
-fn extract_cell_details(range: &Range<CellType>, options: &ExcelReadOptions) -> Result<Vec<ExcelCell>> {
+fn extract_cell_details(
+    range: &Range<CellType>,
+    options: &ExcelReadOptions,
+) -> Result<Vec<ExcelCell>> {
     let mut cells = Vec::new();
-    
+
     for (_row_idx, row) in range.rows().enumerate() {
         for (_col_idx, cell) in row.iter().enumerate() {
             let mut excel_cell = ExcelCell {
@@ -977,21 +981,21 @@ fn extract_cell_details(range: &Range<CellType>, options: &ExcelReadOptions) -> 
                 },
                 format: ExcelCellFormat::default(),
             };
-            
+
             // Extract formula if available and requested
             if options.preserve_formulas {
                 excel_cell.formula = extract_formula_if_available(cell);
             }
-            
+
             // Extract formatting if requested
             if options.include_formatting {
                 excel_cell.format = extract_cell_formatting();
             }
-            
+
             cells.push(excel_cell);
         }
     }
-    
+
     Ok(cells)
 }
 
@@ -1000,8 +1004,14 @@ fn extract_formula_if_available(cell: &CellType) -> Option<String> {
     // Enhanced formula detection beyond simple string checking
     match cell {
         CellType::String(s) if s.starts_with('=') => Some(s.clone()),
-        CellType::String(s) if s.contains("SUM(") || s.contains("AVERAGE(") || 
-                              s.contains("COUNT(") || s.contains("IF(") => Some(s.clone()),
+        CellType::String(s)
+            if s.contains("SUM(")
+                || s.contains("AVERAGE(")
+                || s.contains("COUNT(")
+                || s.contains("IF(") =>
+        {
+            Some(s.clone())
+        }
         _ => None,
     }
 }
@@ -1019,9 +1029,12 @@ fn extract_cell_formatting() -> ExcelCellFormat {
 }
 
 /// Extract named ranges from workbook (enhanced implementation)
-fn extract_named_ranges(workbook: &Xlsx<BufReader<File>>, sheet_name: &str) -> Result<Vec<NamedRange>> {
+fn extract_named_ranges(
+    workbook: &Xlsx<BufReader<File>>,
+    sheet_name: &str,
+) -> Result<Vec<NamedRange>> {
     let mut ranges = Vec::new();
-    
+
     // Enhanced named range detection based on common patterns
     ranges.push(NamedRange {
         name: "DataRange".to_string(),
@@ -1029,14 +1042,14 @@ fn extract_named_ranges(workbook: &Xlsx<BufReader<File>>, sheet_name: &str) -> R
         range: "A1:Z100".to_string(),
         comment: Some("Main data area".to_string()),
     });
-    
+
     ranges.push(NamedRange {
         name: "HeaderRange".to_string(),
         sheet_name: sheet_name.to_string(),
         range: "A1:Z1".to_string(),
         comment: Some("Column headers".to_string()),
     });
-    
+
     Ok(ranges)
 }
 
@@ -1123,7 +1136,7 @@ pub fn write_excel_enhanced<P: AsRef<Path>>(
                         // Fallback to basic data extraction
                         format!("row_{}_col_{}", row_idx, col_name)
                     };
-                    
+
                     row_values.push(cell_value);
                 }
             }
@@ -1245,18 +1258,18 @@ pub struct ExcelFileAnalysis {
 /// use pandrs::io::analyze_excel_file;
 ///
 /// let analysis = analyze_excel_file("data.xlsx").unwrap();
-/// println!("File has {} formulas and {} formatted cells", 
+/// println!("File has {} formulas and {} formatted cells",
 ///          analysis.formula_count, analysis.formatted_cell_count);
 /// ```
 #[cfg(feature = "excel")]
 pub fn analyze_excel_file<P: AsRef<Path>>(path: P) -> Result<ExcelFileAnalysis> {
     let workbook_info = get_workbook_info(path.as_ref())?;
-    
+
     // Analyze each sheet for formulas and formatting
     let mut formula_count = 0;
     let mut formatted_cell_count = 0;
     let mut named_range_count = 0;
-    
+
     for sheet_name in &workbook_info.sheet_names {
         let (_, cells, ranges) = read_excel_enhanced(
             path.as_ref(),
@@ -1268,21 +1281,26 @@ pub fn analyze_excel_file<P: AsRef<Path>>(path: P) -> Result<ExcelFileAnalysis> 
                 ..Default::default()
             },
         )?;
-        
+
         formula_count += cells.iter().filter(|c| c.formula.is_some()).count();
-        formatted_cell_count += cells.iter().filter(|c| {
-            c.format.font_bold || c.format.font_italic || 
-            c.format.font_color.is_some() || c.format.background_color.is_some()
-        }).count();
+        formatted_cell_count += cells
+            .iter()
+            .filter(|c| {
+                c.format.font_bold
+                    || c.format.font_italic
+                    || c.format.font_color.is_some()
+                    || c.format.background_color.is_some()
+            })
+            .count();
         named_range_count += ranges.len();
     }
-    
+
     // Calculate complexity score
-    let complexity_score = (workbook_info.total_cells as f64 * 0.1) +
-                          (formula_count as f64 * 2.0) +
-                          (formatted_cell_count as f64 * 0.5) +
-                          (named_range_count as f64 * 5.0);
-    
+    let complexity_score = (workbook_info.total_cells as f64 * 0.1)
+        + (formula_count as f64 * 2.0)
+        + (formatted_cell_count as f64 * 0.5)
+        + (named_range_count as f64 * 5.0);
+
     Ok(ExcelFileAnalysis {
         workbook_info,
         formula_count,

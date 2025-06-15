@@ -27,17 +27,17 @@ pub enum JoinType {
 /// Methods for handling null values in dropna
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DropNaHow {
-    Any,  // Drop if any null value
-    All,  // Drop only if all values are null
+    Any, // Drop if any null value
+    All, // Drop only if all values are null
 }
 
 /// Fill methods for handling null values
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FillMethod {
-    Forward,    // Forward fill
-    Backward,   // Backward fill
-    Zero,       // Fill with zero
-    Mean,       // Fill with mean
+    Forward,     // Forward fill
+    Backward,    // Backward fill
+    Zero,        // Fill with zero
+    Mean,        // Fill with mean
     Interpolate, // Interpolate values
 }
 
@@ -68,74 +68,74 @@ pub enum AggFunc {
 pub trait DataFrameOps {
     type Output: DataFrameOps;
     type Error: std::error::Error + Send + Sync + 'static;
-    
+
     // Core structural operations
-    
+
     /// Select specific columns by name
     fn select(&self, columns: &[&str]) -> Result<Self::Output>;
-    
+
     /// Drop specific columns by name
     fn drop(&self, columns: &[&str]) -> Result<Self::Output>;
-    
+
     /// Rename columns using a mapping
     fn rename(&self, mapping: &HashMap<String, String>) -> Result<Self::Output>;
-    
+
     // Filtering and selection
-    
+
     /// Filter rows based on a predicate function
     fn filter<F>(&self, predicate: F) -> Result<Self::Output>
     where
         F: Fn(&dyn DataValue) -> bool + Send + Sync;
-    
+
     /// Get the first n rows
     fn head(&self, n: usize) -> Result<Self::Output>;
-    
+
     /// Get the last n rows
     fn tail(&self, n: usize) -> Result<Self::Output>;
-    
+
     /// Sample n random rows
     fn sample(&self, n: usize, random_state: Option<u64>) -> Result<Self::Output>;
-    
+
     // Sorting and ordering
-    
+
     /// Sort by column values
     fn sort_values(&self, by: &[&str], ascending: &[bool]) -> Result<Self::Output>;
-    
+
     /// Sort by index
     fn sort_index(&self) -> Result<Self::Output>;
-    
+
     // Shape and metadata
-    
+
     /// Get the shape (rows, columns) of the DataFrame
     fn shape(&self) -> (usize, usize);
-    
+
     /// Get the column names
     fn columns(&self) -> Vec<String>;
-    
+
     /// Get the data types of columns
     fn dtypes(&self) -> HashMap<String, String>;
-    
+
     /// Get comprehensive DataFrame information
     fn info(&self) -> DataFrameInfo;
-    
+
     // Missing data handling
-    
+
     /// Drop rows or columns containing null values
     fn dropna(&self, axis: Option<Axis>, how: DropNaHow) -> Result<Self::Output>;
-    
+
     /// Fill null values
     fn fillna(&self, value: &dyn DataValue, method: Option<FillMethod>) -> Result<Self::Output>;
-    
+
     /// Check for null values
     fn isna(&self) -> Result<Self::Output>;
-    
+
     // Transformation operations
-    
+
     /// Apply a function to each element
     fn map<F>(&self, func: F) -> Result<Self::Output>
     where
         F: Fn(&dyn DataValue) -> Box<dyn DataValue> + Send + Sync;
-    
+
     /// Apply a function along an axis
     fn apply<F>(&self, func: F, axis: Axis) -> Result<Self::Output>
     where
@@ -144,68 +144,69 @@ pub trait DataFrameOps {
 
 /// Advanced DataFrame operations for complex data manipulation
 pub trait DataFrameAdvancedOps: DataFrameOps {
-    type GroupBy: GroupByOps<Self> where Self: Sized;
-    
+    type GroupBy: GroupByOps<Self>
+    where
+        Self: Sized;
+
     // Merging and joining
-    
+
     /// Merge with another DataFrame
     fn merge(&self, other: &Self, on: &[&str], how: JoinType) -> Result<Self::Output>;
-    
+
     /// Concatenate with other DataFrames
     fn concat(&self, others: &[&Self], axis: Axis) -> Result<Self::Output>;
-    
+
     // Reshaping operations
-    
+
     /// Pivot the DataFrame
-    fn pivot(
-        &self, 
-        index: &[&str], 
-        columns: &[&str], 
-        values: &[&str]
-    ) -> Result<Self::Output>;
-    
+    fn pivot(&self, index: &[&str], columns: &[&str], values: &[&str]) -> Result<Self::Output>;
+
     /// Melt the DataFrame from wide to long format
-    fn melt(
-        &self, 
-        id_vars: &[&str], 
-        value_vars: &[&str]
-    ) -> Result<Self::Output>;
-    
+    fn melt(&self, id_vars: &[&str], value_vars: &[&str]) -> Result<Self::Output>;
+
     /// Stack columns into a series
     fn stack(&self, level: Option<usize>) -> Result<Self::Output>;
-    
+
     /// Unstack index into columns
     fn unstack(&self, level: Option<usize>) -> Result<Self::Output>;
-    
+
     // Grouping operations
-    
+
     /// Group by columns
-    fn group_by(&self, by: &[&str]) -> Result<Self::GroupBy> where Self: Sized;
-    
+    fn group_by(&self, by: &[&str]) -> Result<Self::GroupBy>
+    where
+        Self: Sized;
+
     // Window operations
-    
+
     /// Create rolling window
-    fn rolling(&self, window: usize) -> Result<RollingWindow<Self>> where Self: Sized;
-    
+    fn rolling(&self, window: usize) -> Result<RollingWindow<Self>>
+    where
+        Self: Sized;
+
     /// Create expanding window
-    fn expanding(&self) -> Result<ExpandingWindow<Self>> where Self: Sized;
-    
+    fn expanding(&self) -> Result<ExpandingWindow<Self>>
+    where
+        Self: Sized;
+
     // Time series operations
-    
+
     /// Resample time series data
-    fn resample(&self, freq: &str) -> Result<Resampler<Self>> where Self: Sized;
-    
+    fn resample(&self, freq: &str) -> Result<Resampler<Self>>
+    where
+        Self: Sized;
+
     /// Shift values by periods
     fn shift(&self, periods: i64) -> Result<Self::Output>;
-    
+
     // Advanced indexing
-    
+
     /// Set index from columns
     fn set_index(&self, keys: &[&str]) -> Result<Self::Output>;
-    
+
     /// Reset index to default integer index
     fn reset_index(&self, drop: bool) -> Result<Self::Output>;
-    
+
     /// Reindex using a new index
     fn reindex<I: IndexTrait>(&self, index: &I) -> Result<Self::Output>;
 }
@@ -214,71 +215,73 @@ pub trait DataFrameAdvancedOps: DataFrameOps {
 pub trait GroupByOps<T: DataFrameOps> {
     type GroupByResult: DataFrameOps;
     type Error: std::error::Error + Send + Sync + 'static;
-    
+
     // Basic aggregations
-    
+
     /// Sum of groups
     fn sum(&self) -> Result<Self::GroupByResult>;
-    
+
     /// Mean of groups
     fn mean(&self) -> Result<Self::GroupByResult>;
-    
+
     /// Median of groups
     fn median(&self) -> Result<Self::GroupByResult>;
-    
+
     /// Standard deviation of groups
     fn std(&self) -> Result<Self::GroupByResult>;
-    
+
     /// Variance of groups
     fn var(&self) -> Result<Self::GroupByResult>;
-    
+
     /// Minimum of groups
     fn min(&self) -> Result<Self::GroupByResult>;
-    
+
     /// Maximum of groups
     fn max(&self) -> Result<Self::GroupByResult>;
-    
+
     /// Count of non-null values in groups
     fn count(&self) -> Result<Self::GroupByResult>;
-    
+
     /// Number of unique values in groups
     fn nunique(&self) -> Result<Self::GroupByResult>;
-    
+
     // Advanced aggregations
-    
+
     /// Apply multiple aggregation functions
     fn agg(&self, funcs: &[AggFunc]) -> Result<Self::GroupByResult>;
-    
+
     /// Transform groups with a function
     fn transform<F>(&self, func: F) -> Result<T>
     where
         F: Fn(&T) -> T + Send + Sync;
-    
+
     /// Apply function to each group
     fn apply<F>(&self, func: F) -> Result<Self::GroupByResult>
     where
         F: Fn(&T) -> Box<dyn DataValue> + Send + Sync;
-    
+
     // Filtering
-    
+
     /// Filter groups based on a condition
     fn filter<F>(&self, func: F) -> Result<T>
     where
         F: Fn(&T) -> bool + Send + Sync;
-    
+
     // Group information
-    
+
     /// Get group keys
-    fn groups(&self) -> GroupIterator<T> where T: Clone;
-    
+    fn groups(&self) -> GroupIterator<T>
+    where
+        T: Clone;
+
     /// Get specific group by key
     fn get_group(&self, key: &GroupKey) -> Result<T>;
-    
+
     // Statistics
-    
+
     /// Describe groups with summary statistics
     fn describe(&self) -> Result<Self::GroupByResult>;
-    
+
     /// Calculate quantile for groups
     fn quantile(&self, q: f64) -> Result<Self::GroupByResult>;
 }
@@ -287,46 +290,46 @@ pub trait GroupByOps<T: DataFrameOps> {
 pub trait IndexingOps {
     type Output;
     type Error: std::error::Error + Send + Sync + 'static;
-    
+
     // Position-based indexing (iloc)
-    
+
     /// Select by integer position
     fn iloc(&self, row_indexer: &RowIndexer, col_indexer: &ColIndexer) -> Result<Self::Output>;
-    
+
     /// Get scalar value by position
     fn iloc_scalar(&self, row: usize, col: usize) -> Result<Box<dyn DataValue>>;
-    
+
     // Label-based indexing (loc)
-    
+
     /// Select by label
     fn loc(&self, row_indexer: &LabelIndexer, col_indexer: &LabelIndexer) -> Result<Self::Output>;
-    
+
     /// Get scalar value by label
     fn loc_scalar(&self, row_label: &str, col_label: &str) -> Result<Box<dyn DataValue>>;
-    
+
     // Boolean indexing
-    
+
     /// Select using boolean mask
     fn mask(&self, mask: &BooleanMask) -> Result<Self::Output>;
-    
+
     /// Select where condition is true
     fn where_condition<F>(&self, condition: F) -> Result<Self::Output>
     where
         F: Fn(&dyn DataValue) -> bool + Send + Sync;
-    
+
     // Query-based selection
-    
+
     /// Query using expression string
     fn query(&self, expression: &str) -> Result<Self::Output>;
-    
+
     /// Evaluate expression and return series
     fn eval(&self, expression: &str) -> Result<Self::Output>;
-    
+
     // Fast scalar access
-    
+
     /// Fast scalar access by label
     fn at(&self, row_label: &str, col_label: &str) -> Result<Box<dyn DataValue>>;
-    
+
     /// Fast scalar access by position
     fn iat(&self, row: usize, col: usize) -> Result<Box<dyn DataValue>>;
 }
@@ -400,26 +403,26 @@ impl GroupKey {
 }
 
 /// Iterator over groups
-pub struct GroupIterator<T> 
-where 
-    T: Clone
+pub struct GroupIterator<T>
+where
+    T: Clone,
 {
     groups: Vec<(GroupKey, T)>,
     current: usize,
 }
 
-impl<T> GroupIterator<T> 
-where 
-    T: Clone
+impl<T> GroupIterator<T>
+where
+    T: Clone,
 {
     pub fn new(groups: Vec<(GroupKey, T)>) -> Self {
         Self { groups, current: 0 }
     }
 }
 
-impl<T> Iterator for GroupIterator<T> 
-where 
-    T: Clone
+impl<T> Iterator for GroupIterator<T>
+where
+    T: Clone,
 {
     type Item = (GroupKey, T);
 
@@ -518,7 +521,10 @@ pub struct Resampler<T> {
 
 impl<T> Resampler<T> {
     pub fn new(dataframe: T, frequency: String) -> Self {
-        Self { dataframe, frequency }
+        Self {
+            dataframe,
+            frequency,
+        }
     }
 }
 
@@ -552,22 +558,22 @@ impl<T: DataFrameOps> Resampler<T> {
 pub trait StatisticalOps: DataFrameOps {
     /// Calculate descriptive statistics
     fn describe(&self) -> Result<Self::Output>;
-    
+
     /// Calculate correlation matrix
     fn corr(&self, method: CorrelationMethod) -> Result<Self::Output>;
-    
+
     /// Calculate covariance matrix
     fn cov(&self) -> Result<Self::Output>;
-    
+
     /// Calculate quantiles
     fn quantile(&self, q: &[f64]) -> Result<Self::Output>;
-    
+
     /// Calculate value counts
     fn value_counts(&self, column: &str) -> Result<Self::Output>;
-    
+
     /// Check for duplicate rows
     fn duplicated(&self, subset: Option<&[&str]>) -> Result<BooleanMask>;
-    
+
     /// Remove duplicate rows
     fn drop_duplicates(&self, subset: Option<&[&str]>) -> Result<Self::Output>;
 }
@@ -584,19 +590,19 @@ pub enum CorrelationMethod {
 pub trait DataFrameIO: DataFrameOps {
     /// Read from CSV file
     fn read_csv(path: &str, options: CsvReadOptions) -> Result<Self::Output>;
-    
+
     /// Write to CSV file
     fn to_csv(&self, path: &str, options: CsvWriteOptions) -> Result<()>;
-    
+
     /// Read from JSON file
     fn read_json(path: &str, options: JsonReadOptions) -> Result<Self::Output>;
-    
+
     /// Write to JSON file
     fn to_json(&self, path: &str, options: JsonWriteOptions) -> Result<()>;
-    
+
     /// Read from Parquet file
     fn read_parquet(path: &str, options: ParquetReadOptions) -> Result<Self::Output>;
-    
+
     /// Write to Parquet file
     fn to_parquet(&self, path: &str, options: ParquetWriteOptions) -> Result<()>;
 }
@@ -667,7 +673,7 @@ mod tests {
         let key1 = GroupKey::new(vec!["A".to_string(), "1".to_string()]);
         let key2 = GroupKey::new(vec!["A".to_string(), "1".to_string()]);
         let key3 = GroupKey::new(vec!["B".to_string(), "2".to_string()]);
-        
+
         assert_eq!(key1, key2);
         assert_ne!(key1, key3);
     }
@@ -676,12 +682,12 @@ mod tests {
     fn test_indexers() {
         let row_indexer = RowIndexer::Range(0..5);
         let col_indexer = ColIndexer::List(vec![0, 2, 4]);
-        
+
         match row_indexer {
             RowIndexer::Range(range) => assert_eq!(range, 0..5),
             _ => panic!("Wrong indexer type"),
         }
-        
+
         match col_indexer {
             ColIndexer::List(list) => assert_eq!(list, vec![0, 2, 4]),
             _ => panic!("Wrong indexer type"),

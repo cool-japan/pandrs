@@ -1,5 +1,5 @@
-use pandrs::Series;
 use pandrs::core::error::Result;
+use pandrs::Series;
 
 #[test]
 fn test_string_accessor_integration() -> Result<()> {
@@ -50,7 +50,10 @@ fn test_string_accessor_integration() -> Result<()> {
     // Test case-insensitive contains
     let contains_insensitive = str_accessor.contains("rust", false, false)?;
     let expected_contains_insensitive = vec![false, true, false, false, false];
-    assert_eq!(contains_insensitive.values(), &expected_contains_insensitive);
+    assert_eq!(
+        contains_insensitive.values(),
+        &expected_contains_insensitive
+    );
 
     // Test startswith
     let startswith_result = str_accessor.startswith("Hello", true)?;
@@ -108,7 +111,7 @@ fn test_string_accessor_advanced_operations() -> Result<()> {
     // Test title case
     let title_result = str_accessor.title()?;
     let expected_title = vec![
-        "Apple,banana,cherry".to_string(),  // Only first letter after whitespace is capitalized
+        "Apple,banana,cherry".to_string(), // Only first letter after whitespace is capitalized
         "Dog123cat456".to_string(),
         "Hello World Test".to_string(),
         "Replace_me_please".to_string(),
@@ -120,7 +123,7 @@ fn test_string_accessor_advanced_operations() -> Result<()> {
     let expected_capitalize = vec![
         "Apple,banana,cherry".to_string(),
         "Dog123cat456".to_string(),
-        "Hello World Test".to_string(),  // Capitalize first char, rest unchanged
+        "Hello World Test".to_string(), // Capitalize first char, rest unchanged
         "Replace_me_please".to_string(),
     ];
     assert_eq!(capitalize_result.values(), &expected_capitalize);
@@ -150,13 +153,13 @@ fn test_string_accessor_regex_operations() -> Result<()> {
         "123".to_string(),
         "789".to_string(),
         "".to_string(),  // No match
-        "3".to_string(),  // First digit match
+        "3".to_string(), // First digit match
     ];
     assert_eq!(extract_result.values(), &expected_extract);
 
     // Test count regex matches
     let count_result = str_accessor.count(r"\d", None)?;
-    let expected_count = vec![3i64, 3i64, 0i64, 3i64];  // "mix3d_n0mb3rs" has digits: 3, 0, 3 = 3 total
+    let expected_count = vec![3i64, 3i64, 0i64, 3i64]; // "mix3d_n0mb3rs" has digits: 3, 0, 3 = 3 total
     assert_eq!(count_result.values(), &expected_count);
 
     // Test findall
@@ -183,9 +186,9 @@ fn test_string_accessor_padding_operations() -> Result<()> {
     let left_pad = str_accessor.pad(10, "left", '*')?;
     let expected_left = vec![
         "*****short".to_string(),
-        "medium text".to_string(),  // Already longer than 10
+        "medium text".to_string(), // Already longer than 10
         "*********a".to_string(),
-        "exactly_ten".to_string(),  // Exactly 10, no padding
+        "exactly_ten".to_string(), // Exactly 10, no padding
     ];
     assert_eq!(left_pad.values(), &expected_left);
 
@@ -193,9 +196,9 @@ fn test_string_accessor_padding_operations() -> Result<()> {
     let right_pad = str_accessor.pad(8, "right", '-')?;
     let expected_right = vec![
         "short---".to_string(),
-        "medium text".to_string(),  // Already longer
+        "medium text".to_string(), // Already longer
         "a-------".to_string(),
-        "exactly_ten".to_string(),  // Already longer
+        "exactly_ten".to_string(), // Already longer
     ];
     assert_eq!(right_pad.values(), &expected_right);
 
@@ -203,9 +206,9 @@ fn test_string_accessor_padding_operations() -> Result<()> {
     let both_pad = str_accessor.pad(7, "both", '=')?;
     let expected_both = vec![
         "=short=".to_string(),
-        "medium text".to_string(),  // Already longer
+        "medium text".to_string(), // Already longer
         "===a===".to_string(),
-        "exactly_ten".to_string(),  // Already longer
+        "exactly_ten".to_string(), // Already longer
     ];
     assert_eq!(both_pad.values(), &expected_both);
 
@@ -236,10 +239,10 @@ fn test_string_accessor_strip_operations() -> Result<()> {
     // Test strip with custom characters
     let strip_custom = str_accessor.strip(Some("*abc"))?;
     let expected_custom = vec![
-        "  hello  ".to_string(),  // No * or abc to strip
+        "  hello  ".to_string(), // No * or abc to strip
         "world".to_string(),
         "test".to_string(),
-        "\t\nspaces\t\n".to_string(),  // No * or abc
+        "\t\nspaces\t\n".to_string(), // No * or abc
     ];
     assert_eq!(strip_custom.values(), &expected_custom);
 
@@ -271,10 +274,10 @@ fn test_string_accessor_edge_cases() -> Result<()> {
     // Test with empty strings and special characters
     let data = vec![
         "".to_string(),
-        "🦀".to_string(),  // Unicode emoji
-        "café".to_string(),  // Unicode accented characters
-        "hello\nworld".to_string(),  // Newline
-        "tab\tseparated".to_string(),  // Tab
+        "🦀".to_string(),             // Unicode emoji
+        "café".to_string(),           // Unicode accented characters
+        "hello\nworld".to_string(),   // Newline
+        "tab\tseparated".to_string(), // Tab
     ];
     let series = Series::new(data, Some("edge_test".to_string()))?;
     let str_accessor = series.str()?;
@@ -282,9 +285,9 @@ fn test_string_accessor_edge_cases() -> Result<()> {
     // Test length with Unicode (now returns character count, not byte count)
     let len_result = str_accessor.len()?;
     // Note: Now returns character count for proper Unicode support
-    assert_eq!(len_result.values()[0], 0i64);  // Empty string
-    assert_eq!(len_result.values()[1], 1i64);  // 🦀 is 1 character
-    assert_eq!(len_result.values()[2], 4i64);  // café is 4 characters (é is 1 char)
+    assert_eq!(len_result.values()[0], 0i64); // Empty string
+    assert_eq!(len_result.values()[1], 1i64); // 🦀 is 1 character
+    assert_eq!(len_result.values()[2], 4i64); // café is 4 characters (é is 1 char)
 
     // Test upper/lower with Unicode
     let upper_result = str_accessor.upper()?;
@@ -319,7 +322,7 @@ fn test_string_accessor_method_chaining_concept() -> Result<()> {
     let stripped = series.str()?.strip(None)?;
     let lowered = stripped.str()?.lower()?;
     let contains_result = lowered.str()?.contains("rust", true, false)?;
-    
+
     let expected_contains = vec![false, true, false];
     assert_eq!(contains_result.values(), &expected_contains);
 
@@ -327,7 +330,7 @@ fn test_string_accessor_method_chaining_concept() -> Result<()> {
     let stripped2 = series.str()?.strip(None)?;
     let titled = stripped2.str()?.title()?;
     let lengths = titled.str()?.len()?;
-    
+
     let expected_lengths = vec![11i64, 16i64, 9i64];
     assert_eq!(lengths.values(), &expected_lengths);
 

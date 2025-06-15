@@ -5,10 +5,10 @@
 
 use crate::core::error::{Error, Result};
 use crate::storage::unified_memory::*;
+use rayon::prelude::*;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Instant;
-use rayon::prelude::*;
 // Note: In production, would use actual compression libraries like lz4_flex and zstd
 
 /// Column store configuration
@@ -76,7 +76,7 @@ impl CompressionEngine for Lz4CompressionEngine {
         compressed.extend(data); // Simple "compression" - just copy data
         Ok(compressed)
     }
-    
+
     fn decompress(&self, data: &[u8]) -> Result<Vec<u8>> {
         // Placeholder implementation - in production would use lz4_flex
         if data.is_empty() {
@@ -84,11 +84,11 @@ impl CompressionEngine for Lz4CompressionEngine {
         }
         Ok(data[1..].to_vec()) // Skip length byte
     }
-    
+
     fn name(&self) -> &'static str {
         "LZ4"
     }
-    
+
     fn compression_ratio(&self, original_size: usize, compressed_size: usize) -> f64 {
         if compressed_size == 0 {
             0.0
@@ -118,7 +118,7 @@ impl CompressionEngine for ZstdCompressionEngine {
         compressed.extend(data); // Simple "compression" - just copy data
         Ok(compressed)
     }
-    
+
     fn decompress(&self, data: &[u8]) -> Result<Vec<u8>> {
         // Placeholder implementation - in production would use zstd
         if data.len() < 2 {
@@ -126,11 +126,11 @@ impl CompressionEngine for ZstdCompressionEngine {
         }
         Ok(data[2..].to_vec()) // Skip length bytes
     }
-    
+
     fn name(&self) -> &'static str {
         "ZSTD"
     }
-    
+
     fn compression_ratio(&self, original_size: usize, compressed_size: usize) -> f64 {
         if compressed_size == 0 {
             0.0
@@ -147,15 +147,15 @@ impl CompressionEngine for NoCompressionEngine {
     fn compress(&self, data: &[u8]) -> Result<Vec<u8>> {
         Ok(data.to_vec())
     }
-    
+
     fn decompress(&self, data: &[u8]) -> Result<Vec<u8>> {
         Ok(data.to_vec())
     }
-    
+
     fn name(&self) -> &'static str {
         "None"
     }
-    
+
     fn compression_ratio(&self, _original_size: usize, _compressed_size: usize) -> f64 {
         1.0
     }
@@ -185,23 +185,24 @@ impl EncodingStrategy for RunLengthEncodingStrategy {
     fn encode(&self, data: &[u8]) -> Result<EncodedData> {
         let mut encoded = Vec::new();
         let mut i = 0;
-        
+
         while i < data.len() {
             let current_byte = data[i];
             let mut count = 1u8;
-            
+
             // Count consecutive identical bytes
-            while i + (count as usize) < data.len() && 
-                  data[i + (count as usize)] == current_byte && 
-                  count < 255 {
+            while i + (count as usize) < data.len()
+                && data[i + (count as usize)] == current_byte
+                && count < 255
+            {
                 count += 1;
             }
-            
+
             encoded.push(count);
             encoded.push(current_byte);
             i += count as usize;
         }
-        
+
         Ok(EncodedData {
             data: encoded,
             encoding_type: EncodingType::RunLength,
@@ -209,29 +210,29 @@ impl EncodingStrategy for RunLengthEncodingStrategy {
             metadata: HashMap::new(),
         })
     }
-    
+
     fn decode(&self, encoded: &EncodedData) -> Result<Vec<u8>> {
         let mut decoded = Vec::with_capacity(encoded.original_size);
         let mut i = 0;
-        
+
         while i + 1 < encoded.data.len() {
             let count = encoded.data[i];
             let byte_val = encoded.data[i + 1];
-            
+
             for _ in 0..count {
                 decoded.push(byte_val);
             }
-            
+
             i += 2;
         }
-        
+
         Ok(decoded)
     }
-    
+
     fn name(&self) -> &'static str {
         "RunLength"
     }
-    
+
     fn encoding_ratio(&self, original_size: usize, encoded_size: usize) -> f64 {
         if encoded_size == 0 {
             0.0
@@ -279,10 +280,17 @@ pub struct CompressedBlock {
 }
 
 impl CompressedBlock {
-    pub fn new(data: Vec<u8>, compression_type: CompressionType, encoding_type: EncodingType) -> Self {
+    pub fn new(
+        data: Vec<u8>,
+        compression_type: CompressionType,
+        encoding_type: EncodingType,
+    ) -> Self {
         let metadata = BlockMetadata {
             id: BlockId(0), // Will be set by block manager
-            location: BlockLocation { offset: 0, size: data.len() },
+            location: BlockLocation {
+                offset: 0,
+                size: data.len(),
+            },
             compressed_size: data.len(),
             uncompressed_size: data.len(), // Will be updated after compression
             compression_type,
@@ -294,7 +302,7 @@ impl CompressedBlock {
             null_count: 0,
             distinct_count: None,
         };
-        
+
         Self {
             data,
             compression_type,
@@ -302,19 +310,19 @@ impl CompressedBlock {
             metadata,
         }
     }
-    
+
     pub fn compressed_size(&self) -> usize {
         self.data.len()
     }
-    
+
     pub fn uncompressed_size(&self) -> usize {
         self.metadata.uncompressed_size
     }
-    
+
     pub fn checksum(&self) -> u64 {
         self.metadata.checksum
     }
-    
+
     fn compute_checksum(data: &[u8]) -> u64 {
         // Simple checksum - in production would use CRC32 or similar
         data.iter().map(|&b| b as u64).sum()
@@ -418,30 +426,33 @@ impl BlockManager {
             next_block_id: std::sync::atomic::AtomicU64::new(1),
         }
     }
-    
+
     pub fn write_block(&mut self, mut block: CompressedBlock) -> Result<BlockId> {
         // Assign block ID
-        let block_id = BlockId(self.next_block_id.fetch_add(1, std::sync::atomic::Ordering::SeqCst));
+        let block_id = BlockId(
+            self.next_block_id
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst),
+        );
         block.metadata.id = block_id;
-        
+
         // Find optimal location for block
         let location = self.allocator.allocate_space(block.compressed_size())?;
         block.metadata.location = location.clone();
-        
+
         // Write to physical storage
         self.storage.write_at_location(&location, &block.data)?;
-        
+
         // Update metadata index
         self.metadata_index.insert(block_id, block.metadata.clone());
-        
+
         // Update cache
         if let Ok(mut cache) = self.block_cache.lock() {
             cache.insert(block_id, block);
         }
-        
+
         Ok(block_id)
     }
-    
+
     pub fn read_block(&self, block_id: BlockId) -> Result<CompressedBlock> {
         // Check cache first
         if let Ok(cache) = self.block_cache.lock() {
@@ -449,13 +460,17 @@ impl BlockManager {
                 return Ok(block.clone());
             }
         }
-        
+
         // Read from physical storage
-        let metadata = self.metadata_index.get(&block_id)
+        let metadata = self
+            .metadata_index
+            .get(&block_id)
             .ok_or_else(|| Error::InvalidOperation(format!("Block {:?} not found", block_id)))?;
-        
-        let data = self.storage.read_at_location(&metadata.location, metadata.compressed_size)?;
-        
+
+        let data = self
+            .storage
+            .read_at_location(&metadata.location, metadata.compressed_size)?;
+
         // Verify checksum
         let computed_checksum = CompressedBlock::compute_checksum(&data);
         if computed_checksum != metadata.checksum {
@@ -464,19 +479,19 @@ impl BlockManager {
                 block_id, metadata.checksum, computed_checksum
             )));
         }
-        
+
         let block = CompressedBlock {
             data,
             compression_type: metadata.compression_type,
             encoding_type: metadata.encoding_type,
             metadata: metadata.clone(),
         };
-        
+
         // Update cache
         if let Ok(mut cache) = self.block_cache.lock() {
             cache.insert(block_id, block.clone());
         }
-        
+
         Ok(block)
     }
 }
@@ -509,38 +524,43 @@ impl PhysicalStorage for InMemoryPhysicalStorage {
     fn write_at_location(&mut self, location: &BlockLocation, data: &[u8]) -> Result<()> {
         let start = location.offset as usize;
         let end = start + data.len();
-        
+
         if end > self.data.len() {
-            return Err(Error::InvalidOperation("Not enough space in storage".to_string()));
+            return Err(Error::InvalidOperation(
+                "Not enough space in storage".to_string(),
+            ));
         }
-        
+
         self.data[start..end].copy_from_slice(data);
         self.allocated_regions.push((location.offset, data.len()));
-        
+
         Ok(())
     }
-    
+
     fn read_at_location(&self, location: &BlockLocation, size: usize) -> Result<Vec<u8>> {
         let start = location.offset as usize;
         let end = start + size;
-        
+
         if end > self.data.len() {
-            return Err(Error::InvalidOperation("Read beyond storage bounds".to_string()));
+            return Err(Error::InvalidOperation(
+                "Read beyond storage bounds".to_string(),
+            ));
         }
-        
+
         Ok(self.data[start..end].to_vec())
     }
-    
+
     fn delete_at_location(&mut self, location: &BlockLocation) -> Result<()> {
         // Mark space as available
-        self.allocated_regions.retain(|(offset, _)| *offset != location.offset);
+        self.allocated_regions
+            .retain(|(offset, _)| *offset != location.offset);
         Ok(())
     }
-    
+
     fn total_size(&self) -> u64 {
         self.data.len() as u64
     }
-    
+
     fn available_space(&self) -> u64 {
         let allocated: usize = self.allocated_regions.iter().map(|(_, size)| size).sum();
         (self.data.len() - allocated) as u64
@@ -556,15 +576,15 @@ impl BlockAllocator {
     pub fn new() -> Self {
         Self { next_offset: 0 }
     }
-    
+
     pub fn allocate_space(&mut self, size: usize) -> Result<BlockLocation> {
         let location = BlockLocation {
             offset: self.next_offset,
             size,
         };
-        
+
         self.next_offset += size as u64;
-        
+
         Ok(location)
     }
 }
@@ -580,14 +600,14 @@ impl FreeSpaceTracker {
             free_blocks: Vec::new(),
         }
     }
-    
+
     pub fn add_free_space(&mut self, offset: u64, size: usize) {
         self.free_blocks.push((offset, size));
         // Sort by offset for efficient merging
         self.free_blocks.sort_by_key(|(offset, _)| *offset);
         // TODO: Merge adjacent blocks
     }
-    
+
     pub fn find_space(&self, required_size: usize) -> Option<u64> {
         self.free_blocks
             .iter()
@@ -600,34 +620,39 @@ impl FreeSpaceTracker {
 pub struct UnifiedColumnStoreStrategy {
     /// Multiple compression backends
     compression_engines: HashMap<CompressionType, Box<dyn CompressionEngine>>,
-    
+
     /// Encoding strategies for different data types
     encoding_strategies: HashMap<EncodingType, Box<dyn EncodingStrategy>>,
-    
+
     /// Block-based storage management
     block_manager: Arc<Mutex<BlockManager>>,
-    
+
     /// Columnar metadata cache
     metadata_cache: Arc<RwLock<HashMap<String, ColumnStatistics>>>,
-    
+
     /// Configuration parameters
     config: ColumnStoreConfig,
 }
 
 impl UnifiedColumnStoreStrategy {
     pub fn new(config: ColumnStoreConfig) -> Self {
-        let mut compression_engines: HashMap<CompressionType, Box<dyn CompressionEngine>> = HashMap::new();
+        let mut compression_engines: HashMap<CompressionType, Box<dyn CompressionEngine>> =
+            HashMap::new();
         compression_engines.insert(CompressionType::None, Box::new(NoCompressionEngine));
         compression_engines.insert(CompressionType::Lz4, Box::new(Lz4CompressionEngine));
-        compression_engines.insert(CompressionType::Zstd, Box::new(ZstdCompressionEngine::new(3)));
-        
-        let mut encoding_strategies: HashMap<EncodingType, Box<dyn EncodingStrategy>> = HashMap::new();
+        compression_engines.insert(
+            CompressionType::Zstd,
+            Box::new(ZstdCompressionEngine::new(3)),
+        );
+
+        let mut encoding_strategies: HashMap<EncodingType, Box<dyn EncodingStrategy>> =
+            HashMap::new();
         encoding_strategies.insert(EncodingType::RunLength, Box::new(RunLengthEncodingStrategy));
-        
+
         // Create in-memory storage for this example
         let storage = Box::new(InMemoryPhysicalStorage::new(100 * 1024 * 1024)); // 100MB
         let block_manager = Arc::new(Mutex::new(BlockManager::new(storage)));
-        
+
         Self {
             compression_engines,
             encoding_strategies,
@@ -636,7 +661,7 @@ impl UnifiedColumnStoreStrategy {
             config,
         }
     }
-    
+
     fn determine_optimal_layout(&self, config: &StorageConfig) -> Result<ColumnLayout> {
         let data_type = match config.requirements.data_characteristics {
             DataCharacteristics::Numeric => ColumnDataType::Float64,
@@ -645,7 +670,7 @@ impl UnifiedColumnStoreStrategy {
             DataCharacteristics::Categorical => ColumnDataType::String,
             _ => ColumnDataType::Binary,
         };
-        
+
         Ok(ColumnLayout {
             name: "default".to_string(),
             data_type,
@@ -655,8 +680,11 @@ impl UnifiedColumnStoreStrategy {
             row_count: (config.requirements.estimated_size / 8) as u64, // Estimate
         })
     }
-    
-    fn select_compression_strategy(&self, characteristics: &DataCharacteristics) -> Result<CompressionType> {
+
+    fn select_compression_strategy(
+        &self,
+        characteristics: &DataCharacteristics,
+    ) -> Result<CompressionType> {
         match characteristics {
             DataCharacteristics::Text => Ok(CompressionType::Zstd), // Better for text
             DataCharacteristics::Numeric => Ok(CompressionType::Lz4), // Faster for numeric
@@ -664,8 +692,11 @@ impl UnifiedColumnStoreStrategy {
             _ => Ok(self.config.compression_type),
         }
     }
-    
-    fn select_encoding_strategy(&self, characteristics: &DataCharacteristics) -> Result<EncodingType> {
+
+    fn select_encoding_strategy(
+        &self,
+        characteristics: &DataCharacteristics,
+    ) -> Result<EncodingType> {
         match characteristics {
             DataCharacteristics::Categorical => Ok(EncodingType::Dictionary),
             DataCharacteristics::Sparse => Ok(EncodingType::RunLength),
@@ -673,65 +704,96 @@ impl UnifiedColumnStoreStrategy {
             _ => Ok(self.config.encoding_type),
         }
     }
-    
-    fn find_blocks_for_range(&self, handle: &ColumnStoreHandle, range: &ChunkRange) -> Result<Vec<BlockId>> {
+
+    fn find_blocks_for_range(
+        &self,
+        handle: &ColumnStoreHandle,
+        range: &ChunkRange,
+    ) -> Result<Vec<BlockId>> {
         // Simple implementation - return all blocks in range
         // In a real implementation, this would use spatial indexing
         Ok(handle.blocks.clone())
     }
-    
-    fn read_and_decompress_block(&self, _handle: &ColumnStoreHandle, block_id: BlockId) -> Result<Vec<u8>> {
-        let block_manager = self.block_manager.lock()
-            .map_err(|_| Error::InvalidOperation("Failed to acquire block manager lock".to_string()))?;
-        
+
+    fn read_and_decompress_block(
+        &self,
+        _handle: &ColumnStoreHandle,
+        block_id: BlockId,
+    ) -> Result<Vec<u8>> {
+        let block_manager = self.block_manager.lock().map_err(|_| {
+            Error::InvalidOperation("Failed to acquire block manager lock".to_string())
+        })?;
+
         let compressed_block = block_manager.read_block(block_id)?;
-        
+
         // Decompress
-        let compression_engine = self.compression_engines.get(&compressed_block.compression_type)
-            .ok_or_else(|| Error::InvalidOperation(format!("Compression engine {:?} not found", compressed_block.compression_type)))?;
-        
+        let compression_engine = self
+            .compression_engines
+            .get(&compressed_block.compression_type)
+            .ok_or_else(|| {
+                Error::InvalidOperation(format!(
+                    "Compression engine {:?} not found",
+                    compressed_block.compression_type
+                ))
+            })?;
+
         let decompressed_data = compression_engine.decompress(&compressed_block.data)?;
-        
+
         // Decode if necessary
         if compressed_block.encoding_type != EncodingType::None {
-            let encoding_strategy = self.encoding_strategies.get(&compressed_block.encoding_type)
-                .ok_or_else(|| Error::InvalidOperation(format!("Encoding strategy {:?} not found", compressed_block.encoding_type)))?;
-            
+            let encoding_strategy = self
+                .encoding_strategies
+                .get(&compressed_block.encoding_type)
+                .ok_or_else(|| {
+                    Error::InvalidOperation(format!(
+                        "Encoding strategy {:?} not found",
+                        compressed_block.encoding_type
+                    ))
+                })?;
+
             let encoded_data = EncodedData {
                 data: decompressed_data,
                 encoding_type: compressed_block.encoding_type,
                 original_size: compressed_block.uncompressed_size(),
                 metadata: HashMap::new(),
             };
-            
+
             encoding_strategy.decode(&encoded_data)
         } else {
             Ok(decompressed_data)
         }
     }
-    
+
     fn merge_blocks_to_chunk(&self, blocks: Vec<Vec<u8>>, _range: ChunkRange) -> Result<DataChunk> {
         // Simple concatenation - in real implementation would handle range properly
         let mut merged_data = Vec::new();
         for block in blocks {
             merged_data.extend(block);
         }
-        
+
         Ok(DataChunk::new(merged_data))
     }
-    
-    fn split_chunk_into_blocks(&self, chunk: &DataChunk, layout: &ColumnLayout) -> Result<Vec<Vec<u8>>> {
+
+    fn split_chunk_into_blocks(
+        &self,
+        chunk: &DataChunk,
+        layout: &ColumnLayout,
+    ) -> Result<Vec<Vec<u8>>> {
         let mut blocks = Vec::new();
         let chunk_size = layout.block_size;
-        
+
         for chunk_data in chunk.data.chunks(chunk_size) {
             blocks.push(chunk_data.to_vec());
         }
-        
+
         Ok(blocks)
     }
-    
-    fn compress_and_encode_block(&self, handle: &ColumnStoreHandle, block: &[u8]) -> Result<CompressedBlock> {
+
+    fn compress_and_encode_block(
+        &self,
+        handle: &ColumnStoreHandle,
+        block: &[u8],
+    ) -> Result<CompressedBlock> {
         // Encode first if needed
         let encoded_data = if handle.encoding_type != EncodingType::None {
             if let Some(encoding_strategy) = self.encoding_strategies.get(&handle.encoding_type) {
@@ -743,10 +805,11 @@ impl UnifiedColumnStoreStrategy {
         } else {
             block.to_vec()
         };
-        
+
         // Then compress
         let compressed_data = if handle.compression_type != CompressionType::None {
-            if let Some(compression_engine) = self.compression_engines.get(&handle.compression_type) {
+            if let Some(compression_engine) = self.compression_engines.get(&handle.compression_type)
+            {
                 compression_engine.compress(&encoded_data)?
             } else {
                 encoded_data
@@ -754,30 +817,35 @@ impl UnifiedColumnStoreStrategy {
         } else {
             encoded_data
         };
-        
+
         let mut compressed_block = CompressedBlock::new(
             compressed_data,
             handle.compression_type,
             handle.encoding_type,
         );
-        
+
         compressed_block.metadata.uncompressed_size = block.len();
-        
+
         Ok(compressed_block)
     }
-    
-    fn update_column_statistics(&mut self, handle: &ColumnStoreHandle, chunk: &DataChunk) -> Result<()> {
+
+    fn update_column_statistics(
+        &mut self,
+        handle: &ColumnStoreHandle,
+        chunk: &DataChunk,
+    ) -> Result<()> {
         if let Ok(mut cache) = self.metadata_cache.write() {
-            let stats = cache.entry(handle.layout.name.clone())
+            let stats = cache
+                .entry(handle.layout.name.clone())
                 .or_insert_with(ColumnStatistics::new);
-            
+
             stats.total_size += chunk.len() as u64;
             // TODO: Update other statistics
         }
-        
+
         Ok(())
     }
-    
+
     fn average_compression_ratio(&self) -> f64 {
         // Return estimated compression ratio
         2.5 // Placeholder
@@ -788,16 +856,18 @@ impl StorageStrategy for UnifiedColumnStoreStrategy {
     type Handle = ColumnStoreHandle;
     type Error = Error;
     type Metadata = ColumnStatistics;
-    
+
     fn name(&self) -> &'static str {
         "UnifiedColumnStore"
     }
-    
+
     fn create_storage(&mut self, config: &StorageConfig) -> Result<Self::Handle> {
         let layout = self.determine_optimal_layout(config)?;
-        let compression_type = self.select_compression_strategy(&config.requirements.data_characteristics)?;
-        let encoding_type = self.select_encoding_strategy(&config.requirements.data_characteristics)?;
-        
+        let compression_type =
+            self.select_compression_strategy(&config.requirements.data_characteristics)?;
+        let encoding_type =
+            self.select_encoding_strategy(&config.requirements.data_characteristics)?;
+
         let handle = ColumnStoreHandle {
             layout,
             compression_type,
@@ -805,16 +875,17 @@ impl StorageStrategy for UnifiedColumnStoreStrategy {
             blocks: Vec::new(),
             statistics: ColumnStatistics::new(),
         };
-        
+
         Ok(handle)
     }
-    
+
     fn read_chunk(&self, handle: &Self::Handle, range: ChunkRange) -> Result<DataChunk> {
         // Find relevant blocks for the chunk range
         let relevant_blocks = self.find_blocks_for_range(handle, &range)?;
-        
+
         // Read and decompress blocks in parallel if enabled
-        let block_data: Result<Vec<_>> = if self.config.enable_parallel && relevant_blocks.len() > 1 {
+        let block_data: Result<Vec<_>> = if self.config.enable_parallel && relevant_blocks.len() > 1
+        {
             relevant_blocks
                 .par_iter()
                 .map(|&block_id| self.read_and_decompress_block(handle, block_id))
@@ -825,17 +896,17 @@ impl StorageStrategy for UnifiedColumnStoreStrategy {
                 .map(|&block_id| self.read_and_decompress_block(handle, block_id))
                 .collect()
         };
-        
+
         let blocks = block_data?;
-        
+
         // Merge blocks into requested chunk
         self.merge_blocks_to_chunk(blocks, range)
     }
-    
+
     fn write_chunk(&mut self, handle: &Self::Handle, chunk: DataChunk) -> Result<()> {
         // Split chunk into optimal blocks
         let blocks = self.split_chunk_into_blocks(&chunk, &handle.layout)?;
-        
+
         // Compress and encode blocks in parallel if enabled
         let compressed_blocks: Result<Vec<_>> = if self.config.enable_parallel && blocks.len() > 1 {
             blocks
@@ -848,70 +919,71 @@ impl StorageStrategy for UnifiedColumnStoreStrategy {
                 .map(|block| self.compress_and_encode_block(handle, block))
                 .collect()
         };
-        
+
         let final_blocks = compressed_blocks?;
-        
+
         // Write blocks to storage
         {
-            let mut block_manager = self.block_manager.lock()
-                .map_err(|_| Error::InvalidOperation("Failed to acquire block manager lock".to_string()))?;
-            
+            let mut block_manager = self.block_manager.lock().map_err(|_| {
+                Error::InvalidOperation("Failed to acquire block manager lock".to_string())
+            })?;
+
             for block in final_blocks {
                 block_manager.write_block(block)?;
             }
         }
-        
+
         // Update statistics
         self.update_column_statistics(handle, &chunk)?;
-        
+
         Ok(())
     }
-    
+
     fn append_chunk(&mut self, handle: &Self::Handle, chunk: DataChunk) -> Result<()> {
         // For now, append is the same as write
         self.write_chunk(handle, chunk)
     }
-    
+
     fn flush(&mut self, _handle: &Self::Handle) -> Result<()> {
         // Column store is always flushed (in-memory for now)
         Ok(())
     }
-    
+
     fn delete_storage(&mut self, _handle: &Self::Handle) -> Result<()> {
         // TODO: Mark blocks for deletion
         Ok(())
     }
-    
+
     fn can_handle(&self, requirements: &StorageRequirements) -> StrategyCapability {
         let can_handle = match requirements.data_characteristics {
-            DataCharacteristics::Numeric | 
-            DataCharacteristics::TimeSeries | 
-            DataCharacteristics::Dense => true,
+            DataCharacteristics::Numeric
+            | DataCharacteristics::TimeSeries
+            | DataCharacteristics::Dense => true,
             _ => requirements.estimated_size > 1024 * 1024, // Good for larger datasets
         };
-        
+
         let confidence = if can_handle { 0.9 } else { 0.3 };
-        
+
         let performance_score = match requirements.performance_priority {
             PerformancePriority::Speed => 0.8,
             PerformancePriority::Memory => 0.9,
             PerformancePriority::Balanced => 0.85,
             _ => 0.7,
         };
-        
+
         StrategyCapability {
             can_handle,
             confidence,
             performance_score,
             resource_cost: ResourceCost {
                 memory: requirements.estimated_size / 2, // Compressed
-                cpu: 15.0, // Moderate CPU usage
-                disk: requirements.estimated_size / 3, // Good compression
+                cpu: 15.0,                               // Moderate CPU usage
+                disk: requirements.estimated_size / 3,   // Good compression
                 network: 0,
             },
         }
     }
-    
+
     fn performance_profile(&self) -> PerformanceProfile {
         PerformanceProfile {
             read_speed: Speed::VeryFast,
@@ -922,44 +994,44 @@ impl StorageStrategy for UnifiedColumnStoreStrategy {
             parallel_scalability: ParallelScalability::Excellent,
         }
     }
-    
+
     fn storage_stats(&self) -> StorageStats {
         // TODO: Implement real statistics gathering
         StorageStats::default()
     }
-    
+
     fn optimize_for_pattern(&mut self, pattern: AccessPattern) -> Result<()> {
         match pattern {
             AccessPattern::Sequential => {
                 // Optimize for sequential access
                 self.config.block_size = 256 * 1024; // Larger blocks
                 self.config.enable_parallel = false; // Sequential doesn't need parallelism
-            },
+            }
             AccessPattern::Random => {
                 // Optimize for random access
                 self.config.block_size = 16 * 1024; // Smaller blocks
                 self.config.enable_parallel = true;
-            },
+            }
             AccessPattern::Columnar => {
                 // Already optimized for columnar access
                 self.config.enable_dictionary = true;
                 self.config.compression_type = CompressionType::Zstd;
-            },
+            }
             _ => {
                 // Use default settings
             }
         }
-        
+
         Ok(())
     }
-    
+
     fn compact(&mut self, _handle: &Self::Handle) -> Result<CompactionResult> {
         let start_time = Instant::now();
-        
+
         // TODO: Implement real compaction
         let size_before = 1024 * 1024; // 1MB
         let size_after = 800 * 1024; // 800KB (20% reduction)
-        
+
         Ok(CompactionResult {
             size_before,
             size_after,
@@ -976,10 +1048,10 @@ mod tests {
     fn test_lz4_compression() {
         let engine = Lz4CompressionEngine;
         let data = b"Hello, World! This is a test string for compression.";
-        
+
         let compressed = engine.compress(data).unwrap();
         let decompressed = engine.decompress(&compressed).unwrap();
-        
+
         assert_eq!(data.to_vec(), decompressed);
         // Note: This is a placeholder implementation, so compression may not reduce size
     }
@@ -988,10 +1060,10 @@ mod tests {
     fn test_run_length_encoding() {
         let strategy = RunLengthEncodingStrategy;
         let data = b"aaaaabbbbcccccddddd";
-        
+
         let encoded = strategy.encode(data).unwrap();
         let decoded = strategy.decode(&encoded).unwrap();
-        
+
         assert_eq!(data.to_vec(), decoded);
         assert!(encoded.data.len() < data.len()); // Should be smaller for repetitive data
     }
@@ -1000,7 +1072,7 @@ mod tests {
     fn test_column_store_strategy() {
         let config = ColumnStoreConfig::default();
         let mut strategy = UnifiedColumnStoreStrategy::new(config);
-        
+
         let storage_config = StorageConfig {
             requirements: StorageRequirements {
                 estimated_size: 1024,
@@ -1009,7 +1081,7 @@ mod tests {
             },
             ..Default::default()
         };
-        
+
         let handle = strategy.create_storage(&storage_config).unwrap();
         assert_eq!(handle.layout.data_type, ColumnDataType::Float64);
     }
@@ -1018,16 +1090,16 @@ mod tests {
     fn test_block_manager() {
         let storage = Box::new(InMemoryPhysicalStorage::new(1024 * 1024));
         let mut manager = BlockManager::new(storage);
-        
+
         let block = CompressedBlock::new(
             vec![1, 2, 3, 4, 5],
             CompressionType::None,
             EncodingType::None,
         );
-        
+
         let block_id = manager.write_block(block).unwrap();
         let read_block = manager.read_block(block_id).unwrap();
-        
+
         assert_eq!(read_block.data, vec![1, 2, 3, 4, 5]);
     }
 
@@ -1035,14 +1107,14 @@ mod tests {
     fn test_capability_assessment() {
         let config = ColumnStoreConfig::default();
         let strategy = UnifiedColumnStoreStrategy::new(config);
-        
+
         let requirements = StorageRequirements {
             estimated_size: 10 * 1024 * 1024, // 10MB
             data_characteristics: DataCharacteristics::Numeric,
             performance_priority: PerformancePriority::Speed,
             ..Default::default()
         };
-        
+
         let capability = strategy.can_handle(&requirements);
         assert!(capability.can_handle);
         assert!(capability.confidence > 0.8);

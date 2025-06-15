@@ -12,14 +12,16 @@
 //! rather than being fully compilable, as it showcases planned Phase 2 Alpha.6 capabilities.
 
 use pandrs::dataframe::base::DataFrame;
-use pandrs::series::Series;
 use pandrs::error::Result;
+use pandrs::series::Series;
 
 #[cfg(feature = "parquet")]
 use pandrs::io::{ParquetCompression, ParquetMetadata, ParquetWriteOptions};
 
 #[cfg(feature = "sql")]
-use pandrs::io::sql::{DatabaseConnection, SqlWriteOptions, WriteMode, InsertMethod, TableSchema, ColumnDefinition};
+use pandrs::io::sql::{
+    ColumnDefinition, DatabaseConnection, InsertMethod, SqlWriteOptions, TableSchema, WriteMode,
+};
 
 #[cfg(any(feature = "parquet", feature = "sql"))]
 use std::collections::HashMap;
@@ -69,7 +71,12 @@ fn excel_enhancement_examples(_df: &DataFrame) -> Result<()> {
         };
 
         println!("Writing Excel file with enhanced formatting...");
-        write_excel_enhanced("demo_formatted.xlsx", df, Some("Financial_Data"), &write_options)?;
+        write_excel_enhanced(
+            "demo_formatted.xlsx",
+            df,
+            Some("Financial_Data"),
+            &write_options,
+        )?;
 
         // 2. Multi-sheet Excel Operations
         println!("Creating multi-sheet Excel workbook...");
@@ -261,10 +268,16 @@ fn write_excel_enhanced<P: AsRef<Path>>(
 ) -> Result<()> {
     // This would integrate with the enhanced Excel writer
     // For demonstration, we'll show the API usage
-    println!("  • Writing with formula preservation: {}", options.preserve_formulas);
+    println!(
+        "  • Writing with formula preservation: {}",
+        options.preserve_formulas
+    );
     println!("  • Applying cell formatting: {}", options.apply_formatting);
     println!("  • Including named ranges: {}", options.write_named_ranges);
-    println!("  • Large file optimization: {}", options.optimize_large_files);
+    println!(
+        "  • Large file optimization: {}",
+        options.optimize_large_files
+    );
 
     // Simulate enhanced Excel writing
     let sheet_name = sheet_name.unwrap_or("Sheet1");
@@ -278,15 +291,15 @@ fn write_excel_enhanced<P: AsRef<Path>>(
 fn create_multi_sheet_workbook(df: &DataFrame) -> Result<()> {
     println!("  Creating workbook with multiple sheets...");
 
-    let sheets = vec![
-        ("Summary", df),
-        ("Detailed_Data", df),
-        ("Analysis", df),
-    ];
+    let sheets = vec![("Summary", df), ("Detailed_Data", df), ("Analysis", df)];
 
     for (sheet_name, data) in sheets {
-        println!("    - Sheet '{}': {} rows, {} columns", 
-                 sheet_name, data.row_count(), data.column_count());
+        println!(
+            "    - Sheet '{}': {} rows, {} columns",
+            sheet_name,
+            data.row_count(),
+            data.column_count()
+        );
     }
 
     println!("  Multi-sheet workbook created with 3 sheets");
@@ -312,7 +325,10 @@ fn named_ranges_example(df: &DataFrame) -> Result<()> {
 
     println!("  Created named ranges:");
     for range in &named_ranges {
-        println!("    - {} ({}): {}", range.name, range.sheet_name, range.range);
+        println!(
+            "    - {} ({}): {}",
+            range.name, range.sheet_name, range.range
+        );
     }
 
     // Demonstrate formula preservation
@@ -333,7 +349,7 @@ fn named_ranges_example(df: &DataFrame) -> Result<()> {
 #[cfg(feature = "excel")]
 fn large_excel_file_example(df: &DataFrame) -> Result<()> {
     println!("  Testing large file optimization...");
-    
+
     let large_file_options = ExcelWriteOptions {
         optimize_large_files: true,
         preserve_formulas: false, // Disable for performance
@@ -391,9 +407,18 @@ fn advanced_excel_reading_example() -> Result<()> {
     };
 
     println!("  Advanced reading options:");
-    println!("    • Formula preservation: {}", read_options.preserve_formulas);
-    println!("    • Include formatting: {}", read_options.include_formatting);
-    println!("    • Read named ranges: {}", read_options.read_named_ranges);
+    println!(
+        "    • Formula preservation: {}",
+        read_options.preserve_formulas
+    );
+    println!(
+        "    • Include formatting: {}",
+        read_options.include_formatting
+    );
+    println!(
+        "    • Read named ranges: {}",
+        read_options.read_named_ranges
+    );
     println!("    • Memory mapping: {}", read_options.use_memory_map);
 
     // Simulate reading with enhanced options
@@ -403,7 +428,7 @@ fn advanced_excel_reading_example() -> Result<()> {
 }
 
 // ============================================================================
-// Parquet Advanced Features Implementation Examples  
+// Parquet Advanced Features Implementation Examples
 // ============================================================================
 
 fn schema_evolution_example(_df: &DataFrame) -> Result<()> {
@@ -411,14 +436,14 @@ fn schema_evolution_example(_df: &DataFrame) -> Result<()> {
 
     // Original schema
     println!("    • Original schema: 4 columns (name, price, volume, date)");
-    
+
     // Evolved schema (add new columns)
     println!("    • Evolved schema: 6 columns (added market_cap, sector)");
-    
+
     // Schema compatibility check
     println!("    • Backward compatibility: ✓ Verified");
     println!("    • Forward compatibility: ✓ Verified");
-    
+
     // Migration strategy
     println!("  Schema migration strategy:");
     println!("    • New columns: default values applied");
@@ -488,7 +513,10 @@ fn predicate_pushdown_example(large_df: &DataFrame) -> Result<()> {
     println!("  Performance improvement:");
     println!("    • Original rows: {}", original_rows);
     println!("    • Filtered rows: {}", filtered_rows);
-    println!("    • Data reduction: {:.1}%", (1.0 - filtered_rows as f64 / original_rows as f64) * 100.0);
+    println!(
+        "    • Data reduction: {:.1}%",
+        (1.0 - filtered_rows as f64 / original_rows as f64) * 100.0
+    );
     println!("    • Read time reduction: ~75%");
 
     Ok(())
@@ -505,14 +533,23 @@ fn streaming_parquet_example(large_df: &DataFrame) -> Result<()> {
     println!("  Streaming configuration:");
     println!("    • Chunk size: {} rows", chunk_size);
     println!("    • Total chunks: {}", num_chunks);
-    println!("    • Memory usage: ~{} MB per chunk", chunk_size * 8 / 1024 / 1024);
+    println!(
+        "    • Memory usage: ~{} MB per chunk",
+        chunk_size * 8 / 1024 / 1024
+    );
 
     // Simulate streaming write
     println!("  Streaming write progress:");
     for i in 0..num_chunks {
         let start_row = i * chunk_size;
         let end_row = (start_row + chunk_size).min(total_rows);
-        println!("    • Chunk {}/{}: rows {}-{}", i + 1, num_chunks, start_row, end_row);
+        println!(
+            "    • Chunk {}/{}: rows {}-{}",
+            i + 1,
+            num_chunks,
+            start_row,
+            end_row
+        );
     }
 
     println!("  Streaming operations completed successfully");
@@ -538,8 +575,11 @@ fn schema_analysis_example() -> Result<()> {
 
     // Complexity assessment
     let complexity_score = 7.5;
-    println!("  Overall complexity score: {}/10 (moderate)", complexity_score);
-    
+    println!(
+        "  Overall complexity score: {}/10 (moderate)",
+        complexity_score
+    );
+
     if complexity_score > 8.0 {
         println!("  Recommendation: Consider schema normalization");
     } else {
@@ -558,17 +598,28 @@ fn chunked_parquet_processing_example(large_df: &DataFrame) -> Result<()> {
 
     println!("  Chunking configuration:");
     println!("    • Memory limit: {} MB", memory_limit_mb);
-    println!("    • Estimated row size: {} bytes", estimated_row_size_bytes);
+    println!(
+        "    • Estimated row size: {} bytes",
+        estimated_row_size_bytes
+    );
     println!("    • Rows per chunk: {}", rows_per_chunk);
 
     let total_rows = large_df.row_count();
     let num_chunks = (total_rows + rows_per_chunk - 1) / rows_per_chunk;
 
-    println!("  Processing {} chunks for {} total rows", num_chunks, total_rows);
+    println!(
+        "  Processing {} chunks for {} total rows",
+        num_chunks, total_rows
+    );
 
     // Simulate processing each chunk
-    for i in 0..num_chunks.min(3) { // Show first 3 chunks
-        println!("    • Processing chunk {}: memory usage ~{} MB", i + 1, memory_limit_mb);
+    for i in 0..num_chunks.min(3) {
+        // Show first 3 chunks
+        println!(
+            "    • Processing chunk {}: memory usage ~{} MB",
+            i + 1,
+            memory_limit_mb
+        );
     }
 
     if num_chunks > 3 {
@@ -596,16 +647,26 @@ fn parquet_metadata_analysis_example() -> Result<()> {
     println!("  File metadata:");
     println!("    • Rows: {}", metadata.num_rows);
     println!("    • Row groups: {}", metadata.num_row_groups);
-    println!("    • File size: {:.2} MB", metadata.file_size.unwrap_or(0) as f64 / 1024.0 / 1024.0);
+    println!(
+        "    • File size: {:.2} MB",
+        metadata.file_size.unwrap_or(0) as f64 / 1024.0 / 1024.0
+    );
     println!("    • Compression: {}", metadata.compression);
-    println!("    • Created by: {}", metadata.created_by.unwrap_or("Unknown".to_string()));
+    println!(
+        "    • Created by: {}",
+        metadata.created_by.unwrap_or("Unknown".to_string())
+    );
 
     // Row group analysis
     println!("  Row group analysis:");
     for i in 0..metadata.num_row_groups {
         let rows_in_group = metadata.num_rows / metadata.num_row_groups as i64;
-        println!("    • Group {}: {} rows, ~{} KB", 
-                 i + 1, rows_in_group, (metadata.file_size.unwrap_or(0) / metadata.num_row_groups as i64) / 1024);
+        println!(
+            "    • Group {}: {} rows, ~{} KB",
+            i + 1,
+            rows_in_group,
+            (metadata.file_size.unwrap_or(0) / metadata.num_row_groups as i64) / 1024
+        );
     }
 
     Ok(())
@@ -700,43 +761,48 @@ fn schema_introspection_example() -> Result<()> {
     println!("  Analyzing database schema...");
 
     // Simulate schema introspection
-    let tables = vec![
-        TableSchema {
-            name: "financial_data".to_string(),
-            columns: vec![
-                ColumnDefinition {
-                    name: "id".to_string(),
-                    data_type: "INTEGER PRIMARY KEY".to_string(),
-                    nullable: false,
-                    default_value: None,
-                },
-                ColumnDefinition {
-                    name: "name".to_string(),
-                    data_type: "VARCHAR(100)".to_string(),
-                    nullable: false,
-                    default_value: None,
-                },
-                ColumnDefinition {
-                    name: "price".to_string(),
-                    data_type: "DECIMAL(10,2)".to_string(),
-                    nullable: true,
-                    default_value: Some("0.00".to_string()),
-                },
-            ],
-            primary_keys: vec!["id".to_string()],
-            foreign_keys: vec![],
-        },
-    ];
+    let tables = vec![TableSchema {
+        name: "financial_data".to_string(),
+        columns: vec![
+            ColumnDefinition {
+                name: "id".to_string(),
+                data_type: "INTEGER PRIMARY KEY".to_string(),
+                nullable: false,
+                default_value: None,
+            },
+            ColumnDefinition {
+                name: "name".to_string(),
+                data_type: "VARCHAR(100)".to_string(),
+                nullable: false,
+                default_value: None,
+            },
+            ColumnDefinition {
+                name: "price".to_string(),
+                data_type: "DECIMAL(10,2)".to_string(),
+                nullable: true,
+                default_value: Some("0.00".to_string()),
+            },
+        ],
+        primary_keys: vec!["id".to_string()],
+        foreign_keys: vec![],
+    }];
 
     println!("  Database schema analysis:");
     for table in &tables {
         println!("    • Table: {}", table.name);
         println!("      - Columns: {}", table.columns.len());
         println!("      - Primary keys: {:?}", table.primary_keys);
-        
+
         for column in &table.columns {
-            let nullable_str = if column.nullable { "nullable" } else { "NOT NULL" };
-            println!("        - {} ({}) {}", column.name, column.data_type, nullable_str);
+            let nullable_str = if column.nullable {
+                "nullable"
+            } else {
+                "NOT NULL"
+            };
+            println!(
+                "        - {} ({}) {}",
+                column.name, column.data_type, nullable_str
+            );
         }
     }
 
@@ -755,7 +821,10 @@ fn bulk_insert_example(df: &DataFrame) -> Result<()> {
     };
 
     println!("  Bulk insert configuration:");
-    println!("    • Chunk size: {} rows", write_options.chunksize.unwrap_or(1));
+    println!(
+        "    • Chunk size: {} rows",
+        write_options.chunksize.unwrap_or(1)
+    );
     println!("    • Insert method: {:?}", write_options.method);
     println!("    • Mode: {:?}", write_options.if_exists);
 
@@ -765,10 +834,17 @@ fn bulk_insert_example(df: &DataFrame) -> Result<()> {
     let num_chunks = (total_rows + chunk_size - 1) / chunk_size;
 
     println!("  Bulk insert progress:");
-    for i in 0..num_chunks.min(3) { // Show first 3 chunks
+    for i in 0..num_chunks.min(3) {
+        // Show first 3 chunks
         let start_row = i * chunk_size;
         let end_row = (start_row + chunk_size).min(total_rows);
-        println!("    • Chunk {}/{}: inserted rows {}-{}", i + 1, num_chunks, start_row, end_row);
+        println!(
+            "    • Chunk {}/{}: inserted rows {}-{}",
+            i + 1,
+            num_chunks,
+            start_row,
+            end_row
+        );
     }
 
     if num_chunks > 3 {
@@ -825,19 +901,19 @@ fn multi_database_example(df: &DataFrame) -> Result<()> {
         match db {
             DatabaseConnection::Sqlite(path) => {
                 println!("    {}. SQLite: {}", i + 1, path);
-            },
+            }
             #[cfg(feature = "sql")]
             DatabaseConnection::PostgreSQL(_) => {
                 println!("    {}. PostgreSQL: Connected", i + 1);
-            },
+            }
             #[cfg(feature = "sql")]
             DatabaseConnection::MySQL(_) => {
                 println!("    {}. MySQL: Connected", i + 1);
-            },
+            }
             #[cfg(feature = "sql")]
             DatabaseConnection::Generic(_) => {
                 println!("    {}. Generic database: Connected", i + 1);
-            },
+            }
         }
     }
 
@@ -860,7 +936,7 @@ fn excel_to_parquet_migration(_df: &DataFrame) -> Result<()> {
     println!("  Migration process:");
     println!("    • Source: Excel file (15 MB, multiple sheets)");
     println!("    • Target: Parquet file with Zstd compression");
-    
+
     let conversion_stats = vec![
         ("File size reduction", "15 MB → 4.2 MB (72% reduction)"),
         ("Read performance", "15x faster"),
@@ -880,9 +956,18 @@ fn database_to_excel_reporting(_df: &DataFrame) -> Result<()> {
     println!("  Generating Excel reports from database queries...");
 
     let reports = vec![
-        ("Monthly Sales Report", "financial_data WHERE date >= CURRENT_DATE - INTERVAL '30 days'"),
-        ("Top Performers", "SELECT * FROM financial_data ORDER BY performance DESC LIMIT 100"),
-        ("Risk Analysis", "Complex multi-table join with statistical calculations"),
+        (
+            "Monthly Sales Report",
+            "financial_data WHERE date >= CURRENT_DATE - INTERVAL '30 days'",
+        ),
+        (
+            "Top Performers",
+            "SELECT * FROM financial_data ORDER BY performance DESC LIMIT 100",
+        ),
+        (
+            "Risk Analysis",
+            "Complex multi-table join with statistical calculations",
+        ),
     ];
 
     println!("  Generated reports:");
@@ -932,23 +1017,29 @@ fn format_performance_comparison(_df: &DataFrame) -> Result<()> {
     println!("  Comparing I/O performance across formats...");
 
     let formats = vec![
-        ("CSV", 1000, 350, 120),          // Read(ms), Write(ms), Size(MB)
+        ("CSV", 1000, 350, 120), // Read(ms), Write(ms), Size(MB)
         ("Excel", 2500, 1200, 180),
         ("Parquet (Snappy)", 150, 200, 45),
         ("Parquet (Zstd)", 180, 350, 32),
         ("SQLite", 300, 450, 85),
-        ("PostgreSQL", 250, 300, 0),     // Size N/A for database
+        ("PostgreSQL", 250, 300, 0), // Size N/A for database
     ];
 
     println!("  Performance comparison (100K rows):");
     println!("    Format                | Read (ms) | Write (ms) | Size (MB)");
     println!("    ---------------------|-----------|------------|----------");
-    
+
     for (format, read_ms, write_ms, size_mb) in formats {
         if size_mb > 0 {
-            println!("    {:20} | {:9} | {:10} | {:8}", format, read_ms, write_ms, size_mb);
+            println!(
+                "    {:20} | {:9} | {:10} | {:8}",
+                format, read_ms, write_ms, size_mb
+            );
         } else {
-            println!("    {:20} | {:9} | {:10} | {:8}", format, read_ms, write_ms, "N/A");
+            println!(
+                "    {:20} | {:9} | {:10} | {:8}",
+                format, read_ms, write_ms, "N/A"
+            );
         }
     }
 
@@ -969,8 +1060,14 @@ fn memory_optimization_example(_large_df: &DataFrame) -> Result<()> {
     println!("  Testing memory-efficient I/O operations...");
 
     let memory_strategies = vec![
-        ("Streaming reads", "Process data in chunks, ~10x less memory"),
-        ("Column pruning", "Read only required columns, ~5x less memory"),
+        (
+            "Streaming reads",
+            "Process data in chunks, ~10x less memory",
+        ),
+        (
+            "Column pruning",
+            "Read only required columns, ~5x less memory",
+        ),
         ("Lazy evaluation", "Defer operations until needed"),
         ("Memory mapping", "OS-level memory management"),
         ("Compression", "In-memory compression for large datasets"),
@@ -1010,10 +1107,16 @@ fn parallel_io_example(large_df: &DataFrame) -> Result<()> {
     let speedup = single_threaded_time as f64 / parallel_time as f64;
 
     println!("  Performance improvement:");
-    println!("    • Single-threaded time: {} seconds", single_threaded_time);
+    println!(
+        "    • Single-threaded time: {} seconds",
+        single_threaded_time
+    );
     println!("    • Parallel time: {} seconds", parallel_time);
     println!("    • Speedup: {:.1}x", speedup);
-    println!("    • Efficiency: {:.1}%", (speedup / num_threads as f64) * 100.0);
+    println!(
+        "    • Efficiency: {:.1}%",
+        (speedup / num_threads as f64) * 100.0
+    );
 
     Ok(())
 }
@@ -1036,10 +1139,16 @@ fn large_dataset_streaming_example(large_df: &DataFrame) -> Result<()> {
 
     // Simulate streaming processing
     println!("  Streaming processing simulation:");
-    println!("    • Reading chunk 1/{}: loaded {} MB", num_chunks, chunk_size_mb);
+    println!(
+        "    • Reading chunk 1/{}: loaded {} MB",
+        num_chunks, chunk_size_mb
+    );
     println!("    • Processing: applying transformations...");
     println!("    • Writing results: chunk completed");
-    println!("    • Memory usage: {} MB (within {} GB limit)", chunk_size_mb, memory_limit_gb);
+    println!(
+        "    • Memory usage: {} MB (within {} GB limit)",
+        chunk_size_mb, memory_limit_gb
+    );
 
     for i in 2..=5.min(num_chunks) {
         println!("    • Processing chunk {}/{}: completed", i, num_chunks);
@@ -1057,10 +1166,22 @@ fn io_performance_benchmarks(_large_df: &DataFrame) -> Result<()> {
     println!("  Benchmarking I/O operations...");
 
     let benchmarks = vec![
-        ("Sequential read", vec![("CSV", 850), ("Parquet", 120), ("Excel", 2100)]),
-        ("Random access", vec![("CSV", 1200), ("Parquet", 35), ("Excel", 3500)]),
-        ("Filtered read", vec![("CSV", 950), ("Parquet", 25), ("Excel", 2800)]),
-        ("Aggregation", vec![("CSV", 1100), ("Parquet", 45), ("Excel", 4200)]),
+        (
+            "Sequential read",
+            vec![("CSV", 850), ("Parquet", 120), ("Excel", 2100)],
+        ),
+        (
+            "Random access",
+            vec![("CSV", 1200), ("Parquet", 35), ("Excel", 3500)],
+        ),
+        (
+            "Filtered read",
+            vec![("CSV", 950), ("Parquet", 25), ("Excel", 2800)],
+        ),
+        (
+            "Aggregation",
+            vec![("CSV", 1100), ("Parquet", 45), ("Excel", 4200)],
+        ),
     ];
 
     for (operation, results) in benchmarks {
@@ -1085,51 +1206,78 @@ fn io_performance_benchmarks(_large_df: &DataFrame) -> Result<()> {
 
 fn create_sample_financial_dataframe() -> Result<DataFrame> {
     let mut df = DataFrame::new();
-    
+
     let names = vec!["AAPL", "GOOGL", "MSFT", "AMZN", "TSLA"];
     let prices = vec![150.25, 2800.50, 300.75, 3200.00, 800.25];
     let volumes = vec![1500000, 800000, 1200000, 900000, 2000000];
-    let dates = vec!["2024-12-15", "2024-12-15", "2024-12-15", "2024-12-15", "2024-12-15"];
+    let dates = vec![
+        "2024-12-15",
+        "2024-12-15",
+        "2024-12-15",
+        "2024-12-15",
+        "2024-12-15",
+    ];
 
-    df.add_column("name".to_string(), Series::new(
-        names.into_iter().map(|s| s.to_string()).collect(),
-        Some("name".to_string())
-    )?)?;
+    df.add_column(
+        "name".to_string(),
+        Series::new(
+            names.into_iter().map(|s| s.to_string()).collect(),
+            Some("name".to_string()),
+        )?,
+    )?;
 
-    df.add_column("price".to_string(), Series::new(
-        prices.into_iter().map(|p| p.to_string()).collect(),
-        Some("price".to_string())
-    )?)?;
+    df.add_column(
+        "price".to_string(),
+        Series::new(
+            prices.into_iter().map(|p| p.to_string()).collect(),
+            Some("price".to_string()),
+        )?,
+    )?;
 
-    df.add_column("volume".to_string(), Series::new(
-        volumes.into_iter().map(|v| v.to_string()).collect(),
-        Some("volume".to_string())
-    )?)?;
+    df.add_column(
+        "volume".to_string(),
+        Series::new(
+            volumes.into_iter().map(|v| v.to_string()).collect(),
+            Some("volume".to_string()),
+        )?,
+    )?;
 
-    df.add_column("date".to_string(), Series::new(
-        dates.into_iter().map(|d| d.to_string()).collect(),
-        Some("date".to_string())
-    )?)?;
+    df.add_column(
+        "date".to_string(),
+        Series::new(
+            dates.into_iter().map(|d| d.to_string()).collect(),
+            Some("date".to_string()),
+        )?,
+    )?;
 
     Ok(df)
 }
 
 fn create_large_dataset(size: usize) -> Result<DataFrame> {
     let mut df = DataFrame::new();
-    
+
     let mut names = Vec::with_capacity(size);
     let mut prices = Vec::with_capacity(size);
     let mut volumes = Vec::with_capacity(size);
-    
+
     for i in 0..size {
         names.push(format!("STOCK_{}", i % 1000));
         prices.push((100.0 + (i as f64 * 0.1) % 500.0).to_string());
         volumes.push(((1000000 + i * 1000) % 10000000).to_string());
     }
-    
-    df.add_column("name".to_string(), Series::new(names, Some("name".to_string()))?)?;
-    df.add_column("price".to_string(), Series::new(prices, Some("price".to_string()))?)?;
-    df.add_column("volume".to_string(), Series::new(volumes, Some("volume".to_string()))?)?;
-    
+
+    df.add_column(
+        "name".to_string(),
+        Series::new(names, Some("name".to_string()))?,
+    )?;
+    df.add_column(
+        "price".to_string(),
+        Series::new(prices, Some("price".to_string()))?,
+    )?;
+    df.add_column(
+        "volume".to_string(),
+        Series::new(volumes, Some("volume".to_string()))?,
+    )?;
+
     Ok(df)
 }

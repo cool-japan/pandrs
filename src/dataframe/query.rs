@@ -2,7 +2,7 @@
 //!
 //! This module provides pandas-like query functionality and expression evaluation:
 //! - String-based query expressions (.query() method)
-//! - Expression evaluation (.eval() method) 
+//! - Expression evaluation (.eval() method)
 //! - Boolean indexing with complex conditions
 //! - Support for mathematical operations and comparisons
 //! - Variable substitution and context evaluation
@@ -14,12 +14,12 @@
 //! - engine: Query engine and DataFrame integration (~320 lines)
 
 mod ast;
-mod lexer_parser;
-mod evaluator;
 mod engine;
+mod evaluator;
+mod lexer_parser;
 
 // Re-export all public APIs to maintain backward compatibility
-pub use ast::{Token, Expr, LiteralValue, BinaryOp, UnaryOp};
-pub use lexer_parser::{Lexer, Parser};
-pub use evaluator::{QueryContext, Evaluator, JitEvaluator, OptimizedEvaluator, JitQueryStats};
+pub use ast::{BinaryOp, Expr, LiteralValue, Token, UnaryOp};
 pub use engine::{QueryEngine, QueryExt};
+pub use evaluator::{Evaluator, JitEvaluator, JitQueryStats, OptimizedEvaluator, QueryContext};
+pub use lexer_parser::{Lexer, Parser};
