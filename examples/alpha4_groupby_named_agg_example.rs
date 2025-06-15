@@ -4,6 +4,7 @@ use pandrs::series::base::Series;
 use pandrs::error::Result;
 use std::collections::HashMap;
 
+#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     println!("=== Alpha 4 Enhanced GroupBy with Named Aggregations Example ===\n");
 

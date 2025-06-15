@@ -2,6 +2,7 @@ use pandrs::error::Result;
 use pandrs::{Column, OptimizedDataFrame, StringColumn};
 
 #[test]
+#[allow(clippy::result_large_err)]
 fn test_optimized_multi_index_simulation() -> Result<()> {
     // Simulate multi-index in OptimizedDataFrame
     // This is a test until actual multi-index functionality is implemented

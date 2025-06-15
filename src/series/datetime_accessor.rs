@@ -203,7 +203,7 @@ impl DateTimeAccessor {
     /// # Examples
     /// ```
     /// use pandrs::Series;
-    /// use chrono::NaiveDate;
+    /// use chrono::{NaiveDate, Timelike};
     /// let data = vec![NaiveDate::from_ymd_opt(2023, 12, 25).unwrap().and_hms_opt(14, 30, 45).unwrap()];
     /// let series = Series::new(data, None).unwrap();
     /// let rounded = series.dt().unwrap().round("H").unwrap();
@@ -369,7 +369,7 @@ impl DateTimeAccessor {
     /// # Examples
     /// ```
     /// use pandrs::Series;
-    /// use chrono::NaiveDate;
+    /// use chrono::{NaiveDate, Datelike};
     /// let data = vec![NaiveDate::from_ymd_opt(2023, 12, 25).unwrap().and_hms_opt(14, 30, 45).unwrap()];
     /// let series = Series::new(data, None).unwrap();
     /// let plus_months = series.dt().unwrap().add_months(3).unwrap();
@@ -429,7 +429,7 @@ impl DateTimeAccessor {
     /// # Examples
     /// ```
     /// use pandrs::Series;
-    /// use chrono::NaiveDate;
+    /// use chrono::{NaiveDate, Datelike};
     /// let data = vec![NaiveDate::from_ymd_opt(2023, 12, 25).unwrap().and_hms_opt(14, 30, 45).unwrap()];
     /// let series = Series::new(data, None).unwrap();
     /// let plus_years = series.dt().unwrap().add_years(2).unwrap();

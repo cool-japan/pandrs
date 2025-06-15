@@ -26,9 +26,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     let age_col = df.column("Age")?;
     let mut age_filter = vec![false; df.row_count()];
     if let Some(int_col) = age_col.as_int64() {
-        for i in 0..df.row_count() {
+        for (i, filter_val) in age_filter.iter_mut().enumerate().take(df.row_count()) {
             if let Ok(Some(age)) = int_col.get(i) {
-                age_filter[i] = age >= 30;
+                *filter_val = age >= 30;
             }
         }
     }
@@ -104,9 +104,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     let age_col = df.column("Age")?;
     let mut age_filter = vec![false; df.row_count()];
     if let Some(int_col) = age_col.as_int64() {
-        for i in 0..df.row_count() {
+        for (i, filter_val) in age_filter.iter_mut().enumerate().take(df.row_count()) {
             if let Ok(Some(age)) = int_col.get(i) {
-                age_filter[i] = age >= 30;
+                *filter_val = age >= 30;
             }
         }
     }
@@ -168,7 +168,7 @@ fn generate_large_dataframe(rows: usize) -> Result<OptimizedDataFrame, Box<dyn E
     let mut salaries = Vec::with_capacity(rows);
 
     // List of departments
-    let departments = vec![
+    let departments = [
         "Sales".to_string(),
         "Development".to_string(),
         "HR".to_string(),

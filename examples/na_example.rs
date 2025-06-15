@@ -1,6 +1,7 @@
 use pandrs::error::Result;
 use pandrs::{NASeries, NA};
 
+#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     println!("=== Support for NA Values (Missing Data) ===");
 

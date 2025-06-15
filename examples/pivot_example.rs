@@ -2,6 +2,7 @@ use pandrs::error::Result;
 use pandrs::pivot::AggFunction;
 use pandrs::{DataFrame, Series};
 
+#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     println!("=== Pivot Table and Grouping Example ===");
 

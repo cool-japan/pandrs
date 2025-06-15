@@ -1,6 +1,7 @@
 use pandrs::error::Result;
 use pandrs::optimized::OptimizedDataFrame;
 
+#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     println!("=== Multi-Index GroupBy Example ===");
 
@@ -8,8 +9,8 @@ fn main() -> Result<()> {
     let mut df = OptimizedDataFrame::new();
 
     // Add columns
-    let categories = vec!["A", "A", "B", "B", "A", "B", "A", "B", "C", "C"];
-    let regions = vec![
+    let categories = ["A", "A", "B", "B", "A", "B", "A", "B", "C", "C"];
+    let regions = [
         "East", "West", "East", "West", "East", "East", "West", "West", "East", "West",
     ];
     let values = vec![10, 15, 20, 25, 12, 22, 18, 24, 30, 35];

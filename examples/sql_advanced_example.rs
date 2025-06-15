@@ -15,11 +15,12 @@ use pandrs::io::{
 #[allow(unused_imports)]
 use std::collections::HashMap;
 
+#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     #[cfg(not(feature = "sql"))]
     {
         println!("SQL feature is not enabled. Enable it with --features sql");
-        return Ok(());
+        Ok(())
     }
     
     #[cfg(feature = "sql")]

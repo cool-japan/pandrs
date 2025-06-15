@@ -3,6 +3,7 @@ use pandrs::error::Result;
 use pandrs::series::datetime_accessor::datetime_constructors;
 use chrono::NaiveDate;
 
+#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     println!("=== DateTime Accessor Example ===");
 

@@ -1,6 +1,7 @@
 use pandrs::{DataFrame, Series};
 use pandrs::error::Result;
 
+#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     println!("=== String Accessor Example ===");
 

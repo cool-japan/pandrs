@@ -6,7 +6,6 @@ use pandrs::*;
 /// 
 /// This example demonstrates the performance improvements introduced in alpha.4
 /// and validates the claims made in the documentation.
-
 fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     println!("🚀 PandRS Alpha.4 Performance Demonstration");
     println!("=============================================\n");
@@ -281,9 +280,9 @@ fn demo_series_operations() -> std::result::Result<(), Box<dyn std::error::Error
 
 /// Helper function to estimate memory usage
 fn estimate_memory_usage(strings: &[String]) -> f64 {
-    let string_overhead = std::mem::size_of::<String>();
+    let _string_overhead = std::mem::size_of::<String>();
     let total_capacity: usize = strings.iter().map(|s| s.capacity()).sum();
-    let total_overhead = strings.len() * string_overhead;
+    let total_overhead = std::mem::size_of_val(strings);
     
     ((total_capacity + total_overhead) as f64) / (1024.0 * 1024.0) // Convert to MB
 }

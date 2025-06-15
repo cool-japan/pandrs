@@ -13,9 +13,15 @@ pub mod view;
 pub mod window;
 pub mod enhanced_window;
 pub mod groupby_window;
+pub mod advanced_indexing;
+pub mod jit_window;
+pub mod hierarchical_groupby;
+pub mod multi_index_results;
 
 #[cfg(feature = "cuda")]
 pub mod gpu;
+#[cfg(feature = "cuda")]
+pub mod gpu_window;
 
 // Re-exports for convenience
 pub use apply::{ApplyExt, Axis};
@@ -42,10 +48,32 @@ pub use groupby_window::{
     GroupWiseWindowExt, GroupWiseRolling, GroupWiseExpanding, GroupWiseEWM, GroupWiseTimeRolling,
     GroupWiseRollingOps, GroupWiseExpandingOps, GroupWiseEWMOps, GroupWiseTimeRollingOps
 };
+pub use advanced_indexing::{
+    Index, IndexSetOps, DatetimeIndex, PeriodIndex, PeriodFrequency, Period, 
+    IntervalIndex, IntervalClosed, Interval, CategoricalIndex, IndexOperations, 
+    AdvancedIndexingExt as SpecializedIndexingExt, IndexType
+};
+pub use jit_window::{
+    JitDataFrameWindowExt, JitWindowContext, JitWindowStats, WindowOpType, WindowFunctionKey,
+    JitDataFrameRolling, JitDataFrameExpanding, JitDataFrameEWM, JitDataFrameRollingOps
+};
+pub use hierarchical_groupby::{
+    HierarchicalDataFrameGroupBy, HierarchicalGroupByExt, HierarchicalKey, GroupNode, 
+    GroupHierarchy, HierarchyStatistics, HierarchicalAgg, HierarchicalAggBuilder,
+    GroupNavigationContext, utils as hierarchical_utils
+};
+pub use multi_index_results::{
+    MultiIndexDataFrame, MultiIndexColumn, MultiIndexMetadata, MultiIndexDataFrameBuilder,
+    ColumnHierarchySummary, LevelSummary, ToMultiIndex, utils as multi_index_utils
+};
 
 // Optional feature re-exports
 #[cfg(feature = "cuda")]
 pub use gpu::DataFrameGpuExt;
+#[cfg(feature = "cuda")]
+pub use gpu_window::{
+    GpuDataFrameWindowExt, GpuWindowContext, GpuWindowStats, GpuDataFrameRolling
+};
 
 // Re-export from legacy module for backward compatibility
 #[deprecated(

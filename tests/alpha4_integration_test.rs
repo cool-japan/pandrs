@@ -20,6 +20,7 @@ use pandrs::io::sql::{read_sql, write_to_sql};
 
 /// Test the new DataFrame operations introduced in alpha.4
 #[test]
+#[allow(clippy::result_large_err)]
 fn test_alpha4_dataframe_operations() -> Result<()> {
     // Create a test DataFrame
     let mut df = DataFrame::new();
@@ -85,6 +86,7 @@ fn test_alpha4_dataframe_operations() -> Result<()> {
 
 /// Test OptimizedDataFrame with alpha.4 features
 #[test]
+#[allow(clippy::result_large_err)]
 fn test_alpha4_optimized_dataframe_operations() -> Result<()> {
     let mut df = OptimizedDataFrame::new();
     
@@ -441,6 +443,7 @@ fn test_alpha4_cross_feature_integration() -> Result<()> {
 
 /// Test error handling and edge cases in alpha.4 features
 #[test]
+#[allow(clippy::result_large_err)]
 fn test_alpha4_error_handling() -> Result<()> {
     let mut df = DataFrame::new();
     
@@ -472,6 +475,7 @@ fn test_alpha4_error_handling() -> Result<()> {
 
 /// Test performance characteristics of alpha.4 features
 #[test]
+#[allow(clippy::result_large_err)]
 fn test_alpha4_performance_characteristics() -> Result<()> {
     // Create a larger dataset for performance testing
     let size = 1000;

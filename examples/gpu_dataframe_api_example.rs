@@ -93,6 +93,7 @@ fn main() -> Result<()> {
 
 /// Create a sample DataFrame for benchmarking
 #[allow(dead_code)]
+#[allow(clippy::result_large_err)]
 fn create_sample_dataframe(size: usize) -> Result<DataFrame> {
     // Create data for columns
     let mut x1 = Vec::with_capacity(size);

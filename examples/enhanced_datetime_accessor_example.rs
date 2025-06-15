@@ -2,6 +2,7 @@ use pandrs::{DataFrame, Series};
 use pandrs::error::Result;
 use chrono::NaiveDate;
 
+#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     println!("=== Enhanced DateTime Accessor Example ===");
 

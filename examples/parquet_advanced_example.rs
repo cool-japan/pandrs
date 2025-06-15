@@ -11,6 +11,7 @@ use pandrs::io::{
     ParquetReadOptions, ParquetWriteOptions
 };
 
+#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     #[cfg(not(feature = "parquet"))]
     {

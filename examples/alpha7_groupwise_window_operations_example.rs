@@ -4,6 +4,7 @@ use pandrs::series::Series;
 use pandrs::error::Result;
 use chrono::{NaiveDateTime, Duration};
 
+#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     println!("PandRS Alpha.7: Group-wise Window Operations Example");
     println!("===================================================");
@@ -24,13 +25,13 @@ fn main() -> Result<()> {
         "2024-01-01 09:45:00", "2024-01-01 10:00:00", "2024-01-01 10:15:00",
     ];
     
-    let prices = vec![
+    let prices = [
         150.0, 152.5, 151.8, 153.2, 154.1, 152.9,  // AAPL
         2800.0, 2825.0, 2810.0, 2835.0, 2845.0, 2820.0,  // GOOGL
         400.0, 402.5, 401.8, 403.2, 404.1, 402.9,  // MSFT
     ];
     
-    let volumes = vec![
+    let volumes = [
         1000, 1500, 1200, 1800, 2200, 1600,  // AAPL
         500, 750, 600, 900, 1100, 800,       // GOOGL
         800, 1200, 960, 1440, 1760, 1280,    // MSFT

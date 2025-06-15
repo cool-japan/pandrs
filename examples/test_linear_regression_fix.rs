@@ -46,8 +46,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let predictions = model.predict(&df)?;
     
     println!("Sample predictions:");
-    for i in 0..std::cmp::min(5, predictions.len()) {
-        println!("  Sample {}: predicted={:.4}", i, predictions[i]);
+    for (i, prediction) in predictions.iter().enumerate().take(5) {
+        println!("  Sample {}: predicted={:.4}", i, prediction);
     }
 
     // Calculate R²

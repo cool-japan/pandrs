@@ -238,7 +238,7 @@ fn benchmark_custom_parallel(data: &[f64]) {
 
     let parallel_squared_sum = parallel_custom(
         "parallel_squared_sum",
-        squared_sum.clone(),
+        squared_sum,
         squared_sum,
         reduce_fn,
         None,

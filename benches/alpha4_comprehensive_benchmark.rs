@@ -6,7 +6,6 @@ use std::collections::HashMap;
 /// 
 /// This benchmark validates all performance claims made in the alpha.4 documentation
 /// and provides detailed performance metrics across all major features.
-
 // Helper function to create test data
 fn create_test_dataframe(size: usize) -> DataFrame {
     let mut df = DataFrame::new();
@@ -124,7 +123,7 @@ fn bench_string_pool_optimization(c: &mut Criterion) {
         
         group.bench_with_input(BenchmarkId::new("without_pool", size), size, |b, &size| {
             b.iter(|| {
-                let data: Vec<String> = (0..*size).map(|i| format!("String_{}", i % unique_count)).collect();
+                let data: Vec<String> = (0..size).map(|i| format!("String_{}", i % unique_count)).collect();
                 black_box(data)
             })
         });
@@ -132,7 +131,7 @@ fn bench_string_pool_optimization(c: &mut Criterion) {
         group.bench_with_input(BenchmarkId::new("with_pool", size), size, |b, &size| {
             b.iter(|| {
                 let mut df = OptimizedDataFrame::new();
-                let data: Vec<String> = (0..*size).map(|i| format!("String_{}", i % unique_count)).collect();
+                let data: Vec<String> = (0..size).map(|i| format!("String_{}", i % unique_count)).collect();
                 df.add_column("strings".to_string(), Column::String(StringColumn::new(data))).unwrap();
                 black_box(df)
             })
@@ -244,7 +243,7 @@ fn bench_series_operations(c: &mut Criterion) {
             let mut series = pandrs::series::Series::new(data.clone(), None).unwrap();
             b.iter(|| {
                 series.set_name("test_name".to_string());
-                black_box(series.name())
+                black_box(series.name().cloned())
             })
         });
         

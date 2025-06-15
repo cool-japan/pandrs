@@ -2,6 +2,7 @@ use pandrs::error::Result;
 use pandrs::optimized::OptimizedDataFrame;
 use std::time::Instant;
 
+#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     println!("PandRS Parallel GroupBy Operations Example");
     println!("=========================================");
@@ -46,21 +47,21 @@ fn main() -> Result<()> {
     println!("------------------------");
 
     benchmark_operation("Sum operation", || {
-        for (_, group_df) in &grouped {
+        for group_df in grouped.values() {
             let _ = group_df.sum("value");
         }
         Ok(())
     })?;
 
     benchmark_operation("Mean operation", || {
-        for (_, group_df) in &grouped {
+        for group_df in grouped.values() {
             let _ = group_df.mean("value");
         }
         Ok(())
     })?;
 
     benchmark_operation("Min/Max operations", || {
-        for (_, group_df) in &grouped {
+        for group_df in grouped.values() {
             let _ = group_df.min("value");
             let _ = group_df.max("value");
         }
@@ -72,6 +73,7 @@ fn main() -> Result<()> {
     Ok(())
 }
 
+#[allow(clippy::result_large_err)]
 fn create_dataset(size: usize) -> Result<OptimizedDataFrame> {
     let mut df = OptimizedDataFrame::new();
 
@@ -92,6 +94,7 @@ fn create_dataset(size: usize) -> Result<OptimizedDataFrame> {
     Ok(df)
 }
 
+#[allow(clippy::result_large_err)]
 fn benchmark_operation<F>(name: &str, mut op: F) -> Result<()>
 where
     F: FnMut() -> Result<()>,
@@ -99,7 +102,7 @@ where
     println!("\nBenchmarking: {}", name);
 
     // Warm up
-    let _ = op()?;
+    op()?;
 
     let start = Instant::now();
     op()?;

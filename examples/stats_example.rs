@@ -4,6 +4,7 @@ use pandrs::error::Result;
 use pandrs::{DataFrame, Series, TTestResult};
 use rand::Rng;
 
+#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     println!("PandRS Statistical Module Sample\n");
 
@@ -19,6 +20,7 @@ fn main() -> Result<()> {
     Ok(())
 }
 
+#[allow(clippy::result_large_err)]
 fn descriptive_stats_example() -> Result<()> {
     println!("1. Descriptive Statistics Sample");
     println!("-----------------");
@@ -67,6 +69,7 @@ fn descriptive_stats_example() -> Result<()> {
     Ok(())
 }
 
+#[allow(clippy::result_large_err)]
 fn ttest_example() -> Result<()> {
     println!("2. t-test Sample");
     println!("--------------");
@@ -104,6 +107,7 @@ fn print_ttest_result(result: &TTestResult) {
     );
 }
 
+#[allow(clippy::result_large_err)]
 fn regression_example() -> Result<()> {
     println!("3. Regression Analysis Sample");
     println!("-----------------");
