@@ -30,6 +30,7 @@ impl Default for BenchmarkConfig {
 }
 
 /// Enhanced data generator with realistic patterns
+#[allow(clippy::result_large_err)]
 fn create_realistic_dataframe(size: usize, config: &BenchmarkConfig) -> Result<OptimizedDataFrame> {
     let mut df = OptimizedDataFrame::new();
     use rand::prelude::*;
@@ -295,7 +296,8 @@ fn benchmark_enhanced_string_ops(c: &mut Criterion) {
             |b, data| {
                 b.iter(|| {
                     let mut df = OptimizedDataFrame::new();
-                    black_box(df.add_string_column("test_strings", data.clone()).unwrap());
+                    df.add_string_column("test_strings", data.clone()).unwrap();
+                    black_box(())
                 });
             },
         );

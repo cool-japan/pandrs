@@ -50,6 +50,7 @@ impl RegressionDetector {
         }
     }
 
+    #[allow(clippy::result_large_err)]
     pub fn save_baseline(&self, baseline: &PerformanceBaseline) -> Result<()> {
         let json = serde_json::to_string_pretty(baseline)
             .map_err(|e| pandrs::error::Error::IoError(format!("JSON serialization error: {}", e)))?;
@@ -72,6 +73,7 @@ impl RegressionDetector {
 }
 
 /// Create standardized test data for regression testing
+#[allow(clippy::result_large_err)]
 fn create_regression_test_dataframe(size: usize) -> Result<OptimizedDataFrame> {
     let mut df = OptimizedDataFrame::new();
     
@@ -312,7 +314,6 @@ criterion_group!(
 
 criterion_main!(regression_benches);
 
-#[cfg(test)]
 #[cfg(test)]
 mod tests {
     #[allow(unused_imports)]

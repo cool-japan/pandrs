@@ -4,6 +4,7 @@ use pandrs::optimized::jit::*;
 use pandrs::optimized::OptimizedDataFrame;
 use std::time::Duration;
 
+#[allow(clippy::result_large_err)]
 fn create_test_dataframe(size: usize) -> Result<OptimizedDataFrame> {
     let mut df = OptimizedDataFrame::new();
 
@@ -145,7 +146,8 @@ fn benchmark_string_operations(c: &mut Criterion) {
     group.bench_function("string_column_creation", |b| {
         b.iter(|| {
             let mut df = OptimizedDataFrame::new();
-            black_box(df.add_string_column("test", string_data.clone()).unwrap());
+            df.add_string_column("test", string_data.clone()).unwrap();
+            black_box(())
         });
     });
 
@@ -192,12 +194,8 @@ fn benchmark_filter_operations(c: &mut Criterion) {
                 let int_col = df.get_int_column("value").unwrap();
                 let mask: Vec<bool> = (0..df.row_count())
                     .map(|i| {
-                        if let Some(val_opt) = int_col.get(i) {
-                            if let Some(val) = val_opt {
-                                *val > 500
-                            } else {
-                                false
-                            }
+                        if let Some(Some(val)) = int_col.get(i) {
+                            *val > 500
                         } else {
                             false
                         }

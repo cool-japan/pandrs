@@ -56,6 +56,11 @@ impl Float64Column {
         self.name.as_deref()
     }
 
+    /// Get a reference to the underlying data (for testing and demonstration)
+    pub fn data(&self) -> &[f64] {
+        &self.data
+    }
+
     /// Get data at the specified index
     pub fn get(&self, index: usize) -> Result<Option<f64>> {
         if index >= self.data.len() {

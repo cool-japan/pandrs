@@ -58,9 +58,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     let category_col = df.column("category")?;
     let mut is_a = vec![false; df.row_count()];
     if let Some(str_col) = category_col.as_string() {
-        for i in 0..df.row_count() {
+        for (i, is_a_val) in is_a.iter_mut().enumerate().take(df.row_count()) {
             if let Ok(Some(val)) = str_col.get(i) {
-                is_a[i] = val == "A";
+                *is_a_val = val == "A";
             }
         }
     }

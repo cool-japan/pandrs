@@ -724,7 +724,7 @@ impl<'a> DataFrameTimeRolling<'a> {
 }
 
 impl DataFrame {
-    /// Helper method to get a column as Series<f64>
+    /// Helper method to get a column as `Series<f64>`
     pub fn get_column_as_f64(&self, column_name: &str) -> Result<Series<f64>> {
         // Try to get the column as a string series first, then parse to f64
         if let Ok(string_series) = self.get_column::<String>(column_name) {

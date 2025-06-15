@@ -11,6 +11,8 @@ pub mod ml_strategy_selector;
 pub mod zero_copy;
 pub mod adaptive_string_pool;
 pub mod hybrid_large_scale;
+// pub mod unified_string_pool; // Temporarily disabled due to Send/Sync issues
+pub mod simple_unified_string_pool;
 
 // Re-exports for storage engines
 pub use column_store::ColumnStore;
@@ -76,4 +78,15 @@ pub use hybrid_large_scale::{
     HybridLargeScaleStrategy, HybridConfig, TierConfig, TierStorageType, DataTier,
     AccessPattern as HybridAccessPattern, AccessPatternType, TieredDataEntry, DataId,
     TierManager, TieringReport, TierBackend, TierStorageInfo, HybridHandle, HybridStatistics,
+};
+
+// Re-exports for unified zero-copy string pool (temporarily disabled)
+// pub use unified_string_pool::{
+//     UnifiedStringPool, UnifiedStringPoolConfig, UnifiedStringView, StringMetadata,
+//     UnifiedStringPoolStats,
+// };
+
+// Re-exports for simplified unified zero-copy string pool
+pub use simple_unified_string_pool::{
+    SimpleUnifiedStringPool, SimpleStringView, SimpleStringPoolStats,
 };

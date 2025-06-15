@@ -49,6 +49,12 @@ pub struct ProfilingMetrics {
     pub cache_misses: Option<usize>,
 }
 
+impl Default for ProfilingMetrics {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ProfilingMetrics {
     pub fn new() -> Self {
         Self {
@@ -86,6 +92,7 @@ impl ProfilingMetrics {
 }
 
 /// Profiling-aware DataFrame creator with various patterns
+#[allow(clippy::result_large_err)]
 fn create_profiling_dataframe(size: usize, pattern: &str) -> Result<OptimizedDataFrame> {
     let mut df = OptimizedDataFrame::new();
     

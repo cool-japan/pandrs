@@ -80,7 +80,8 @@ fn bench_column_management(c: &mut Criterion) {
             rename_map.insert("category".to_string(), "dept".to_string());
             
             b.iter(|| {
-                black_box(df.rename_columns(&rename_map).unwrap())
+                df.rename_columns(&rename_map).unwrap();
+                black_box(())
             })
         });
         
@@ -93,7 +94,8 @@ fn bench_column_management(c: &mut Criterion) {
             ];
             
             b.iter(|| {
-                black_box(df.set_column_names(new_names.clone()).unwrap())
+                df.set_column_names(new_names.clone()).unwrap();
+                black_box(())
             })
         });
         
@@ -105,7 +107,8 @@ fn bench_column_management(c: &mut Criterion) {
             rename_map.insert("category".to_string(), "dept".to_string());
             
             b.iter(|| {
-                black_box(df.rename_columns(&rename_map).unwrap())
+                df.rename_columns(&rename_map).unwrap();
+                black_box(())
             })
         });
     }
@@ -229,7 +232,7 @@ fn bench_series_operations(c: &mut Criterion) {
     let mut group = c.benchmark_group("Series Operations");
     
     for size in [1_000, 10_000, 100_000].iter() {
-        let data: Vec<i32> = (0..*size).map(|i| i as i32).collect();
+        let data: Vec<i32> = (0..*size).collect();
         
         // Benchmark series creation
         group.bench_with_input(BenchmarkId::new("series_creation", size), &data, |b, data| {
@@ -307,7 +310,7 @@ fn bench_aggregation_performance(c: &mut Criterion) {
                 let mut groups: HashMap<String, Vec<f64>> = HashMap::new();
                 for (cat, val) in categories.iter().zip(values.iter()) {
                     let val_f64: f64 = val.parse().unwrap_or(0.0);
-                    groups.entry(cat.clone()).or_insert_with(Vec::new).push(val_f64);
+                    groups.entry(cat.clone()).or_default().push(val_f64);
                 }
                 
                 let mut results = HashMap::new();
@@ -329,7 +332,7 @@ fn bench_type_conversion(c: &mut Criterion) {
     let mut group = c.benchmark_group("Type Conversion");
     
     for size in [1_000, 10_000, 100_000].iter() {
-        let int_data: Vec<i32> = (0..*size).map(|i| i as i32).collect();
+        let int_data: Vec<i32> = (0..*size).collect();
         let series = pandrs::series::Series::new(int_data, Some("test".to_string())).unwrap();
         
         // Alpha.4 enhanced type conversion

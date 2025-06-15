@@ -10,6 +10,7 @@ pub mod core;
 pub mod groupby;
 pub mod parallel;
 pub mod simd;
+pub mod simd_column_ops;
 
 // Enhanced JIT modules
 pub mod cache;
@@ -34,6 +35,12 @@ pub use parallel::{
 pub use simd::{
     simd_max_f64, simd_max_i64, simd_mean_f64, simd_mean_i64, simd_min_f64, simd_min_i64,
     simd_sum_f64, simd_sum_i64,
+};
+pub use simd_column_ops::{
+    simd_add_f64, simd_subtract_f64, simd_multiply_f64, simd_divide_f64,
+    simd_add_scalar_f64, simd_multiply_scalar_f64, simd_abs_f64, simd_sqrt_f64,
+    simd_compare_f64, simd_add_i64, simd_subtract_i64, simd_multiply_i64,
+    simd_add_scalar_i64, simd_abs_i64, simd_compare_i64, ComparisonOp,
 };
 
 // Re-export enhanced types

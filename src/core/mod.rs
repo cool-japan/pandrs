@@ -7,6 +7,7 @@ pub mod error;
 pub mod error_context;
 pub mod index;
 pub mod multi_index;
+pub mod advanced_multi_index;
 pub mod migration;
 
 // Re-exports for convenience
@@ -32,3 +33,4 @@ pub use migration::{
 };
 pub use index::{Index, IndexTrait};
 pub use multi_index::MultiIndex;
+pub use advanced_multi_index::{AdvancedMultiIndex, IndexValue, CrossSectionResult, SelectionCriteria};

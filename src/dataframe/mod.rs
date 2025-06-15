@@ -17,6 +17,7 @@ pub mod advanced_indexing;
 pub mod jit_window;
 pub mod hierarchical_groupby;
 pub mod multi_index_results;
+pub mod multi_index_cross_section;
 
 #[cfg(feature = "cuda")]
 pub mod gpu;
@@ -65,6 +66,10 @@ pub use hierarchical_groupby::{
 pub use multi_index_results::{
     MultiIndexDataFrame, MultiIndexColumn, MultiIndexMetadata, MultiIndexDataFrameBuilder,
     ColumnHierarchySummary, LevelSummary, ToMultiIndex, utils as multi_index_utils
+};
+pub use multi_index_cross_section::{
+    MultiIndexDataFrame as CrossSectionDataFrame, CrossSectionDataFrame as CrossSectionResult,
+    MultiIndexGroupBy, AggregationFunction
 };
 
 // Optional feature re-exports

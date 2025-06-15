@@ -1,5 +1,6 @@
 pub mod convert;
 pub mod dataframe;
+pub mod direct_aggregations;
 pub mod jit;
 pub mod lazy;
 pub mod operations;

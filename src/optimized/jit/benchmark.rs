@@ -140,8 +140,8 @@ where
             
             let input_gen = move || {
                 // Generate random data
-                let mut rng = rand::thread_rng();
-                (0..size).map(|_| rng.gen_range(0.0..100.0)).collect::<Vec<f64>>()
+                let mut rng = rand::rng();
+                (0..size).map(|_| rng.random_range(0.0..100.0)).collect::<Vec<f64>>()
             };
             
             let result = benchmark(&name, &func, input_gen, iterations);

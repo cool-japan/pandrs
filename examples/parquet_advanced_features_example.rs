@@ -17,6 +17,7 @@ use pandrs::error::Result;
 #[cfg(feature = "parquet")]
 use pandrs::io::{ParquetCompression, ParquetMetadata, RowGroupInfo, ColumnStats, ParquetReadOptions, ParquetWriteOptions};
 
+#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     println!("PandRS Advanced Parquet Features - Phase 2 Alpha.6");
     println!("==================================================");
@@ -62,6 +63,7 @@ fn main() -> Result<()> {
     Ok(())
 }
 
+#[allow(clippy::result_large_err)]
 fn schema_evolution_example(original_data: &DataFrame, evolved_data: &DataFrame) -> Result<()> {
     println!("Demonstrating Parquet schema evolution capabilities...");
 
@@ -134,6 +136,7 @@ fn schema_evolution_example(original_data: &DataFrame, evolved_data: &DataFrame)
 }
 
 #[cfg(feature = "parquet")]
+#[allow(clippy::result_large_err)]
 fn compression_algorithms_example(df: &DataFrame) -> Result<()> {
     println!("Testing advanced compression algorithms...");
 
@@ -196,6 +199,7 @@ fn compression_algorithms_example(df: &DataFrame) -> Result<()> {
     Ok(())
 }
 
+#[allow(clippy::result_large_err)]
 fn predicate_pushdown_example(large_df: &DataFrame) -> Result<()> {
     println!("Demonstrating predicate pushdown optimization...");
 
@@ -254,6 +258,7 @@ fn predicate_pushdown_example(large_df: &DataFrame) -> Result<()> {
 }
 
 #[cfg(feature = "streaming")]
+#[allow(clippy::result_large_err)]
 fn streaming_operations_example(large_df: &DataFrame) -> Result<()> {
     println!("Demonstrating streaming Parquet operations...");
 
@@ -317,6 +322,7 @@ fn streaming_operations_example(large_df: &DataFrame) -> Result<()> {
     Ok(())
 }
 
+#[allow(clippy::result_large_err)]
 fn chunked_processing_example(large_df: &DataFrame) -> Result<()> {
     println!("Demonstrating memory-efficient chunked processing...");
 
@@ -330,7 +336,7 @@ fn chunked_processing_example(large_df: &DataFrame) -> Result<()> {
 
     println!("  Chunking strategies:");
     for (strategy, chunk_size, description) in chunking_strategies {
-        let num_chunks = (large_df.row_count() + chunk_size - 1) / chunk_size;
+        let num_chunks = large_df.row_count().div_ceil(chunk_size);
         let memory_per_chunk = (chunk_size * 8) / 1024 / 1024; // MB estimate
         
         println!("    • {}: {} rows/chunk", strategy, chunk_size);
@@ -354,7 +360,7 @@ fn chunked_processing_example(large_df: &DataFrame) -> Result<()> {
 
     // Chunked processing simulation
     let recommended_chunk_size = (optimal_chunk_size as f64 * 0.8) as usize;
-    let num_chunks = (large_df.row_count() + recommended_chunk_size - 1) / recommended_chunk_size;
+    let num_chunks = large_df.row_count().div_ceil(recommended_chunk_size);
     
     println!("  Processing {} rows in {} chunks:", large_df.row_count(), num_chunks);
     
@@ -382,6 +388,7 @@ fn chunked_processing_example(large_df: &DataFrame) -> Result<()> {
     Ok(())
 }
 
+#[allow(clippy::result_large_err)]
 fn metadata_analysis_example() -> Result<()> {
     println!("Performing comprehensive Parquet metadata analysis...");
 
@@ -501,6 +508,7 @@ fn metadata_analysis_example() -> Result<()> {
     Ok(())
 }
 
+#[allow(clippy::result_large_err)]
 fn performance_optimization_example(_large_df: &DataFrame) -> Result<()> {
     println!("Demonstrating performance optimization strategies...");
 
@@ -579,6 +587,7 @@ fn performance_optimization_example(_large_df: &DataFrame) -> Result<()> {
     Ok(())
 }
 
+#[allow(clippy::result_large_err)]
 fn schema_analysis_example(_df: &DataFrame) -> Result<()> {
     println!("Performing schema analysis and evolution planning...");
 
@@ -630,7 +639,7 @@ fn schema_analysis_example(_df: &DataFrame) -> Result<()> {
 
     // Migration planning
     println!("  Migration planning for v3.0 schema:");
-    let migration_steps = vec![
+    let migration_steps = [
         "Add 'created_at' timestamp column with default value",
         "Restructure financial metrics into nested struct",
         "Add computed column for 'market_sector' (derived from sector)",
@@ -662,6 +671,7 @@ fn schema_analysis_example(_df: &DataFrame) -> Result<()> {
 // Helper Functions
 // ============================================================================
 
+#[allow(clippy::result_large_err)]
 fn create_original_dataset() -> Result<DataFrame> {
     let mut df = DataFrame::new();
     
@@ -699,6 +709,7 @@ fn create_original_dataset() -> Result<DataFrame> {
     Ok(df)
 }
 
+#[allow(clippy::result_large_err)]
 fn create_evolved_dataset() -> Result<DataFrame> {
     let mut df = create_original_dataset()?;
     
@@ -731,6 +742,7 @@ fn create_evolved_dataset() -> Result<DataFrame> {
     Ok(df)
 }
 
+#[allow(clippy::result_large_err)]
 fn create_large_financial_dataset(size: usize) -> Result<DataFrame> {
     let mut df = DataFrame::new();
     
@@ -740,7 +752,7 @@ fn create_large_financial_dataset(size: usize) -> Result<DataFrame> {
     let mut volumes = Vec::with_capacity(size);
     let mut sectors = Vec::with_capacity(size);
     
-    let sector_list = vec!["Technology", "Finance", "Healthcare", "Energy", "Consumer", "Industrial"];
+    let sector_list = ["Technology", "Finance", "Healthcare", "Energy", "Consumer", "Industrial"];
     
     for i in 0..size {
         ids.push((i + 1).to_string());
