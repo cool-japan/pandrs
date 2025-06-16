@@ -1,0 +1,212 @@
+# PandRS Configuration File
+# 
+# This is a sample configuration file for PandRS that demonstrates
+# all available configuration options with their default values.
+# 
+# Copy this file to 'pandrs.yml' in your project directory or
+# ~/.config/pandrs/config.yml for global configuration.
+
+# Database Configuration
+database:
+  # Default database connection URL
+  # Supports: postgresql://, mysql://, sqlite://
+  default_url: null  # e.g., "postgresql://user:password@localhost:5432/mydb"
+  
+  # Connection pool settings
+  pool:
+    max_connections: 10        # Maximum connections in pool
+    min_idle: 1               # Minimum idle connections
+    max_lifetime: 3600        # Connection lifetime (seconds)
+    idle_timeout: 600         # Idle timeout (seconds)
+    acquire_timeout: 30       # Connection acquisition timeout (seconds)
+  
+  # Query timeout settings
+  timeouts:
+    query: 30                 # Query execution timeout (seconds)
+    connection: 10            # Connection timeout (seconds)
+    transaction: 60           # Transaction timeout (seconds)
+  
+  # SSL/TLS configuration
+  ssl:
+    enabled: false            # Enable SSL/TLS
+    mode: "prefer"           # SSL mode: disable, allow, prefer, require, verify-ca, verify-full
+    cert_file: null          # Path to SSL certificate file
+    key_file: null           # Path to SSL key file
+    ca_file: null            # Path to CA certificate file
+  
+  # Additional database parameters
+  parameters: {}             # Key-value pairs for database-specific settings
+
+# Cloud Storage Configuration
+cloud:
+  # Default cloud provider (aws, gcp, azure)
+  default_provider: null
+  
+  # AWS S3 Configuration
+  aws:
+    region: null             # AWS region (e.g., "us-west-2")
+    endpoint_url: null       # Custom endpoint URL
+    access_key_id: null      # AWS access key (prefer environment variables)
+    secret_access_key: null  # AWS secret key (prefer environment variables)
+    session_token: null      # AWS session token
+    profile: null            # AWS profile name
+    use_instance_metadata: false  # Use EC2 instance metadata service
+  
+  # Google Cloud Platform Configuration
+  gcp:
+    project_id: null         # GCP project ID
+    service_account_key: null # Path to service account key file
+    use_default_credentials: true  # Use default application credentials
+    endpoint_url: null       # Custom endpoint URL
+  
+  # Microsoft Azure Configuration
+  azure:
+    account_name: null       # Storage account name
+    account_key: null        # Storage account key
+    sas_token: null          # SAS token
+    use_managed_identity: false  # Use managed identity
+    endpoint_url: null       # Custom endpoint URL
+  
+  # Global cloud settings
+  global:
+    timeout: 300             # Operation timeout (seconds)
+    max_retries: 3           # Maximum retry attempts
+    retry_backoff: 2.0       # Retry backoff multiplier
+    compression: true        # Enable compression
+    buffer_size: 65536       # Buffer size for transfers (bytes)
+
+# Performance Configuration
+performance:
+  # Threading settings
+  threading:
+    worker_threads: 0        # Number of worker threads (0 = auto-detect)
+    parallel_enabled: true   # Enable parallel processing
+    parallel_batch_size: 1000  # Batch size for parallel operations
+    stack_size: 2097152      # Thread stack size (bytes)
+  
+  # Memory management
+  memory:
+    limit: 0                 # Memory limit (bytes, 0 = unlimited)
+    enable_mmap: true        # Enable memory mapping for large files
+    
+    # String pool configuration
+    string_pool:
+      enabled: true          # Enable string pooling
+      max_size: 104857600    # Maximum pool size (bytes)
+      cleanup_threshold: 0.8 # Cleanup threshold (0.0-1.0)
+    
+    # Garbage collection settings
+    gc:
+      auto_gc: true          # Enable automatic GC suggestions
+      trigger_mb: 512        # GC trigger threshold (MB)
+      aggressive: false      # Aggressive cleanup mode
+  
+  # Caching configuration
+  caching:
+    enabled: true            # Enable caching
+    size_limit: 104857600    # Cache size limit (bytes)
+    ttl: 3600               # Cache TTL (seconds)
+    cleanup_interval: 300    # Cache cleanup interval (seconds)
+  
+  # JIT compilation settings
+  jit:
+    enabled: true            # Enable JIT compilation
+    threshold: 100           # JIT compilation threshold
+    simd_enabled: true       # Enable SIMD optimizations
+    cache_functions: true    # Cache compiled functions
+
+# Security Configuration
+security:
+  # Encryption settings
+  encryption:
+    enabled: false           # Enable credential encryption
+    algorithm: "AES-256-GCM" # Encryption algorithm
+    key_derivation: "PBKDF2" # Key derivation method
+    salt: null               # Salt for key derivation
+  
+  # Audit logging
+  audit:
+    enabled: false           # Enable audit logging
+    level: "info"           # Audit log level
+    file_path: null         # Audit log file path
+    include_sensitive: false # Include sensitive data in logs
+  
+  # Access control
+  access_control:
+    enabled: false           # Enable access control
+    allowed_operations:      # Allowed operations
+      - "*"
+    restricted_patterns: []  # Restricted patterns
+
+# Logging Configuration
+logging:
+  level: "info"             # Log level: trace, debug, info, warn, error
+  format: "text"            # Log format: json, text, compact
+  file_path: null           # Log file path
+  console: true             # Enable console logging
+  
+  # Log rotation settings
+  rotation:
+    enabled: false          # Enable log rotation
+    max_size: 104857600     # Maximum file size (bytes)
+    max_files: 10           # Maximum number of files to keep
+    compress: true          # Compress rotated files
+
+# Environment Variables Reference:
+# 
+# Database:
+#   PANDRS_DB_URL                 - Database connection URL
+#   PANDRS_DB_POOL_SIZE          - Connection pool size
+#   PANDRS_DB_TIMEOUT            - Query timeout
+#   PANDRS_DB_SSL_MODE           - SSL mode
+# 
+# AWS:
+#   AWS_ACCESS_KEY_ID            - AWS access key
+#   AWS_SECRET_ACCESS_KEY        - AWS secret key
+#   AWS_SESSION_TOKEN            - AWS session token
+#   AWS_DEFAULT_REGION           - AWS region
+#   AWS_PROFILE                  - AWS profile
+# 
+# GCP:
+#   GOOGLE_APPLICATION_CREDENTIALS - Path to service account key
+#   GOOGLE_CLOUD_PROJECT         - GCP project ID
+# 
+# Azure:
+#   AZURE_STORAGE_ACCOUNT        - Storage account name
+#   AZURE_STORAGE_KEY            - Storage account key
+#   AZURE_STORAGE_SAS_TOKEN      - SAS token
+# 
+# Performance:
+#   PANDRS_WORKER_THREADS        - Number of worker threads
+#   PANDRS_PARALLEL_ENABLED      - Enable parallel processing
+#   PANDRS_MEMORY_LIMIT          - Memory limit (bytes)
+#   PANDRS_JIT_ENABLED           - Enable JIT compilation
+# 
+# Logging:
+#   PANDRS_LOG_LEVEL             - Log level
+#   PANDRS_LOG_FILE              - Log file path
+#   RUST_LOG                     - Rust log level (fallback)
+# 
+# Security:
+#   PANDRS_ENCRYPTION_ENABLED    - Enable encryption
+#   PANDRS_AUDIT_ENABLED         - Enable audit logging
+# 
+# Configuration File:
+#   PANDRS_CONFIG_FILE           - Path to configuration file
+
+# Usage Examples:
+# 
+# 1. Load configuration from environment and defaults:
+#    let config = PandRSConfig::from_env()?;
+# 
+# 2. Load configuration from file:
+#    let config = PandRSConfig::from_file("pandrs.yml")?;
+# 
+# 3. Load with precedence (file -> env -> defaults):
+#    let config = PandRSConfig::load_with_precedence(Some("pandrs.yml"))?;
+# 
+# 4. Auto-discover configuration:
+#    let config = config::loader::auto_load()?;
+# 
+# 5. Create sample configuration:
+#    config::loader::create_sample_config("pandrs.yml")?;

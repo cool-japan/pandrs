@@ -354,18 +354,56 @@ where
         F: Fn(&T) -> T;
 }
 
-// Forward declarations for concrete column types
-// These will be implemented by specific column implementations
-pub struct ConcreteInt64Column;
-pub struct ConcreteInt32Column;
-pub struct ConcreteFloat64Column;
-pub struct ConcreteFloat32Column;
-pub struct ConcreteStringColumn;
-pub struct ConcreteBooleanColumn;
-pub struct ConcreteDateTimeColumn;
-pub struct ConcreteDateColumn;
-pub struct ConcreteTimeColumn;
-pub struct ConcreteCategoricalColumn;
+// Concrete column implementations wrapping the actual column types
+#[derive(Debug, Clone)]
+pub struct ConcreteInt64Column {
+    inner: crate::column::Int64Column,
+}
+
+#[derive(Debug, Clone)]
+pub struct ConcreteInt32Column {
+    inner: crate::column::Int64Column, // Using Int64Column internally for simplicity
+}
+
+#[derive(Debug, Clone)]
+pub struct ConcreteFloat64Column {
+    inner: crate::column::Float64Column,
+}
+
+#[derive(Debug, Clone)]
+pub struct ConcreteFloat32Column {
+    inner: crate::column::Float64Column, // Using Float64Column internally for simplicity
+}
+
+#[derive(Debug, Clone)]
+pub struct ConcreteStringColumn {
+    inner: crate::column::StringColumn,
+}
+
+#[derive(Debug, Clone)]
+pub struct ConcreteBooleanColumn {
+    inner: crate::column::BooleanColumn,
+}
+
+#[derive(Debug, Clone)]
+pub struct ConcreteDateTimeColumn {
+    inner: crate::column::StringColumn, // Using StringColumn for datetime storage
+}
+
+#[derive(Debug, Clone)]
+pub struct ConcreteDateColumn {
+    inner: crate::column::StringColumn, // Using StringColumn for date storage
+}
+
+#[derive(Debug, Clone)]
+pub struct ConcreteTimeColumn {
+    inner: crate::column::StringColumn, // Using StringColumn for time storage
+}
+
+#[derive(Debug, Clone)]
+pub struct ConcreteCategoricalColumn {
+    inner: crate::column::StringColumn, // Using StringColumn for categorical storage
+}
 
 // Type aliases using concrete implementations
 pub type Int64Column = Box<ConcreteInt64Column>;
@@ -460,48 +498,91 @@ pub trait ColumnFactory {
 pub struct DefaultColumnFactory;
 
 impl ColumnFactory for DefaultColumnFactory {
-    fn create_int64(&self, _data: Vec<i64>, _name: Option<String>) -> Int64Column {
-        unimplemented!("Int64Column creation not yet implemented")
+    fn create_int64(&self, data: Vec<i64>, name: Option<String>) -> Int64Column {
+        let mut column = crate::column::Int64Column::new(data);
+        if let Some(name) = name {
+            column.set_name(name);
+        }
+        Box::new(ConcreteInt64Column { inner: column })
     }
 
-    fn create_int32(&self, _data: Vec<i32>, _name: Option<String>) -> Int32Column {
-        unimplemented!("Int32Column creation not yet implemented")
+    fn create_int32(&self, data: Vec<i32>, name: Option<String>) -> Int32Column {
+        // Convert i32 to i64 for now (simplified approach)
+        let i64_data: Vec<i64> = data.into_iter().map(|x| x as i64).collect();
+        let mut column = crate::column::Int64Column::new(i64_data);
+        if let Some(name) = name {
+            column.set_name(name);
+        }
+        Box::new(ConcreteInt32Column { inner: column })
     }
 
-    fn create_float64(&self, _data: Vec<f64>, _name: Option<String>) -> Float64Column {
-        unimplemented!("Float64Column creation not yet implemented")
+    fn create_float64(&self, data: Vec<f64>, name: Option<String>) -> Float64Column {
+        let mut column = crate::column::Float64Column::new(data);
+        if let Some(name) = name {
+            column.set_name(name);
+        }
+        Box::new(ConcreteFloat64Column { inner: column })
     }
 
-    fn create_float32(&self, _data: Vec<f32>, _name: Option<String>) -> Float32Column {
-        unimplemented!("Float32Column creation not yet implemented")
+    fn create_float32(&self, data: Vec<f32>, name: Option<String>) -> Float32Column {
+        // Convert f32 to f64 for now (simplified approach)
+        let f64_data: Vec<f64> = data.into_iter().map(|x| x as f64).collect();
+        let mut column = crate::column::Float64Column::new(f64_data);
+        if let Some(name) = name {
+            column.set_name(name);
+        }
+        Box::new(ConcreteFloat32Column { inner: column })
     }
 
-    fn create_string(&self, _data: Vec<String>, _name: Option<String>) -> StringColumn {
-        unimplemented!("StringColumn creation not yet implemented")
+    fn create_string(&self, data: Vec<String>, name: Option<String>) -> StringColumn {
+        let mut column = crate::column::StringColumn::new(data);
+        if let Some(name) = name {
+            column.set_name(name);
+        }
+        Box::new(ConcreteStringColumn { inner: column })
     }
 
-    fn create_boolean(&self, _data: Vec<bool>, _name: Option<String>) -> BooleanColumn {
-        unimplemented!("BooleanColumn creation not yet implemented")
+    fn create_boolean(&self, data: Vec<bool>, name: Option<String>) -> BooleanColumn {
+        let mut column = crate::column::BooleanColumn::new(data);
+        if let Some(name) = name {
+            column.set_name(name);
+        }
+        Box::new(ConcreteBooleanColumn { inner: column })
     }
 
     fn create_datetime(
         &self,
-        _data: Vec<chrono::DateTime<chrono::Utc>>,
-        _name: Option<String>,
+        data: Vec<chrono::DateTime<chrono::Utc>>,
+        name: Option<String>,
     ) -> DateTimeColumn {
-        unimplemented!("DateTimeColumn creation not yet implemented")
+        // Convert DateTime to timestamp strings for now (simplified approach)
+        let string_data: Vec<String> = data
+            .into_iter()
+            .map(|dt| dt.to_rfc3339())
+            .collect();
+        let mut column = crate::column::StringColumn::new(string_data);
+        if let Some(name) = name {
+            column.set_name(name);
+        }
+        Box::new(ConcreteDateTimeColumn { inner: column })
     }
 
     fn create_categorical<T>(
         &self,
-        _data: Vec<T>,
+        data: Vec<T>,
         _categories: Vec<T>,
-        _name: Option<String>,
+        name: Option<String>,
     ) -> CategoricalColumn
     where
         T: Clone + Eq + std::hash::Hash + Send + Sync + 'static + Into<String>,
     {
-        unimplemented!("CategoricalColumn creation not yet implemented")
+        // Convert categorical data to strings for now (simplified approach)
+        let string_data: Vec<String> = data.into_iter().map(|x| x.into()).collect();
+        let mut column = crate::column::StringColumn::new(string_data);
+        if let Some(name) = name {
+            column.set_name(name);
+        }
+        Box::new(ConcreteCategoricalColumn { inner: column })
     }
 }
 

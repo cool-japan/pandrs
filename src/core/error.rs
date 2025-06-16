@@ -134,6 +134,15 @@ pub enum Error {
     #[error("Connection error: {0}")]
     ConnectionError(String),
 
+    #[error("Configuration error: {0}")]
+    ConfigurationError(String),
+
+    #[error("Authentication error: {0}")]
+    AuthenticationError(String),
+
+    #[error("Timeout error: {0}")]
+    TimeoutError(String),
+
     #[error("Executor error: {0}")]
     ExecutorError(String),
 

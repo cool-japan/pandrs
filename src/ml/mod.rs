@@ -1,10 +1,10 @@
 //! Machine Learning Module
 //!
-//! This module provides machine learning functionality for data analysis.
-//! It includes preprocessing, model training/evaluation, dimensionality reduction,
-//! clustering, and anomaly detection algorithms.
+//! This module provides comprehensive machine learning functionality including
+//! preprocessing, model training/evaluation, dimensionality reduction, clustering,
+//! anomaly detection, automated feature engineering, model selection, and AutoML.
 
-// Feature modules
+// Core ML modules
 pub mod anomaly;
 pub mod clustering;
 pub mod dimension;
@@ -13,6 +13,12 @@ pub mod models;
 pub mod pipeline;
 pub mod pipeline_extended;
 pub mod preprocessing;
+
+// Advanced ML capabilities
+pub mod automl;
+pub mod feature_engineering;
+pub mod model_selection;
+pub mod sklearn_compat;
 
 // GPU-accelerated ML functionality (conditionally compiled)
 #[cfg(feature = "cuda")]
@@ -23,7 +29,7 @@ pub mod backward_compat;
 
 // Re-export public types and functions
 use crate::dataframe::DataFrame;
-use crate::error::{Error, Result};
+use crate::core::error::{Error, Result};
 use crate::optimized::OptimizedDataFrame;
 use std::collections::HashMap;
 
@@ -82,3 +88,21 @@ pub use pipeline_compat::{Pipeline as PipelineCompat, Transformer};
 // Re-export GPU-accelerated ML functionality when CUDA is enabled
 #[cfg(feature = "cuda")]
 pub use gpu::{GpuKMeans, GpuModelParams, GpuPCA, GpuTSNE};
+
+// Re-export advanced ML capabilities
+pub use automl::{AutoML, AutoMLConfig, AutoMLResult, ModelResult, TaskType, ModelSearchSpace};
+
+pub use feature_engineering::{
+    AutoFeatureEngineer, FeatureSelectionMethod, ScalingMethod, AggregationFunction,
+    FeatureScaler, StandardScaler as MLStandardScaler, MinMaxScaler as MLMinMaxScaler,
+};
+
+pub use model_selection::{
+    GridSearchCV, RandomizedSearchCV, CrossValidationStrategy, Scorer, ParameterDistribution,
+    SelectKBest, ScoreFunction, SearchResults, SearchResultEntry,
+};
+
+pub use sklearn_compat::{
+    SklearnEstimator, SklearnTransformer, SklearnPredictor, Pipeline as SklearnPipeline,
+    PipelineStep, StandardScalerCompat, MinMaxScalerCompat,
+};

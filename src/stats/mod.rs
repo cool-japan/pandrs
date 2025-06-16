@@ -1,15 +1,24 @@
 //! PandRS Statistics Module
 //!
-//! This module provides statistical functionality for data analysis.
+//! This module provides comprehensive statistical functionality for data analysis.
 //! It implements a wide range of statistical methods including descriptive statistics,
-//! inferential statistics, hypothesis testing, and regression analysis.
+//! inferential statistics, hypothesis testing, probability distributions,
+//! non-parametric methods, and regression analysis.
 
-// Feature modules
+// Core statistical modules
 pub mod categorical;
 pub mod descriptive;
 pub mod inference;
 pub mod regression;
 pub mod sampling;
+
+// Backward compatibility modules (temporarily disabled)
+// pub mod backward_compat;
+
+// Advanced statistical computing modules
+pub mod distributions;
+pub mod hypothesis;
+pub mod nonparametric;
 
 // GPU-accelerated statistical functions (conditionally compiled)
 #[cfg(feature = "cuda")]
@@ -146,7 +155,18 @@ pub struct ChiSquareResult {
 /// println!("Standard deviation: {}", stats.std);
 /// ```
 pub fn describe<T: AsRef<[f64]>>(data: T) -> Result<DescriptiveStats> {
-    descriptive::describe_impl(data.as_ref())
+    // Use the comprehensive descriptive statistics and convert to legacy format
+    let summary = advanced_descriptive::describe(data.as_ref())?;
+    Ok(DescriptiveStats {
+        count: summary.count,
+        mean: summary.mean,
+        std: summary.std,
+        min: summary.min,
+        q1: summary.quartiles.q1,
+        median: summary.median,
+        q3: summary.quartiles.q3,
+        max: summary.max,
+    })
 }
 
 /// Calculate correlation coefficient
@@ -166,7 +186,7 @@ pub fn describe<T: AsRef<[f64]>>(data: T) -> Result<DescriptiveStats> {
 /// println!("Correlation coefficient: {}", corr);
 /// ```
 pub fn correlation<T: AsRef<[f64]>, U: AsRef<[f64]>>(x: T, y: U) -> Result<f64> {
-    descriptive::correlation_impl(x.as_ref(), y.as_ref())
+    advanced_descriptive::pearson_correlation(x.as_ref(), y.as_ref())
 }
 
 /// Calculate covariance
@@ -185,7 +205,26 @@ pub fn correlation<T: AsRef<[f64]>, U: AsRef<[f64]>>(x: T, y: U) -> Result<f64> 
 /// println!("Covariance: {}", cov);
 /// ```
 pub fn covariance<T: AsRef<[f64]>, U: AsRef<[f64]>>(x: T, y: U) -> Result<f64> {
-    descriptive::covariance_impl(x.as_ref(), y.as_ref())
+    let data1 = x.as_ref();
+    let data2 = y.as_ref();
+    
+    if data1.len() != data2.len() {
+        return Err(Error::DimensionMismatch("Arrays must have the same length".into()));
+    }
+    
+    if data1.is_empty() {
+        return Err(Error::EmptyData("Cannot calculate covariance of empty arrays".into()));
+    }
+    
+    let n = data1.len() as f64;
+    let mean1 = data1.iter().sum::<f64>() / n;
+    let mean2 = data2.iter().sum::<f64>() / n;
+    
+    let cov = data1.iter().zip(data2.iter())
+        .map(|(&x, &y)| (x - mean1) * (y - mean2))
+        .sum::<f64>() / (n - 1.0);
+    
+    Ok(cov)
 }
 
 /// Perform two-sample t-test
@@ -495,8 +534,8 @@ pub fn normalized_mutual_info(df: &DataFrame, col1: &str, col2: &str) -> Result<
 // pub use descriptive::variance;
 // pub use descriptive::std_dev;
 // pub use descriptive::quantile;
-// These are probably implemented under different names or in different modules
-pub use descriptive::correlation_impl as correlation_matrix;
+// Use advanced descriptive module for correlation matrix
+pub use advanced_descriptive::correlation_matrix;
 
 // Inference statistics functions
 // pub use inference::one_sample_ttest;
@@ -524,3 +563,224 @@ pub use gpu::{
     correlation_matrix as gpu_correlation_matrix, covariance_matrix as gpu_covariance_matrix,
     describe_gpu, feature_importance, kmeans, linear_regression as gpu_linear_regression, pca,
 };
+
+// Re-export advanced statistical computing functionality
+pub use distributions::{
+    Distribution, Normal, StandardNormal, TDistribution, ChiSquared, 
+    FDistribution, Binomial, Poisson
+};
+
+pub use hypothesis::{
+    one_sample_ttest, independent_ttest, paired_ttest, one_way_anova,
+    chi_square_independence as chi_square_test_independence, correlation_test, 
+    shapiro_wilk_test, adjust_p_values, TestResult as HypothesisTestResult, 
+    AlternativeHypothesis, EffectSize, MultipleComparisonCorrection
+};
+
+pub use nonparametric::{
+    mann_whitney_u_test as mann_whitney_u_advanced, 
+    wilcoxon_signed_rank_test, kruskal_wallis_test,
+    friedman_test, ks_two_sample_test, runs_test, 
+    bootstrap_confidence_interval, permutation_test
+};
+
+// Advanced descriptive statistics from the new module
+pub use descriptive as advanced_descriptive;
+
+/// Comprehensive statistical analysis wrapper for DataFrames
+pub struct StatisticalAnalyzer;
+
+impl StatisticalAnalyzer {
+    /// Create a new statistical analyzer
+    pub fn new() -> Self {
+        StatisticalAnalyzer
+    }
+    
+    /// Perform comprehensive descriptive analysis on a DataFrame column
+    pub fn analyze_column(&self, df: &DataFrame, column_name: &str) -> Result<advanced_descriptive::StatisticalSummary> {
+        let column = df.get_column::<f64>(column_name)?;
+        let values = column.as_f64()?;
+        advanced_descriptive::describe(&values)
+    }
+    
+    /// Perform correlation analysis between two columns
+    pub fn correlate_columns(
+        &self, 
+        df: &DataFrame, 
+        col1: &str, 
+        col2: &str,
+        method: CorrelationMethod
+    ) -> Result<f64> {
+        let series1 = df.get_column::<f64>(col1)?;
+        let series2 = df.get_column::<f64>(col2)?;
+        let values1 = series1.as_f64()?;
+        let values2 = series2.as_f64()?;
+        
+        match method {
+            CorrelationMethod::Pearson => advanced_descriptive::pearson_correlation(&values1, &values2),
+            CorrelationMethod::Spearman => advanced_descriptive::spearman_correlation(&values1, &values2),
+        }
+    }
+    
+    /// Perform hypothesis test between two DataFrame columns
+    pub fn test_columns(
+        &self,
+        df: &DataFrame,
+        col1: &str,
+        col2: &str,
+        test_type: HypothesisTestType,
+        alternative: AlternativeHypothesis,
+    ) -> Result<HypothesisTestResult> {
+        let series1 = df.get_column::<f64>(col1)?;
+        let series2 = df.get_column::<f64>(col2)?;
+        let values1 = series1.as_f64()?;
+        let values2 = series2.as_f64()?;
+        
+        match test_type {
+            HypothesisTestType::TTest => independent_ttest(&values1, &values2, alternative, true),
+            HypothesisTestType::WelchTTest => independent_ttest(&values1, &values2, alternative, false),
+            HypothesisTestType::MannWhitneyU => mann_whitney_u_advanced(&values1, &values2, alternative),
+            HypothesisTestType::KolmogorovSmirnov => ks_two_sample_test(&values1, &values2, alternative),
+        }
+    }
+    
+    /// Perform one-way ANOVA by groups
+    /// TODO: Fix string data extraction from Series
+    pub fn anova_by_group(
+        &self,
+        _df: &DataFrame,
+        _value_column: &str,
+        _group_column: &str,
+        _parametric: bool,
+    ) -> Result<HypothesisTestResult> {
+        // Temporarily disabled due to Series API changes
+        Err(Error::NotImplemented("ANOVA by group temporarily disabled due to Series API changes".into()))
+    }
+    
+    /// Generate correlation matrix for multiple columns
+    pub fn correlation_matrix(
+        &self,
+        df: &DataFrame,
+        columns: &[String],
+        method: CorrelationMethod,
+    ) -> Result<Vec<Vec<f64>>> {
+        let mut data = Vec::new();
+        
+        for column in columns {
+            let series = df.get_column::<f64>(column)?;
+            let values = series.as_f64()?;
+            data.push(values.to_vec());
+        }
+        
+        match method {
+            CorrelationMethod::Pearson => advanced_descriptive::correlation_matrix(&data),
+            CorrelationMethod::Spearman => {
+                // For Spearman, we need to calculate it differently
+                let n_vars = data.len();
+                let mut corr_matrix = vec![vec![0.0; n_vars]; n_vars];
+                
+                for i in 0..n_vars {
+                    for j in 0..n_vars {
+                        if i == j {
+                            corr_matrix[i][j] = 1.0;
+                        } else {
+                            corr_matrix[i][j] = advanced_descriptive::spearman_correlation(&data[i], &data[j])?;
+                        }
+                    }
+                }
+                
+                Ok(corr_matrix)
+            }
+        }
+    }
+    
+    /// Perform outlier detection on a column
+    pub fn detect_outliers(
+        &self,
+        df: &DataFrame,
+        column_name: &str,
+        method: OutlierMethod,
+    ) -> Result<Vec<usize>> {
+        let column = df.get_column::<f64>(column_name)?;
+        let values = column.as_f64()?;
+        let summary = advanced_descriptive::describe(&values)?;
+        
+        let mut outlier_indices = Vec::new();
+        
+        match method {
+            OutlierMethod::IQR => {
+                let iqr_lower = summary.quartiles.q1 - 1.5 * summary.iqr;
+                let iqr_upper = summary.quartiles.q3 + 1.5 * summary.iqr;
+                
+                for (i, &value) in values.iter().enumerate() {
+                    if value < iqr_lower || value > iqr_upper {
+                        outlier_indices.push(i);
+                    }
+                }
+            },
+            OutlierMethod::ZScore => {
+                for (i, &value) in values.iter().enumerate() {
+                    let z_score = (value - summary.mean) / summary.std;
+                    if z_score.abs() > 3.0 {
+                        outlier_indices.push(i);
+                    }
+                }
+            },
+            OutlierMethod::ModifiedZScore => {
+                let median = summary.median;
+                let mad = {
+                    let deviations: Vec<f64> = values.iter()
+                        .map(|&x| (x - median).abs())
+                        .collect();
+                    let mut sorted_deviations = deviations;
+                    sorted_deviations.sort_by(|a, b| a.partial_cmp(b).unwrap());
+                    advanced_descriptive::percentile(&sorted_deviations, 50.0)?
+                };
+                
+                if mad > 0.0 {
+                    for (i, &value) in values.iter().enumerate() {
+                        let modified_z = 0.6745 * (value - median) / mad;
+                        if modified_z.abs() > 3.5 {
+                            outlier_indices.push(i);
+                        }
+                    }
+                }
+            },
+        }
+        
+        Ok(outlier_indices)
+    }
+}
+
+/// Correlation methods
+#[derive(Debug, Clone)]
+pub enum CorrelationMethod {
+    /// Pearson product-moment correlation
+    Pearson,
+    /// Spearman rank correlation
+    Spearman,
+}
+
+/// Hypothesis test types
+#[derive(Debug, Clone)]
+pub enum HypothesisTestType {
+    /// Student's t-test (equal variances)
+    TTest,
+    /// Welch's t-test (unequal variances)
+    WelchTTest,
+    /// Mann-Whitney U test (non-parametric)
+    MannWhitneyU,
+    /// Kolmogorov-Smirnov test
+    KolmogorovSmirnov,
+}
+
+/// Outlier detection methods
+#[derive(Debug, Clone)]
+pub enum OutlierMethod {
+    /// Interquartile range method
+    IQR,
+    /// Z-score method
+    ZScore,
+    /// Modified Z-score method
+    ModifiedZScore,
+}

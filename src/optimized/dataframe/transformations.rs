@@ -45,7 +45,9 @@ impl OptimizedDataFrame {
             if let crate::index::DataFrameIndex::Simple(simple_index) = index {
                 self_split_df.set_index_from_simple_index(simple_index.clone())?;
             }
-            // TODO: Handle multi-index case
+            if let crate::index::DataFrameIndex::Multi(multi_index) = index {
+                self_split_df.set_index_from_multi_index(multi_index.clone())?;
+            }
         }
 
         // Convert other to SplitDataFrame
@@ -65,7 +67,9 @@ impl OptimizedDataFrame {
             if let crate::index::DataFrameIndex::Simple(simple_index) = index {
                 other_split_df.set_index_from_simple_index(simple_index.clone())?;
             }
-            // TODO: Handle multi-index case
+            if let crate::index::DataFrameIndex::Multi(multi_index) = index {
+                other_split_df.set_index_from_multi_index(multi_index.clone())?;
+            }
         }
 
         // Call append from SplitDataFrame
@@ -538,7 +542,9 @@ impl OptimizedDataFrame {
             if let crate::index::DataFrameIndex::Simple(simple_index) = index {
                 split_df.set_index_from_simple_index(simple_index.clone())?;
             }
-            // TODO: Handle multi-index case
+            if let crate::index::DataFrameIndex::Multi(multi_index) = index {
+                split_df.set_index_from_multi_index(multi_index.clone())?;
+            }
         }
 
         // Call par_groupby from SplitDataFrame
@@ -649,7 +655,9 @@ impl OptimizedDataFrame {
             if let crate::index::DataFrameIndex::Simple(simple_index) = index {
                 left_split_df.set_index_from_simple_index(simple_index.clone())?;
             }
-            // TODO: Handle multi-index case
+            if let crate::index::DataFrameIndex::Multi(multi_index) = index {
+                left_split_df.set_index_from_multi_index(multi_index.clone())?;
+            }
         }
 
         // Set index if available (right side)
@@ -658,7 +666,9 @@ impl OptimizedDataFrame {
             if let crate::index::DataFrameIndex::Simple(simple_index) = index {
                 right_split_df.set_index_from_simple_index(simple_index.clone())?;
             }
-            // TODO: Handle multi-index case
+            if let crate::index::DataFrameIndex::Multi(multi_index) = index {
+                right_split_df.set_index_from_multi_index(multi_index.clone())?;
+            }
         }
 
         // Call inner_join from SplitDataFrame
@@ -714,7 +724,9 @@ impl OptimizedDataFrame {
             if let crate::index::DataFrameIndex::Simple(simple_index) = index {
                 left_split_df.set_index_from_simple_index(simple_index.clone())?;
             }
-            // TODO: Handle multi-index case
+            if let crate::index::DataFrameIndex::Multi(multi_index) = index {
+                left_split_df.set_index_from_multi_index(multi_index.clone())?;
+            }
         }
 
         // Set index if available (right side)
@@ -723,7 +735,9 @@ impl OptimizedDataFrame {
             if let crate::index::DataFrameIndex::Simple(simple_index) = index {
                 right_split_df.set_index_from_simple_index(simple_index.clone())?;
             }
-            // TODO: Handle multi-index case
+            if let crate::index::DataFrameIndex::Multi(multi_index) = index {
+                right_split_df.set_index_from_multi_index(multi_index.clone())?;
+            }
         }
 
         // Call left_join from SplitDataFrame
@@ -779,7 +793,9 @@ impl OptimizedDataFrame {
             if let crate::index::DataFrameIndex::Simple(simple_index) = index {
                 left_split_df.set_index_from_simple_index(simple_index.clone())?;
             }
-            // TODO: Handle multi-index case
+            if let crate::index::DataFrameIndex::Multi(multi_index) = index {
+                left_split_df.set_index_from_multi_index(multi_index.clone())?;
+            }
         }
 
         // Set index if available (right side)
@@ -788,7 +804,9 @@ impl OptimizedDataFrame {
             if let crate::index::DataFrameIndex::Simple(simple_index) = index {
                 right_split_df.set_index_from_simple_index(simple_index.clone())?;
             }
-            // TODO: Handle multi-index case
+            if let crate::index::DataFrameIndex::Multi(multi_index) = index {
+                right_split_df.set_index_from_multi_index(multi_index.clone())?;
+            }
         }
 
         // Call right_join from SplitDataFrame
@@ -844,7 +862,9 @@ impl OptimizedDataFrame {
             if let crate::index::DataFrameIndex::Simple(simple_index) = index {
                 left_split_df.set_index_from_simple_index(simple_index.clone())?;
             }
-            // TODO: Handle multi-index case
+            if let crate::index::DataFrameIndex::Multi(multi_index) = index {
+                left_split_df.set_index_from_multi_index(multi_index.clone())?;
+            }
         }
 
         // Set index if available (right side)
@@ -853,7 +873,9 @@ impl OptimizedDataFrame {
             if let crate::index::DataFrameIndex::Simple(simple_index) = index {
                 right_split_df.set_index_from_simple_index(simple_index.clone())?;
             }
-            // TODO: Handle multi-index case
+            if let crate::index::DataFrameIndex::Multi(multi_index) = index {
+                right_split_df.set_index_from_multi_index(multi_index.clone())?;
+            }
         }
 
         // Call outer_join from SplitDataFrame
@@ -1048,7 +1070,9 @@ impl OptimizedDataFrame {
             if let crate::index::DataFrameIndex::Simple(simple_index) = index {
                 split_df.set_index_from_simple_index(simple_index.clone())?;
             }
-            // TODO: Handle multi-index case
+            if let crate::index::DataFrameIndex::Multi(multi_index) = index {
+                split_df.set_index_from_multi_index(multi_index.clone())?;
+            }
         }
 
         // Call melt from SplitDataFrame

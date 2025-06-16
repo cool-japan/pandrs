@@ -153,14 +153,14 @@ Add the following to your Cargo.toml:
 
 ```toml
 [dependencies]
-pandrs = "0.1.0-alpha.4"
+pandrs = "0.1.0-alpha.5"
 ```
 
 For GPU acceleration, add the CUDA feature flag (requires CUDA toolkit installation):
 
 ```toml
 [dependencies]
-pandrs = { version = "0.1.0-alpha.4", features = ["cuda"] }
+pandrs = { version = "0.1.0-alpha.5", features = ["cuda"] }
 ```
 
 **Note**: The CUDA feature requires NVIDIA CUDA toolkit to be installed on your system.
@@ -169,14 +169,14 @@ For distributed processing capabilities, add the distributed feature:
 
 ```toml
 [dependencies]
-pandrs = { version = "0.1.0-alpha.4", features = ["distributed"] }
+pandrs = { version = "0.1.0-alpha.5", features = ["distributed"] }
 ```
 
 Multiple features can be combined:
 
 ```toml
 [dependencies]
-pandrs = { version = "0.1.0-alpha.4", features = ["cuda", "distributed", "wasm"] }
+pandrs = { version = "0.1.0-alpha.5", features = ["cuda", "distributed", "wasm"] }
 ```
 
 ### Working with Missing Values (NA)

@@ -10,6 +10,9 @@ use std::collections::HashMap;
 // Optimized Python integration module
 mod py_optimized;
 
+// Pandas compatibility layer
+mod pandas_compat;
+
 // GPU acceleration module
 #[cfg(feature = "cuda")]
 mod py_gpu;
@@ -24,6 +27,9 @@ fn pandrs(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     // Register optimized classes
     py_optimized::register_optimized_types(m)?;
+
+    // Register pandas compatibility layer
+    pandas_compat::register_pandas_types(m)?;
 
     // Register GPU acceleration classes if CUDA is enabled
     #[cfg(feature = "cuda")]

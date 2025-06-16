@@ -12,6 +12,16 @@ use std::sync::Arc;
 
 use super::types::{JitNumeric, JitType, NumericValue, TypedVector};
 
+// JIT compilation imports
+#[cfg(feature = "jit")]
+use cranelift::prelude::*;
+#[cfg(feature = "jit")]
+use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
+#[cfg(feature = "jit")]
+use cranelift_jit::JITModule;
+#[cfg(feature = "jit")]
+use cranelift_module::Module;
+
 /// Error types for JIT compilation and execution
 #[derive(Debug)]
 pub enum JitError {
@@ -186,15 +196,19 @@ impl JitCompilable<Vec<f64>, f64> for JitFunction {
         #[cfg(feature = "jit")]
         {
             if let Some(ctx) = &self.jit_context {
-                // In a real implementation, this would call the JIT-compiled function
-                // For now, we'll just use the native implementation
-                let result = (self.native_fn)(args);
-                let duration = start.elapsed().as_nanos() as u64;
-
-                // In a real implementation, record stats
-                // stats.record_jit_execution(duration);
-
-                return result;
+                // Use the JIT-compiled function for array operations
+                match ctx.execute_array_sum(&args) {
+                    Ok(result) => {
+                        let duration = start.elapsed().as_nanos() as u64;
+                        // In a real implementation, record JIT stats
+                        // stats.record_jit_execution(duration);
+                        return result;
+                    }
+                    Err(_) => {
+                        // Fall back to native implementation on JIT error
+                        // In production, you might want to log this error
+                    }
+                }
             }
         }
 
@@ -214,27 +228,163 @@ impl JitCompilable<Vec<f64>, f64> for JitFunction {
 pub struct JitContext {
     /// Function name for debugging and caching
     name: String,
-    // In a real implementation, this would contain
-    // the JIT module, compilation context, etc.
-    // For now, it's a placeholder
+    /// The compiled function pointer
+    compiled_fn: Option<*const u8>,
+    /// JIT module for function management
+    #[cfg(feature = "jit")]
+    jit_module: Option<cranelift_jit::JITModule>,
 }
 
 #[cfg(feature = "jit")]
 impl JitContext {
     /// Compile a function by name
     pub fn compile(name: &str) -> JitResult<Self> {
-        // In a real implementation, this would use Cranelift to compile
-        // the function. For now, it's just a stub.
-
-        // TODO: Implement actual JIT compilation with Cranelift
-        // use cranelift_codegen::settings;
-        // let _flags_builder = settings::builder();
-        // Configure JIT settings here
-
-        // Create the JIT context
+        use cranelift_jit::{JITBuilder, JITModule};
+        use cranelift_module::{Linkage, Module};
+        use target_lexicon::Triple;
+        
+        // Create JIT builder with current target
+        let isa = cranelift_native::builder()
+            .map_err(|e| JitError::CompilationError(format!("Failed to create ISA builder: {}", e)))?
+            .finish(settings::Flags::new(settings::builder()))
+            .map_err(|e| JitError::CompilationError(format!("Failed to finish ISA: {}", e)))?;
+        
+        let builder = JITBuilder::with_isa(
+            isa,
+            cranelift_module::default_libcall_names(),
+        );
+        
+        // Create JIT module
+        let mut module = JITModule::new(builder);
+        
+        // Define function signature for array sum operation
+        let mut sig = module.make_signature();
+        sig.params.push(AbiParam::new(types::I64)); // array pointer
+        sig.params.push(AbiParam::new(types::I64)); // array length
+        sig.returns.push(AbiParam::new(types::F64)); // result
+        
+        // Create function declaration
+        let func_id = module
+            .declare_function(name, Linkage::Export, &sig)
+            .map_err(|e| JitError::CompilationError(format!("Function declaration failed: {}", e)))?;
+        
+        // Define function body
+        let mut ctx = module.make_context();
+        let mut builder_ctx = codegen::Context::new();
+        builder_ctx.func.signature = sig.clone();
+        
+        // Build simple sum function
+        {
+            use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
+            
+            let mut func_ctx = FunctionBuilderContext::new();
+            let mut builder = FunctionBuilder::new(&mut builder_ctx.func, &mut func_ctx);
+            
+            // Create entry block
+            let entry_block = builder.create_block();
+            builder.append_block_params_for_function_params(entry_block);
+            builder.switch_to_block(entry_block);
+            builder.seal_block(entry_block);
+            
+            // Get function parameters
+            let array_ptr = builder.block_params(entry_block)[0];
+            let array_len = builder.block_params(entry_block)[1];
+            
+            // Initialize sum to 0.0
+            let zero = builder.ins().f64const(0.0);
+            let sum = Variable::new(0);
+            builder.declare_var(sum, types::F64);
+            builder.def_var(sum, zero);
+            
+            // Initialize loop counter
+            let counter = Variable::new(1);
+            builder.declare_var(counter, types::I64);
+            let zero_i64 = builder.ins().iconst(types::I64, 0);
+            builder.def_var(counter, zero_i64);
+            
+            // Create loop blocks
+            let loop_header = builder.create_block();
+            let loop_body = builder.create_block();
+            let loop_end = builder.create_block();
+            
+            // Jump to loop header
+            builder.ins().jump(loop_header, &[]);
+            
+            // Loop header: check condition
+            builder.switch_to_block(loop_header);
+            let current_counter = builder.use_var(counter);
+            let condition = builder.ins().icmp(IntCC::UnsignedLessThan, current_counter, array_len);
+            builder.ins().brif(condition, loop_body, &[], loop_end, &[]);
+            
+            // Loop body: add current element to sum
+            builder.switch_to_block(loop_body);
+            let current_counter = builder.use_var(counter);
+            let element_offset = builder.ins().imul_imm(current_counter, 8); // 8 bytes per f64
+            let element_ptr = builder.ins().iadd(array_ptr, element_offset);
+            let element_value = builder.ins().load(types::F64, MemFlags::new(), element_ptr, 0);
+            
+            let current_sum = builder.use_var(sum);
+            let new_sum = builder.ins().fadd(current_sum, element_value);
+            builder.def_var(sum, new_sum);
+            
+            // Increment counter
+            let one = builder.ins().iconst(types::I64, 1);
+            let next_counter = builder.ins().iadd(current_counter, one);
+            builder.def_var(counter, next_counter);
+            
+            // Jump back to loop header
+            builder.ins().jump(loop_header, &[]);
+            
+            // Loop end: return sum
+            builder.switch_to_block(loop_end);
+            let final_sum = builder.use_var(sum);
+            builder.ins().return_(&[final_sum]);
+            
+            // Seal remaining blocks
+            builder.seal_block(loop_header);
+            builder.seal_block(loop_body);
+            builder.seal_block(loop_end);
+            
+            builder.finalize();
+        }
+        
+        // Define the function
+        ctx.func = builder_ctx.func;
+        module
+            .define_function(func_id, &mut ctx)
+            .map_err(|e| JitError::CompilationError(format!("Function definition failed: {}", e)))?;
+        
+        // Finalize function
+        module.finalize_definitions()
+            .map_err(|e| JitError::CompilationError(format!("Failed to finalize definitions: {}", e)))?;
+        
+        // Get function pointer
+        let compiled_fn = module.get_finalized_function(func_id);
+        
         Ok(Self {
             name: name.to_string(),
+            compiled_fn: Some(compiled_fn),
+            jit_module: Some(module),
         })
+    }
+    
+    /// Execute the compiled function with array data
+    pub fn execute_array_sum(&self, data: &[f64]) -> JitResult<f64> {
+        if let Some(func_ptr) = self.compiled_fn {
+            // Cast function pointer to correct signature
+            let func: unsafe extern "C" fn(*const f64, i64) -> f64 = unsafe {
+                std::mem::transmute(func_ptr)
+            };
+            
+            // Call the JIT-compiled function
+            let result = unsafe {
+                func(data.as_ptr(), data.len() as i64)
+            };
+            
+            Ok(result)
+        } else {
+            Err(JitError::ExecutionError("Function not compiled".to_string()))
+        }
     }
 }
 

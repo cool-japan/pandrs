@@ -20,6 +20,16 @@ pub mod core;
 // Compute module for computation functionality
 pub mod compute;
 
+// Arrow integration module for ecosystem compatibility
+#[cfg(feature = "distributed")]
+pub mod arrow_integration;
+
+// Data connectors for databases and cloud storage
+pub mod connectors;
+
+// Configuration management for secure settings and credentials
+pub mod config;
+
 // Storage module for data storage engines
 pub mod storage;
 
@@ -65,6 +75,18 @@ pub use core::data_value::{DataValue, DataValueExt, DisplayExt};
 pub use core::error::{Error, Result};
 pub use core::index::{Index as CoreIndex, IndexTrait};
 pub use core::multi_index::MultiIndex as CoreMultiIndex;
+
+// Configuration management exports
+pub use config::{
+    PandRSConfig, DatabaseConfig, CloudConfig, PerformanceConfig, SecurityConfig, LoggingConfig,
+    ConnectionPoolConfig, TimeoutConfig, SslConfig, AwsConfig, GcpConfig, AzureConfig,
+    GlobalCloudConfig, ThreadingConfig, MemoryConfig, CachingConfig, JitConfig,
+    EncryptionConfig, AuditConfig, AccessControlConfig, LogRotationConfig,
+};
+pub use config::credentials::{
+    CredentialStore, CredentialStoreConfig, CredentialType, CredentialMetadata,
+    CredentialBuilder, EncryptedCredential,
+};
 
 // Re-export legacy types (for backward compatibility)
 pub use column::{BooleanColumn, Column, ColumnType, Float64Column, Int64Column, StringColumn};

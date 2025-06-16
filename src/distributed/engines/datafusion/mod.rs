@@ -163,8 +163,6 @@ impl ExecutionContext for DataFusionContext {
 
         // Register table with DataFusion
         self.context
-            .write()
-            .unwrap()
             .register_table(name, Arc::new(mem_table))
             .map_err(|e| Error::InvalidValue(format!("Failed to register table: {}", e)))?;
 
@@ -175,41 +173,68 @@ impl ExecutionContext for DataFusionContext {
     }
 
     fn register_csv(&mut self, name: &str, path: &str) -> Result<()> {
-        // TODO: Implement CSV registration properly
-        use arrow::datatypes::Schema;
-        use datafusion::datasource::MemTable;
+        use datafusion::datasource::file_format::csv::CsvFormat;
+        use datafusion::datasource::listing::{ListingOptions, ListingTable, ListingTableConfig};
+        use datafusion::datasource::object_store::ObjectStoreUrl;
         use std::sync::Arc;
 
-        // For now, register empty table as placeholder
-        let schema = Arc::new(Schema::new(vec![]));
-        let mem_table = MemTable::try_new(schema, vec![vec![]])
-            .map_err(|e| Error::InvalidValue(format!("Failed to create CSV table: {}", e)))?;
+        // Create CSV format options
+        let file_format = Arc::new(CsvFormat::default().with_has_header(true));
+        
+        // Create listing options
+        let listing_options = ListingOptions::new(file_format)
+            .with_file_extension(".csv");
 
-        self.context
-            .write()
-            .unwrap()
-            .register_table(name, Arc::new(mem_table))
-            .map_err(|e| Error::InvalidValue(format!("Failed to register CSV table: {}", e)))?;
+        // Create table path
+        let table_path = datafusion::datasource::listing::ListingTableUrl::parse(path)
+            .map_err(|e| Error::InvalidValue(format!("Invalid CSV path: {}", e)))?;
+
+        // Register CSV file with DataFusion
+        futures::executor::block_on(async {
+            self.context
+                .register_listing_table(
+                    name,
+                    table_path,
+                    listing_options,
+                    None,
+                    None,
+                )
+                .await
+        })
+        .map_err(|e| Error::InvalidValue(format!("Failed to register CSV table: {}", e)))?;
 
         Ok(())
     }
 
     fn register_parquet(&mut self, name: &str, path: &str) -> Result<()> {
-        // TODO: Implement Parquet registration properly
-        use arrow::datatypes::Schema;
-        use datafusion::datasource::MemTable;
+        use datafusion::datasource::file_format::parquet::ParquetFormat;
+        use datafusion::datasource::listing::{ListingOptions, ListingTableConfig};
         use std::sync::Arc;
 
-        // For now, register empty table as placeholder
-        let schema = Arc::new(Schema::new(vec![]));
-        let mem_table = MemTable::try_new(schema, vec![vec![]])
-            .map_err(|e| Error::InvalidValue(format!("Failed to create Parquet table: {}", e)))?;
+        // Create Parquet format options
+        let file_format = Arc::new(ParquetFormat::default());
+        
+        // Create listing options
+        let listing_options = ListingOptions::new(file_format)
+            .with_file_extension(".parquet");
 
-        self.context
-            .write()
-            .unwrap()
-            .register_table(name, Arc::new(mem_table))
-            .map_err(|e| Error::InvalidValue(format!("Failed to register Parquet table: {}", e)))?;
+        // Create table path
+        let table_path = datafusion::datasource::listing::ListingTableUrl::parse(path)
+            .map_err(|e| Error::InvalidValue(format!("Invalid Parquet path: {}", e)))?;
+
+        // Register Parquet file with DataFusion
+        futures::executor::block_on(async {
+            self.context
+                .register_listing_table(
+                    name,
+                    table_path,
+                    listing_options,
+                    None,
+                    None,
+                )
+                .await
+        })
+        .map_err(|e| Error::InvalidValue(format!("Failed to register Parquet table: {}", e)))?;
 
         Ok(())
     }
@@ -219,7 +244,7 @@ impl ExecutionContext for DataFusionContext {
 
         // Execute SQL query using DataFusion
         let sql_result = futures::executor::block_on(async {
-            let df = self.context.write().unwrap().sql(query).await?;
+            let df = self.context.sql(query).await?;
             df.collect().await
         })
         .map_err(|e| Error::InvalidValue(format!("SQL execution failed: {}", e)))?;
@@ -227,7 +252,7 @@ impl ExecutionContext for DataFusionContext {
         // Convert result to our format
         let mut partitions = Vec::new();
         for (i, batch) in sql_result.iter().enumerate() {
-            partitions.push(Partition::new(i, batch.clone()));
+            partitions.push(Arc::new(Partition::new(i, batch.clone())));
         }
 
         let schema = if sql_result.is_empty() {
@@ -247,23 +272,108 @@ impl ExecutionContext for DataFusionContext {
     }
 
     fn table_schema(&self, name: &str) -> Result<arrow::datatypes::SchemaRef> {
-        // TODO: Implement proper schema retrieval
-        use arrow::datatypes::Schema;
-        Ok(std::sync::Arc::new(Schema::new(vec![])))
+        // Try to get table schema from DataFusion context
+        if let Some(table) = futures::executor::block_on(async {
+            self.context.table(name).await.ok()
+        }) {
+            let schema = table.schema();
+            Ok(schema.into())
+        } else {
+            // If table not found, check our registered tables
+            if let Some(partition_set) = self.registered_tables.get(name) {
+                Ok(partition_set.schema())
+            } else {
+                Err(Error::InvalidValue(format!("Table '{}' not found", name)))
+            }
+        }
     }
 
-    fn explain_plan(&self, plan: &ExecutionPlan, _with_statistics: bool) -> Result<String> {
-        // TODO: Implement proper plan explanation
-        Ok(format!("Execution plan for: {}", plan.input()))
+    fn explain_plan(&self, plan: &ExecutionPlan, with_statistics: bool) -> Result<String> {
+        // Convert execution plan to SQL and explain it
+        let sql = self.plan_to_sql(plan)?;
+        
+        let explain_sql = if with_statistics {
+            format!("EXPLAIN (ANALYZE true, VERBOSE true) {}", sql)
+        } else {
+            format!("EXPLAIN {}", sql)
+        };
+        
+        // Execute the explain query
+        let result = futures::executor::block_on(async {
+            let df = self.context.sql(&explain_sql).await?;
+            df.collect().await
+        })
+        .map_err(|e| Error::InvalidValue(format!("Plan explanation failed: {}", e)))?;
+        
+        // Convert result to string
+        let mut explanation = String::new();
+        for batch in result {
+            if let Some(column) = batch.column(0).as_any().downcast_ref::<arrow::array::StringArray>() {
+                for i in 0..column.len() {
+                    if let Some(line) = column.value(i) {
+                        explanation.push_str(line);
+                        explanation.push('\n');
+                    }
+                }
+            }
+        }
+        
+        Ok(explanation)
     }
 
-    fn write_parquet(&mut self, _result: &ExecutionResult, _path: &str) -> Result<()> {
-        // TODO: Implement Parquet writing
+    fn write_parquet(&mut self, result: &ExecutionResult, path: &str) -> Result<()> {
+        use parquet::arrow::arrow_writer::ArrowWriter;
+        use parquet::file::properties::WriterProperties;
+        use std::fs::File;
+        use std::sync::Arc;
+        
+        // Create writer properties with compression
+        let props = WriterProperties::builder()
+            .set_compression(parquet::basic::Compression::SNAPPY)
+            .build();
+        
+        // Create output file
+        let file = File::create(path)
+            .map_err(|e| Error::InvalidValue(format!("Failed to create Parquet file: {}", e)))?;
+        
+        // Create Arrow writer
+        let mut writer = ArrowWriter::try_new(file, result.schema(), Some(props))
+            .map_err(|e| Error::InvalidValue(format!("Failed to create Parquet writer: {}", e)))?;
+        
+        // Write all partitions
+        for partition in result.partitions().partitions() {
+            if let Some(batch) = partition.data() {
+                writer.write(batch)
+                    .map_err(|e| Error::InvalidValue(format!("Failed to write Parquet batch: {}", e)))?;
+            }
+        }
+        
+        // Close writer
+        writer.close()
+            .map_err(|e| Error::InvalidValue(format!("Failed to close Parquet writer: {}", e)))?;
+        
         Ok(())
     }
 
-    fn write_csv(&mut self, _result: &ExecutionResult, _path: &str) -> Result<()> {
-        // TODO: Implement CSV writing
+    fn write_csv(&mut self, result: &ExecutionResult, path: &str) -> Result<()> {
+        use arrow::csv::Writer;
+        use std::fs::File;
+        
+        // Create output file
+        let file = File::create(path)
+            .map_err(|e| Error::InvalidValue(format!("Failed to create CSV file: {}", e)))?;
+        
+        // Create CSV writer with headers
+        let mut writer = Writer::new(file);
+        
+        // Write all partitions
+        for partition in result.partitions().partitions() {
+            if let Some(batch) = partition.data() {
+                writer.write(batch)
+                    .map_err(|e| Error::InvalidValue(format!("Failed to write CSV batch: {}", e)))?;
+            }
+        }
+        
         Ok(())
     }
 
@@ -272,8 +382,16 @@ impl ExecutionContext for DataFusionContext {
     }
 
     fn clone(&self) -> Box<dyn ExecutionContext> {
-        // TODO: Implement proper cloning
-        Box::new(DataFusionContext::new())
+        // Create new context with same configuration
+        let mut new_context = DataFusionContext::new(&self.config);
+        
+        // Copy registered tables
+        new_context.registered_tables = self.registered_tables.clone();
+        
+        // Copy metrics
+        new_context.metrics = self.metrics.clone();
+        
+        Box::new(new_context)
     }
 }
 

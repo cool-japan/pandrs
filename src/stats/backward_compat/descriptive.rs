@@ -147,7 +147,7 @@ pub(crate) fn correlation_impl(x: &[f64], y: &[f64]) -> Result<f64> {
     let denominator = (sum_squared_diff_x * sum_squared_diff_y).sqrt();
     
     if denominator.abs() < std::f64::EPSILON {
-        return Err(Error::ComputationError("Correlation calculation: zero variance".into()));
+        return Err(Error::Computation("Correlation calculation: zero variance".into()));
     }
     
     Ok(numerator / denominator)
