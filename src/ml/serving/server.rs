@@ -676,7 +676,7 @@ mod tests {
     
     #[test]
     fn test_request_statistics() {
-        let mut stats = RequestStatistics::default();
+        let stats = RequestStatistics::default();
         assert_eq!(stats.total_requests, 0);
         assert_eq!(stats.successful_requests, 0);
         assert_eq!(stats.failed_requests, 0);

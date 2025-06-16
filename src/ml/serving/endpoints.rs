@@ -362,7 +362,7 @@ impl HealthEndpoint {
         let models = server.list_models();
         let mut model_statuses = HashMap::new();
         let mut healthy_count = 0;
-        let mut total_count = models.len();
+        let total_count = models.len();
         
         for model_name in &models {
             match server.get_model(model_name) {

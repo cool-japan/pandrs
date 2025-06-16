@@ -799,13 +799,11 @@ impl TimeSeriesFeatureExtractor {
         for i in 0..(n - m) {
             for j in (i + 1)..(n - m) {
                 let mut match_m = true;
-                let mut match_m1 = true;
                 
                 // Check pattern of length m
                 for k in 0..m {
                     if (values[i + k] - values[j + k]).abs() > r {
                         match_m = false;
-                        match_m1 = false;
                         break;
                     }
                 }

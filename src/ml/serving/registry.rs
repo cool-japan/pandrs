@@ -655,7 +655,7 @@ mod tests {
     
     #[test]
     fn test_in_memory_registry() {
-        let mut registry = InMemoryModelRegistry::new();
+        let registry = InMemoryModelRegistry::new();
         
         // Test that registry starts empty
         assert!(registry.list_models().unwrap().is_empty());

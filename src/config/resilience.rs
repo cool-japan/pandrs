@@ -487,6 +487,7 @@ impl Default for ResilienceManager {
 }
 
 /// Helper trait for resilient operations
+#[allow(async_fn_in_trait)]
 pub trait ResilientOperation<T> {
     /// Execute operation with resilience patterns
     async fn execute_resilient(

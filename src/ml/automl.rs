@@ -108,7 +108,7 @@ impl ModelSearchSpace {
         let mut linear_models = Vec::new();
         let mut tree_models = Vec::new();
         let mut ensemble_models = Vec::new();
-        let mut neural_models = Vec::new();
+        let neural_models = Vec::new();
         
         // Linear models
         let mut linear_regression_params = HashMap::new();
@@ -174,7 +174,7 @@ impl ModelSearchSpace {
         let mut linear_models = Vec::new();
         let mut tree_models = Vec::new();
         let mut ensemble_models = Vec::new();
-        let mut neural_models = Vec::new();
+        let neural_models = Vec::new();
         
         // Linear models
         let mut logistic_regression_params = HashMap::new();
@@ -616,7 +616,7 @@ impl AutoML {
         
         // In a real implementation, this would use the fitted best model
         // For now, return placeholder predictions
-        Ok(vec![0.0; x.nrows()])
+        Ok(vec![0.0; processed_x.nrows()])
     }
     
     /// Get the AutoML results

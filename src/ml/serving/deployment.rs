@@ -672,7 +672,7 @@ mod tests {
     
     #[test]
     fn test_deployment_manager() {
-        let mut manager = DeploymentManager::new();
+        let manager = DeploymentManager::new();
         
         // Test that manager starts empty
         assert!(manager.list_deployments().is_empty());

@@ -297,13 +297,6 @@ impl TimeSeriesPreprocessor {
     pub fn preprocess(&self, ts: &TimeSeries) -> Result<PreprocessingResult> {
         let mut processed_series = ts.clone();
         let mut transformations = Vec::new();
-        let mut outlier_info = OutlierInfo {
-            outlier_indices: Vec::new(),
-            outlier_values: Vec::new(),
-            detection_method: "None".to_string(),
-            treatment_method: "None".to_string(),
-            threshold: 0.0,
-        };
         
         let original_stats = self.calculate_basic_stats(&processed_series)?;
         let original_length = processed_series.len();
@@ -328,7 +321,7 @@ impl TimeSeriesPreprocessor {
         if let Some(transform) = outlier_transform {
             transformations.push(transform);
         }
-        outlier_info = outlier_detection_info;
+        let outlier_info = outlier_detection_info;
         
         // Step 4: Apply smoothing if configured
         if let Some(smoothing_config) = &self.smoothing {

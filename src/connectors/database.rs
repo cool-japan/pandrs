@@ -61,6 +61,7 @@ impl DatabaseConfig {
 }
 
 /// Generic database connector trait
+#[allow(async_fn_in_trait)]
 pub trait DatabaseConnector: Send + Sync {
     /// Connect to the database
     async fn connect(&mut self, config: &DatabaseConfig) -> Result<()>;
@@ -538,7 +539,7 @@ mod tests {
         }
     }
     
-    #[cfg(feature = "database")]
+    #[cfg(feature = "sql")]
     #[tokio::test]
     async fn test_sqlite_connector() {
         let connector = SQLiteConnector::in_memory().await;

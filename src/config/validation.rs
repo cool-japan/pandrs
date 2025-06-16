@@ -149,9 +149,11 @@ fn validate_aws_config(config: &AwsConfig) -> Result<()> {
         validate_aws_region(region)?;
     }
     
-    // Validate endpoint URL if provided
+    // Validate endpoint URL if provided and not empty
     if let Some(endpoint) = &config.endpoint_url {
-        validate_url(endpoint, "AWS endpoint")?;
+        if !endpoint.is_empty() {
+            validate_url(endpoint, "AWS endpoint")?;
+        }
     }
     
     // Check for credential completeness
@@ -179,14 +181,18 @@ fn validate_aws_region(region: &str) -> Result<()> {
 
 /// Validate GCP configuration
 fn validate_gcp_config(config: &GcpConfig) -> Result<()> {
-    // Validate service account key file if provided
+    // Validate service account key file if provided and not empty
     if let Some(key_file) = &config.service_account_key {
-        validate_file_path(key_file, "GCP service account key")?;
+        if !key_file.is_empty() {
+            validate_file_path(key_file, "GCP service account key")?;
+        }
     }
     
-    // Validate endpoint URL if provided
+    // Validate endpoint URL if provided and not empty
     if let Some(endpoint) = &config.endpoint_url {
-        validate_url(endpoint, "GCP endpoint")?;
+        if !endpoint.is_empty() {
+            validate_url(endpoint, "GCP endpoint")?;
+        }
     }
     
     // Check for credential configuration
@@ -202,9 +208,11 @@ fn validate_gcp_config(config: &GcpConfig) -> Result<()> {
 
 /// Validate Azure configuration
 fn validate_azure_config(config: &AzureConfig) -> Result<()> {
-    // Validate endpoint URL if provided
+    // Validate endpoint URL if provided and not empty
     if let Some(endpoint) = &config.endpoint_url {
-        validate_url(endpoint, "Azure endpoint")?;
+        if !endpoint.is_empty() {
+            validate_url(endpoint, "Azure endpoint")?;
+        }
     }
     
     // Check for credential configuration

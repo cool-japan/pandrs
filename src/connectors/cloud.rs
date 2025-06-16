@@ -101,6 +101,7 @@ impl CloudConfig {
 }
 
 /// Generic cloud storage connector trait
+#[allow(async_fn_in_trait)]
 pub trait CloudConnector: Send + Sync {
     /// Connect to cloud storage
     async fn connect(&mut self, config: &CloudConfig) -> Result<()>;
@@ -573,7 +574,7 @@ mod tests {
         assert!(FileFormat::from_extension("data.unknown").is_none());
     }
     
-    #[cfg(feature = "cloud")]
+    #[cfg(feature = "distributed")]
     #[tokio::test]
     async fn test_s3_connector() {
         let mut connector = S3Connector::new();

@@ -892,7 +892,7 @@ impl AutocorrelationAnalysis {
             } else {
                 // Solve Yule-Walker equations for partial autocorrelation
                 let mut numerator = acf[k];
-                let mut denominator = 1.0;
+                let denominator = 1.0;
                 
                 for j in 1..k {
                     numerator -= pacf[j] * acf[k - j];

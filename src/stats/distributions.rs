@@ -418,7 +418,7 @@ impl FDistribution {
         }
         
         // Simplified continued fraction approximation
-        let mut result = x.powf(a) * (1.0 - x).powf(b) / (a * Self::beta(a, b));
+        let result = x.powf(a) * (1.0 - x).powf(b) / (a * Self::beta(a, b));
         
         // Series approximation for moderate values
         let mut sum = 1.0;
