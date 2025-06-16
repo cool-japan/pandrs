@@ -448,9 +448,7 @@ impl GridSearchCV {
     
     /// Create a clone of the base estimator
     fn create_estimator_clone(&self) -> Box<dyn SklearnPredictor + Send + Sync> {
-        // In a real implementation, this would properly clone the estimator
-        // For now, return a placeholder
-        todo!("Implement proper estimator cloning")
+        self.estimator.clone_predictor()
     }
     
     /// Fit the grid search

@@ -316,7 +316,10 @@ impl AutoML {
             .filter_map(|&x| if x.fract() == 0.0 { Some(x as i64) } else { None })
             .collect();
         
-        if unique_values.len() <= 20 && unique_values.len() == values.len() {
+        let integer_count = values.iter().filter(|x| x.fract() == 0.0).count();
+        
+        // Check if values appear to be categorical (all values are integers with limited unique count)
+        if integer_count == values.len() && unique_values.len() <= 20 && unique_values.len() > 0 {
             if unique_values.len() == 2 {
                 Ok(TaskType::BinaryClassification)
             } else {
@@ -566,7 +569,8 @@ impl AutoML {
         
         if let Some(n_estimators) = params.get("n_estimators") {
             if let Ok(n) = n_estimators.parse::<f64>() {
-                complexity *= (n / 100.0).ln().max(1.0);
+                // More estimators = higher complexity (logarithmic scaling)
+                complexity *= (n / 50.0).ln().max(1.0) + 1.0;
             }
         }
         

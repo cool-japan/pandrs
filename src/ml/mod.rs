@@ -20,6 +20,9 @@ pub mod feature_engineering;
 pub mod model_selection;
 pub mod sklearn_compat;
 
+// Model serving and deployment
+pub mod serving;
+
 // GPU-accelerated ML functionality (conditionally compiled)
 #[cfg(feature = "cuda")]
 pub mod gpu;
@@ -105,4 +108,12 @@ pub use model_selection::{
 pub use sklearn_compat::{
     SklearnEstimator, SklearnTransformer, SklearnPredictor, Pipeline as SklearnPipeline,
     PipelineStep, StandardScalerCompat, MinMaxScalerCompat,
+};
+
+// Re-export model serving capabilities
+pub use serving::{
+    ModelServing, ModelServer, ModelServingFactory, ServerConfig, DeploymentConfig,
+    PredictionRequest, PredictionResponse, BatchPredictionRequest, BatchPredictionResponse,
+    ModelMetadata, HealthStatus, ModelInfo, DeploymentMetrics, DeploymentStatus,
+    ResourceConfig, ScalingConfig, HealthCheckConfig, MonitoringConfig,
 };

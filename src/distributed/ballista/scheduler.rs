@@ -22,7 +22,7 @@ impl TaskScheduler {
     ) -> crate::error::Result<TaskHandle> {
         // Placeholder implementation
         // This will be implemented in the next phase
-        unimplemented!("Task scheduling will be implemented in the next phase")
+        Err(crate::error::Error::NotImplemented("Task scheduling will be implemented in the next phase".into()))
     }
     
     /// Gets the status of a task
@@ -30,7 +30,7 @@ impl TaskScheduler {
     pub async fn task_status(&self, _handle: &TaskHandle) -> crate::error::Result<TaskStatus> {
         // Placeholder implementation
         // This will be implemented in the next phase
-        unimplemented!("Task status tracking will be implemented in the next phase")
+        Err(crate::error::Error::NotImplemented("Task status tracking will be implemented in the next phase".into()))
     }
 }
 

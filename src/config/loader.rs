@@ -323,12 +323,97 @@ database:
   default_url: "postgresql://localhost/test"
   pool:
     max_connections: 25
+    min_idle: 2
+    max_lifetime: 3600
+    idle_timeout: 600
+    acquire_timeout: 30
+  timeouts:
+    query: 30
+    connection: 10
+    transaction: 60
+  ssl:
+    enabled: false
+    mode: "prefer"
+  parameters: {}
 cloud:
   aws:
     region: "us-west-1"
+    endpoint_url: ""
+    access_key_id: ""
+    secret_access_key: ""
+    session_token: ""
+    profile: "default"
+    use_instance_metadata: false
+  gcp:
+    project_id: ""
+    service_account_key: ""
+    use_default_credentials: true
+    endpoint_url: ""
+  azure:
+    account_name: ""
+    account_key: ""
+    sas_token: ""
+    use_managed_identity: false
+    endpoint_url: ""
+  default_provider: "aws"
+  global:
+    timeout: 300
+    max_retries: 3
+    retry_backoff: 2.0
+    compression: true
+    buffer_size: 65536
 performance:
+  threading:
+    worker_threads: 0
+    parallel_enabled: true
+    parallel_batch_size: 1000
+    stack_size: 2097152
+  memory:
+    limit: 0
+    enable_mmap: true
+    string_pool:
+      enabled: true
+      max_size: 104857600
+      cleanup_threshold: 0.8
+    gc:
+      auto_gc: true
+      trigger_mb: 512
+      aggressive: false
+  caching:
+    enabled: true
+    size_limit: 104857600
+    ttl: 3600
+    cleanup_interval: 300
   jit:
     enabled: false
+    threshold: 100
+    simd_enabled: true
+    cache_functions: true
+security:
+  encryption:
+    enabled: false
+    algorithm: "aes-256-gcm"
+    key_derivation: "pbkdf2"
+    salt: ""
+  audit:
+    enabled: false
+    level: "info"
+    file_path: ""
+    include_sensitive: false
+  access_control:
+    enabled: false
+    allowed_operations: []
+    restricted_patterns: []
+logging:
+  level: "info"
+  format: "text"
+  file_path: ""
+  console: true
+  rotation:
+    enabled: false
+    max_size: 10485760
+    max_files: 10
+    compress: true
 "#;
         
         let config = load_from_yaml(yaml).unwrap();
@@ -360,11 +445,100 @@ performance:
         // Create a config file
         let yaml = r#"
 database:
+  default_url: "postgresql://localhost/test"
   pool:
     max_connections: 30
+    min_idle: 2
+    max_lifetime: 3600
+    idle_timeout: 600
+    acquire_timeout: 30
+  timeouts:
+    query: 30
+    connection: 10
+    transaction: 60
+  ssl:
+    enabled: false
+    mode: "prefer"
+  parameters: {}
 cloud:
   aws:
     region: "eu-west-1"
+    endpoint_url: ""
+    access_key_id: ""
+    secret_access_key: ""
+    session_token: ""
+    profile: "default"
+    use_instance_metadata: false
+  gcp:
+    project_id: ""
+    service_account_key: ""
+    use_default_credentials: true
+    endpoint_url: ""
+  azure:
+    account_name: ""
+    account_key: ""
+    sas_token: ""
+    use_managed_identity: false
+    endpoint_url: ""
+  default_provider: "aws"
+  global:
+    timeout: 300
+    max_retries: 3
+    retry_backoff: 2.0
+    compression: true
+    buffer_size: 65536
+performance:
+  threading:
+    worker_threads: 0
+    parallel_enabled: true
+    parallel_batch_size: 1000
+    stack_size: 2097152
+  memory:
+    limit: 0
+    enable_mmap: true
+    string_pool:
+      enabled: true
+      max_size: 104857600
+      cleanup_threshold: 0.8
+    gc:
+      auto_gc: true
+      trigger_mb: 512
+      aggressive: false
+  caching:
+    enabled: true
+    size_limit: 104857600
+    ttl: 3600
+    cleanup_interval: 300
+  jit:
+    enabled: false
+    threshold: 100
+    simd_enabled: true
+    cache_functions: true
+security:
+  encryption:
+    enabled: false
+    algorithm: "aes-256-gcm"
+    key_derivation: "pbkdf2"
+    salt: ""
+  audit:
+    enabled: false
+    level: "info"
+    file_path: ""
+    include_sensitive: false
+  access_control:
+    enabled: false
+    allowed_operations: []
+    restricted_patterns: []
+logging:
+  level: "info"
+  format: "text"
+  file_path: ""
+  console: true
+  rotation:
+    enabled: false
+    max_size: 10485760
+    max_files: 10
+    compress: true
 "#;
         std::fs::write(&config_path, yaml).unwrap();
         

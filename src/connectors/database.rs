@@ -538,6 +538,7 @@ mod tests {
         }
     }
     
+    #[cfg(feature = "database")]
     #[tokio::test]
     async fn test_sqlite_connector() {
         let connector = SQLiteConnector::in_memory().await;

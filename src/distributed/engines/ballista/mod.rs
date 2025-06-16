@@ -160,6 +160,7 @@ impl ExecutionContext for BallistaContext {
 
     fn clone(&self) -> Box<dyn ExecutionContext> {
         // Implementation will be provided in a future PR
-        unimplemented!("Ballista context cloning not yet implemented");
+        // For now, create a new instance with the same configuration
+        Box::new(BallistaContext::new())
     }
 }

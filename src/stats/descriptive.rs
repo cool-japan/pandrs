@@ -257,7 +257,7 @@ fn calculate_kurtosis(data: &[f64], mean: f64, std: f64) -> Result<f64> {
 /// Calculate confidence intervals for the mean
 fn calculate_confidence_intervals(mean: f64, standard_error: f64, n: usize) -> Result<ConfidenceIntervals> {
     let df = (n - 1) as f64;
-    let t_dist = TDistribution::new(df);
+    let t_dist = TDistribution::new(df)?;
     
     // Critical values for different confidence levels
     let t_90 = t_dist.inverse_cdf(0.95);  // 90% CI

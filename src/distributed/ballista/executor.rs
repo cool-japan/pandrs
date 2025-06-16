@@ -58,6 +58,6 @@ impl ExecutionEngine for BallistaEngine {
         }
         
         // Will be implemented in the next phase
-        unimplemented!("Ballista context creation will be implemented in the next phase")
+        Err(crate::error::Error::NotImplemented("Ballista context creation will be implemented in the next phase".into()))
     }
 }

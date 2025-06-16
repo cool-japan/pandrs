@@ -69,7 +69,7 @@ pub fn mann_whitney_u_test(
         (u_statistic + 0.5 - mean_u) / var_u.sqrt()
     };
     
-    let normal = Normal::new(0.0, 1.0);
+    let normal = Normal::new(0.0, 1.0)?;
     let p_value = match alternative {
         AlternativeHypothesis::TwoSided => 2.0 * (1.0 - normal.cdf(z_statistic.abs())),
         AlternativeHypothesis::Greater => 1.0 - normal.cdf(z_statistic),
@@ -160,7 +160,7 @@ pub fn wilcoxon_signed_rank_test(
         (w_statistic + 0.5 - mean_w) / var_w.sqrt()
     };
     
-    let normal = Normal::new(0.0, 1.0);
+    let normal = Normal::new(0.0, 1.0)?;
     let p_value = match alternative {
         AlternativeHypothesis::TwoSided => 2.0 * (1.0 - normal.cdf(z_statistic.abs())),
         AlternativeHypothesis::Greater => 1.0 - normal.cdf(z_statistic),
@@ -251,7 +251,7 @@ pub fn kruskal_wallis_test(groups: &[&[f64]]) -> Result<TestResult> {
     let df = (k - 1) as f64;
     
     // P-value using chi-squared distribution
-    let chi_sq = ChiSquared::new(df);
+    let chi_sq = ChiSquared::new(df)?;
     let p_value = 1.0 - chi_sq.cdf(h_statistic);
     
     // Effect size (eta-squared)
@@ -330,7 +330,7 @@ pub fn friedman_test(data: &[Vec<f64>]) -> Result<TestResult> {
     let df = k - 1.0;
     
     // P-value using chi-squared distribution
-    let chi_sq = ChiSquared::new(df);
+    let chi_sq = ChiSquared::new(df)?;
     let p_value = 1.0 - chi_sq.cdf(q_statistic);
     
     // Effect size (Kendall's W)
@@ -487,7 +487,7 @@ pub fn runs_test(sequence: &[bool]) -> Result<TestResult> {
         (runs as f64 + 0.5 - expected_runs) / variance_runs.sqrt()
     };
     
-    let normal = Normal::new(0.0, 1.0);
+    let normal = Normal::new(0.0, 1.0)?;
     let p_value = 2.0 * (1.0 - normal.cdf(z_statistic.abs()));
     
     let mut additional_info = HashMap::new();

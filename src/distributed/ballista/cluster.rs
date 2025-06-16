@@ -26,7 +26,7 @@ impl BallistaCluster {
     pub async fn connect(&mut self) -> crate::error::Result<()> {
         // Placeholder implementation
         // This will be implemented in the next phase
-        unimplemented!("Ballista cluster connection will be implemented in the next phase")
+        Err(crate::error::Error::NotImplemented("Ballista cluster connection will be implemented in the next phase".into()))
     }
     
     /// Checks if connected to the cluster

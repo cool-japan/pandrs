@@ -136,7 +136,7 @@ pub fn one_sample_ttest(
     let t_statistic = (sample_mean - hypothesized_mean) / standard_error;
     let df = n - 1.0;
     
-    let t_dist = TDistribution::new(df);
+    let t_dist = TDistribution::new(df)?;
     let p_value = match alternative {
         AlternativeHypothesis::TwoSided => 2.0 * (1.0 - t_dist.cdf(t_statistic.abs())),
         AlternativeHypothesis::Greater => 1.0 - t_dist.cdf(t_statistic),
@@ -220,7 +220,7 @@ pub fn independent_ttest(
         (t, degrees_freedom, se)
     };
     
-    let t_dist = TDistribution::new(df);
+    let t_dist = TDistribution::new(df)?;
     let p_value = match alternative {
         AlternativeHypothesis::TwoSided => 2.0 * (1.0 - t_dist.cdf(t_statistic.abs())),
         AlternativeHypothesis::Greater => 1.0 - t_dist.cdf(t_statistic),
@@ -378,7 +378,7 @@ pub fn one_way_anova(groups: &[&[f64]]) -> Result<TestResult> {
     let f_statistic = ms_between / ms_within;
     
     // P-value
-    let f_dist = FDistribution::new(df_between, df_within);
+    let f_dist = FDistribution::new(df_between, df_within)?;
     let p_value = 1.0 - f_dist.cdf(f_statistic);
     
     // Critical value
@@ -474,7 +474,7 @@ pub fn chi_square_independence(observed: &[Vec<f64>]) -> Result<TestResult> {
     let df = (rows - 1) * (cols - 1);
     
     // P-value
-    let chi_sq_dist = ChiSquared::new(df as f64);
+    let chi_sq_dist = ChiSquared::new(df as f64)?;
     let p_value = 1.0 - chi_sq_dist.cdf(chi_square);
     
     // Critical value
@@ -548,14 +548,29 @@ pub fn correlation_test(x: &[f64], y: &[f64], alternative: AlternativeHypothesis
     let r = sum_xy / denominator;
     
     // t-statistic for testing correlation
-    let t_statistic = r * ((n - 2.0) / (1.0 - r.powi(2))).sqrt();
+    let denominator_t = 1.0 - r.powi(2);
+    let t_statistic = if denominator_t < 1e-10 {
+        // For perfect correlation, t-statistic approaches infinity
+        if r > 0.0 { f64::INFINITY } else { f64::NEG_INFINITY }
+    } else {
+        r * ((n - 2.0) / denominator_t).sqrt()
+    };
     let df = n - 2.0;
     
-    let t_dist = TDistribution::new(df);
-    let p_value = match alternative {
-        AlternativeHypothesis::TwoSided => 2.0 * (1.0 - t_dist.cdf(t_statistic.abs())),
-        AlternativeHypothesis::Greater => 1.0 - t_dist.cdf(t_statistic),
-        AlternativeHypothesis::Less => t_dist.cdf(t_statistic),
+    let t_dist = TDistribution::new(df)?;
+    let p_value = if t_statistic.is_infinite() {
+        // For perfect correlation, p-value is essentially 0
+        match alternative {
+            AlternativeHypothesis::TwoSided => 0.0,
+            AlternativeHypothesis::Greater => if t_statistic > 0.0 { 0.0 } else { 1.0 },
+            AlternativeHypothesis::Less => if t_statistic < 0.0 { 0.0 } else { 1.0 },
+        }
+    } else {
+        match alternative {
+            AlternativeHypothesis::TwoSided => 2.0 * (1.0 - t_dist.cdf(t_statistic.abs())),
+            AlternativeHypothesis::Greater => 1.0 - t_dist.cdf(t_statistic),
+            AlternativeHypothesis::Less => t_dist.cdf(t_statistic),
+        }
     };
     
     let critical_value = match alternative {
@@ -567,17 +582,24 @@ pub fn correlation_test(x: &[f64], y: &[f64], alternative: AlternativeHypothesis
     let effect_size = EffectSize::PearsonR(r);
     
     // Fisher's z-transformation for confidence interval
-    let z_r = 0.5 * ((1.0 + r) / (1.0 - r)).ln();
-    let se_z = 1.0 / (n - 3.0).sqrt();
-    let z_critical = 1.96; // for 95% CI
-    
-    let z_lower = z_r - z_critical * se_z;
-    let z_upper = z_r + z_critical * se_z;
-    
-    let r_lower = (z_lower.exp() * 2.0 - 1.0) / (z_lower.exp() * 2.0 + 1.0);
-    let r_upper = (z_upper.exp() * 2.0 - 1.0) / (z_upper.exp() * 2.0 + 1.0);
-    
-    let ci = (r_lower, r_upper);
+    let ci = if r.abs() >= 0.999999 {
+        // For near-perfect correlation, CI is very narrow around r
+        let margin = 1e-6;
+        let r_clamped = r.clamp(-0.999999, 0.999999);
+        (r_clamped - margin, r_clamped + margin)
+    } else {
+        let z_r = 0.5 * ((1.0 + r) / (1.0 - r)).ln();
+        let se_z = 1.0 / (n - 3.0).sqrt();
+        let z_critical = 1.96; // for 95% CI
+        
+        let z_lower = z_r - z_critical * se_z;
+        let z_upper = z_r + z_critical * se_z;
+        
+        let r_lower = z_lower.tanh();
+        let r_upper = z_upper.tanh();
+        
+        (r_lower, r_upper)
+    };
     
     let mut additional_info = HashMap::new();
     additional_info.insert("correlation".to_string(), r);
@@ -646,7 +668,7 @@ pub fn shapiro_wilk_test(data: &[f64]) -> Result<TestResult> {
     
     // Very rough approximation - would need proper implementation
     let p_value = if w_statistic > 0.95 {
-        1.0 - Normal::new(0.0, 1.0).cdf(normalized)
+        1.0 - Normal::new(0.0, 1.0)?.cdf(normalized)
     } else {
         0.01
     };

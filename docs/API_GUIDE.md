@@ -1,6 +1,6 @@
-# PandRS API Guide (Alpha 4)
+# PandRS API Guide
 
-This guide provides comprehensive documentation for using PandRS effectively, including API patterns, best practices, and migration guidance.
+This guide provides comprehensive documentation for using PandRS effectively, including API patterns and best practices.
 
 ## Table of Contents
 
@@ -12,8 +12,7 @@ This guide provides comprehensive documentation for using PandRS effectively, in
 6. [I/O Operations](#io-operations)
 7. [Error Handling](#error-handling)
 8. [Performance Considerations](#performance-considerations)
-9. [Migration from Alpha 3](#migration-from-alpha-3)
-10. [Best Practices](#best-practices)
+9. [Best Practices](#best-practices)
 
 ## Core Concepts
 
@@ -116,7 +115,7 @@ df.add_column("age".to_string(), ages)?;
 
 ## Series Operations
 
-### Name Management (New in Alpha 4)
+### Name Management
 
 ```rust
 // Create series without name
@@ -155,7 +154,7 @@ for (i, value) in numbers.values().iter().enumerate() {
 
 ## Column Management
 
-### Column Renaming (New in Alpha 4)
+### Column Renaming
 
 ```rust
 use std::collections::HashMap;
@@ -386,45 +385,6 @@ df.add_string_column("name", names)?;
 df.add_float_column("score", scores)?;
 ```
 
-## Migration from Alpha 3
-
-### API Changes
-
-1. **Series Name Management**: New `set_name()` and `with_name()` methods
-2. **DataFrame Column Renaming**: New `rename_columns()` and `set_column_names()` methods
-3. **Enhanced Type Safety**: Better error handling and type checking
-
-### Updated Patterns
-
-**Before (Alpha 3)**:
-```rust
-// Series name was immutable after creation
-let series = Series::new(data, Some("name".to_string()))?;
-```
-
-**After (Alpha 4)**:
-```rust
-// Series name can be changed and managed
-let mut series = Series::new(data, None)?;
-series.set_name("name".to_string());
-
-// Or use fluent API
-let series = Series::new(data, None)?.with_name("name".to_string());
-```
-
-**Before (Alpha 3)**:
-```rust
-// Column renaming was not directly supported
-```
-
-**After (Alpha 4)**:
-```rust
-// Column renaming is now supported
-let mut rename_map = HashMap::new();
-rename_map.insert("old_name".to_string(), "new_name".to_string());
-df.rename_columns(&rename_map)?;
-```
-
 ## Best Practices
 
 ### 1. Use OptimizedDataFrame for Performance
@@ -580,4 +540,4 @@ fn benchmark_operation() -> Result<()> {
 }
 ```
 
-This guide covers the essential patterns for working with PandRS Alpha 4. For more examples, see the `examples/` directory in the repository.
+This guide covers the essential patterns for working with PandRS. For more examples, see the `examples/` directory in the repository.

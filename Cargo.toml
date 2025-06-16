@@ -1,6 +1,6 @@
 [package]
 name = "pandrs"
-version = "0.1.0-alpha.5"
+version = "0.1.0"
 edition = "2021"
 description = "A Rust implementation of pandas-like DataFrame for data analysis"
 authors = ["Cool Japan"]
@@ -12,7 +12,7 @@ categories = ["data-structures", "science", "mathematics"]
 
 [dependencies]
 num-traits = "0.2.19"
-chrono = "0.4.38"
+chrono = { version = "0.4.38", features = ["serde"] }
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1.0.140"
 serde_yaml = "0.9.34"  # YAML serialization support
@@ -63,7 +63,7 @@ ndarray = { version = "0.15.6", optional = true } # N-dimensional arrays
 
 # Distributed processing support (optional) - downgraded for chrono compatibility
 datafusion = { version = "30.0.0", optional = true }  # DataFrame processing engine
-uuid = { version = "1.4.1", optional = true }  # For unique IDs in distributed processing
+uuid = { version = "1.4.1", features = ["v4", "serde"], optional = true }  # For unique IDs in distributed processing and serving
 futures = { version = "0.3.30", optional = true }  # For async operations in distributed processing
 tokio = { version = "1.40", features = ["full"], optional = true }  # Async runtime for streaming and resilience
 log = "0.4.20"  # Logging interface
@@ -84,6 +84,7 @@ backward_compat = []  # Backward compatibility for older APIs
 wasm = ["wasm-bindgen", "js-sys", "web-sys", "plotters-canvas", "visualization"]  # WebAssembly support
 cuda = ["cudarc", "half", "ndarray"]  # CUDA support (requires CUDA toolkit)
 distributed = ["datafusion", "uuid", "dep:arrow", "dep:parquet", "dep:futures"]  # Distributed processing support
+serving = ["uuid", "dep:tokio", "dep:futures"]  # Model serving and deployment support
 excel = ["simple_excel_writer", "calamine"]  # Excel support
 visualization = ["textplots", "plotters"]  # Visualization support
 parquet = ["dep:arrow", "dep:parquet"]  # Parquet file support
@@ -97,7 +98,7 @@ test-core = ["optimized", "backward_compat", "streaming"]
 test-safe = ["optimized", "parquet", "excel", "sql", "streaming", "backward_compat"]
 
 # Feature bundle for all safe features (excludes CUDA/WASM which require external tools)  
-all-safe = ["optimized", "distributed", "parquet", "excel", "sql", "streaming", "backward_compat", "resilience"]
+all-safe = ["optimized", "distributed", "serving", "parquet", "excel", "sql", "streaming", "backward_compat", "resilience"]
 
 # Resilience patterns (retry mechanisms, circuit breakers)
 resilience = ["dep:tokio"]

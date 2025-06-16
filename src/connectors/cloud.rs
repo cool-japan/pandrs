@@ -573,6 +573,7 @@ mod tests {
         assert!(FileFormat::from_extension("data.unknown").is_none());
     }
     
+    #[cfg(feature = "cloud")]
     #[tokio::test]
     async fn test_s3_connector() {
         let mut connector = S3Connector::new();

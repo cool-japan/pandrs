@@ -51,6 +51,7 @@ pub mod series;
 pub mod stats;
 pub mod streaming;
 pub mod temporal;
+pub mod time_series;
 pub mod vis;
 
 // Internal utilities and compatibility layers
@@ -137,6 +138,20 @@ pub use large::{ChunkedDataFrame, DiskBasedDataFrame, DiskBasedOptimizedDataFram
 pub use streaming::{
     AggregationType, DataStream, MetricType, RealTimeAnalytics, StreamAggregator, StreamConfig,
     StreamConnector, StreamProcessor, StreamRecord,
+};
+
+// Time series analysis and forecasting
+pub use time_series::{
+    TimeSeries, TimeSeriesBuilder, TimePoint, Frequency, DateTimeIndex,
+    SeasonalDecomposition, DecompositionMethod, DecompositionResult,
+    Forecaster, ForecastResult, ForecastMetrics, ArimaForecaster, 
+    ExponentialSmoothingForecaster, SimpleMovingAverageForecaster, LinearTrendForecaster,
+    TrendAnalysis, SeasonalityAnalysis, StationarityTest, AutocorrelationAnalysis,
+    ChangePointDetection, TimeSeriesFeatureExtractor, FeatureSet, WindowFeatures,
+    StatisticalFeatures, TimeSeriesStats, AugmentedDickeyFullerTest, 
+    KwiatkowskiPhillipsSchmidtShinTest, SeasonalTest, WhiteNoiseTest,
+    TimeSeriesPreprocessor, MissingValueStrategy, OutlierDetection, Normalization,
+    Differencing,
 };
 
 // WebAssembly and web visualization (when enabled)

@@ -44,6 +44,9 @@ pub trait SklearnTransformer: SklearnEstimator {
     fn inverse_transform(&self, x: &DataFrame) -> Result<DataFrame> {
         Err(Error::NotImplemented("inverse_transform not supported".into()))
     }
+    
+    /// Create a clone of this transformer for cross-validation
+    fn clone_transformer(&self) -> Box<dyn SklearnTransformer + Send + Sync>;
 }
 
 /// Trait for predictors (classifiers and regressors)
@@ -61,6 +64,9 @@ pub trait SklearnPredictor: SklearnEstimator {
     
     /// Score the model on test data
     fn score(&self, x: &DataFrame, y: &DataFrame) -> Result<f64>;
+    
+    /// Create a clone of this predictor for cross-validation
+    fn clone_predictor(&self) -> Box<dyn SklearnPredictor + Send + Sync>;
 }
 
 /// Enhanced StandardScaler with full scikit-learn compatibility
@@ -268,6 +274,10 @@ impl SklearnTransformer for StandardScalerCompat {
         }
         
         Ok(result)
+    }
+    
+    fn clone_transformer(&self) -> Box<dyn SklearnTransformer + Send + Sync> {
+        Box::new(self.clone())
     }
 }
 
@@ -500,6 +510,10 @@ impl SklearnTransformer for MinMaxScalerCompat {
         
         Ok(result)
     }
+    
+    fn clone_transformer(&self) -> Box<dyn SklearnTransformer + Send + Sync> {
+        Box::new(self.clone())
+    }
 }
 
 /// Enhanced Pipeline with full scikit-learn compatibility
@@ -520,6 +534,19 @@ pub enum PipelineStep {
     Transformer(Box<dyn SklearnTransformer + Send + Sync>),
     /// A predictor step (must be the last step)
     Predictor(Box<dyn SklearnPredictor + Send + Sync>),
+}
+
+impl Clone for PipelineStep {
+    fn clone(&self) -> Self {
+        match self {
+            PipelineStep::Transformer(transformer) => {
+                PipelineStep::Transformer(transformer.clone_transformer())
+            },
+            PipelineStep::Predictor(predictor) => {
+                PipelineStep::Predictor(predictor.clone_predictor())
+            },
+        }
+    }
 }
 
 impl Pipeline {
@@ -718,6 +745,18 @@ impl SklearnPredictor for Pipeline {
         }
         
         Err(Error::InvalidOperation("Pipeline has no predictor step".into()))
+    }
+    
+    fn clone_predictor(&self) -> Box<dyn SklearnPredictor + Send + Sync> {
+        let cloned_steps = self.steps.iter()
+            .map(|(name, step)| (name.clone(), step.clone()))
+            .collect();
+        
+        Box::new(Pipeline {
+            steps: cloned_steps,
+            memory: self.memory.clone(),
+            verbose: self.verbose,
+        })
     }
 }
 

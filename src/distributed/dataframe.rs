@@ -595,7 +595,8 @@ impl DistributedDataFrame {
         
         #[cfg(not(feature = "distributed"))]
         {
-            panic!("Distributed feature not enabled");
+            // Return a placeholder engine that returns errors for all operations
+            Box::new(PlaceholderEngine::new())
         }
     }
 }
@@ -682,4 +683,36 @@ fn generate_unique_id() -> String {
         .as_nanos();
     
     format!("{:x}", now)
+}
+
+/// Placeholder execution engine for when distributed features are not enabled
+#[cfg(not(feature = "distributed"))]
+struct PlaceholderEngine {
+    initialized: bool,
+}
+
+#[cfg(not(feature = "distributed"))]
+impl PlaceholderEngine {
+    fn new() -> Self {
+        Self { initialized: false }
+    }
+}
+
+#[cfg(not(feature = "distributed"))]
+impl ExecutionEngine for PlaceholderEngine {
+    fn initialize(&mut self, _config: &DistributedConfig) -> Result<()> {
+        Err(crate::error::Error::InvalidOperation(
+            "Distributed feature not enabled. Cannot initialize execution engine.".into()
+        ))
+    }
+    
+    fn is_initialized(&self) -> bool {
+        false
+    }
+    
+    fn create_context(&self, _config: &DistributedConfig) -> Result<Box<dyn ExecutionContext>> {
+        Err(crate::error::Error::InvalidOperation(
+            "Distributed feature not enabled. Cannot create execution context.".into()
+        ))
+    }
 }

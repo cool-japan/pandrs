@@ -1,6 +1,6 @@
 # PandRS Benchmarking Infrastructure
 
-This document describes the comprehensive benchmarking infrastructure for PandRS alpha.4, designed to measure performance, detect regressions, and guide optimization efforts.
+This document describes the comprehensive benchmarking infrastructure for PandRS, designed to measure performance, detect regressions, and guide optimization efforts.
 
 ## Benchmark Suites
 
@@ -148,7 +148,7 @@ Baselines are stored in JSON format with the following structure:
 
 ```json
 {
-  "version": "0.1.0-alpha.4",
+  "version": "0.1.0",
   "timestamp": 1640995200,
   "benchmarks": {
     "dataframe_creation": {
