@@ -158,10 +158,14 @@ impl ProjectionExt for DistributedDataFrame {
 
         if self.is_lazy() {
             let mut new_df = self.clone_empty();
-            new_df.add_pending_operation(operation, vec![self.id().to_string()]);
+            let mut plan = ExecutionPlan::new(&self.id().to_string());
+            plan.add_operation(operation);
+            new_df.add_pending_operation(plan, vec![self.id().to_string()]);
             Ok(new_df)
         } else {
-            self.execute_operation(operation, vec![self.id().to_string()])
+            let mut plan = ExecutionPlan::new(&self.id().to_string());
+            plan.add_operation(operation);
+            self.execute_operation(plan, vec![self.id().to_string()])
         }
     }
 
@@ -186,16 +190,20 @@ impl ProjectionExt for DistributedDataFrame {
 
         if self.is_lazy() {
             let mut new_df = self.clone_empty();
-            new_df.add_pending_operation(operation, vec![self.id().to_string()]);
+            let mut plan = ExecutionPlan::new(&self.id().to_string());
+            plan.add_operation(operation);
+            new_df.add_pending_operation(plan, vec![self.id().to_string()]);
             Ok(new_df)
         } else {
-            self.execute_operation(operation, vec![self.id().to_string()])
+            let mut plan = ExecutionPlan::new(&self.id().to_string());
+            plan.add_operation(operation);
+            self.execute_operation(plan, vec![self.id().to_string()])
         }
     }
 
     fn filter_expr(&self, expr: Expr) -> Result<DistributedDataFrame> {
         // Convert the expression to SQL
-        let filter_sql = expr.to_string();
+        let filter_sql = format!("{:?}", expr);
 
         // Use the existing filter operation with the SQL expression
         self.filter(&filter_sql)
@@ -216,10 +224,14 @@ impl ProjectionExt for DistributedDataFrame {
 
         if self.is_lazy() {
             let mut new_df = self.clone_empty();
-            new_df.add_pending_operation(operation, vec![self.id().to_string()]);
+            let mut plan = ExecutionPlan::new(&self.id().to_string());
+            plan.add_operation(operation);
+            new_df.add_pending_operation(plan, vec![self.id().to_string()]);
             Ok(new_df)
         } else {
-            self.execute_operation(operation, vec![self.id().to_string()])
+            let mut plan = ExecutionPlan::new(&self.id().to_string());
+            plan.add_operation(operation);
+            self.execute_operation(plan, vec![self.id().to_string()])
         }
     }
 

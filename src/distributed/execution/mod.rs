@@ -134,8 +134,8 @@ pub enum Operation {
     /// LIMIT operation - Limit number of rows
     Limit(usize),
 
-    /// WINDOW operation - Apply window functions (temporarily disabled)
-    // Window(Vec<crate::distributed::window::WindowFunction>),
+    /// WINDOW operation - Apply window functions
+    Window(Vec<String>),
 
     /// PROJECTION operation - Add computed columns
     Project(Vec<(String, String)>),

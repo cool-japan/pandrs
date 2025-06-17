@@ -91,7 +91,7 @@ mod resilience_tests {
         let attempt_count = Arc::new(AtomicU32::new(0));
         let attempt_count_clone = attempt_count.clone();
 
-        let result = retry
+        let result: Result<&str, _> = retry
             .execute(|| {
                 attempt_count_clone.fetch_add(1, Ordering::SeqCst);
                 Err("NonRetryableError")
@@ -243,7 +243,7 @@ mod resilience_tests {
 
         // Circuit should be open now
         let result = manager
-            .execute_with_resilience("failing_service", || Ok("Success"))
+            .execute_with_resilience("failing_service", || Ok::<&str, &str>("Success"))
             .await;
 
         assert!(result.is_err());

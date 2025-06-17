@@ -46,15 +46,15 @@ impl SchemaValidator {
                         "Join operation requires at least two input schemas".to_string(),
                     ));
                 }
-                self.validate_join(input_schemas[0], input_schemas[1], left_keys, right_keys)
+                self.validate_join(input_schemas[0], input_schemas[1], &left_keys, &right_keys)
             }
             Operation::GroupBy { keys, aggregates } => {
                 self.validate_groupby(input_schemas[0], keys, aggregates)
             }
-            Operation::OrderBy { sort_exprs } => {
+            Operation::OrderBy(sort_exprs) => {
                 self.validate_orderby(input_schemas[0], sort_exprs)
             }
-            Operation::Window { window_functions } => {
+            Operation::Window(window_functions) => {
                 self.validate_window(input_schemas[0], window_functions)
             }
             Operation::Custom { name, params } => {
@@ -256,15 +256,15 @@ impl SchemaValidator {
 
         // Check that aggregated columns exist in schema
         for agg in aggregates {
-            if !schema.has_column(&agg.input) {
+            if !schema.has_column(&agg.column) {
                 return Err(Error::InvalidOperation(format!(
                     "Aggregated column not found in schema: {}",
-                    agg.input
+                    agg.column
                 )));
             }
 
             // Check that aggregation function is valid for column type
-            let col = schema.column(&agg.input).unwrap();
+            let col = schema.column(&agg.column).unwrap();
 
             match agg.function.as_str() {
                 "min" | "max" | "sum" | "avg" => {

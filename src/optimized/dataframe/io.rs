@@ -97,9 +97,29 @@ impl OptimizedDataFrame {
         skip_rows: usize,
         use_cols: Option<&[&str]>,
     ) -> Result<Self> {
-        // This functionality is not implemented yet
-        // For now, return an empty DataFrame
-        let df = Self::new();
+        // Using implementation from split_dataframe/io.rs
+        use crate::optimized::split_dataframe::core::OptimizedDataFrame as SplitDataFrame;
+
+        // Call from_excel from SplitDataFrame
+        let split_df = SplitDataFrame::from_excel(path, sheet_name, header, skip_rows, use_cols)?;
+
+        // Convert to OptimizedDataFrame
+        let mut df = Self::new();
+
+        // Copy column data
+        for name in split_df.column_names() {
+            let column_result = split_df.column(name);
+            if let Ok(column_view) = column_result {
+                let column = column_view.column;
+                df.add_column(name.to_string(), column.clone())?;
+            }
+        }
+
+        // Set index if available
+        if let Some(index) = split_df.get_index() {
+            df.index = Some(index.clone());
+        }
+
         Ok(df)
     }
 
@@ -111,11 +131,28 @@ impl OptimizedDataFrame {
         sheet_name: Option<&str>,
         index: bool,
     ) -> Result<()> {
-        // This functionality is not implemented yet
-        // For now, just return an error
-        Err(Error::NotImplemented(
-            "Excel export not implemented yet".to_string(),
-        ))
+        // Using implementation from split_dataframe/io.rs
+        use crate::optimized::split_dataframe::core::OptimizedDataFrame as SplitDataFrame;
+
+        // Convert to SplitDataFrame
+        let mut split_df = SplitDataFrame::new();
+
+        // Copy column data
+        for name in &self.column_names {
+            let column_result = self.column(name);
+            if let Ok(column_view) = column_result {
+                let column = column_view.column();
+                split_df.add_column(name.clone(), column.clone())?;
+            }
+        }
+
+        // Set index if available
+        if let Some(ref index) = self.index {
+            let _ = split_df.set_index(index.clone());
+        }
+
+        // Call to_excel from SplitDataFrame
+        split_df.to_excel(path, sheet_name, index)
     }
 
     /// Write DataFrame to a Parquet file

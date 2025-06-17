@@ -56,15 +56,15 @@ impl ArrowConverter {
         let batch_size = batch_size.unwrap_or(1024);
 
         for df in dataframes {
-            if df.len() <= batch_size {
+            if df.row_count() <= batch_size {
                 // Small DataFrame - single batch
                 batches.push(Self::dataframe_to_record_batch(df)?);
             } else {
                 // Large DataFrame - split into batches
-                let num_batches = (df.len() + batch_size - 1) / batch_size;
+                let num_batches = (df.row_count() + batch_size - 1) / batch_size;
                 for i in 0..num_batches {
                     let start = i * batch_size;
-                    let end = std::cmp::min(start + batch_size, df.len());
+                    let end = std::cmp::min(start + batch_size, df.row_count());
 
                     // Create batch from DataFrame slice
                     let batch_df = Self::slice_dataframe(df, start, end)?;
@@ -91,15 +91,22 @@ impl ArrowConverter {
         }
 
         // Create DataFrame with proper column ordering
+        let mut df = DataFrame::new();
         let column_order: Vec<String> = schema.fields().iter().map(|f| f.name().clone()).collect();
-
-        DataFrame::new_with_columns_and_order(columns, column_order)
+        
+        for col_name in &column_order {
+            if let Some(series) = columns.remove(col_name) {
+                df.add_column(col_name.clone(), series)?;
+            }
+        }
+        
+        Ok(df)
     }
 
     /// Enhanced type inference for Arrow compatibility
     fn infer_arrow_type(df: &DataFrame, column_name: &str) -> Result<DataType> {
         // Examine first few values to determine type
-        let sample_size = std::cmp::min(100, df.len());
+        let sample_size = std::cmp::min(100, df.row_count());
 
         // For now, use simplified type inference
         // In a real implementation, you'd examine the actual data
@@ -124,7 +131,7 @@ impl ArrowConverter {
         arrow_type: &DataType,
     ) -> Result<ArrayRef> {
         // Simplified implementation - in reality you'd extract actual data from Series
-        let row_count = df.len();
+        let row_count = df.row_count();
 
         match arrow_type {
             DataType::Int64 => {
@@ -154,7 +161,7 @@ impl ArrowConverter {
     }
 
     /// Convert Arrow Array to Series
-    fn arrow_array_to_series(array: &dyn Array, column_name: &str) -> Result<Series> {
+    fn arrow_array_to_series(array: &dyn Array, column_name: &str) -> Result<Series<String>> {
         match array.data_type() {
             DataType::Int64 => {
                 let arr = array.as_any().downcast_ref::<Int64Array>().ok_or_else(|| {
@@ -171,7 +178,7 @@ impl ArrowConverter {
                     })
                     .collect();
 
-                Ok(Series::new(values, Some(column_name.to_string())))
+                Series::new(values, Some(column_name.to_string()))
             }
             DataType::Float64 => {
                 let arr = array
@@ -191,7 +198,7 @@ impl ArrowConverter {
                     })
                     .collect();
 
-                Ok(Series::new(values, Some(column_name.to_string())))
+                Series::new(values, Some(column_name.to_string()))
             }
             DataType::Utf8 => {
                 let arr = array
@@ -211,7 +218,7 @@ impl ArrowConverter {
                     })
                     .collect();
 
-                Ok(Series::new(values, Some(column_name.to_string())))
+                Series::new(values, Some(column_name.to_string()))
             }
             DataType::Boolean => {
                 let arr = array
@@ -231,7 +238,7 @@ impl ArrowConverter {
                     })
                     .collect();
 
-                Ok(Series::new(values, Some(column_name.to_string())))
+                Series::new(values, Some(column_name.to_string()))
             }
             _ => Err(Error::NotImplemented(format!(
                 "Arrow type {:?} conversion not implemented",
@@ -249,11 +256,20 @@ impl ArrowConverter {
         for column_name in df.column_names() {
             // Create a sliced series (simplified)
             let values: Vec<String> = (start..end).map(|i| format!("row_{}", i)).collect();
-            let series = Series::new(values, Some(column_name.clone()));
+            let series = Series::new(values, Some(column_name.clone()))?;
             columns.insert(column_name.clone(), series);
         }
 
-        DataFrame::new_with_columns_and_order(columns, df.column_names())
+        let mut result_df = DataFrame::new();
+        let column_order = df.column_names();
+        
+        for col_name in &column_order {
+            if let Some(series) = columns.remove(col_name) {
+                result_df.add_column(col_name.clone(), series)?;
+            }
+        }
+        
+        Ok(result_df)
     }
 
     /// Compute operations using Arrow's compute kernels
@@ -289,22 +305,22 @@ impl ArrowConverter {
                     .ok_or_else(|| Error::Computation("Sum computation failed".to_string()))?;
 
                 // Create a result DataFrame with the sum
-                let mut columns = HashMap::new();
-                let result_series = Series::new(vec![sum.to_string()], Some("sum".to_string()));
-                columns.insert("sum".to_string(), result_series);
-
-                DataFrame::new_with_columns_and_order(columns, vec!["sum".to_string()])
+                let result_series = Series::new(vec![sum.to_string()], Some("sum".to_string()))?;
+                
+                let mut result_df = DataFrame::new();
+                result_df.add_column("sum".to_string(), result_series)?;
+                Ok(result_df)
             }
             DataType::Float64 => {
                 let arr = array.as_any().downcast_ref::<Float64Array>().unwrap();
                 let sum = compute::sum(arr)
                     .ok_or_else(|| Error::Computation("Sum computation failed".to_string()))?;
 
-                let mut columns = HashMap::new();
-                let result_series = Series::new(vec![sum.to_string()], Some("sum".to_string()));
-                columns.insert("sum".to_string(), result_series);
-
-                DataFrame::new_with_columns_and_order(columns, vec!["sum".to_string()])
+                let result_series = Series::new(vec![sum.to_string()], Some("sum".to_string()))?;
+                
+                let mut result_df = DataFrame::new();
+                result_df.add_column("sum".to_string(), result_series)?;
+                Ok(result_df)
             }
             _ => Err(Error::InvalidOperation(format!(
                 "Sum not supported for type {:?}",
@@ -431,11 +447,10 @@ pub mod flight {
             );
 
             // Return a dummy DataFrame for now
-            let mut columns = HashMap::new();
-            let series = Series::new(vec!["remote_data".to_string()], Some("data".to_string()));
-            columns.insert("data".to_string(), series);
-
-            DataFrame::new_with_columns_and_order(columns, vec!["data".to_string()])
+            let mut df = DataFrame::new();
+            let series = Series::new(vec!["remote_data".to_string()], Some("data".to_string())).unwrap();
+            df.add_column("data".to_string(), series)?;
+            Ok(df)
         }
     }
 }
@@ -453,19 +468,15 @@ mod tests {
         let series1 = Series::new(
             vec!["1".to_string(), "2".to_string(), "3".to_string()],
             Some("numbers".to_string()),
-        );
+        ).unwrap();
         let series2 = Series::new(
             vec!["a".to_string(), "b".to_string(), "c".to_string()],
             Some("letters".to_string()),
-        );
-        columns.insert("numbers".to_string(), series1);
-        columns.insert("letters".to_string(), series2);
-
-        let df = DataFrame::new_with_columns_and_order(
-            columns,
-            vec!["numbers".to_string(), "letters".to_string()],
-        )
-        .unwrap();
+        ).unwrap();
+        
+        let mut df = DataFrame::new();
+        df.add_column("numbers".to_string(), series1).unwrap();
+        df.add_column("letters".to_string(), series2).unwrap();
 
         // Test conversion to Arrow
         let record_batch = df.to_arrow().unwrap();
@@ -480,11 +491,10 @@ mod tests {
     #[test]
     fn test_arrow_integration_trait() {
         // Test that the trait is implemented
-        let mut columns = HashMap::new();
-        let series = Series::new(vec!["test".to_string()], Some("col".to_string()));
-        columns.insert("col".to_string(), series);
-
-        let df = DataFrame::new_with_columns_and_order(columns, vec!["col".to_string()]).unwrap();
+        let series = Series::new(vec!["test".to_string()], Some("col".to_string())).unwrap();
+        
+        let mut df = DataFrame::new();
+        df.add_column("col".to_string(), series).unwrap();
 
         // The trait methods should be available
         #[cfg(feature = "distributed")]

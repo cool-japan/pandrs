@@ -168,6 +168,7 @@ fn compression_algorithms_example(df: &DataFrame) -> Result<()> {
             ParquetCompression::Lz4 => (35, 15, 480, 2.08),
             ParquetCompression::Zstd => (250, 60, 280, 3.57),
             ParquetCompression::Brotli => (400, 80, 290, 3.45),
+            ParquetCompression::Lzo => (150, 40, 350, 2.86),
         };
 
         println!(

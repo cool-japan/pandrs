@@ -205,12 +205,12 @@ impl DistributedDataFrame {
 
     /// Writes results to a Parquet file
     pub fn write_parquet(&mut self, path: &str) -> Result<()> {
-        let mut context = self.context.lock().unwrap();
-
         // Execute pending operations if needed
         if !self.pending_operations.is_empty() || self.current_result.is_none() {
             self.execute()?;
         }
+
+        let mut context = self.context.lock().unwrap();
 
         // Write to Parquet
         if let Some(result) = &self.current_result {
@@ -222,12 +222,12 @@ impl DistributedDataFrame {
 
     /// Writes results to a CSV file
     pub fn write_csv(&mut self, path: &str) -> Result<()> {
-        let mut context = self.context.lock().unwrap();
-
         // Execute pending operations if needed
         if !self.pending_operations.is_empty() || self.current_result.is_none() {
             self.execute()?;
         }
+
+        let mut context = self.context.lock().unwrap();
 
         // Write to CSV
         if let Some(result) = &self.current_result {

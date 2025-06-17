@@ -9,6 +9,8 @@ use crate::error::{Error, Result};
 #[cfg(feature = "distributed")]
 use crate::na::NA;
 #[cfg(feature = "distributed")]
+use crate::series::Series;
+#[cfg(feature = "distributed")]
 use arrow::array::{
     Array, ArrayRef, BooleanArray, Float64Array, Int64Array, NullArray, StringArray,
     TimestampNanosecondArray,
@@ -28,7 +30,7 @@ pub fn dataframe_to_record_batches(
     use arrow::record_batch::RecordBatch;
 
     if df.nrows() == 0 {
-        let schema = Arc::new(Schema::new(vec![]));
+        let schema = Arc::new(Schema::new(vec![] as Vec<arrow::datatypes::Field>));
         return Ok(vec![RecordBatch::new_empty(schema)]);
     }
 
@@ -91,23 +93,28 @@ pub fn record_batches_to_dataframe(
         match data_type {
             DataType::Boolean => {
                 let values = extract_boolean_values(batches, col_idx)?;
-                df.add_column(name.clone(), values)?;
+                let series = Series::new(values.into_iter().map(|v| format!("{:?}", v)).collect(), Some(name.clone()))?;
+                df.add_column(name.clone(), series)?;
             }
             DataType::Int64 => {
                 let values = extract_int64_values(batches, col_idx)?;
-                df.add_column(name.clone(), values)?;
+                let series = Series::new(values.into_iter().map(|v| format!("{:?}", v)).collect(), Some(name.clone()))?;
+                df.add_column(name.clone(), series)?;
             }
             DataType::Float64 => {
                 let values = extract_float64_values(batches, col_idx)?;
-                df.add_column(name.clone(), values)?;
+                let series = Series::new(values.into_iter().map(|v| format!("{:?}", v)).collect(), Some(name.clone()))?;
+                df.add_column(name.clone(), series)?;
             }
             DataType::Utf8 => {
                 let values = extract_string_values(batches, col_idx)?;
-                df.add_column(name.clone(), values)?;
+                let series = Series::new(values.into_iter().map(|v| format!("{:?}", v)).collect(), Some(name.clone()))?;
+                df.add_column(name.clone(), series)?;
             }
             DataType::Timestamp(TimeUnit::Nanosecond, _) => {
                 let values = extract_timestamp_values(batches, col_idx)?;
-                df.add_column(name.clone(), values)?;
+                let series = Series::new(values.into_iter().map(|v| format!("{:?}", v)).collect(), Some(name.clone()))?;
+                df.add_column(name.clone(), series)?;
             }
             _ => {
                 return Err(Error::InvalidInput(format!(
@@ -143,6 +150,129 @@ fn extract_boolean_values(
         } else {
             return Err(Error::InvalidInput(
                 "Column is not a boolean array".to_string(),
+            ));
+        }
+    }
+
+    Ok(values)
+}
+
+/// Extracts int64 values from record batches
+#[cfg(feature = "distributed")]
+fn extract_int64_values(
+    batches: &[arrow::record_batch::RecordBatch],
+    col_idx: usize,
+) -> Result<Vec<NA<f64>>> {
+    let mut values = Vec::new();
+
+    for batch in batches {
+        let array = batch.column(col_idx);
+        if let Some(int_array) = array.as_any().downcast_ref::<Int64Array>() {
+            for i in 0..int_array.len() {
+                if int_array.is_null(i) {
+                    values.push(NA::NA);
+                } else {
+                    values.push(NA::Value(int_array.value(i) as f64));
+                }
+            }
+        } else {
+            return Err(Error::InvalidInput(
+                "Column is not an int64 array".to_string(),
+            ));
+        }
+    }
+
+    Ok(values)
+}
+
+/// Extracts float64 values from record batches  
+#[cfg(feature = "distributed")]
+fn extract_float64_values(
+    batches: &[arrow::record_batch::RecordBatch],
+    col_idx: usize,
+) -> Result<Vec<NA<f64>>> {
+    let mut values = Vec::new();
+
+    for batch in batches {
+        let array = batch.column(col_idx);
+        if let Some(float_array) = array.as_any().downcast_ref::<Float64Array>() {
+            for i in 0..float_array.len() {
+                if float_array.is_null(i) {
+                    values.push(NA::NA);
+                } else {
+                    values.push(NA::Value(float_array.value(i)));
+                }
+            }
+        } else {
+            return Err(Error::InvalidInput(
+                "Column is not a float64 array".to_string(),
+            ));
+        }
+    }
+
+    Ok(values)
+}
+
+/// Extracts string values from record batches
+#[cfg(feature = "distributed")]
+fn extract_string_values(
+    batches: &[arrow::record_batch::RecordBatch],
+    col_idx: usize,
+) -> Result<Vec<NA<f64>>> {
+    let mut values = Vec::new();
+
+    for batch in batches {
+        let array = batch.column(col_idx);
+        if let Some(string_array) = array.as_any().downcast_ref::<StringArray>() {
+            for i in 0..string_array.len() {
+                if string_array.is_null(i) {
+                    values.push(NA::NA);
+                } else {
+                    // Convert string to f64 if possible, otherwise use hash
+                    let string_val = string_array.value(i);
+                    if let Ok(num_val) = string_val.parse::<f64>() {
+                        values.push(NA::Value(num_val));
+                    } else {
+                        // Use string hash as numeric value
+                        use std::collections::hash_map::DefaultHasher;
+                        use std::hash::{Hash, Hasher};
+                        let mut hasher = DefaultHasher::new();
+                        string_val.hash(&mut hasher);
+                        values.push(NA::Value(hasher.finish() as f64));
+                    }
+                }
+            }
+        } else {
+            return Err(Error::InvalidInput(
+                "Column is not a string array".to_string(),
+            ));
+        }
+    }
+
+    Ok(values)
+}
+
+/// Extracts timestamp values from record batches
+#[cfg(feature = "distributed")]
+fn extract_timestamp_values(
+    batches: &[arrow::record_batch::RecordBatch],
+    col_idx: usize,
+) -> Result<Vec<NA<f64>>> {
+    let mut values = Vec::new();
+
+    for batch in batches {
+        let array = batch.column(col_idx);
+        if let Some(timestamp_array) = array.as_any().downcast_ref::<TimestampNanosecondArray>() {
+            for i in 0..timestamp_array.len() {
+                if timestamp_array.is_null(i) {
+                    values.push(NA::NA);
+                } else {
+                    values.push(NA::Value(timestamp_array.value(i) as f64));
+                }
+            }
+        } else {
+            return Err(Error::InvalidInput(
+                "Column is not a timestamp array".to_string(),
             ));
         }
     }

@@ -98,8 +98,11 @@ test-core = ["optimized", "backward_compat", "streaming"]
 # Feature bundle for testing most features without CUDA/WASM (visualization has compilation issues)
 test-safe = ["optimized", "parquet", "excel", "sql", "streaming", "backward_compat"]
 
-# Feature bundle for all safe features (excludes CUDA/WASM which require external tools)  
-all-safe = ["optimized", "distributed", "serving", "parquet", "excel", "sql", "streaming", "backward_compat", "resilience"]
+# Feature bundle for all safe features (excludes CUDA/WASM/distributed which require external tools)  
+all-safe = ["optimized", "serving", "parquet", "excel", "sql", "streaming", "backward_compat", "resilience"]
+
+# Feature bundle that works reliably for CI/development (most stable features)
+stable = ["optimized", "parquet", "excel", "sql", "streaming", "backward_compat"]
 
 # Resilience patterns (retry mechanisms, circuit breakers)
 resilience = ["dep:tokio"]

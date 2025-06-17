@@ -405,10 +405,9 @@ pub fn avx2_available() -> bool {
 
 /// Get SIMD capabilities as a string
 pub fn simd_capabilities() -> String {
-    let mut caps = Vec::new();
-
     #[cfg(target_arch = "x86_64")]
     {
+        let mut caps: Vec<&str> = Vec::new();
         if is_x86_feature_detected!("avx2") {
             caps.push("AVX2");
         }
@@ -430,12 +429,17 @@ pub fn simd_capabilities() -> String {
         if is_x86_feature_detected!("sse") {
             caps.push("SSE");
         }
+
+        if caps.is_empty() {
+            "None".to_string()
+        } else {
+            caps.join(", ")
+        }
     }
 
-    if caps.is_empty() {
+    #[cfg(not(target_arch = "x86_64"))]
+    {
         "None".to_string()
-    } else {
-        caps.join(", ")
     }
 }
 
