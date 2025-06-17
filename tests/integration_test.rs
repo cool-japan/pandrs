@@ -319,7 +319,7 @@ fn test_alpha4_distributed_processing_integration() -> Result<()> {
                 "South".to_string(),
             ],
             Some("region".to_string()),
-        )?
+        )?,
     )?;
 
     df.add_column(
@@ -327,12 +327,12 @@ fn test_alpha4_distributed_processing_integration() -> Result<()> {
         pandrs::series::Series::new(
             vec![1000, 1500, 800, 1200, 900, 1100],
             Some("sales".to_string()),
-        )?
+        )?,
     )?;
 
     df.add_column(
         "quarter".to_string(),
-        pandrs::series::Series::new(vec![1, 1, 1, 1, 2, 2], Some("quarter".to_string()))?
+        pandrs::series::Series::new(vec![1, 1, 1, 1, 2, 2], Some("quarter".to_string()))?,
     )?;
 
     // Create distributed context

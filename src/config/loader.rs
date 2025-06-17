@@ -327,10 +327,29 @@ pub fn reload_config(current_config: &mut PandRSConfig) -> Result<bool> {
 mod tests {
     use super::*;
     use std::env;
+    use std::sync::Mutex;
     use tempfile::tempdir;
+
+    // Mutex to serialize tests that modify environment variables
+    static ENV_TEST_MUTEX: Mutex<()> = Mutex::new(());
 
     #[test]
     fn test_load_from_env() {
+        // Lock to prevent concurrent environment variable tests
+        let _lock = ENV_TEST_MUTEX.lock().unwrap();
+
+        // Save original environment variables
+        let orig_db_url = env::var("PANDRS_DB_URL").ok();
+        let orig_pool_size = env::var("PANDRS_DB_POOL_SIZE").ok();
+        let orig_aws_region = env::var("AWS_DEFAULT_REGION").ok();
+        let orig_log_level = env::var("PANDRS_LOG_LEVEL").ok();
+
+        // Clean up any pre-existing environment variables first
+        env::remove_var("PANDRS_DB_URL");
+        env::remove_var("PANDRS_DB_POOL_SIZE");
+        env::remove_var("AWS_DEFAULT_REGION");
+        env::remove_var("PANDRS_LOG_LEVEL");
+
         // Set test environment variables
         env::set_var("PANDRS_DB_URL", "postgresql://test:test@localhost/test");
         env::set_var("PANDRS_DB_POOL_SIZE", "15");
@@ -347,11 +366,25 @@ mod tests {
         assert_eq!(config.cloud.aws.region, Some("us-east-1".to_string()));
         assert_eq!(config.logging.level, "debug");
 
-        // Clean up
+        // Clean up and restore original values
         env::remove_var("PANDRS_DB_URL");
         env::remove_var("PANDRS_DB_POOL_SIZE");
         env::remove_var("AWS_DEFAULT_REGION");
         env::remove_var("PANDRS_LOG_LEVEL");
+
+        // Restore original environment variables if they existed
+        if let Some(val) = orig_db_url {
+            env::set_var("PANDRS_DB_URL", val);
+        }
+        if let Some(val) = orig_pool_size {
+            env::set_var("PANDRS_DB_POOL_SIZE", val);
+        }
+        if let Some(val) = orig_aws_region {
+            env::set_var("AWS_DEFAULT_REGION", val);
+        }
+        if let Some(val) = orig_log_level {
+            env::set_var("PANDRS_LOG_LEVEL", val);
+        }
     }
 
     #[test]
@@ -483,6 +516,17 @@ logging:
 
     #[test]
     fn test_precedence() {
+        // Lock to prevent concurrent environment variable tests
+        let _lock = ENV_TEST_MUTEX.lock().unwrap();
+
+        // Save original environment variables
+        let orig_pool_size = env::var("PANDRS_DB_POOL_SIZE").ok();
+        let orig_aws_region = env::var("AWS_DEFAULT_REGION").ok();
+
+        // Clean up environment variables first to avoid interference from other tests
+        env::remove_var("PANDRS_DB_POOL_SIZE");
+        env::remove_var("AWS_DEFAULT_REGION");
+
         let dir = tempdir().unwrap();
         let config_path = dir.path().join("precedence_test.yml");
 
@@ -596,8 +640,16 @@ logging:
         assert_eq!(config.database.pool.max_connections, 50);
         assert_eq!(config.cloud.aws.region, Some("ap-southeast-1".to_string()));
 
-        // Clean up
+        // Clean up and restore original values
         env::remove_var("PANDRS_DB_POOL_SIZE");
         env::remove_var("AWS_DEFAULT_REGION");
+
+        // Restore original environment variables if they existed
+        if let Some(val) = orig_pool_size {
+            env::set_var("PANDRS_DB_POOL_SIZE", val);
+        }
+        if let Some(val) = orig_aws_region {
+            env::set_var("AWS_DEFAULT_REGION", val);
+        }
     }
 }

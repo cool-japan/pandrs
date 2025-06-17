@@ -289,37 +289,36 @@ impl RetryMechanism {
         let mut attempt = 0;
         let mut last_error = None;
 
-        while attempt <= self.config.max_attempts {
+        loop {
+            attempt += 1;
             match operation() {
                 Ok(result) => return Ok(result),
                 Err(error) => {
-                    attempt += 1;
                     last_error = Some(format!("{}", error));
 
                     // Check if this error type is retryable
-                    let error_str = format!("{:?}", error);
+                    let error_str = format!("{}", error);
                     let is_retryable = self
                         .config
                         .retryable_errors
                         .iter()
-                        .any(|retryable| error_str.contains(retryable));
+                        .any(|retryable| error_str.starts_with(retryable));
 
-                    if !is_retryable || attempt > self.config.max_attempts {
+                    // Break immediately if error is not retryable or we've reached max attempts
+                    if !is_retryable || attempt >= self.config.max_attempts {
                         break;
                     }
 
                     // Calculate delay for next attempt
-                    if attempt <= self.config.max_attempts {
-                        let delay = self.calculate_delay(attempt);
-                        std::thread::sleep(Duration::from_millis(delay));
-                    }
+                    let delay = self.calculate_delay(attempt);
+                    std::thread::sleep(Duration::from_millis(delay));
                 }
             }
         }
 
         Err(Error::OperationFailed(format!(
             "Operation failed after {} attempts. Last error: {}",
-            self.config.max_attempts,
+            attempt,
             last_error.unwrap_or_else(|| "Unknown error".to_string())
         )))
     }
@@ -361,7 +360,7 @@ impl RetryMechanism {
 /// Combined resilience manager for connectors
 #[derive(Debug)]
 pub struct ResilienceManager {
-    circuit_breakers: Arc<Mutex<HashMap<String, CircuitBreaker>>>,
+    circuit_breakers: Arc<Mutex<HashMap<String, Arc<CircuitBreaker>>>>,
     retry_configs: Arc<Mutex<HashMap<String, RetryConfig>>>,
     default_retry_config: RetryConfig,
     default_circuit_config: CircuitBreakerConfig,
@@ -383,13 +382,12 @@ impl ResilienceManager {
         let mut breakers = self.circuit_breakers.lock().unwrap();
 
         if !breakers.contains_key(service_name) {
-            let breaker = CircuitBreaker::new(self.default_circuit_config.clone());
+            let breaker = Arc::new(CircuitBreaker::new(self.default_circuit_config.clone()));
             breakers.insert(service_name.to_string(), breaker);
         }
 
-        // Clone the circuit breaker for safe shared access
-        let breaker = breakers.get(service_name).unwrap();
-        Arc::new(CircuitBreaker::new(breaker.config.clone()))
+        // Return the shared circuit breaker instance
+        breakers.get(service_name).unwrap().clone()
     }
 
     /// Get retry configuration for the given service

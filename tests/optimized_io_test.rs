@@ -1,8 +1,15 @@
 use pandrs::error::Result;
-use pandrs::optimized::split_dataframe::io::ParquetCompression;
 use pandrs::{BooleanColumn, Column, Float64Column, Int64Column, OptimizedDataFrame, StringColumn};
 
 mod optimized_io_test_utils;
+
+// Use feature-gated imports when parquet feature is available, otherwise use test utils
+#[cfg(not(feature = "parquet"))]
+use crate::optimized_io_test_utils::ParquetCompression;
+#[cfg(feature = "parquet")]
+use pandrs::optimized::split_dataframe::io::ParquetCompression;
+
+use crate::optimized_io_test_utils::{ExcelExt, ParquetExt};
 use std::fs;
 use std::fs::File;
 use std::io::Write;

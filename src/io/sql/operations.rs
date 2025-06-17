@@ -468,6 +468,10 @@ pub fn read_sql_table(
 ///
 /// ```no_run
 /// use pandrs::io::sql::{write_sql_advanced, SqlConnection, SqlWriteOptions, WriteMode};
+/// use pandrs::optimized::dataframe::OptimizedDataFrame;
+///
+/// // Create sample dataframe
+/// let df = OptimizedDataFrame::new();
 ///
 /// let conn = SqlConnection::from_url("sqlite:data.db").unwrap();
 /// let options = SqlWriteOptions {

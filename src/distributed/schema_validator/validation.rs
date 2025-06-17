@@ -51,9 +51,7 @@ impl SchemaValidator {
             Operation::GroupBy { keys, aggregates } => {
                 self.validate_groupby(input_schemas[0], keys, aggregates)
             }
-            Operation::OrderBy(sort_exprs) => {
-                self.validate_orderby(input_schemas[0], sort_exprs)
-            }
+            Operation::OrderBy(sort_exprs) => self.validate_orderby(input_schemas[0], sort_exprs),
             Operation::Window(window_functions) => {
                 self.validate_window(input_schemas[0], window_functions)
             }

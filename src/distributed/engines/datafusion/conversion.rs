@@ -93,27 +93,42 @@ pub fn record_batches_to_dataframe(
         match data_type {
             DataType::Boolean => {
                 let values = extract_boolean_values(batches, col_idx)?;
-                let series = Series::new(values.into_iter().map(|v| format!("{:?}", v)).collect(), Some(name.clone()))?;
+                let series = Series::new(
+                    values.into_iter().map(|v| format!("{:?}", v)).collect(),
+                    Some(name.clone()),
+                )?;
                 df.add_column(name.clone(), series)?;
             }
             DataType::Int64 => {
                 let values = extract_int64_values(batches, col_idx)?;
-                let series = Series::new(values.into_iter().map(|v| format!("{:?}", v)).collect(), Some(name.clone()))?;
+                let series = Series::new(
+                    values.into_iter().map(|v| format!("{:?}", v)).collect(),
+                    Some(name.clone()),
+                )?;
                 df.add_column(name.clone(), series)?;
             }
             DataType::Float64 => {
                 let values = extract_float64_values(batches, col_idx)?;
-                let series = Series::new(values.into_iter().map(|v| format!("{:?}", v)).collect(), Some(name.clone()))?;
+                let series = Series::new(
+                    values.into_iter().map(|v| format!("{:?}", v)).collect(),
+                    Some(name.clone()),
+                )?;
                 df.add_column(name.clone(), series)?;
             }
             DataType::Utf8 => {
                 let values = extract_string_values(batches, col_idx)?;
-                let series = Series::new(values.into_iter().map(|v| format!("{:?}", v)).collect(), Some(name.clone()))?;
+                let series = Series::new(
+                    values.into_iter().map(|v| format!("{:?}", v)).collect(),
+                    Some(name.clone()),
+                )?;
                 df.add_column(name.clone(), series)?;
             }
             DataType::Timestamp(TimeUnit::Nanosecond, _) => {
                 let values = extract_timestamp_values(batches, col_idx)?;
-                let series = Series::new(values.into_iter().map(|v| format!("{:?}", v)).collect(), Some(name.clone()))?;
+                let series = Series::new(
+                    values.into_iter().map(|v| format!("{:?}", v)).collect(),
+                    Some(name.clone()),
+                )?;
                 df.add_column(name.clone(), series)?;
             }
             _ => {

@@ -17,8 +17,8 @@ use pandrs::series::Series;
 
 #[cfg(feature = "sql")]
 use pandrs::io::sql::{
-    ColumnDefinition, DatabaseConnection, InsertMethod, PoolConfig,
-    SqlWriteOptions, TableSchema, WriteMode,
+    ColumnDefinition, DatabaseConnection, InsertMethod, PoolConfig, SqlWriteOptions, TableSchema,
+    WriteMode,
 };
 
 #[cfg(feature = "sql")]

@@ -20,11 +20,12 @@ use std::path::Path;
 use pandrs::io::{ParquetCompression, ParquetMetadata, ParquetWriteOptions};
 
 #[cfg(feature = "excel")]
-use pandrs::io::{ExcelWriteOptions, ExcelReadOptions, ExcelWorkbookInfo, NamedRange};
+use pandrs::io::{ExcelReadOptions, ExcelWorkbookInfo, ExcelWriteOptions, NamedRange};
 
 #[cfg(feature = "sql")]
 use pandrs::io::sql::{
-    ColumnDefinition, DatabaseConnection, InsertMethod, SqlWriteOptions, TableSchema, WriteMode, PoolConfig,
+    ColumnDefinition, DatabaseConnection, InsertMethod, PoolConfig, SqlWriteOptions, TableSchema,
+    WriteMode,
 };
 
 #[cfg(any(feature = "parquet", feature = "sql"))]

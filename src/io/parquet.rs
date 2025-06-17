@@ -825,6 +825,10 @@ pub fn read_parquet_advanced(
 ///
 /// ```no_run
 /// use pandrs::io::{write_parquet_advanced, ParquetWriteOptions, ParquetCompression};
+/// use pandrs::optimized::dataframe::OptimizedDataFrame;
+///
+/// // Create sample dataframe
+/// let df = OptimizedDataFrame::new();
 ///
 /// let options = ParquetWriteOptions {
 ///     compression: ParquetCompression::Zstd,
@@ -1640,6 +1644,10 @@ fn read_parquet_streaming(path: &Path, options: &AdvancedParquetReadOptions) -> 
 ///
 /// ```no_run
 /// use pandrs::io::write_parquet_streaming;
+/// use pandrs::optimized::dataframe::OptimizedDataFrame;
+///
+/// // Create sample large dataframe
+/// let large_df = OptimizedDataFrame::new();
 ///
 /// write_parquet_streaming(&large_df, "output.parquet", 100000).unwrap();
 /// ```

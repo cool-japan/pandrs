@@ -9,7 +9,7 @@ use crate::series::base::Series;
 use std::collections::HashMap;
 
 #[cfg(feature = "sql")]
-use sqlx::{Row, Column};
+use sqlx::{Column, Row};
 
 /// Database connection configuration
 #[derive(Debug, Clone)]

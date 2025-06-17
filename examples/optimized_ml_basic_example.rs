@@ -4,9 +4,9 @@ use pandrs::column::ColumnTrait; // Add ColumnTrait import
 #[cfg(feature = "optimized")]
 use pandrs::error::Result;
 #[cfg(feature = "optimized")]
-use pandrs::ml::preprocessing::{MinMaxScaler, StandardScaler};
-#[cfg(feature = "optimized")]  
 use pandrs::ml::pipeline_compat::Transformer;
+#[cfg(feature = "optimized")]
+use pandrs::ml::preprocessing::{MinMaxScaler, StandardScaler};
 #[cfg(feature = "optimized")]
 use pandrs::{Column, Float64Column, Int64Column, OptimizedDataFrame}; // Removed unused UnsupervisedModel import
 
@@ -73,7 +73,7 @@ fn main() -> Result<()> {
     let mut minmax = MinMaxScaler::new();
     minmax = minmax.with_columns(vec!["feature1".to_string(), "feature2".to_string()]);
     minmax = minmax.with_range(0.0, 1.0);
-    
+
     // Apply using the Transformer trait for OptimizedDataFrame
     let normalized_df = Transformer::fit_transform(&mut minmax, &df)?;
     println!("Normalized DataFrame:");

@@ -4,8 +4,7 @@ use pandrs::column::ColumnTrait;
 use pandrs::ml::pipeline_compat::Pipeline;
 #[cfg(feature = "optimized")]
 use pandrs::ml::preprocessing::{
-    Binner, ImputeStrategy, Imputer, MinMaxScaler, PolynomialFeatures,
-    StandardScaler,
+    Binner, ImputeStrategy, Imputer, MinMaxScaler, PolynomialFeatures, StandardScaler,
 };
 #[cfg(feature = "optimized")]
 use pandrs::optimized::OptimizedDataFrame;
@@ -137,18 +136,14 @@ fn main() -> Result<(), PandRSError> {
 
     // Only use transformers that implement the Transformer trait
     // Standardize numerical data
-    pipeline.add_stage(StandardScaler::new()
-        .with_columns(vec![
-            "value1".to_string(),
-            "value2".to_string(),
-        ]));
+    pipeline.add_stage(
+        StandardScaler::new().with_columns(vec!["value1".to_string(), "value2".to_string()]),
+    );
 
     // Add Min-Max scaling as well
-    pipeline.add_stage(MinMaxScaler::new()
-        .with_columns(vec![
-            "value1".to_string(),
-            "value2".to_string(),
-        ]));
+    pipeline.add_stage(
+        MinMaxScaler::new().with_columns(vec!["value1".to_string(), "value2".to_string()]),
+    );
 
     // Data transformation using pipeline (simplified implementation)
     println!("\nRunning Feature Engineering Pipeline...");

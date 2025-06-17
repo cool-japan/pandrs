@@ -93,13 +93,13 @@ impl ArrowConverter {
         // Create DataFrame with proper column ordering
         let mut df = DataFrame::new();
         let column_order: Vec<String> = schema.fields().iter().map(|f| f.name().clone()).collect();
-        
+
         for col_name in &column_order {
             if let Some(series) = columns.remove(col_name) {
                 df.add_column(col_name.clone(), series)?;
             }
         }
-        
+
         Ok(df)
     }
 
@@ -262,13 +262,13 @@ impl ArrowConverter {
 
         let mut result_df = DataFrame::new();
         let column_order = df.column_names();
-        
+
         for col_name in &column_order {
             if let Some(series) = columns.remove(col_name) {
                 result_df.add_column(col_name.clone(), series)?;
             }
         }
-        
+
         Ok(result_df)
     }
 
@@ -306,7 +306,7 @@ impl ArrowConverter {
 
                 // Create a result DataFrame with the sum
                 let result_series = Series::new(vec![sum.to_string()], Some("sum".to_string()))?;
-                
+
                 let mut result_df = DataFrame::new();
                 result_df.add_column("sum".to_string(), result_series)?;
                 Ok(result_df)
@@ -317,7 +317,7 @@ impl ArrowConverter {
                     .ok_or_else(|| Error::Computation("Sum computation failed".to_string()))?;
 
                 let result_series = Series::new(vec![sum.to_string()], Some("sum".to_string()))?;
-                
+
                 let mut result_df = DataFrame::new();
                 result_df.add_column("sum".to_string(), result_series)?;
                 Ok(result_df)
@@ -448,7 +448,8 @@ pub mod flight {
 
             // Return a dummy DataFrame for now
             let mut df = DataFrame::new();
-            let series = Series::new(vec!["remote_data".to_string()], Some("data".to_string())).unwrap();
+            let series =
+                Series::new(vec!["remote_data".to_string()], Some("data".to_string())).unwrap();
             df.add_column("data".to_string(), series)?;
             Ok(df)
         }
@@ -468,12 +469,14 @@ mod tests {
         let series1 = Series::new(
             vec!["1".to_string(), "2".to_string(), "3".to_string()],
             Some("numbers".to_string()),
-        ).unwrap();
+        )
+        .unwrap();
         let series2 = Series::new(
             vec!["a".to_string(), "b".to_string(), "c".to_string()],
             Some("letters".to_string()),
-        ).unwrap();
-        
+        )
+        .unwrap();
+
         let mut df = DataFrame::new();
         df.add_column("numbers".to_string(), series1).unwrap();
         df.add_column("letters".to_string(), series2).unwrap();
@@ -492,7 +495,7 @@ mod tests {
     fn test_arrow_integration_trait() {
         // Test that the trait is implemented
         let series = Series::new(vec!["test".to_string()], Some("col".to_string())).unwrap();
-        
+
         let mut df = DataFrame::new();
         df.add_column("col".to_string(), series).unwrap();
 

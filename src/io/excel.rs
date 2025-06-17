@@ -699,7 +699,12 @@ pub fn read_excel_with_info<P: AsRef<Path>>(
 ///
 /// ```no_run
 /// use pandrs::io::write_excel_sheets;
+/// use pandrs::optimized::dataframe::OptimizedDataFrame;
 /// use std::collections::HashMap;
+///
+/// // Create sample dataframes
+/// let df1 = OptimizedDataFrame::new();
+/// let df2 = OptimizedDataFrame::new();
 ///
 /// let mut sheets = HashMap::new();
 /// sheets.insert("Data".to_string(), &df1);
@@ -1071,7 +1076,15 @@ fn extract_named_ranges(
 /// # Examples
 ///
 /// ```no_run
-/// use pandrs::io::{write_excel_enhanced, ExcelWriteOptions};
+/// use pandrs::io::{write_excel_enhanced, ExcelWriteOptions, ExcelCell, NamedRange};
+/// use pandrs::optimized::dataframe::OptimizedDataFrame;
+///
+/// // Create sample dataframe
+/// let df = OptimizedDataFrame::new();
+///
+/// // Create sample cells and ranges
+/// let cells: Vec<ExcelCell> = vec![];
+/// let ranges: Vec<NamedRange> = vec![];
 ///
 /// let options = ExcelWriteOptions {
 ///     preserve_formulas: true,

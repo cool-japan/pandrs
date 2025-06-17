@@ -78,6 +78,7 @@ impl AsyncDatabasePool {
     ///
     /// ```no_run
     /// use pandrs::io::sql::{AsyncDatabasePool, SqlWriteOptions};
+    /// use pandrs::DataFrame;
     ///
     /// async fn example(pool: &AsyncDatabasePool, df: &DataFrame) {
     ///     let options = SqlWriteOptions::default();

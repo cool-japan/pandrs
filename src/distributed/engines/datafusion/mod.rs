@@ -57,7 +57,9 @@ impl ExecutionEngine for DataFusionEngine {
 
     fn create_context(&self, config: &DistributedConfig) -> Result<Box<dyn ExecutionContext>> {
         if !self.initialized {
-            return Err(Error::InvalidOperation("Engine not initialized".to_string()));
+            return Err(Error::InvalidOperation(
+                "Engine not initialized".to_string(),
+            ));
         }
 
         let ctx = DataFusionContext::new(config);

@@ -229,6 +229,10 @@ pub fn get_table_schema(
 ///
 /// ```no_run
 /// use pandrs::io::sql::{get_create_table_sql, SqlConnection};
+/// use pandrs::optimized::dataframe::OptimizedDataFrame;
+///
+/// // Create sample dataframe
+/// let df = OptimizedDataFrame::new();
 ///
 /// let conn = SqlConnection::from_url("sqlite:data.db").unwrap();
 /// let sql = get_create_table_sql(&df, "users", &conn).unwrap();
@@ -747,6 +751,22 @@ impl SchemaComparator {
     /// ```no_run
     /// use pandrs::io::sql::{SchemaComparator, TableSchema};
     ///
+    /// // Create sample schemas
+    /// let schema1 = TableSchema {
+    ///     name: "users".to_string(),
+    ///     columns: vec![],
+    ///     primary_keys: vec![],
+    ///     foreign_keys: vec![],
+    ///     indexes: vec![],
+    /// };
+    /// let schema2 = TableSchema {
+    ///     name: "users".to_string(),
+    ///     columns: vec![],
+    ///     primary_keys: vec![],
+    ///     foreign_keys: vec![],
+    ///     indexes: vec![],
+    /// };
+    ///
     /// let comparison = SchemaComparator::compare_schemas(&schema1, &schema2);
     /// if !comparison.differences.is_empty() {
     ///     println!("Schemas differ: {:?}", comparison.differences);
@@ -836,6 +856,22 @@ impl SchemaComparator {
     ///
     /// ```no_run
     /// use pandrs::io::sql::{SchemaComparator, TableSchema};
+    ///
+    /// // Create sample schemas
+    /// let old_schema = TableSchema {
+    ///     name: "users".to_string(),
+    ///     columns: vec![],
+    ///     primary_keys: vec![],
+    ///     foreign_keys: vec![],
+    ///     indexes: vec![],
+    /// };
+    /// let new_schema = TableSchema {
+    ///     name: "users".to_string(),
+    ///     columns: vec![],
+    ///     primary_keys: vec![],
+    ///     foreign_keys: vec![],
+    ///     indexes: vec![],
+    /// };
     ///
     /// let migration_sql = SchemaComparator::generate_migration(&old_schema, &new_schema).unwrap();
     /// for sql in migration_sql {

@@ -219,7 +219,7 @@ impl MinMaxScaler {
                     .iter()
                     .max_by(|a, b| a.partial_cmp(b).unwrap())
                     .unwrap();
-                
+
                 min_values.insert(col_name.to_string(), min_val);
                 max_values.insert(col_name.to_string(), max_val);
             }
