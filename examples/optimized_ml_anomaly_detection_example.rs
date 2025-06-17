@@ -177,7 +177,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // LocalOutlierFactor doesn't currently support transform in this implementation,
     // so we need to use fit() and then duplicate reg_df to create our result
     lof.fit(&reg_df)?;
-    let mut lof_result = reg_df.clone();
+    let lof_result = reg_df.clone();
     // Convert back to OptimizedDataFrame for consistent handling
     let lof_result_opt = convert::optimize_dataframe(&lof_result)?;
 

@@ -5,8 +5,8 @@ use pandrs::column::ColumnTrait; // Add ColumnTrait import
 use pandrs::error::Result;
 #[cfg(feature = "optimized")]
 use pandrs::ml::preprocessing::{MinMaxScaler, StandardScaler};
-#[cfg(feature = "optimized")]
-use pandrs::ml::Transformer;
+#[cfg(feature = "optimized")]  
+use pandrs::ml::pipeline_compat::Transformer;
 #[cfg(feature = "optimized")]
 use pandrs::{Column, Float64Column, Int64Column, OptimizedDataFrame}; // Removed unused UnsupervisedModel import
 
@@ -46,19 +46,18 @@ fn main() -> Result<()> {
     println!("Number of columns: {}", df.column_count());
     println!("Column names: {:?}", df.column_names());
 
-    // Try using StandardScaler
+    // Try using StandardScaler with Transformer trait
     println!("\n=== Applying StandardScaler ===");
     let mut scaler = StandardScaler::new();
     scaler = scaler.with_columns(vec!["feature1".to_string(), "feature2".to_string()]);
 
-    // Apply directly to the OptimizedDataFrame
-    let scaled_df = scaler.fit_transform(&df)?;
+    // Apply using the Transformer trait for OptimizedDataFrame
+    let scaled_df = Transformer::fit_transform(&mut scaler, &df)?;
     println!("Standardized DataFrame:");
     println!("{:?}", scaled_df);
 
-    // The result is already an OptimizedDataFrame
-    let opt_scaled_df = scaled_df;
-    if let Ok(col) = opt_scaled_df.column("feature1") {
+    // The result is an OptimizedDataFrame
+    if let Ok(col) = scaled_df.column("feature1") {
         if let Some(float_col) = col.as_float64() {
             println!("\nStandardized values of the feature1 column:");
             for i in 0..float_col.len() {
@@ -69,19 +68,19 @@ fn main() -> Result<()> {
         }
     }
 
-    // Try using MinMaxScaler
+    // Try using MinMaxScaler with Transformer trait
     println!("\n=== Applying MinMaxScaler ===");
     let mut minmax = MinMaxScaler::new();
     minmax = minmax.with_columns(vec!["feature1".to_string(), "feature2".to_string()]);
     minmax = minmax.with_range(0.0, 1.0);
-    // Note: MinMaxScaler expects an OptimizedDataFrame, not a regular DataFrame
-    let normalized_df = minmax.fit_transform(&df)?; // Using original OptimizedDataFrame directly
+    
+    // Apply using the Transformer trait for OptimizedDataFrame
+    let normalized_df = Transformer::fit_transform(&mut minmax, &df)?;
     println!("Normalized DataFrame:");
     println!("{:?}", normalized_df);
 
-    // Since the result is already an OptimizedDataFrame, we don't need to convert
-    let opt_normalized_df = normalized_df;
-    if let Ok(col) = opt_normalized_df.column("feature1") {
+    // The result is an OptimizedDataFrame
+    if let Ok(col) = normalized_df.column("feature1") {
         if let Some(float_col) = col.as_float64() {
             println!("\nNormalized values of the feature1 column:");
             for i in 0..float_col.len() {
@@ -101,13 +100,13 @@ fn main() -> Result<()> {
     // First apply the StandardScaler to feature1
     let mut scaler1 = StandardScaler::new();
     scaler1 = scaler1.with_columns(vec!["feature1".to_string()]);
-    let temp_df = scaler1.fit_transform(&df)?; // Using the original OptimizedDataFrame
+    let temp_df = Transformer::fit_transform(&mut scaler1, &df)?; // Using the Transformer trait
 
     // Then apply the MinMaxScaler to feature2
     let mut scaler2 = MinMaxScaler::new();
     scaler2 = scaler2.with_columns(vec!["feature2".to_string()]);
     scaler2 = scaler2.with_range(0.0, 1.0);
-    let result_df = scaler2.fit_transform(&temp_df)?;
+    let result_df = Transformer::fit_transform(&mut scaler2, &temp_df)?;
     println!("DataFrame after applying the pipeline:");
     println!("{:?}", result_df);
 

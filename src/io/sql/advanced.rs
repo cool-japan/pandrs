@@ -213,8 +213,8 @@ impl AsyncDatabasePool {
         use futures::future::try_join_all;
 
         let futures: Vec<_> = queries
-            .into_iter()
-            .map(|query| self.query_async(&query, None))
+            .iter()
+            .map(|query| self.query_async(query, None))
             .collect();
 
         try_join_all(futures).await
@@ -472,7 +472,7 @@ impl TransactionManager {
             .await
             .map_err(|e| Error::IoError(format!("Failed to set isolation level: {}", e)))?;
 
-        self.isolation_level = level;
+        self.set_isolation_level_internal(level);
         Ok(())
     }
 

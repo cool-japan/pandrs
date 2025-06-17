@@ -466,7 +466,7 @@ impl<T: DataFrameOps> RollingWindow<T> {
         // This is a placeholder implementation - in practice this would need
         // to work with the actual DataFrame implementation
         Err(Error::NotImplemented(
-            "Rolling sum requires DataFrame-specific implementation".to_string()
+            "Rolling sum requires DataFrame-specific implementation".to_string(),
         ))
     }
 
@@ -476,7 +476,7 @@ impl<T: DataFrameOps> RollingWindow<T> {
         // This is a placeholder implementation - in practice this would need
         // to work with the actual DataFrame implementation
         Err(Error::NotImplemented(
-            "Rolling mean requires DataFrame-specific implementation".to_string()
+            "Rolling mean requires DataFrame-specific implementation".to_string(),
         ))
     }
 
@@ -486,28 +486,28 @@ impl<T: DataFrameOps> RollingWindow<T> {
         // This is a placeholder implementation - in practice this would need
         // to work with the actual DataFrame implementation
         Err(Error::NotImplemented(
-            "Rolling std requires DataFrame-specific implementation".to_string()
+            "Rolling std requires DataFrame-specific implementation".to_string(),
         ))
     }
 
     /// Calculate rolling minimum
     pub fn min(&self) -> Result<T::Output> {
         Err(Error::NotImplemented(
-            "Rolling min requires DataFrame-specific implementation".to_string()
+            "Rolling min requires DataFrame-specific implementation".to_string(),
         ))
     }
 
     /// Calculate rolling maximum
     pub fn max(&self) -> Result<T::Output> {
         Err(Error::NotImplemented(
-            "Rolling max requires DataFrame-specific implementation".to_string()
+            "Rolling max requires DataFrame-specific implementation".to_string(),
         ))
     }
 
     /// Calculate rolling count
     pub fn count(&self) -> Result<T::Output> {
         Err(Error::NotImplemented(
-            "Rolling count requires DataFrame-specific implementation".to_string()
+            "Rolling count requires DataFrame-specific implementation".to_string(),
         ))
     }
 
@@ -517,7 +517,7 @@ impl<T: DataFrameOps> RollingWindow<T> {
         F: Fn(&[f64]) -> f64 + Send + Sync,
     {
         Err(Error::NotImplemented(
-            "Rolling apply requires DataFrame-specific implementation".to_string()
+            "Rolling apply requires DataFrame-specific implementation".to_string(),
         ))
     }
 }
@@ -549,7 +549,7 @@ impl<T: DataFrameOps> ExpandingWindow<T> {
         // This is a placeholder implementation - in practice this would need
         // to work with the actual DataFrame implementation
         Err(Error::NotImplemented(
-            "Expanding sum requires DataFrame-specific implementation".to_string()
+            "Expanding sum requires DataFrame-specific implementation".to_string(),
         ))
     }
 
@@ -559,42 +559,42 @@ impl<T: DataFrameOps> ExpandingWindow<T> {
         // This is a placeholder implementation - in practice this would need
         // to work with the actual DataFrame implementation
         Err(Error::NotImplemented(
-            "Expanding mean requires DataFrame-specific implementation".to_string()
+            "Expanding mean requires DataFrame-specific implementation".to_string(),
         ))
     }
 
     /// Calculate expanding standard deviation
     pub fn std(&self) -> Result<T::Output> {
         Err(Error::NotImplemented(
-            "Expanding std requires DataFrame-specific implementation".to_string()
+            "Expanding std requires DataFrame-specific implementation".to_string(),
         ))
     }
 
     /// Calculate expanding variance
     pub fn var(&self) -> Result<T::Output> {
         Err(Error::NotImplemented(
-            "Expanding var requires DataFrame-specific implementation".to_string()
+            "Expanding var requires DataFrame-specific implementation".to_string(),
         ))
     }
 
     /// Calculate expanding minimum
     pub fn min(&self) -> Result<T::Output> {
         Err(Error::NotImplemented(
-            "Expanding min requires DataFrame-specific implementation".to_string()
+            "Expanding min requires DataFrame-specific implementation".to_string(),
         ))
     }
 
     /// Calculate expanding maximum
     pub fn max(&self) -> Result<T::Output> {
         Err(Error::NotImplemented(
-            "Expanding max requires DataFrame-specific implementation".to_string()
+            "Expanding max requires DataFrame-specific implementation".to_string(),
         ))
     }
 
     /// Calculate expanding count
     pub fn count(&self) -> Result<T::Output> {
         Err(Error::NotImplemented(
-            "Expanding count requires DataFrame-specific implementation".to_string()
+            "Expanding count requires DataFrame-specific implementation".to_string(),
         ))
     }
 
@@ -604,7 +604,7 @@ impl<T: DataFrameOps> ExpandingWindow<T> {
         F: Fn(&[f64]) -> f64 + Send + Sync,
     {
         Err(Error::NotImplemented(
-            "Expanding apply requires DataFrame-specific implementation".to_string()
+            "Expanding apply requires DataFrame-specific implementation".to_string(),
         ))
     }
 }
@@ -631,7 +631,7 @@ impl<T: DataFrameOps> Resampler<T> {
         // This is a placeholder implementation - in practice this would need
         // to work with the actual DataFrame implementation and parse the frequency string
         Err(Error::NotImplemented(
-            "Resample sum requires DataFrame-specific implementation".to_string()
+            "Resample sum requires DataFrame-specific implementation".to_string(),
         ))
     }
 
@@ -639,7 +639,7 @@ impl<T: DataFrameOps> Resampler<T> {
     pub fn mean(&self) -> Result<T::Output> {
         // Parse frequency and apply resampling with mean aggregation
         Err(Error::NotImplemented(
-            "Resample mean requires DataFrame-specific implementation".to_string()
+            "Resample mean requires DataFrame-specific implementation".to_string(),
         ))
     }
 
@@ -647,7 +647,7 @@ impl<T: DataFrameOps> Resampler<T> {
     pub fn first(&self) -> Result<T::Output> {
         // Parse frequency and apply resampling taking first value
         Err(Error::NotImplemented(
-            "Resample first requires DataFrame-specific implementation".to_string()
+            "Resample first requires DataFrame-specific implementation".to_string(),
         ))
     }
 
@@ -655,49 +655,49 @@ impl<T: DataFrameOps> Resampler<T> {
     pub fn last(&self) -> Result<T::Output> {
         // Parse frequency and apply resampling taking last value
         Err(Error::NotImplemented(
-            "Resample last requires DataFrame-specific implementation".to_string()
+            "Resample last requires DataFrame-specific implementation".to_string(),
         ))
     }
 
     /// Resample and calculate standard deviation
     pub fn std(&self) -> Result<T::Output> {
         Err(Error::NotImplemented(
-            "Resample std requires DataFrame-specific implementation".to_string()
+            "Resample std requires DataFrame-specific implementation".to_string(),
         ))
     }
 
     /// Resample and calculate variance
     pub fn var(&self) -> Result<T::Output> {
         Err(Error::NotImplemented(
-            "Resample var requires DataFrame-specific implementation".to_string()
+            "Resample var requires DataFrame-specific implementation".to_string(),
         ))
     }
 
     /// Resample and find minimum
     pub fn min(&self) -> Result<T::Output> {
         Err(Error::NotImplemented(
-            "Resample min requires DataFrame-specific implementation".to_string()
+            "Resample min requires DataFrame-specific implementation".to_string(),
         ))
     }
 
     /// Resample and find maximum
     pub fn max(&self) -> Result<T::Output> {
         Err(Error::NotImplemented(
-            "Resample max requires DataFrame-specific implementation".to_string()
+            "Resample max requires DataFrame-specific implementation".to_string(),
         ))
     }
 
     /// Resample and count values
     pub fn count(&self) -> Result<T::Output> {
         Err(Error::NotImplemented(
-            "Resample count requires DataFrame-specific implementation".to_string()
+            "Resample count requires DataFrame-specific implementation".to_string(),
         ))
     }
 
     /// Apply custom aggregation function to resampled data
     pub fn agg(&self, _funcs: &[AggFunc]) -> Result<T::Output> {
         Err(Error::NotImplemented(
-            "Resample agg requires DataFrame-specific implementation".to_string()
+            "Resample agg requires DataFrame-specific implementation".to_string(),
         ))
     }
 

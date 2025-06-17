@@ -157,7 +157,7 @@ fn demo_string_pool_optimization() -> std::result::Result<(), Box<dyn std::error
 
 /// Demonstrate enhanced I/O performance
 #[cfg(feature = "parquet")]
-fn demo_enhanced_io() -> Result<(), Box<dyn std::error::Error>> {
+fn demo_enhanced_io() -> std::result::Result<(), Box<dyn std::error::Error>> {
     use pandrs::io::parquet::{read_parquet, write_parquet, ParquetCompression};
     use tempfile::NamedTempFile;
 

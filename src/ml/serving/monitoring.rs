@@ -4,7 +4,7 @@
 //! performance metrics, drift detection, alerting, and observability.
 
 use crate::core::error::{Error, Result};
-use crate::ml::serving::{ModelMetadata, DeploymentMetrics, HealthStatus};
+use crate::ml::serving::{DeploymentMetrics, HealthStatus, ModelMetadata};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -261,26 +261,27 @@ impl ModelMonitor {
             last_collection: Instant::now(),
         }
     }
-    
+
     /// Add alert configuration
     pub fn add_alert(&mut self, config: AlertConfig) {
         self.alert_configs.push(config);
     }
-    
+
     /// Remove alert configuration
     pub fn remove_alert(&mut self, alert_name: &str) {
-        self.alert_configs.retain(|config| config.name != alert_name);
+        self.alert_configs
+            .retain(|config| config.name != alert_name);
         self.alert_counters.remove(alert_name);
         self.last_alert_times.remove(alert_name);
     }
-    
+
     /// Collect metrics from deployment
     pub fn collect_metrics(&mut self, deployment_metrics: &DeploymentMetrics) -> Result<()> {
         // Check if it's time to collect metrics
         if self.last_collection.elapsed() < self.collection_interval {
             return Ok(());
         }
-        
+
         // Create performance metrics
         let performance_metrics = PerformanceMetrics {
             model_name: self.model_metadata.name.clone(),
@@ -292,28 +293,28 @@ impl ModelMonitor {
             resource_utilization: self.calculate_resource_metrics(deployment_metrics),
             quality_metrics: self.calculate_quality_metrics(),
         };
-        
+
         // Add to history
         self.metrics_history.push_back(performance_metrics.clone());
-        
+
         // Trim history if too large
         while self.metrics_history.len() > self.max_history_size {
             self.metrics_history.pop_front();
         }
-        
+
         // Evaluate alerts
         self.evaluate_alerts(&performance_metrics)?;
-        
+
         self.last_collection = Instant::now();
-        
+
         Ok(())
     }
-    
+
     /// Calculate latency metrics
     fn calculate_latency_metrics(&self, deployment_metrics: &DeploymentMetrics) -> LatencyMetrics {
         // In a real implementation, this would calculate percentiles from raw latency data
         let avg_latency = deployment_metrics.avg_response_time_ms;
-        
+
         LatencyMetrics {
             avg_latency_ms: avg_latency,
             p50_latency_ms: avg_latency * 0.8,
@@ -323,9 +324,12 @@ impl ModelMonitor {
             min_latency_ms: avg_latency * 0.5,
         }
     }
-    
+
     /// Calculate throughput metrics
-    fn calculate_throughput_metrics(&self, deployment_metrics: &DeploymentMetrics) -> ThroughputMetrics {
+    fn calculate_throughput_metrics(
+        &self,
+        deployment_metrics: &DeploymentMetrics,
+    ) -> ThroughputMetrics {
         ThroughputMetrics {
             requests_per_second: deployment_metrics.request_rate,
             total_requests: deployment_metrics.total_requests,
@@ -334,24 +338,42 @@ impl ModelMonitor {
             concurrent_requests: deployment_metrics.active_instances as u64,
         }
     }
-    
+
     /// Calculate error metrics
     fn calculate_error_metrics(&self, deployment_metrics: &DeploymentMetrics) -> ErrorMetrics {
         let mut error_rates_by_type = HashMap::new();
         let mut error_counts_by_type = HashMap::new();
-        
+
         // Simulate error categorization
         if deployment_metrics.error_rate > 0.0 {
-            error_rates_by_type.insert("prediction_error".to_string(), deployment_metrics.error_rate * 0.7);
-            error_rates_by_type.insert("timeout_error".to_string(), deployment_metrics.error_rate * 0.2);
-            error_rates_by_type.insert("validation_error".to_string(), deployment_metrics.error_rate * 0.1);
-            
+            error_rates_by_type.insert(
+                "prediction_error".to_string(),
+                deployment_metrics.error_rate * 0.7,
+            );
+            error_rates_by_type.insert(
+                "timeout_error".to_string(),
+                deployment_metrics.error_rate * 0.2,
+            );
+            error_rates_by_type.insert(
+                "validation_error".to_string(),
+                deployment_metrics.error_rate * 0.1,
+            );
+
             let total_errors = deployment_metrics.failed_requests;
-            error_counts_by_type.insert("prediction_error".to_string(), (total_errors as f64 * 0.7) as u64);
-            error_counts_by_type.insert("timeout_error".to_string(), (total_errors as f64 * 0.2) as u64);
-            error_counts_by_type.insert("validation_error".to_string(), (total_errors as f64 * 0.1) as u64);
+            error_counts_by_type.insert(
+                "prediction_error".to_string(),
+                (total_errors as f64 * 0.7) as u64,
+            );
+            error_counts_by_type.insert(
+                "timeout_error".to_string(),
+                (total_errors as f64 * 0.2) as u64,
+            );
+            error_counts_by_type.insert(
+                "validation_error".to_string(),
+                (total_errors as f64 * 0.1) as u64,
+            );
         }
-        
+
         ErrorMetrics {
             error_rate: deployment_metrics.error_rate,
             error_rates_by_type,
@@ -359,9 +381,12 @@ impl ModelMonitor {
             recent_errors: Vec::new(), // Would be populated in real implementation
         }
     }
-    
+
     /// Calculate resource utilization metrics
-    fn calculate_resource_metrics(&self, deployment_metrics: &DeploymentMetrics) -> ResourceUtilizationMetrics {
+    fn calculate_resource_metrics(
+        &self,
+        deployment_metrics: &DeploymentMetrics,
+    ) -> ResourceUtilizationMetrics {
         ResourceUtilizationMetrics {
             cpu_utilization: deployment_metrics.cpu_utilization,
             memory_utilization: deployment_metrics.memory_utilization,
@@ -370,7 +395,7 @@ impl ModelMonitor {
             network_io_utilization: deployment_metrics.request_rate / 1000.0, // Simulated
         }
     }
-    
+
     /// Calculate model quality metrics
     fn calculate_quality_metrics(&self) -> QualityMetrics {
         QualityMetrics {
@@ -399,27 +424,27 @@ impl ModelMonitor {
             feature_importance_drift: Some(0.03),
         }
     }
-    
+
     /// Evaluate alerts based on current metrics
     fn evaluate_alerts(&mut self, metrics: &PerformanceMetrics) -> Result<()> {
         // Clone alert configs to avoid borrow checker issues
         let alert_configs = self.alert_configs.clone();
-        
+
         for config in &alert_configs {
             if !config.enabled {
                 continue;
             }
-            
+
             // Check cooldown
             if let Some(last_alert_time) = self.last_alert_times.get(&config.name) {
                 if last_alert_time.elapsed() < Duration::from_secs(config.cooldown_seconds) {
                     continue;
                 }
             }
-            
+
             // Get metric value
             let current_value = self.get_metric_value(metrics, &config.metric)?;
-            
+
             // Evaluate threshold
             let threshold_exceeded = match config.operator {
                 ComparisonOperator::GreaterThan => current_value > config.threshold,
@@ -429,7 +454,7 @@ impl ModelMonitor {
                 ComparisonOperator::Equal => (current_value - config.threshold).abs() < 1e-10,
                 ComparisonOperator::NotEqual => (current_value - config.threshold).abs() >= 1e-10,
             };
-            
+
             if threshold_exceeded {
                 // Increment counter
                 let should_trigger = {
@@ -437,22 +462,23 @@ impl ModelMonitor {
                     *counter += 1;
                     *counter >= config.consecutive_evaluations
                 };
-                
+
                 // Check if we should trigger alert
                 if should_trigger {
                     self.trigger_alert(config, current_value)?;
                     self.alert_counters.insert(config.name.clone(), 0); // Reset counter
-                    self.last_alert_times.insert(config.name.clone(), Instant::now());
+                    self.last_alert_times
+                        .insert(config.name.clone(), Instant::now());
                 }
             } else {
                 // Reset counter if threshold not exceeded
                 self.alert_counters.insert(config.name.clone(), 0);
             }
         }
-        
+
         Ok(())
     }
-    
+
     /// Get metric value by name
     fn get_metric_value(&self, metrics: &PerformanceMetrics, metric_name: &str) -> Result<f64> {
         match metric_name {
@@ -465,10 +491,13 @@ impl ModelMonitor {
             "memory_utilization" => Ok(metrics.resource_utilization.memory_utilization),
             "drift_score" => Ok(metrics.quality_metrics.data_drift.drift_score),
             "avg_confidence" => Ok(metrics.quality_metrics.confidence_scores.avg_confidence),
-            _ => Err(Error::InvalidInput(format!("Unknown metric: {}", metric_name))),
+            _ => Err(Error::InvalidInput(format!(
+                "Unknown metric: {}",
+                metric_name
+            ))),
         }
     }
-    
+
     /// Trigger an alert
     fn trigger_alert(&mut self, config: &AlertConfig, current_value: f64) -> Result<()> {
         let alert_event = AlertEvent {
@@ -488,23 +517,23 @@ impl ModelMonitor {
             model_version: self.model_metadata.version.clone(),
             context: HashMap::new(),
         };
-        
+
         // Add to alert events
         self.alert_events.push_back(alert_event.clone());
-        
+
         // Limit alert events history
         while self.alert_events.len() > 100 {
             self.alert_events.pop_front();
         }
-        
+
         // Log alert
         log::warn!("Alert triggered: {}", alert_event.message);
-        
+
         // In a real implementation, this would send notifications via email, Slack, etc.
-        
+
         Ok(())
     }
-    
+
     /// Convert operator to string
     fn operator_to_string(&self, operator: &ComparisonOperator) -> &'static str {
         match operator {
@@ -516,68 +545,83 @@ impl ModelMonitor {
             ComparisonOperator::NotEqual => "!=",
         }
     }
-    
+
     /// Get recent metrics
     pub fn get_recent_metrics(&self, limit: usize) -> Vec<PerformanceMetrics> {
-        self.metrics_history.iter()
+        self.metrics_history
+            .iter()
             .rev()
             .take(limit)
             .cloned()
             .collect()
     }
-    
+
     /// Get recent alerts
     pub fn get_recent_alerts(&self, limit: usize) -> Vec<AlertEvent> {
-        self.alert_events.iter()
+        self.alert_events
+            .iter()
             .rev()
             .take(limit)
             .cloned()
             .collect()
     }
-    
+
     /// Get alert configurations
     pub fn get_alert_configs(&self) -> &[AlertConfig] {
         &self.alert_configs
     }
-    
+
     /// Get metrics summary for time window
     pub fn get_metrics_summary(&self, window_minutes: usize) -> Option<MetricsSummary> {
         let cutoff = chrono::Utc::now() - chrono::Duration::minutes(window_minutes as i64);
-        
-        let recent_metrics: Vec<_> = self.metrics_history.iter()
+
+        let recent_metrics: Vec<_> = self
+            .metrics_history
+            .iter()
             .filter(|m| m.timestamp > cutoff)
             .collect();
-        
+
         if recent_metrics.is_empty() {
             return None;
         }
-        
-        let avg_latency = recent_metrics.iter()
+
+        let avg_latency = recent_metrics
+            .iter()
             .map(|m| m.latency.avg_latency_ms)
-            .sum::<f64>() / recent_metrics.len() as f64;
-        
-        let avg_throughput = recent_metrics.iter()
+            .sum::<f64>()
+            / recent_metrics.len() as f64;
+
+        let avg_throughput = recent_metrics
+            .iter()
             .map(|m| m.throughput.requests_per_second)
-            .sum::<f64>() / recent_metrics.len() as f64;
-        
-        let avg_error_rate = recent_metrics.iter()
+            .sum::<f64>()
+            / recent_metrics.len() as f64;
+
+        let avg_error_rate = recent_metrics
+            .iter()
             .map(|m| m.error_metrics.error_rate)
-            .sum::<f64>() / recent_metrics.len() as f64;
-        
-        let avg_cpu = recent_metrics.iter()
+            .sum::<f64>()
+            / recent_metrics.len() as f64;
+
+        let avg_cpu = recent_metrics
+            .iter()
             .map(|m| m.resource_utilization.cpu_utilization)
-            .sum::<f64>() / recent_metrics.len() as f64;
-        
+            .sum::<f64>()
+            / recent_metrics.len() as f64;
+
         Some(MetricsSummary {
             window_minutes,
             avg_latency_ms: avg_latency,
-            avg_throughput: avg_throughput,
+            avg_throughput,
             avg_error_rate,
             avg_cpu_utilization: avg_cpu,
-            total_requests: recent_metrics.iter()
+            total_requests: recent_metrics
+                .iter()
                 .map(|m| m.throughput.total_requests)
                 .sum(),
-            alert_count: self.alert_events.iter()
+            alert_count: self
+                .alert_events
+                .iter()
                 .filter(|e| e.triggered_at > cutoff)
                 .count(),
         })
@@ -607,7 +651,7 @@ pub struct MetricsSummary {
 pub trait MetricsCollector {
     /// Collect system metrics
     fn collect_system_metrics(&self) -> Result<SystemMetrics>;
-    
+
     /// Collect model-specific metrics
     fn collect_model_metrics(&self, model_name: &str) -> Result<ModelSpecificMetrics>;
 }
@@ -655,25 +699,25 @@ impl MetricsCollector for DefaultMetricsCollector {
     fn collect_system_metrics(&self) -> Result<SystemMetrics> {
         // In a real implementation, this would use system APIs to collect actual metrics
         Ok(SystemMetrics {
-            cpu_usage: 0.45, // Simulated
-            memory_usage: 2_147_483_648, // 2GB simulated
-            memory_available: 6_442_450_944, // 6GB simulated
-            disk_usage: 0.75, // Simulated
-            network_bytes_sent: 1_048_576, // 1MB simulated
+            cpu_usage: 0.45,                   // Simulated
+            memory_usage: 2_147_483_648,       // 2GB simulated
+            memory_available: 6_442_450_944,   // 6GB simulated
+            disk_usage: 0.75,                  // Simulated
+            network_bytes_sent: 1_048_576,     // 1MB simulated
             network_bytes_received: 2_097_152, // 2MB simulated
-            load_average: 1.5, // Simulated
-            process_count: 150, // Simulated
+            load_average: 1.5,                 // Simulated
+            process_count: 150,                // Simulated
         })
     }
-    
+
     fn collect_model_metrics(&self, _model_name: &str) -> Result<ModelSpecificMetrics> {
         // In a real implementation, this would collect model-specific metrics
         Ok(ModelSpecificMetrics {
             model_memory_usage: 536_870_912, // 512MB simulated
-            model_init_time_ms: 2500, // Simulated
-            cache_hit_rate: 0.85, // Simulated
-            feature_processing_time_ms: 5, // Simulated
-            prediction_time_ms: 15, // Simulated
+            model_init_time_ms: 2500,        // Simulated
+            cache_hit_rate: 0.85,            // Simulated
+            feature_processing_time_ms: 5,   // Simulated
+            prediction_time_ms: 15,          // Simulated
         })
     }
 }
@@ -682,7 +726,7 @@ impl MetricsCollector for DefaultMetricsCollector {
 mod tests {
     use super::*;
     use crate::ml::serving::ModelMetadata;
-    
+
     fn create_test_metadata() -> ModelMetadata {
         ModelMetadata {
             name: "test_model".to_string(),
@@ -697,10 +741,10 @@ mod tests {
             metadata: HashMap::new(),
         }
     }
-    
+
     fn create_test_deployment_metrics() -> DeploymentMetrics {
         use crate::ml::serving::deployment::DeploymentStatus;
-        
+
         crate::ml::serving::deployment::DeploymentMetrics {
             status: DeploymentStatus::Running,
             active_instances: 2,
@@ -717,17 +761,17 @@ mod tests {
             updated_at: chrono::Utc::now(),
         }
     }
-    
+
     #[test]
     fn test_model_monitor_creation() {
         let metadata = create_test_metadata();
         let monitor = ModelMonitor::new(metadata);
-        
+
         assert_eq!(monitor.model_metadata.name, "test_model");
         assert_eq!(monitor.alert_configs.len(), 0);
         assert_eq!(monitor.metrics_history.len(), 0);
     }
-    
+
     #[test]
     fn test_alert_config() {
         let config = AlertConfig {
@@ -742,37 +786,37 @@ mod tests {
             cooldown_seconds: 600,
             enabled: true,
         };
-        
+
         assert_eq!(config.name, "high_latency");
         assert_eq!(config.threshold, 200.0);
         assert_eq!(config.severity, AlertSeverity::Warning);
     }
-    
+
     #[test]
     fn test_metrics_collector() {
         let collector = DefaultMetricsCollector;
-        
+
         let system_metrics = collector.collect_system_metrics().unwrap();
         assert!(system_metrics.cpu_usage >= 0.0 && system_metrics.cpu_usage <= 1.0);
-        
+
         let model_metrics = collector.collect_model_metrics("test_model").unwrap();
         assert!(model_metrics.model_memory_usage > 0);
     }
-    
+
     #[test]
     fn test_performance_metrics() {
         let metadata = create_test_metadata();
         let mut monitor = ModelMonitor::new(metadata);
         let deployment_metrics = create_test_deployment_metrics();
-        
+
         // Set collection interval to 0 for immediate collection
         monitor.collection_interval = Duration::from_secs(0);
-        
+
         // Collect metrics
         monitor.collect_metrics(&deployment_metrics).unwrap();
-        
+
         assert_eq!(monitor.metrics_history.len(), 1);
-        
+
         let metrics = &monitor.metrics_history[0];
         assert_eq!(metrics.model_name, "test_model");
         assert!(metrics.latency.avg_latency_ms > 0.0);

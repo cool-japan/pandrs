@@ -14,17 +14,20 @@
 use pandrs::dataframe::base::DataFrame;
 use pandrs::error::Result;
 use pandrs::series::Series;
+use std::path::Path;
 
 #[cfg(feature = "parquet")]
 use pandrs::io::{ParquetCompression, ParquetMetadata, ParquetWriteOptions};
 
+#[cfg(feature = "excel")]
+use pandrs::io::{ExcelWriteOptions, ExcelReadOptions, ExcelWorkbookInfo, NamedRange};
+
 #[cfg(feature = "sql")]
 use pandrs::io::sql::{
-    ColumnDefinition, DatabaseConnection, InsertMethod, SqlWriteOptions, TableSchema, WriteMode,
+    ColumnDefinition, DatabaseConnection, InsertMethod, SqlWriteOptions, TableSchema, WriteMode, PoolConfig,
 };
 
 #[cfg(any(feature = "parquet", feature = "sql"))]
-use std::collections::HashMap;
 #[cfg(feature = "sql")]
 use std::time::Duration;
 
@@ -56,7 +59,7 @@ fn main() -> Result<()> {
 }
 
 /// Comprehensive Excel Support Enhancement Examples
-fn excel_enhancement_examples(_df: &DataFrame) -> Result<()> {
+fn excel_enhancement_examples(df: &DataFrame) -> Result<()> {
     println!("\n--- Excel Formula Preservation and Cell Formatting ---");
 
     #[cfg(feature = "excel")]
@@ -481,6 +484,7 @@ fn compression_comparison_example(df: &DataFrame) -> Result<()> {
             ParquetCompression::Zstd => 250,
             ParquetCompression::Lz4 => 450,
             ParquetCompression::Brotli => 280,
+            ParquetCompression::Lzo => 380,
         };
 
         println!("    • {}: ~{} KB", description, estimated_size);
@@ -769,22 +773,35 @@ fn schema_introspection_example() -> Result<()> {
                 data_type: "INTEGER PRIMARY KEY".to_string(),
                 nullable: false,
                 default_value: None,
+                max_length: None,
+                precision: None,
+                scale: None,
+                auto_increment: true,
             },
             ColumnDefinition {
                 name: "name".to_string(),
                 data_type: "VARCHAR(100)".to_string(),
                 nullable: false,
                 default_value: None,
+                max_length: Some(100),
+                precision: None,
+                scale: None,
+                auto_increment: false,
             },
             ColumnDefinition {
                 name: "price".to_string(),
                 data_type: "DECIMAL(10,2)".to_string(),
                 nullable: true,
                 default_value: Some("0.00".to_string()),
+                max_length: None,
+                precision: Some(10),
+                scale: Some(2),
+                auto_increment: false,
             },
         ],
         primary_keys: vec!["id".to_string()],
         foreign_keys: vec![],
+        indexes: vec![],
     }];
 
     println!("  Database schema analysis:");
@@ -885,7 +902,7 @@ async fn connection_monitoring_example() -> Result<()> {
 }
 
 #[cfg(feature = "sql")]
-fn multi_database_example(df: &DataFrame) -> Result<()> {
+fn multi_database_example(_df: &DataFrame) -> Result<()> {
     println!("  Demonstrating multi-database integration...");
 
     let databases = vec![
@@ -1122,7 +1139,7 @@ fn parallel_io_example(large_df: &DataFrame) -> Result<()> {
 }
 
 #[cfg(feature = "streaming")]
-fn large_dataset_streaming_example(large_df: &DataFrame) -> Result<()> {
+fn large_dataset_streaming_example(_large_df: &DataFrame) -> Result<()> {
     println!("  Processing very large datasets with streaming...");
 
     let dataset_size_gb = 10;

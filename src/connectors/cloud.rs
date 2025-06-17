@@ -74,25 +74,25 @@ impl CloudConfig {
             parameters: HashMap::new(),
         }
     }
-    
+
     /// Set region
     pub fn with_region(mut self, region: impl Into<String>) -> Self {
         self.region = Some(region.into());
         self
     }
-    
+
     /// Set custom endpoint
     pub fn with_endpoint(mut self, endpoint: impl Into<String>) -> Self {
         self.endpoint = Some(endpoint.into());
         self
     }
-    
+
     /// Set timeout
     pub fn with_timeout(mut self, timeout: u64) -> Self {
         self.timeout = Some(timeout);
         self
     }
-    
+
     /// Add parameter
     pub fn with_parameter(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
         self.parameters.insert(key.into(), value.into());
@@ -105,13 +105,18 @@ impl CloudConfig {
 pub trait CloudConnector: Send + Sync {
     /// Connect to cloud storage
     async fn connect(&mut self, config: &CloudConfig) -> Result<()>;
-    
+
     /// List objects in bucket/container
     async fn list_objects(&self, bucket: &str, prefix: Option<&str>) -> Result<Vec<CloudObject>>;
-    
+
     /// Read DataFrame from cloud object (CSV, Parquet, etc.)
-    async fn read_dataframe(&self, bucket: &str, key: &str, format: FileFormat) -> Result<DataFrame>;
-    
+    async fn read_dataframe(
+        &self,
+        bucket: &str,
+        key: &str,
+        format: FileFormat,
+    ) -> Result<DataFrame>;
+
     /// Write DataFrame to cloud storage
     async fn write_dataframe(
         &self,
@@ -120,25 +125,25 @@ pub trait CloudConnector: Send + Sync {
         key: &str,
         format: FileFormat,
     ) -> Result<()>;
-    
+
     /// Download object to local file
     async fn download_object(&self, bucket: &str, key: &str, local_path: &str) -> Result<()>;
-    
+
     /// Upload local file to cloud storage
     async fn upload_object(&self, local_path: &str, bucket: &str, key: &str) -> Result<()>;
-    
+
     /// Delete object
     async fn delete_object(&self, bucket: &str, key: &str) -> Result<()>;
-    
+
     /// Get object metadata
     async fn get_object_metadata(&self, bucket: &str, key: &str) -> Result<ObjectMetadata>;
-    
+
     /// Check if object exists
     async fn object_exists(&self, bucket: &str, key: &str) -> Result<bool>;
-    
+
     /// Create bucket/container
     async fn create_bucket(&self, bucket: &str) -> Result<()>;
-    
+
     /// Delete bucket/container
     async fn delete_bucket(&self, bucket: &str) -> Result<()>;
 }
@@ -166,10 +171,7 @@ pub struct ObjectMetadata {
 /// Supported file formats for cloud storage
 #[derive(Debug, Clone)]
 pub enum FileFormat {
-    CSV {
-        delimiter: char,
-        has_header: bool,
-    },
+    CSV { delimiter: char, has_header: bool },
     Parquet,
     JSON,
     JSONL,
@@ -209,7 +211,7 @@ impl S3Connector {
             client: None,
         }
     }
-    
+
     /// Create S3 connector with immediate connection
     pub async fn connect_with_config(config: CloudConfig) -> Result<Self> {
         let mut connector = Self::new();
@@ -222,28 +224,39 @@ impl CloudConnector for S3Connector {
     async fn connect(&mut self, config: &CloudConfig) -> Result<()> {
         // In a real implementation, you'd initialize the AWS S3 client
         // using aws-sdk-s3 or similar
-        
+
         match &config.credentials {
-            CloudCredentials::AWS { access_key_id, secret_access_key, .. } => {
-                println!("Connecting to S3 with access key: {}...", &access_key_id[..8]);
+            CloudCredentials::AWS {
+                access_key_id,
+                secret_access_key,
+                ..
+            } => {
+                println!(
+                    "Connecting to S3 with access key: {}...",
+                    &access_key_id[..8]
+                );
             }
             CloudCredentials::Environment => {
                 println!("Connecting to S3 using environment credentials");
             }
             _ => {
-                return Err(Error::InvalidOperation("Invalid credentials for S3".to_string()));
+                return Err(Error::InvalidOperation(
+                    "Invalid credentials for S3".to_string(),
+                ));
             }
         }
-        
+
         self.config = Some(config.clone());
         self.client = Some(S3Client);
         Ok(())
     }
-    
+
     async fn list_objects(&self, bucket: &str, prefix: Option<&str>) -> Result<Vec<CloudObject>> {
-        let _client = self.client.as_ref()
+        let _client = self
+            .client
+            .as_ref()
             .ok_or_else(|| Error::ConnectionError("Not connected to S3".to_string()))?;
-        
+
         // Mock implementation
         Ok(vec![
             CloudObject {
@@ -262,53 +275,81 @@ impl CloudConnector for S3Connector {
             },
         ])
     }
-    
-    async fn read_dataframe(&self, bucket: &str, key: &str, format: FileFormat) -> Result<DataFrame> {
-        let _client = self.client.as_ref()
+
+    async fn read_dataframe(
+        &self,
+        bucket: &str,
+        key: &str,
+        format: FileFormat,
+    ) -> Result<DataFrame> {
+        let _client = self
+            .client
+            .as_ref()
             .ok_or_else(|| Error::ConnectionError("Not connected to S3".to_string()))?;
-        
-        println!("Reading {} from S3 bucket {} with format {:?}", key, bucket, format);
-        
+
+        println!(
+            "Reading {} from S3 bucket {} with format {:?}",
+            key, bucket, format
+        );
+
         // Mock DataFrame creation
         let mut df = DataFrame::new();
         let series = crate::series::base::Series::new(
-            vec!["cloud_data_1".to_string(), "cloud_data_2".to_string(), "cloud_data_3".to_string()],
+            vec![
+                "cloud_data_1".to_string(),
+                "cloud_data_2".to_string(),
+                "cloud_data_3".to_string(),
+            ],
             Some("s3_data".to_string()),
         );
         df.add_column("s3_data".to_string(), series?)?;
-        
+
         Ok(df)
     }
-    
-    async fn write_dataframe(&self, df: &DataFrame, bucket: &str, key: &str, format: FileFormat) -> Result<()> {
-        let _client = self.client.as_ref()
+
+    async fn write_dataframe(
+        &self,
+        df: &DataFrame,
+        bucket: &str,
+        key: &str,
+        format: FileFormat,
+    ) -> Result<()> {
+        let _client = self
+            .client
+            .as_ref()
             .ok_or_else(|| Error::ConnectionError("Not connected to S3".to_string()))?;
-        
-        println!("Writing DataFrame to S3: s3://{}/{} (format: {:?})", bucket, key, format);
-        println!("DataFrame shape: {:?}", (df.row_count(), df.column_names().len()));
-        
+
+        println!(
+            "Writing DataFrame to S3: s3://{}/{} (format: {:?})",
+            bucket, key, format
+        );
+        println!(
+            "DataFrame shape: {:?}",
+            (df.row_count(), df.column_names().len())
+        );
+
         // In a real implementation, you'd:
         // 1. Serialize the DataFrame to the specified format
         // 2. Upload the data to S3
-        
+
         Ok(())
     }
-    
+
     async fn download_object(&self, bucket: &str, key: &str, local_path: &str) -> Result<()> {
         println!("Downloading s3://{}/{} to {}", bucket, key, local_path);
         Ok(())
     }
-    
+
     async fn upload_object(&self, local_path: &str, bucket: &str, key: &str) -> Result<()> {
         println!("Uploading {} to s3://{}/{}", local_path, bucket, key);
         Ok(())
     }
-    
+
     async fn delete_object(&self, bucket: &str, key: &str) -> Result<()> {
         println!("Deleting s3://{}/{}", bucket, key);
         Ok(())
     }
-    
+
     async fn get_object_metadata(&self, bucket: &str, key: &str) -> Result<ObjectMetadata> {
         Ok(ObjectMetadata {
             size: 1024,
@@ -318,17 +359,17 @@ impl CloudConnector for S3Connector {
             custom_metadata: HashMap::new(),
         })
     }
-    
+
     async fn object_exists(&self, bucket: &str, key: &str) -> Result<bool> {
         // Mock implementation
         Ok(key.contains("sample"))
     }
-    
+
     async fn create_bucket(&self, bucket: &str) -> Result<()> {
         println!("Creating S3 bucket: {}", bucket);
         Ok(())
     }
-    
+
     async fn delete_bucket(&self, bucket: &str) -> Result<()> {
         println!("Deleting S3 bucket: {}", bucket);
         Ok(())
@@ -356,22 +397,35 @@ impl CloudConnector for GCSConnector {
                 println!("Connecting to GCS using environment credentials");
             }
             _ => {
-                return Err(Error::InvalidOperation("Invalid credentials for GCS".to_string()));
+                return Err(Error::InvalidOperation(
+                    "Invalid credentials for GCS".to_string(),
+                ));
             }
         }
-        
+
         self.config = Some(config.clone());
         Ok(())
     }
-    
+
     async fn list_objects(&self, bucket: &str, prefix: Option<&str>) -> Result<Vec<CloudObject>> {
-        println!("Listing GCS objects in bucket: {} with prefix: {:?}", bucket, prefix);
+        println!(
+            "Listing GCS objects in bucket: {} with prefix: {:?}",
+            bucket, prefix
+        );
         Ok(vec![])
     }
-    
-    async fn read_dataframe(&self, bucket: &str, key: &str, format: FileFormat) -> Result<DataFrame> {
-        println!("Reading {} from GCS bucket {} with format {:?}", key, bucket, format);
-        
+
+    async fn read_dataframe(
+        &self,
+        bucket: &str,
+        key: &str,
+        format: FileFormat,
+    ) -> Result<DataFrame> {
+        println!(
+            "Reading {} from GCS bucket {} with format {:?}",
+            key, bucket, format
+        );
+
         // Mock DataFrame
         let mut df = DataFrame::new();
         let series = crate::series::base::Series::new(
@@ -379,30 +433,36 @@ impl CloudConnector for GCSConnector {
             Some("data".to_string()),
         );
         df.add_column("data".to_string(), series?)?;
-        
+
         Ok(df)
     }
-    
-    async fn write_dataframe(&self, df: &DataFrame, bucket: &str, key: &str, format: FileFormat) -> Result<()> {
+
+    async fn write_dataframe(
+        &self,
+        df: &DataFrame,
+        bucket: &str,
+        key: &str,
+        format: FileFormat,
+    ) -> Result<()> {
         println!("Writing DataFrame to GCS: gs://{}/{}", bucket, key);
         Ok(())
     }
-    
+
     async fn download_object(&self, bucket: &str, key: &str, local_path: &str) -> Result<()> {
         println!("Downloading gs://{}/{} to {}", bucket, key, local_path);
         Ok(())
     }
-    
+
     async fn upload_object(&self, local_path: &str, bucket: &str, key: &str) -> Result<()> {
         println!("Uploading {} to gs://{}/{}", local_path, bucket, key);
         Ok(())
     }
-    
+
     async fn delete_object(&self, bucket: &str, key: &str) -> Result<()> {
         println!("Deleting gs://{}/{}", bucket, key);
         Ok(())
     }
-    
+
     async fn get_object_metadata(&self, bucket: &str, key: &str) -> Result<ObjectMetadata> {
         Ok(ObjectMetadata {
             size: 2048,
@@ -412,16 +472,16 @@ impl CloudConnector for GCSConnector {
             custom_metadata: HashMap::new(),
         })
     }
-    
+
     async fn object_exists(&self, bucket: &str, key: &str) -> Result<bool> {
         Ok(true)
     }
-    
+
     async fn create_bucket(&self, bucket: &str) -> Result<()> {
         println!("Creating GCS bucket: {}", bucket);
         Ok(())
     }
-    
+
     async fn delete_bucket(&self, bucket: &str) -> Result<()> {
         println!("Deleting GCS bucket: {}", bucket);
         Ok(())
@@ -443,24 +503,34 @@ impl CloudConnector for AzureConnector {
     async fn connect(&mut self, config: &CloudConfig) -> Result<()> {
         match &config.credentials {
             CloudCredentials::Azure { account_name, .. } => {
-                println!("Connecting to Azure Blob Storage for account: {}", account_name);
+                println!(
+                    "Connecting to Azure Blob Storage for account: {}",
+                    account_name
+                );
             }
             _ => {
-                return Err(Error::InvalidOperation("Invalid credentials for Azure".to_string()));
+                return Err(Error::InvalidOperation(
+                    "Invalid credentials for Azure".to_string(),
+                ));
             }
         }
-        
+
         self.config = Some(config.clone());
         Ok(())
     }
-    
+
     // Simplified implementations for all required methods
     async fn list_objects(&self, bucket: &str, prefix: Option<&str>) -> Result<Vec<CloudObject>> {
         println!("Listing Azure blobs in container: {}", bucket);
         Ok(vec![])
     }
-    
-    async fn read_dataframe(&self, bucket: &str, key: &str, format: FileFormat) -> Result<DataFrame> {
+
+    async fn read_dataframe(
+        &self,
+        bucket: &str,
+        key: &str,
+        format: FileFormat,
+    ) -> Result<DataFrame> {
         println!("Reading {} from Azure container {}", key, bucket);
         let mut df = DataFrame::new();
         let series = crate::series::base::Series::new(
@@ -470,24 +540,30 @@ impl CloudConnector for AzureConnector {
         df.add_column("data".to_string(), series?)?;
         Ok(df)
     }
-    
-    async fn write_dataframe(&self, df: &DataFrame, bucket: &str, key: &str, format: FileFormat) -> Result<()> {
+
+    async fn write_dataframe(
+        &self,
+        df: &DataFrame,
+        bucket: &str,
+        key: &str,
+        format: FileFormat,
+    ) -> Result<()> {
         println!("Writing DataFrame to Azure: {}/{}", bucket, key);
         Ok(())
     }
-    
+
     async fn download_object(&self, bucket: &str, key: &str, local_path: &str) -> Result<()> {
         Ok(())
     }
-    
+
     async fn upload_object(&self, local_path: &str, bucket: &str, key: &str) -> Result<()> {
         Ok(())
     }
-    
+
     async fn delete_object(&self, bucket: &str, key: &str) -> Result<()> {
         Ok(())
     }
-    
+
     async fn get_object_metadata(&self, bucket: &str, key: &str) -> Result<ObjectMetadata> {
         Ok(ObjectMetadata {
             size: 4096,
@@ -497,15 +573,15 @@ impl CloudConnector for AzureConnector {
             custom_metadata: HashMap::new(),
         })
     }
-    
+
     async fn object_exists(&self, bucket: &str, key: &str) -> Result<bool> {
         Ok(false)
     }
-    
+
     async fn create_bucket(&self, bucket: &str) -> Result<()> {
         Ok(())
     }
-    
+
     async fn delete_bucket(&self, bucket: &str) -> Result<()> {
         Ok(())
     }
@@ -519,12 +595,12 @@ impl CloudConnectorFactory {
     pub fn s3() -> S3Connector {
         S3Connector::new()
     }
-    
+
     /// Create GCS connector
     pub fn gcs() -> GCSConnector {
         GCSConnector::new()
     }
-    
+
     /// Create Azure connector
     pub fn azure() -> AzureConnector {
         AzureConnector::new()
@@ -538,7 +614,7 @@ impl CloudConnectorFactory {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_cloud_config() {
         let config = CloudConfig::new(
@@ -551,12 +627,12 @@ mod tests {
         )
         .with_region("us-west-2")
         .with_timeout(600);
-        
+
         assert!(matches!(config.provider, CloudProvider::AWS));
         assert_eq!(config.region, Some("us-west-2".to_string()));
         assert_eq!(config.timeout, Some(600));
     }
-    
+
     #[test]
     fn test_file_format_detection() {
         assert!(matches!(
@@ -573,19 +649,16 @@ mod tests {
         ));
         assert!(FileFormat::from_extension("data.unknown").is_none());
     }
-    
+
     #[cfg(feature = "distributed")]
     #[tokio::test]
     async fn test_s3_connector() {
         let mut connector = S3Connector::new();
-        let config = CloudConfig::new(
-            CloudProvider::AWS,
-            CloudCredentials::Environment,
-        );
-        
+        let config = CloudConfig::new(CloudProvider::AWS, CloudCredentials::Environment);
+
         let result = connector.connect(&config).await;
         assert!(result.is_ok());
-        
+
         let objects = connector.list_objects("test-bucket", None).await.unwrap();
         assert_eq!(objects.len(), 2);
     }

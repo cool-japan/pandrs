@@ -1,8 +1,8 @@
 use pandrs::error::Result;
+use pandrs::optimized::split_dataframe::io::ParquetCompression;
 use pandrs::{BooleanColumn, Column, Float64Column, Int64Column, OptimizedDataFrame, StringColumn};
 
 mod optimized_io_test_utils;
-use optimized_io_test_utils::{ExcelExt, ParquetCompression, ParquetExt};
 use std::fs;
 use std::fs::File;
 use std::io::Write;

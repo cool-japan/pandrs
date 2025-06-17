@@ -3,15 +3,6 @@ use pandrs::error::Result;
 #[cfg(feature = "excel")]
 use pandrs::{DataFrame, Series};
 
-#[cfg(feature = "excel")]
-use pandrs::io::{
-    get_sheet_info, get_workbook_info, list_sheet_names, read_excel_sheets, read_excel_with_info,
-    write_excel_sheets, ExcelSheetInfo, ExcelWorkbookInfo,
-};
-
-#[cfg(feature = "excel")]
-use std::collections::HashMap;
-
 #[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     #[cfg(not(feature = "excel"))]
@@ -112,14 +103,15 @@ fn main() -> Result<()> {
         println!("✓ Enhanced sheet information");
         println!("✓ Comprehensive error handling");
         println!("✓ Validation and sheet management");
-
-        Ok(())
     }
 
-    /// Create sample sales DataFrame
-    #[cfg(feature = "excel")]
-    fn create_sample_sales_dataframe() -> Result<DataFrame> {
-        let mut df = DataFrame::new();
+    Ok(())
+}
+
+/// Create sample sales DataFrame
+#[cfg(feature = "excel")]
+fn create_sample_sales_dataframe() -> Result<DataFrame> {
+    let mut df = DataFrame::new();
 
         let dates = vec![
             "2024-01-01",
@@ -152,11 +144,11 @@ fn main() -> Result<()> {
         df.add_column("Revenue".to_string(), revenue_series.to_string_series()?)?;
 
         Ok(df)
-    }
+}
 
-    /// Create sample inventory DataFrame
-    #[cfg(feature = "excel")]
-    fn create_sample_inventory_dataframe() -> Result<DataFrame> {
+/// Create sample inventory DataFrame
+#[cfg(feature = "excel")]
+fn create_sample_inventory_dataframe() -> Result<DataFrame> {
         let mut df = DataFrame::new();
 
         let products = vec!["Widget A", "Widget B", "Widget C", "Widget D"];
@@ -184,11 +176,11 @@ fn main() -> Result<()> {
         df.add_column("Supplier".to_string(), supplier_series)?;
 
         Ok(df)
-    }
+}
 
-    /// Create sample summary DataFrame
-    #[cfg(feature = "excel")]
-    fn create_sample_summary_dataframe() -> Result<DataFrame> {
+/// Create sample summary DataFrame
+#[cfg(feature = "excel")]
+fn create_sample_summary_dataframe() -> Result<DataFrame> {
         let mut df = DataFrame::new();
 
         let metrics = vec![
@@ -252,4 +244,3 @@ fn main() -> Result<()> {
         println!("   }}");
         println!("   write_excel_sheets(&sheets, \"report.xlsx\", true)?;");
     }
-}

@@ -1,5 +1,5 @@
 //! Resilience patterns for PandRS connectors
-//! 
+//!
 //! This module provides retry mechanisms, circuit breakers, and fault tolerance
 //! patterns for database and cloud storage connectors to handle transient failures
 //! and improve system reliability.
@@ -7,9 +7,9 @@
 use crate::core::error::{Error, Result};
 use crate::utils::rand_compat::{thread_rng, GenRangeCompat};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use std::collections::HashMap;
 
 /// Configuration for retry mechanisms
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -154,17 +154,17 @@ impl CircuitBreaker {
             CircuitState::Open => {
                 // Check if timeout has elapsed
                 let stats = self.stats.lock().unwrap();
-                let timeout_elapsed = now.duration_since(stats.state_changed_time).as_secs() 
+                let timeout_elapsed = now.duration_since(stats.state_changed_time).as_secs()
                     >= self.config.timeout_seconds;
-                
+
                 if timeout_elapsed {
                     *state = CircuitState::HalfOpen;
                     drop(stats);
                     drop(state);
-                    
+
                     // Reset half-open call counter
                     *self.half_open_calls.lock().unwrap() = 0;
-                    
+
                     // Update state change time
                     self.stats.lock().unwrap().state_changed_time = now;
                     true
@@ -193,12 +193,13 @@ impl CircuitBreaker {
 
             // Check if we should close the circuit
             if *half_open_calls >= self.config.half_open_max_calls {
-                let success_rate = (*half_open_calls as f64 / self.config.half_open_max_calls as f64) * 100.0;
+                let success_rate =
+                    (*half_open_calls as f64 / self.config.half_open_max_calls as f64) * 100.0;
                 if success_rate >= self.config.success_threshold_percentage {
                     drop(half_open_calls);
                     *self.state.lock().unwrap() = CircuitState::Closed;
                     stats.state_changed_time = Instant::now();
-                    
+
                     // Clear failure history
                     self.failure_times.lock().unwrap().clear();
                 }
@@ -226,12 +227,13 @@ impl CircuitBreaker {
         drop(failure_times);
 
         let state = self.state.lock().unwrap();
-        
+
         match *state {
             CircuitState::Closed => {
                 // Check if we should open the circuit
-                if stats.total_calls >= self.config.minimum_calls.into() 
-                    && failure_count >= self.config.failure_threshold {
+                if stats.total_calls >= self.config.minimum_calls.into()
+                    && failure_count >= self.config.failure_threshold
+                {
                     drop(state);
                     *self.state.lock().unwrap() = CircuitState::Open;
                     stats.state_changed_time = now;
@@ -296,7 +298,10 @@ impl RetryMechanism {
 
                     // Check if this error type is retryable
                     let error_str = format!("{:?}", error);
-                    let is_retryable = self.config.retryable_errors.iter()
+                    let is_retryable = self
+                        .config
+                        .retryable_errors
+                        .iter()
                         .any(|retryable| error_str.contains(retryable));
 
                     if !is_retryable || attempt > self.config.max_attempts {
@@ -324,8 +329,9 @@ impl RetryMechanism {
         let base_delay = match &self.config.backoff_strategy {
             BackoffStrategy::Fixed => self.config.base_delay_ms,
             BackoffStrategy::Exponential => {
-                let exp_delay = (self.config.base_delay_ms as f64 
-                    * self.config.backoff_multiplier.powi((attempt - 1) as i32)) as u64;
+                let exp_delay = (self.config.base_delay_ms as f64
+                    * self.config.backoff_multiplier.powi((attempt - 1) as i32))
+                    as u64;
                 std::cmp::min(exp_delay, self.config.max_delay_ms)
             }
             BackoffStrategy::Linear => {
@@ -375,7 +381,7 @@ impl ResilienceManager {
     /// Get or create a circuit breaker for the given service
     pub fn get_circuit_breaker(&self, service_name: &str) -> Arc<CircuitBreaker> {
         let mut breakers = self.circuit_breakers.lock().unwrap();
-        
+
         if !breakers.contains_key(service_name) {
             let breaker = CircuitBreaker::new(self.default_circuit_config.clone());
             breakers.insert(service_name.to_string(), breaker);
@@ -389,7 +395,8 @@ impl ResilienceManager {
     /// Get retry configuration for the given service
     pub fn get_retry_config(&self, service_name: &str) -> RetryConfig {
         let configs = self.retry_configs.lock().unwrap();
-        configs.get(service_name)
+        configs
+            .get(service_name)
             .cloned()
             .unwrap_or_else(|| self.default_retry_config.clone())
     }
@@ -418,14 +425,13 @@ impl ResilienceManager {
         if !circuit_breaker.can_execute() {
             circuit_breaker.record_rejection();
             return Err(Error::ConnectionError(format!(
-                "Circuit breaker is open for service: {}", service_name
+                "Circuit breaker is open for service: {}",
+                service_name
             )));
         }
 
         // Execute with retry logic
-        let result = retry_mechanism.execute(|| {
-            operation()
-        }).await;
+        let result = retry_mechanism.execute(|| operation()).await;
 
         // Record result in circuit breaker
         match &result {
@@ -444,7 +450,7 @@ impl ResilienceManager {
         for (service_name, breaker) in breakers.iter() {
             let stats = breaker.stats();
             let state = breaker.state();
-            
+
             let health = ServiceHealth {
                 service_name: service_name.clone(),
                 state,
@@ -459,7 +465,7 @@ impl ResilienceManager {
                 },
                 last_failure_time: stats.last_failure_time,
             };
-            
+
             health_status.insert(service_name.clone(), health);
         }
 
@@ -490,11 +496,7 @@ impl Default for ResilienceManager {
 #[allow(async_fn_in_trait)]
 pub trait ResilientOperation<T> {
     /// Execute operation with resilience patterns
-    async fn execute_resilient(
-        self,
-        manager: &ResilienceManager,
-        service_name: &str,
-    ) -> Result<T>;
+    async fn execute_resilient(self, manager: &ResilienceManager, service_name: &str) -> Result<T>;
 }
 
 impl<F, T, E> ResilientOperation<T> for F
@@ -502,11 +504,7 @@ where
     F: Fn() -> std::result::Result<T, E> + Send + Sync,
     E: std::fmt::Display + std::fmt::Debug + Send + Sync,
 {
-    async fn execute_resilient(
-        self,
-        manager: &ResilienceManager,
-        service_name: &str,
-    ) -> Result<T> {
+    async fn execute_resilient(self, manager: &ResilienceManager, service_name: &str) -> Result<T> {
         manager.execute_with_resilience(service_name, self).await
     }
 }
@@ -581,18 +579,18 @@ mod tests {
     #[test]
     fn test_resilience_manager() {
         let manager = ResilienceManager::new();
-        
+
         // Test getting circuit breaker
         let cb1 = manager.get_circuit_breaker("test_service");
         let cb2 = manager.get_circuit_breaker("test_service");
-        
+
         // Test retry config
         let config = RetryConfig {
             max_attempts: 5,
             ..Default::default()
         };
         manager.set_retry_config("test_service", config.clone());
-        
+
         let retrieved_config = manager.get_retry_config("test_service");
         assert_eq!(retrieved_config.max_attempts, 5);
     }

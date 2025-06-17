@@ -1,14 +1,10 @@
 use pandrs::error::Result;
 
 #[cfg(feature = "parquet")]
-use pandrs::DataFrame;
+use pandrs::{DataFrame, Series};
 
 #[cfg(feature = "parquet")]
-use pandrs::io::{
-    get_column_statistics, get_parquet_metadata, get_row_group_info, read_parquet,
-    read_parquet_advanced, write_parquet, write_parquet_advanced, ColumnStats, ParquetCompression,
-    ParquetMetadata, ParquetReadOptions, ParquetWriteOptions, RowGroupInfo,
-};
+use pandrs::io::ParquetCompression;
 
 #[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
@@ -97,7 +93,7 @@ fn main() -> Result<()> {
             ("Zstd", ParquetCompression::Zstd),
         ];
 
-        for (name, compression) in compressions.iter() {
+        for (name, _compression) in compressions.iter() {
             println!("  {}: Balanced for speed vs. compression ratio", name);
         }
 

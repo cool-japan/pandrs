@@ -429,18 +429,20 @@ impl TimeSeriesStats {
             .filter_map(|i| ts.values.get_f64(i))
             .filter(|v| v.is_finite())
             .collect();
-        
+
         if values.is_empty() {
-            return Err(Error::InvalidInput("No valid values in time series".to_string()));
+            return Err(Error::InvalidInput(
+                "No valid values in time series".to_string(),
+            ));
         }
-        
+
         let descriptive = Self::compute_descriptive_stats(&values)?;
         let stationarity_tests = Self::compute_stationarity_tests(&values)?;
         let seasonality_tests = Self::compute_seasonality_tests(&values)?;
         let autocorrelation_tests = Self::compute_autocorrelation_tests(&values)?;
         let normality_tests = Self::compute_normality_tests(&values)?;
         let outlier_tests = Self::compute_outlier_tests(&values)?;
-        
+
         Ok(Self {
             descriptive,
             stationarity_tests,
@@ -450,23 +452,21 @@ impl TimeSeriesStats {
             outlier_tests,
         })
     }
-    
+
     /// Compute descriptive statistics
     fn compute_descriptive_stats(values: &[f64]) -> Result<DescriptiveStats> {
         let count = values.len();
         let sum = values.iter().sum::<f64>();
         let mean = sum / count as f64;
-        
+
         // Variance and standard deviation
-        let variance = values.iter()
-            .map(|x| (x - mean).powi(2))
-            .sum::<f64>() / count as f64;
+        let variance = values.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / count as f64;
         let std = variance.sqrt();
-        
+
         // Sorted values for quantiles
         let mut sorted = values.to_vec();
         sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
-        
+
         let min = sorted[0];
         let max = sorted[count - 1];
         let median = if count % 2 == 0 {
@@ -474,32 +474,37 @@ impl TimeSeriesStats {
         } else {
             sorted[count / 2]
         };
-        
+
         let q1_idx = count / 4;
         let q3_idx = 3 * count / 4;
         let q25 = sorted[q1_idx];
         let q75 = sorted[q3_idx];
         let iqr = q75 - q25;
-        
+
         // Higher order moments
         let skewness = if std > 0.0 {
-            values.iter()
+            values
+                .iter()
                 .map(|x| ((x - mean) / std).powi(3))
-                .sum::<f64>() / count as f64
+                .sum::<f64>()
+                / count as f64
         } else {
             0.0
         };
-        
+
         let kurtosis = if std > 0.0 {
-            values.iter()
+            values
+                .iter()
                 .map(|x| ((x - mean) / std).powi(4))
-                .sum::<f64>() / count as f64 - 3.0
+                .sum::<f64>()
+                / count as f64
+                - 3.0
         } else {
             0.0
         };
-        
+
         let cv = if mean != 0.0 { std / mean.abs() } else { 0.0 };
-        
+
         Ok(DescriptiveStats {
             count,
             mean,
@@ -515,16 +520,16 @@ impl TimeSeriesStats {
             iqr,
         })
     }
-    
+
     /// Compute stationarity tests
     fn compute_stationarity_tests(values: &[f64]) -> Result<StationarityTestResults> {
         let adf_test = AugmentedDickeyFullerTest::compute(values)?;
         let kpss_test = KwiatkowskiPhillipsSchmidtShinTest::compute(values, "constant")?;
         let pp_test = PhillipsPerronTest::compute(values)?;
-        
+
         // Overall assessment
         let is_stationary = adf_test.is_stationary && kpss_test.is_stationary;
-        
+
         let differencing_recommendation = if !adf_test.is_stationary {
             DifferencingRecommendation {
                 recommended_d: 1,
@@ -538,7 +543,7 @@ impl TimeSeriesStats {
                 reason: "Series appears stationary".to_string(),
             }
         };
-        
+
         Ok(StationarityTestResults {
             adf_test,
             kpss_test,
@@ -547,17 +552,17 @@ impl TimeSeriesStats {
             differencing_recommendation,
         })
     }
-    
+
     /// Compute seasonality tests
     fn compute_seasonality_tests(values: &[f64]) -> Result<SeasonalityTestResults> {
         let seasonal_test = SeasonalTest::compute(values)?;
         let friedman_test = FriedmanTest::compute(values, 12)?; // Assume monthly data
         let kruskal_wallis_test = KruskalWallisTest::compute(values, 7)?; // Assume weekly seasonality
-        
-        let has_seasonality = seasonal_test.is_seasonal || 
-                             friedman_test.is_seasonal || 
-                             kruskal_wallis_test.is_significant;
-        
+
+        let has_seasonality = seasonal_test.is_seasonal
+            || friedman_test.is_seasonal
+            || kruskal_wallis_test.is_significant;
+
         let mut seasonal_periods = Vec::new();
         if let Some(period) = seasonal_test.period {
             seasonal_periods.push(period);
@@ -570,7 +575,7 @@ impl TimeSeriesStats {
         }
         seasonal_periods.sort_unstable();
         seasonal_periods.dedup();
-        
+
         Ok(SeasonalityTestResults {
             seasonal_test,
             friedman_test,
@@ -579,19 +584,19 @@ impl TimeSeriesStats {
             seasonal_periods,
         })
     }
-    
+
     /// Compute autocorrelation tests
     fn compute_autocorrelation_tests(values: &[f64]) -> Result<AutocorrelationTestResults> {
         let ljung_box_test = LjungBoxTest::compute(values, 10)?;
         let box_pierce_test = BoxPierceTest::compute(values, 10)?;
         let durbin_watson_test = DurbinWatsonTest::compute(values)?;
         let breusch_godfrey_test = BreuschGodfreyTest::compute(values, 5)?;
-        
-        let is_white_noise = !ljung_box_test.has_autocorrelation &&
-                           !box_pierce_test.has_autocorrelation &&
-                           !durbin_watson_test.has_positive_autocorr &&
-                           !breusch_godfrey_test.has_serial_correlation;
-        
+
+        let is_white_noise = !ljung_box_test.has_autocorrelation
+            && !box_pierce_test.has_autocorrelation
+            && !durbin_watson_test.has_positive_autocorr
+            && !breusch_godfrey_test.has_serial_correlation;
+
         Ok(AutocorrelationTestResults {
             ljung_box_test,
             box_pierce_test,
@@ -600,17 +605,17 @@ impl TimeSeriesStats {
             is_white_noise,
         })
     }
-    
+
     /// Compute normality tests
     fn compute_normality_tests(values: &[f64]) -> Result<NormalityTestResults> {
         let jarque_bera_test = JarqueBeraTest::compute(values)?;
         let shapiro_wilk_test = ShapiroWilkTest::compute(values)?;
         let anderson_darling_test = AndersonDarlingTest::compute(values)?;
-        
-        let is_normal = jarque_bera_test.is_normal &&
-                       shapiro_wilk_test.is_normal &&
-                       anderson_darling_test.is_normal;
-        
+
+        let is_normal = jarque_bera_test.is_normal
+            && shapiro_wilk_test.is_normal
+            && anderson_darling_test.is_normal;
+
         Ok(NormalityTestResults {
             jarque_bera_test,
             shapiro_wilk_test,
@@ -618,13 +623,13 @@ impl TimeSeriesStats {
             is_normal,
         })
     }
-    
+
     /// Compute outlier tests
     fn compute_outlier_tests(values: &[f64]) -> Result<OutlierTestResults> {
         let grubbs_test = GrubbsTest::compute(values)?;
         let modified_z_score_test = ModifiedZScoreTest::compute(values, 3.5)?;
         let iqr_outlier_test = IQROutlierTest::compute(values)?;
-        
+
         let mut all_outliers = Vec::new();
         if let Some(idx) = grubbs_test.outlier_index {
             all_outliers.push(idx);
@@ -633,9 +638,9 @@ impl TimeSeriesStats {
         all_outliers.extend(&iqr_outlier_test.outlier_indices);
         all_outliers.sort_unstable();
         all_outliers.dedup();
-        
+
         let outlier_percentage = all_outliers.len() as f64 / values.len() as f64 * 100.0;
-        
+
         Ok(OutlierTestResults {
             grubbs_test,
             modified_z_score_test,
@@ -650,36 +655,40 @@ impl AugmentedDickeyFullerTest {
     /// Compute ADF test
     pub fn compute(values: &[f64]) -> Result<Self> {
         if values.len() < 10 {
-            return Err(Error::InvalidInput("Need at least 10 observations for ADF test".to_string()));
+            return Err(Error::InvalidInput(
+                "Need at least 10 observations for ADF test".to_string(),
+            ));
         }
-        
+
         let n = values.len();
         let n_lags = ((n as f64).cbrt() * 12.0 / 100.0) as usize;
-        
+
         // Create difference series
         let mut diff_series = Vec::new();
         for i in 1..n {
             diff_series.push(values[i] - values[i - 1]);
         }
-        
+
         // Simplified ADF calculation
         let mean_diff = diff_series.iter().sum::<f64>() / diff_series.len() as f64;
-        let var_diff = diff_series.iter()
+        let var_diff = diff_series
+            .iter()
             .map(|x| (x - mean_diff).powi(2))
-            .sum::<f64>() / diff_series.len() as f64;
-        
+            .sum::<f64>()
+            / diff_series.len() as f64;
+
         let std_diff = var_diff.sqrt();
         let statistic = if std_diff > 0.0 {
             mean_diff / (std_diff / (diff_series.len() as f64).sqrt())
         } else {
             0.0
         };
-        
+
         let mut critical_values = HashMap::new();
         critical_values.insert("1%".to_string(), -3.43);
         critical_values.insert("5%".to_string(), -2.86);
         critical_values.insert("10%".to_string(), -2.57);
-        
+
         let p_value = if statistic < -3.43 {
             0.01
         } else if statistic < -2.86 {
@@ -689,9 +698,9 @@ impl AugmentedDickeyFullerTest {
         } else {
             0.20
         };
-        
+
         let is_stationary = statistic < critical_values["5%"];
-        
+
         Ok(Self {
             statistic,
             p_value,
@@ -707,33 +716,37 @@ impl KwiatkowskiPhillipsSchmidtShinTest {
     /// Compute KPSS test
     pub fn compute(values: &[f64], trend: &str) -> Result<Self> {
         if values.len() < 10 {
-            return Err(Error::InvalidInput("Need at least 10 observations for KPSS test".to_string()));
+            return Err(Error::InvalidInput(
+                "Need at least 10 observations for KPSS test".to_string(),
+            ));
         }
-        
+
         // Detrend the series
         let detrended = match trend {
             "constant" => Self::detrend_constant(values)?,
             "linear" => Self::detrend_linear(values)?,
-            _ => return Err(Error::InvalidInput("Invalid trend specification".to_string())),
+            _ => {
+                return Err(Error::InvalidInput(
+                    "Invalid trend specification".to_string(),
+                ))
+            }
         };
-        
+
         // Calculate partial sums
         let mut partial_sums = vec![0.0; detrended.len()];
         partial_sums[0] = detrended[0];
         for i in 1..detrended.len() {
             partial_sums[i] = partial_sums[i - 1] + detrended[i];
         }
-        
+
         // Calculate long-run variance (simplified)
-        let variance = detrended.iter()
-            .map(|x| x * x)
-            .sum::<f64>() / detrended.len() as f64;
-        
+        let variance = detrended.iter().map(|x| x * x).sum::<f64>() / detrended.len() as f64;
+
         // KPSS statistic
         let n = values.len() as f64;
         let sum_of_squares: f64 = partial_sums.iter().map(|x| x * x).sum();
         let statistic = sum_of_squares / (n * n * variance);
-        
+
         let mut critical_values = HashMap::new();
         match trend {
             "constant" => {
@@ -748,7 +761,7 @@ impl KwiatkowskiPhillipsSchmidtShinTest {
             }
             _ => {}
         }
-        
+
         let p_value = if statistic > critical_values["1%"] {
             0.01
         } else if statistic > critical_values["5%"] {
@@ -758,9 +771,9 @@ impl KwiatkowskiPhillipsSchmidtShinTest {
         } else {
             0.15
         };
-        
+
         let is_stationary = statistic < critical_values["5%"];
-        
+
         Ok(Self {
             statistic,
             p_value,
@@ -770,28 +783,30 @@ impl KwiatkowskiPhillipsSchmidtShinTest {
             n_lags: 4, // Simplified
         })
     }
-    
+
     fn detrend_constant(values: &[f64]) -> Result<Vec<f64>> {
         let mean = values.iter().sum::<f64>() / values.len() as f64;
         Ok(values.iter().map(|x| x - mean).collect())
     }
-    
+
     fn detrend_linear(values: &[f64]) -> Result<Vec<f64>> {
         let n = values.len() as f64;
         let x_values: Vec<f64> = (0..values.len()).map(|i| i as f64).collect();
-        
+
         let sum_x = x_values.iter().sum::<f64>();
         let sum_y = values.iter().sum::<f64>();
         let sum_xy = x_values.iter().zip(values).map(|(x, y)| x * y).sum::<f64>();
         let sum_x2 = x_values.iter().map(|x| x * x).sum::<f64>();
-        
+
         let slope = (n * sum_xy - sum_x * sum_y) / (n * sum_x2 - sum_x * sum_x);
         let intercept = (sum_y - slope * sum_x) / n;
-        
-        let detrended: Vec<f64> = x_values.iter().zip(values)
+
+        let detrended: Vec<f64> = x_values
+            .iter()
+            .zip(values)
             .map(|(x, y)| y - (slope * x + intercept))
             .collect();
-        
+
         Ok(detrended)
     }
 }
@@ -801,13 +816,13 @@ impl PhillipsPerronTest {
     pub fn compute(values: &[f64]) -> Result<Self> {
         // Simplified PP test implementation
         let adf_result = AugmentedDickeyFullerTest::compute(values)?;
-        
+
         // PP test is similar to ADF but with different correction
         let statistic = adf_result.statistic * 0.95; // Simplified correction
         let p_value = adf_result.p_value;
         let critical_values = adf_result.critical_values;
         let is_stationary = statistic < critical_values["5%"];
-        
+
         Ok(Self {
             statistic,
             p_value,
@@ -830,10 +845,10 @@ impl SeasonalTest {
                 is_seasonal: false,
             });
         }
-        
+
         let mut max_strength = 0.0;
         let mut best_period = None;
-        
+
         // Test common periods
         for period in 2..=std::cmp::min(values.len() / 3, 365) {
             let strength = Self::calculate_seasonal_strength(values, period)?;
@@ -842,11 +857,11 @@ impl SeasonalTest {
                 best_period = Some(period);
             }
         }
-        
+
         let is_seasonal = max_strength > 0.3; // Threshold
         let statistic = max_strength * values.len() as f64; // Simplified
         let p_value = if is_seasonal { 0.01 } else { 0.5 };
-        
+
         Ok(Self {
             statistic,
             p_value,
@@ -855,36 +870,40 @@ impl SeasonalTest {
             is_seasonal,
         })
     }
-    
+
     fn calculate_seasonal_strength(values: &[f64], period: usize) -> Result<f64> {
         if values.len() < period * 2 {
             return Ok(0.0);
         }
-        
+
         let mut seasonal_means = vec![0.0; period];
         let mut counts = vec![0; period];
-        
+
         for (i, &value) in values.iter().enumerate() {
             let season_idx = i % period;
             seasonal_means[season_idx] += value;
             counts[season_idx] += 1;
         }
-        
+
         for i in 0..period {
             if counts[i] > 0 {
                 seasonal_means[i] /= counts[i] as f64;
             }
         }
-        
+
         let overall_mean = values.iter().sum::<f64>() / values.len() as f64;
-        let seasonal_variance = seasonal_means.iter()
+        let seasonal_variance = seasonal_means
+            .iter()
             .map(|&mean| (mean - overall_mean).powi(2))
-            .sum::<f64>() / period as f64;
-        
-        let total_variance = values.iter()
+            .sum::<f64>()
+            / period as f64;
+
+        let total_variance = values
+            .iter()
             .map(|&value| (value - overall_mean).powi(2))
-            .sum::<f64>() / values.len() as f64;
-        
+            .sum::<f64>()
+            / values.len() as f64;
+
         if total_variance > 0.0 {
             Ok((seasonal_variance / total_variance).min(1.0))
         } else {
@@ -905,34 +924,36 @@ impl FriedmanTest {
                 period,
             });
         }
-        
+
         // Group values by seasonal period
         let n_groups = values.len() / period;
         let mut groups = vec![Vec::new(); period];
-        
+
         for (i, &value) in values.iter().enumerate() {
             if i / period < n_groups {
                 groups[i % period].push(value);
             }
         }
-        
+
         // Calculate rank sums (simplified)
         let mut rank_sums = vec![0.0; period];
         for i in 0..period {
             rank_sums[i] = groups[i].iter().sum::<f64>();
         }
-        
+
         let total_sum: f64 = rank_sums.iter().sum();
         let expected_sum = total_sum / period as f64;
-        
-        let statistic = rank_sums.iter()
+
+        let statistic = rank_sums
+            .iter()
             .map(|&sum| (sum - expected_sum).powi(2))
-            .sum::<f64>() / expected_sum;
-        
+            .sum::<f64>()
+            / expected_sum;
+
         let df = (period - 1) as f64;
         let p_value = if statistic > 12.59 { 0.01 } else { 0.5 }; // Simplified
         let is_seasonal = p_value < 0.05;
-        
+
         Ok(Self {
             statistic,
             p_value,
@@ -947,7 +968,7 @@ impl KruskalWallisTest {
     /// Compute Kruskal-Wallis test
     pub fn compute(values: &[f64], period: usize) -> Result<Self> {
         let friedman_result = FriedmanTest::compute(values, period)?;
-        
+
         Ok(Self {
             statistic: friedman_result.statistic,
             p_value: friedman_result.p_value,
@@ -963,20 +984,20 @@ impl LjungBoxTest {
     pub fn compute(values: &[f64], n_lags: usize) -> Result<Self> {
         let n = values.len() as f64;
         let mut statistic = 0.0;
-        
+
         let mean = values.iter().sum::<f64>() / n;
-        
+
         for lag in 1..=n_lags {
             let autocorr = Self::calculate_autocorrelation(values, lag, mean)?;
             statistic += autocorr * autocorr / (n - lag as f64);
         }
-        
+
         statistic *= n * (n + 2.0);
-        
+
         let df = n_lags;
         let p_value = if statistic > 18.31 { 0.01 } else { 0.5 }; // Simplified
         let has_autocorrelation = p_value < 0.05;
-        
+
         Ok(Self {
             statistic,
             p_value,
@@ -985,27 +1006,27 @@ impl LjungBoxTest {
             has_autocorrelation,
         })
     }
-    
+
     fn calculate_autocorrelation(values: &[f64], lag: usize, mean: f64) -> Result<f64> {
         if lag >= values.len() {
             return Ok(0.0);
         }
-        
+
         let n = values.len() - lag;
         let mut numerator = 0.0;
         let mut denominator = 0.0;
-        
+
         for i in 0..n {
             let dev1 = values[i] - mean;
             let dev2 = values[i + lag] - mean;
             numerator += dev1 * dev2;
         }
-        
+
         for &val in values {
             let dev = val - mean;
             denominator += dev * dev;
         }
-        
+
         if denominator == 0.0 {
             Ok(0.0)
         } else {
@@ -1018,10 +1039,10 @@ impl BoxPierceTest {
     /// Compute Box-Pierce test
     pub fn compute(values: &[f64], n_lags: usize) -> Result<Self> {
         let ljung_box = LjungBoxTest::compute(values, n_lags)?;
-        
+
         // Box-Pierce is similar but simpler than Ljung-Box
         let statistic = ljung_box.statistic * 0.9; // Simplified
-        
+
         Ok(Self {
             statistic,
             p_value: ljung_box.p_value,
@@ -1036,32 +1057,34 @@ impl DurbinWatsonTest {
     /// Compute Durbin-Watson test
     pub fn compute(values: &[f64]) -> Result<Self> {
         if values.len() < 3 {
-            return Err(Error::InvalidInput("Need at least 3 observations for DW test".to_string()));
+            return Err(Error::InvalidInput(
+                "Need at least 3 observations for DW test".to_string(),
+            ));
         }
-        
+
         let mut sum_diff_sq = 0.0;
         let mut sum_sq = 0.0;
-        
+
         let mean = values.iter().sum::<f64>() / values.len() as f64;
-        
+
         for i in 1..values.len() {
             sum_diff_sq += (values[i] - values[i - 1]).powi(2);
         }
-        
+
         for &val in values {
             sum_sq += (val - mean).powi(2);
         }
-        
+
         let statistic = if sum_sq > 0.0 {
             sum_diff_sq / sum_sq
         } else {
             2.0
         };
-        
+
         // Critical values (simplified)
         let lower_critical = 1.5;
         let upper_critical = 2.5;
-        
+
         let result = if statistic < lower_critical {
             "Positive autocorrelation"
         } else if statistic > upper_critical {
@@ -1069,10 +1092,10 @@ impl DurbinWatsonTest {
         } else {
             "No significant autocorrelation"
         };
-        
+
         let has_positive_autocorr = statistic < lower_critical;
         let has_negative_autocorr = statistic > upper_critical;
-        
+
         Ok(Self {
             statistic,
             lower_critical,
@@ -1088,13 +1111,13 @@ impl BreuschGodfreyTest {
     /// Compute Breusch-Godfrey test
     pub fn compute(values: &[f64], n_lags: usize) -> Result<Self> {
         let ljung_box = LjungBoxTest::compute(values, n_lags)?;
-        
+
         // Simplified BG test based on LB test
         let statistic = ljung_box.statistic;
         let p_value = ljung_box.p_value;
         let df = ljung_box.df;
         let has_serial_correlation = ljung_box.has_autocorrelation;
-        
+
         Ok(Self {
             statistic,
             p_value,
@@ -1110,36 +1133,39 @@ impl JarqueBeraTest {
     pub fn compute(values: &[f64]) -> Result<Self> {
         let n = values.len() as f64;
         let mean = values.iter().sum::<f64>() / n;
-        
+
         // Calculate skewness and kurtosis
-        let variance = values.iter()
-            .map(|x| (x - mean).powi(2))
-            .sum::<f64>() / n;
+        let variance = values.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / n;
         let std = variance.sqrt();
-        
+
         let skewness = if std > 0.0 {
-            values.iter()
+            values
+                .iter()
                 .map(|x| ((x - mean) / std).powi(3))
-                .sum::<f64>() / n
+                .sum::<f64>()
+                / n
         } else {
             0.0
         };
-        
+
         let kurtosis = if std > 0.0 {
-            values.iter()
+            values
+                .iter()
                 .map(|x| ((x - mean) / std).powi(4))
-                .sum::<f64>() / n - 3.0
+                .sum::<f64>()
+                / n
+                - 3.0
         } else {
             0.0
         };
-        
+
         let skewness_stat = n * skewness.powi(2) / 6.0;
         let kurtosis_stat = n * kurtosis.powi(2) / 24.0;
         let statistic = skewness_stat + kurtosis_stat;
-        
+
         let p_value = if statistic > 9.21 { 0.01 } else { 0.5 }; // Simplified
         let is_normal = p_value > 0.05;
-        
+
         Ok(Self {
             statistic,
             p_value,
@@ -1160,18 +1186,16 @@ impl ShapiroWilkTest {
                 is_normal: true,
             });
         }
-        
+
         // Simplified SW test
         let mut sorted = values.to_vec();
         sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
-        
+
         let n = sorted.len();
         let mean = sorted.iter().sum::<f64>() / n as f64;
-        
-        let variance = sorted.iter()
-            .map(|x| (x - mean).powi(2))
-            .sum::<f64>() / n as f64;
-        
+
+        let variance = sorted.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / n as f64;
+
         // Simplified statistic calculation
         let range = sorted[n - 1] - sorted[0];
         let statistic = if variance > 0.0 {
@@ -1179,10 +1203,10 @@ impl ShapiroWilkTest {
         } else {
             1.0
         };
-        
+
         let p_value = if statistic < 0.9 { 0.01 } else { 0.5 };
         let is_normal = p_value > 0.05;
-        
+
         Ok(Self {
             statistic: statistic.max(0.0).min(1.0),
             p_value,
@@ -1196,33 +1220,30 @@ impl AndersonDarlingTest {
     pub fn compute(values: &[f64]) -> Result<Self> {
         let mut sorted = values.to_vec();
         sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
-        
+
         let n = sorted.len() as f64;
         let mean = sorted.iter().sum::<f64>() / n;
-        let std = (sorted.iter()
-            .map(|x| (x - mean).powi(2))
-            .sum::<f64>() / n).sqrt();
-        
+        let std = (sorted.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / n).sqrt();
+
         // Simplified AD statistic
         let mut statistic = 0.0;
         for (i, &x) in sorted.iter().enumerate() {
             let z = if std > 0.0 { (x - mean) / std } else { 0.0 };
             let phi = Self::standard_normal_cdf(z);
             if phi > 0.0 && phi < 1.0 {
-                statistic += (2.0 * (i + 1) as f64 - 1.0) * 
-                           (phi.ln() + (1.0 - phi).ln());
+                statistic += (2.0 * (i + 1) as f64 - 1.0) * (phi.ln() + (1.0 - phi).ln());
             }
         }
         statistic = -n - statistic / n;
-        
+
         let mut critical_values = HashMap::new();
         critical_values.insert("1%".to_string(), 1.035);
         critical_values.insert("5%".to_string(), 0.752);
         critical_values.insert("10%".to_string(), 0.631);
-        
+
         let p_value = if statistic > 1.035 { 0.01 } else { 0.5 };
         let is_normal = statistic < critical_values["5%"];
-        
+
         Ok(Self {
             statistic,
             critical_values,
@@ -1230,11 +1251,11 @@ impl AndersonDarlingTest {
             is_normal,
         })
     }
-    
+
     fn standard_normal_cdf(x: f64) -> f64 {
         0.5 * (1.0 + Self::erf(x / 2.0_f64.sqrt()))
     }
-    
+
     fn erf(x: f64) -> f64 {
         let a1 = 0.254829592;
         let a2 = -0.284496736;
@@ -1242,13 +1263,13 @@ impl AndersonDarlingTest {
         let a4 = -1.453152027;
         let a5 = 1.061405429;
         let p = 0.3275911;
-        
+
         let sign = if x < 0.0 { -1.0 } else { 1.0 };
         let x = x.abs();
-        
+
         let t = 1.0 / (1.0 + p * x);
         let y = 1.0 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * (-x * x).exp();
-        
+
         sign * y
     }
 }
@@ -1265,27 +1286,29 @@ impl GrubbsTest {
                 has_outlier: false,
             });
         }
-        
+
         let n = values.len();
         let mean = values.iter().sum::<f64>() / n as f64;
-        let std = (values.iter()
-            .map(|x| (x - mean).powi(2))
-            .sum::<f64>() / n as f64).sqrt();
-        
+        let std = (values.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / n as f64).sqrt();
+
         // Find maximum deviation
         let mut max_z = 0.0;
         let mut outlier_index = None;
-        
+
         for (i, &value) in values.iter().enumerate() {
-            let z = if std > 0.0 { (value - mean).abs() / std } else { 0.0 };
+            let z = if std > 0.0 {
+                (value - mean).abs() / std
+            } else {
+                0.0
+            };
             if z > max_z {
                 max_z = z;
                 outlier_index = Some(i);
             }
         }
-        
+
         let statistic = max_z;
-        
+
         // Critical value (simplified)
         let critical_value = match n {
             3..=10 => 2.2,
@@ -1293,10 +1316,10 @@ impl GrubbsTest {
             21..=50 => 2.8,
             _ => 3.0,
         };
-        
+
         let has_outlier = statistic > critical_value;
         let p_value = if has_outlier { 0.01 } else { 0.5 };
-        
+
         Ok(Self {
             statistic,
             p_value,
@@ -1318,7 +1341,7 @@ impl ModifiedZScoreTest {
                 has_outliers: false,
             });
         }
-        
+
         // Calculate median
         let mut sorted = values.to_vec();
         sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
@@ -1327,38 +1350,41 @@ impl ModifiedZScoreTest {
         } else {
             sorted[sorted.len() / 2]
         };
-        
+
         // Calculate MAD (Median Absolute Deviation)
-        let deviations: Vec<f64> = values.iter()
-            .map(|&x| (x - median).abs())
-            .collect();
+        let deviations: Vec<f64> = values.iter().map(|&x| (x - median).abs()).collect();
         let mut sorted_deviations = deviations.clone();
         sorted_deviations.sort_by(|a, b| a.partial_cmp(b).unwrap());
         let mad = if sorted_deviations.len() % 2 == 0 {
-            (sorted_deviations[sorted_deviations.len() / 2 - 1] + 
-             sorted_deviations[sorted_deviations.len() / 2]) / 2.0
+            (sorted_deviations[sorted_deviations.len() / 2 - 1]
+                + sorted_deviations[sorted_deviations.len() / 2])
+                / 2.0
         } else {
             sorted_deviations[sorted_deviations.len() / 2]
         };
-        
+
         // Calculate modified Z-scores
-        let modified_z_scores: Vec<f64> = values.iter()
-            .map(|&x| if mad > 0.0 {
-                0.6745 * (x - median) / mad
-            } else {
-                0.0
+        let modified_z_scores: Vec<f64> = values
+            .iter()
+            .map(|&x| {
+                if mad > 0.0 {
+                    0.6745 * (x - median) / mad
+                } else {
+                    0.0
+                }
             })
             .collect();
-        
+
         // Find outliers
-        let outlier_indices: Vec<usize> = modified_z_scores.iter()
+        let outlier_indices: Vec<usize> = modified_z_scores
+            .iter()
             .enumerate()
             .filter(|(_, &z)| z.abs() > threshold)
             .map(|(i, _)| i)
             .collect();
-        
+
         let has_outliers = !outlier_indices.is_empty();
-        
+
         Ok(Self {
             modified_z_scores,
             threshold,
@@ -1382,28 +1408,29 @@ impl IQROutlierTest {
                 has_outliers: false,
             });
         }
-        
+
         let mut sorted = values.to_vec();
         sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
-        
+
         let n = sorted.len();
         let q1_idx = n / 4;
         let q3_idx = 3 * n / 4;
         let q1 = sorted[q1_idx];
         let q3 = sorted[q3_idx];
         let iqr = q3 - q1;
-        
+
         let lower_fence = q1 - 1.5 * iqr;
         let upper_fence = q3 + 1.5 * iqr;
-        
-        let outlier_indices: Vec<usize> = values.iter()
+
+        let outlier_indices: Vec<usize> = values
+            .iter()
             .enumerate()
             .filter(|(_, &x)| x < lower_fence || x > upper_fence)
             .map(|(i, _)| i)
             .collect();
-        
+
         let has_outliers = !outlier_indices.is_empty();
-        
+
         Ok(Self {
             q1,
             q3,
@@ -1420,21 +1447,21 @@ impl WhiteNoiseTest {
     /// Compute comprehensive white noise test
     pub fn compute(values: &[f64]) -> Result<Self> {
         let mut ljung_box_tests = Vec::new();
-        
+
         // Test multiple lag values
         for &n_lags in &[5, 10, 15, 20] {
             if n_lags < values.len() / 4 {
                 ljung_box_tests.push(LjungBoxTest::compute(values, n_lags)?);
             }
         }
-        
+
         let variance_ratio_test = VarianceRatioTest::compute(values)?;
         let runs_test = RunsTest::compute(values)?;
-        
-        let is_white_noise = ljung_box_tests.iter().all(|test| !test.has_autocorrelation) &&
-                           variance_ratio_test.is_random_walk &&
-                           runs_test.is_random;
-        
+
+        let is_white_noise = ljung_box_tests.iter().all(|test| !test.has_autocorrelation)
+            && variance_ratio_test.is_random_walk
+            && runs_test.is_random;
+
         Ok(Self {
             ljung_box_tests,
             variance_ratio_test,
@@ -1455,41 +1482,45 @@ impl VarianceRatioTest {
                 is_random_walk: true,
             });
         }
-        
+
         // Calculate first differences
         let mut diff_values = Vec::new();
         for i in 1..values.len() {
             diff_values.push(values[i] - values[i - 1]);
         }
-        
+
         // Calculate variance of first differences
         let mean_diff = diff_values.iter().sum::<f64>() / diff_values.len() as f64;
-        let var_1 = diff_values.iter()
+        let var_1 = diff_values
+            .iter()
             .map(|x| (x - mean_diff).powi(2))
-            .sum::<f64>() / diff_values.len() as f64;
-        
+            .sum::<f64>()
+            / diff_values.len() as f64;
+
         // Calculate variance of k-period differences (k=2)
         let k = 2;
         let mut k_diff_values = Vec::new();
         for i in k..values.len() {
             k_diff_values.push(values[i] - values[i - k]);
         }
-        
+
         let mean_k_diff = k_diff_values.iter().sum::<f64>() / k_diff_values.len() as f64;
-        let var_k = k_diff_values.iter()
+        let var_k = k_diff_values
+            .iter()
             .map(|x| (x - mean_k_diff).powi(2))
-            .sum::<f64>() / k_diff_values.len() as f64;
-        
+            .sum::<f64>()
+            / k_diff_values.len() as f64;
+
         let variance_ratio = if var_1 > 0.0 {
             var_k / (k as f64 * var_1)
         } else {
             1.0
         };
-        
+
         let statistic = (variance_ratio - 1.0).abs();
         let p_value = if statistic > 0.1 { 0.01 } else { 0.5 };
         let is_random_walk = variance_ratio > 0.8 && variance_ratio < 1.2;
-        
+
         Ok(Self {
             statistic,
             p_value,
@@ -1511,7 +1542,7 @@ impl RunsTest {
                 is_random: true,
             });
         }
-        
+
         // Convert to binary sequence (above/below median)
         let median = {
             let mut sorted = values.to_vec();
@@ -1522,11 +1553,9 @@ impl RunsTest {
                 sorted[sorted.len() / 2]
             }
         };
-        
-        let binary: Vec<bool> = values.iter()
-            .map(|&x| x >= median)
-            .collect();
-        
+
+        let binary: Vec<bool> = values.iter().map(|&x| x >= median).collect();
+
         // Count runs
         let mut n_runs = 1;
         for i in 1..binary.len() {
@@ -1534,35 +1563,35 @@ impl RunsTest {
                 n_runs += 1;
             }
         }
-        
+
         // Count positive and negative values
         let n_pos = binary.iter().filter(|&&x| x).count() as f64;
         let n_neg = binary.len() as f64 - n_pos;
         let n = binary.len() as f64;
-        
+
         // Expected number of runs
         let expected_runs = if n > 0.0 {
             (2.0 * n_pos * n_neg) / n + 1.0
         } else {
             0.0
         };
-        
+
         // Test statistic
         let variance = if n > 1.0 {
             (2.0 * n_pos * n_neg * (2.0 * n_pos * n_neg - n)) / (n * n * (n - 1.0))
         } else {
             1.0
         };
-        
+
         let statistic = if variance > 0.0 {
             (n_runs as f64 - expected_runs) / variance.sqrt()
         } else {
             0.0
         };
-        
+
         let p_value = if statistic.abs() > 1.96 { 0.05 } else { 0.5 };
         let is_random = p_value > 0.05;
-        
+
         Ok(Self {
             n_runs,
             expected_runs,
@@ -1576,104 +1605,104 @@ impl RunsTest {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::time_series::core::{TimeSeriesBuilder, Frequency};
+    use crate::time_series::core::{Frequency, TimeSeriesBuilder};
     use chrono::{TimeZone, Utc};
-    
+
     fn create_test_series() -> TimeSeries {
         let mut builder = TimeSeriesBuilder::new();
-        
+
         for i in 0..100 {
             let timestamp = Utc.timestamp_opt(1640995200 + i * 86400, 0).unwrap();
             let value = 10.0 + i as f64 * 0.1 + (i as f64 % 7.0 - 3.0) * 0.5;
             builder = builder.add_point(timestamp, value);
         }
-        
+
         builder.frequency(Frequency::Daily).build().unwrap()
     }
-    
+
     #[test]
     fn test_time_series_stats_computation() {
         let ts = create_test_series();
         let stats = TimeSeriesStats::compute(&ts).unwrap();
-        
+
         assert!(stats.descriptive.count > 0);
         assert!(stats.descriptive.mean > 0.0);
         assert!(stats.descriptive.std > 0.0);
         assert!(stats.descriptive.min < stats.descriptive.max);
     }
-    
+
     #[test]
     fn test_adf_test() {
         let values: Vec<f64> = (0..50).map(|i| i as f64 + (i as f64 * 0.1).sin()).collect();
         let result = AugmentedDickeyFullerTest::compute(&values).unwrap();
-        
+
         assert!(result.statistic != 0.0);
         assert!(result.p_value >= 0.0 && result.p_value <= 1.0);
         assert!(result.critical_values.contains_key("5%"));
     }
-    
+
     #[test]
     fn test_kpss_test() {
         let values: Vec<f64> = (0..50).map(|i| (i as f64 * 0.1).sin()).collect();
         let result = KwiatkowskiPhillipsSchmidtShinTest::compute(&values, "constant").unwrap();
-        
+
         assert!(result.statistic >= 0.0);
         assert!(result.p_value >= 0.0 && result.p_value <= 1.0);
         assert!(result.critical_values.contains_key("5%"));
     }
-    
+
     #[test]
     fn test_ljung_box_test() {
         let values: Vec<f64> = (0..50).map(|i| (i as f64 * 0.1).sin()).collect();
         let result = LjungBoxTest::compute(&values, 10).unwrap();
-        
+
         assert!(result.statistic >= 0.0);
         assert!(result.p_value >= 0.0 && result.p_value <= 1.0);
         assert_eq!(result.n_lags, 10);
     }
-    
+
     #[test]
     fn test_jarque_bera_test() {
         let values: Vec<f64> = (0..100).map(|i| (i as f64 * 0.1).sin()).collect();
         let result = JarqueBeraTest::compute(&values).unwrap();
-        
+
         assert!(result.statistic >= 0.0);
         assert!(result.p_value >= 0.0 && result.p_value <= 1.0);
         assert!(result.skewness_stat >= 0.0);
         assert!(result.kurtosis_stat >= 0.0);
     }
-    
+
     #[test]
     fn test_grubbs_test() {
         let mut values: Vec<f64> = (0..20).map(|i| i as f64).collect();
         values.push(100.0); // Add outlier
-        
+
         let result = GrubbsTest::compute(&values).unwrap();
-        
+
         assert!(result.statistic > 0.0);
         assert!(result.has_outlier);
         assert_eq!(result.outlier_index, Some(20)); // Should detect the outlier
     }
-    
+
     #[test]
     fn test_modified_z_score_test() {
         let mut values: Vec<f64> = (0..20).map(|i| i as f64).collect();
         values.push(100.0); // Add outlier
-        
+
         let result = ModifiedZScoreTest::compute(&values, 3.5).unwrap();
-        
+
         assert_eq!(result.modified_z_scores.len(), values.len());
         assert!(result.has_outliers);
         assert!(!result.outlier_indices.is_empty());
     }
-    
+
     #[test]
     fn test_iqr_outlier_test() {
         let mut values: Vec<f64> = (0..20).map(|i| i as f64).collect();
         values.push(100.0); // Add outlier
-        
+
         let result = IQROutlierTest::compute(&values).unwrap();
-        
+
         assert!(result.q3 > result.q1);
         assert!(result.iqr > 0.0);
         assert!(result.upper_fence > result.lower_fence);

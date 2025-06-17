@@ -1,5 +1,5 @@
 //! Configuration management for PandRS
-//! 
+//!
 //! This module provides centralized configuration management with support for:
 //! - Environment variables
 //! - YAML/TOML configuration files
@@ -13,9 +13,9 @@ use std::collections::HashMap;
 use std::path::Path;
 
 pub mod credentials;
-pub mod validation;
 pub mod loader;
 pub mod resilience;
+pub mod validation;
 
 /// Main configuration structure for PandRS
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -438,7 +438,7 @@ impl Default for AzureConfig {
 impl Default for GlobalCloudConfig {
     fn default() -> Self {
         Self {
-            timeout: 300,      // 5 minutes
+            timeout: 300, // 5 minutes
             max_retries: 3,
             retry_backoff: 2.0,
             compression: true,
@@ -505,8 +505,8 @@ impl Default for CachingConfig {
         Self {
             enabled: true,
             size_limit: 100 * 1024 * 1024, // 100MB
-            ttl: 3600,                      // 1 hour
-            cleanup_interval: 300,          // 5 minutes
+            ttl: 3600,                     // 1 hour
+            cleanup_interval: 300,         // 5 minutes
         }
     }
 }
@@ -592,56 +592,58 @@ impl PandRSConfig {
     pub fn from_env() -> Result<Self> {
         loader::load_from_env()
     }
-    
+
     /// Load configuration from a file (YAML or TOML)
     pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self> {
         loader::load_from_file(path.as_ref())
     }
-    
+
     /// Load configuration from YAML string
     pub fn from_yaml(yaml: &str) -> Result<Self> {
         loader::load_from_yaml(yaml)
     }
-    
+
     /// Load configuration from TOML string
     pub fn from_toml(toml: &str) -> Result<Self> {
         loader::load_from_toml(toml)
     }
-    
+
     /// Load configuration with precedence: file -> env -> defaults
     pub fn load_with_precedence<P: AsRef<Path>>(config_file: Option<P>) -> Result<Self> {
         loader::load_with_precedence(config_file)
     }
-    
+
     /// Validate configuration and return errors if invalid
     pub fn validate(&self) -> Result<()> {
         validation::validate_config(self)
     }
-    
+
     /// Save configuration to a file
     pub fn save_to_file<P: AsRef<Path>>(&self, path: P) -> Result<()> {
         loader::save_to_file(self, path.as_ref())
     }
-    
+
     /// Convert to YAML string
     pub fn to_yaml(&self) -> Result<String> {
-        serde_yaml::to_string(self)
-            .map_err(|e| Error::ConfigurationError(format!("Failed to serialize config to YAML: {}", e)))
+        serde_yaml::to_string(self).map_err(|e| {
+            Error::ConfigurationError(format!("Failed to serialize config to YAML: {}", e))
+        })
     }
-    
+
     /// Convert to TOML string
     pub fn to_toml(&self) -> Result<String> {
-        toml::to_string(self)
-            .map_err(|e| Error::ConfigurationError(format!("Failed to serialize config to TOML: {}", e)))
+        toml::to_string(self).map_err(|e| {
+            Error::ConfigurationError(format!("Failed to serialize config to TOML: {}", e))
+        })
     }
-    
+
     /// Merge another configuration into this one
     pub fn merge(&mut self, other: &Self) {
         // Merge database configuration
         if other.database.default_url.is_some() {
             self.database.default_url = other.database.default_url.clone();
         }
-        
+
         // Merge database pool settings
         if other.database.pool.max_connections != self.database.pool.max_connections {
             self.database.pool.max_connections = other.database.pool.max_connections;
@@ -658,7 +660,7 @@ impl PandRSConfig {
         if other.database.pool.acquire_timeout != self.database.pool.acquire_timeout {
             self.database.pool.acquire_timeout = other.database.pool.acquire_timeout;
         }
-        
+
         // Merge timeout settings
         if other.database.timeouts.query != self.database.timeouts.query {
             self.database.timeouts.query = other.database.timeouts.query;
@@ -669,7 +671,7 @@ impl PandRSConfig {
         if other.database.timeouts.transaction != self.database.timeouts.transaction {
             self.database.timeouts.transaction = other.database.timeouts.transaction;
         }
-        
+
         // Merge SSL settings
         if other.database.ssl.enabled != self.database.ssl.enabled {
             self.database.ssl.enabled = other.database.ssl.enabled;
@@ -686,12 +688,12 @@ impl PandRSConfig {
         if other.database.ssl.ca_file.is_some() {
             self.database.ssl.ca_file = other.database.ssl.ca_file.clone();
         }
-        
+
         // Merge database parameters
         for (key, value) in &other.database.parameters {
             self.database.parameters.insert(key.clone(), value.clone());
         }
-        
+
         // Merge cloud configuration
         if other.cloud.aws.region.is_some() {
             self.cloud.aws.region = other.cloud.aws.region.clone();
@@ -714,7 +716,7 @@ impl PandRSConfig {
         if other.cloud.aws.use_instance_metadata != self.cloud.aws.use_instance_metadata {
             self.cloud.aws.use_instance_metadata = other.cloud.aws.use_instance_metadata;
         }
-        
+
         // Merge GCP configuration
         if other.cloud.gcp.project_id.is_some() {
             self.cloud.gcp.project_id = other.cloud.gcp.project_id.clone();
@@ -728,7 +730,7 @@ impl PandRSConfig {
         if other.cloud.gcp.endpoint_url.is_some() {
             self.cloud.gcp.endpoint_url = other.cloud.gcp.endpoint_url.clone();
         }
-        
+
         // Merge Azure configuration
         if other.cloud.azure.account_name.is_some() {
             self.cloud.azure.account_name = other.cloud.azure.account_name.clone();
@@ -742,29 +744,32 @@ impl PandRSConfig {
         if other.cloud.azure.use_managed_identity != self.cloud.azure.use_managed_identity {
             self.cloud.azure.use_managed_identity = other.cloud.azure.use_managed_identity;
         }
-        
+
         // Merge cloud global settings
         if other.cloud.default_provider.is_some() {
             self.cloud.default_provider = other.cloud.default_provider.clone();
         }
-        
+
         // Note: Performance, Security, and Logging configurations would be merged similarly
         // but are not needed for the failing test case
     }
-    
+
     /// Get a database configuration by name
     pub fn get_database_config(&self, _name: &str) -> &DatabaseConfig {
         // In a full implementation, this would support multiple named database configs
         &self.database
     }
-    
+
     /// Get cloud provider configuration
     pub fn get_cloud_config(&self, provider: &str) -> Result<&dyn std::any::Any> {
         match provider.to_lowercase().as_str() {
             "aws" | "s3" => Ok(&self.cloud.aws),
             "gcp" | "gcs" => Ok(&self.cloud.gcp),
             "azure" => Ok(&self.cloud.azure),
-            _ => Err(Error::ConfigurationError(format!("Unknown cloud provider: {}", provider))),
+            _ => Err(Error::ConfigurationError(format!(
+                "Unknown cloud provider: {}",
+                provider
+            ))),
         }
     }
 }

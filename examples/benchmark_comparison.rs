@@ -1,13 +1,13 @@
 // Benchmark Comparison: Comparing the traditional implementation and optimized implementation of PandRS
 // This file provides benchmarks to compare the performance of the traditional implementation and optimized implementation of PandRS.
 
-use pandrs::{DataFrame, Series};
+use pandrs::{DataFrame, Float64Column, Int64Column, OptimizedDataFrame, Series, StringColumn};
 use std::time::{Duration, Instant};
 
 // Import prototype types
-mod prototype {
-    include!("column_prototype.rs");
-}
+// mod prototype {
+//     include!("column_prototype.rs");
+// }
 
 fn format_duration(duration: Duration) -> String {
     if duration.as_secs() > 0 {
@@ -66,12 +66,9 @@ fn run_benchmark_suite() {
         let (optimized_series_time, (opt_int_col, opt_float_col, opt_string_col)) =
             bench("Optimized Implementation - Column Creation", || {
                 let int_col =
-                    prototype::Int64Column::new(int_data.iter().map(|&i| i as i64).collect())
-                        .with_name("int_col");
-                let float_col =
-                    prototype::Float64Column::new(float_data.clone()).with_name("float_col");
-                let string_col =
-                    prototype::StringColumn::new(string_data.clone()).with_name("string_col");
+                    Int64Column::with_name(int_data.iter().map(|&i| i as i64).collect(), "int_col");
+                let float_col = Float64Column::with_name(float_data.clone(), "float_col");
+                let string_col = StringColumn::with_name(string_data.clone(), "string_col");
                 (int_col, float_col, string_col)
             });
 
@@ -91,7 +88,7 @@ fn run_benchmark_suite() {
         // Optimized implementation: OptimizedDataFrame creation
         let (optimized_df_time, optimized_df) =
             bench("Optimized Implementation - DataFrame Creation", || {
-                let mut df = prototype::OptimizedDataFrame::new();
+                let mut df = OptimizedDataFrame::new();
                 df.add_column("int_col", opt_int_col.clone()).unwrap();
                 df.add_column("float_col", opt_float_col.clone()).unwrap();
                 df.add_column("string_col", opt_string_col.clone()).unwrap();
@@ -130,8 +127,11 @@ fn run_benchmark_suite() {
         let (optimized_agg_time, _) =
             bench("Optimized Implementation - Aggregation Operations", || {
                 // Optimized implementation has type-safe access and direct numerical operations
-                let int_col = optimized_df.get_int64_column("int_col").unwrap();
-                let float_col = optimized_df.get_float64_column("float_col").unwrap();
+                let int_col_view = optimized_df.column("int_col").unwrap();
+                let float_col_view = optimized_df.column("float_col").unwrap();
+
+                let int_col = int_col_view.as_int64().unwrap();
+                let float_col = float_col_view.as_float64().unwrap();
 
                 // Direct aggregation calculations
                 let int_sum = int_col.sum();
@@ -199,7 +199,7 @@ fn benchmark_string_operations() {
     // Optimized implementation: StringColumn using string pool
     let (optimized_series_time, optimized_string_col) =
         bench("Optimized Implementation - String Column Creation", || {
-            prototype::StringColumn::new(string_data.clone()).with_name("strings")
+            StringColumn::with_name(string_data.clone(), "strings")
         });
 
     // Legacy implementation: String search
@@ -213,7 +213,9 @@ fn benchmark_string_operations() {
     let (optimized_search_time, _optimized_count) =
         bench("Optimized Implementation - String Search", || {
             optimized_string_col
-                .values()
+                .to_strings()
+                .iter()
+                .flatten()
                 .filter(|&s| s == target)
                 .count()
         });

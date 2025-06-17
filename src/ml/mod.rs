@@ -31,8 +31,8 @@ pub mod gpu;
 pub mod backward_compat;
 
 // Re-export public types and functions
-use crate::dataframe::DataFrame;
 use crate::core::error::{Error, Result};
+use crate::dataframe::DataFrame;
 use crate::optimized::OptimizedDataFrame;
 use std::collections::HashMap;
 
@@ -93,27 +93,27 @@ pub use pipeline_compat::{Pipeline as PipelineCompat, Transformer};
 pub use gpu::{GpuKMeans, GpuModelParams, GpuPCA, GpuTSNE};
 
 // Re-export advanced ML capabilities
-pub use automl::{AutoML, AutoMLConfig, AutoMLResult, ModelResult, TaskType, ModelSearchSpace};
+pub use automl::{AutoML, AutoMLConfig, AutoMLResult, ModelResult, ModelSearchSpace, TaskType};
 
 pub use feature_engineering::{
-    AutoFeatureEngineer, FeatureSelectionMethod, ScalingMethod, AggregationFunction,
-    FeatureScaler, StandardScaler as MLStandardScaler, MinMaxScaler as MLMinMaxScaler,
+    AggregationFunction, AutoFeatureEngineer, FeatureScaler, FeatureSelectionMethod,
+    MinMaxScaler as MLMinMaxScaler, ScalingMethod, StandardScaler as MLStandardScaler,
 };
 
 pub use model_selection::{
-    GridSearchCV, RandomizedSearchCV, CrossValidationStrategy, Scorer, ParameterDistribution,
-    SelectKBest, ScoreFunction, SearchResults, SearchResultEntry,
+    CrossValidationStrategy, GridSearchCV, ParameterDistribution, RandomizedSearchCV,
+    ScoreFunction, Scorer, SearchResultEntry, SearchResults, SelectKBest,
 };
 
 pub use sklearn_compat::{
-    SklearnEstimator, SklearnTransformer, SklearnPredictor, Pipeline as SklearnPipeline,
-    PipelineStep, StandardScalerCompat, MinMaxScalerCompat,
+    MinMaxScalerCompat, Pipeline as SklearnPipeline, PipelineStep, SklearnEstimator,
+    SklearnPredictor, SklearnTransformer, StandardScalerCompat,
 };
 
 // Re-export model serving capabilities
 pub use serving::{
-    ModelServing, ModelServer, ModelServingFactory, ServerConfig, DeploymentConfig,
-    PredictionRequest, PredictionResponse, BatchPredictionRequest, BatchPredictionResponse,
-    ModelMetadata, HealthStatus, ModelInfo, DeploymentMetrics, DeploymentStatus,
-    ResourceConfig, ScalingConfig, HealthCheckConfig, MonitoringConfig,
+    BatchPredictionRequest, BatchPredictionResponse, DeploymentConfig, DeploymentMetrics,
+    DeploymentStatus, HealthCheckConfig, HealthStatus, ModelInfo, ModelMetadata, ModelServer,
+    ModelServing, ModelServingFactory, MonitoringConfig, PredictionRequest, PredictionResponse,
+    ResourceConfig, ScalingConfig, ServerConfig,
 };

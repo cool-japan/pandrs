@@ -35,34 +35,34 @@ pub fn dataframe_to_record_batches(
     // Build schema from DataFrame columns
     let mut fields = Vec::new();
     let column_names = df.column_names();
-    
+
     for column_name in &column_names {
         // Determine field type by examining column data
         let field_type = determine_arrow_type(df, column_name)?;
         let field = Field::new(column_name, field_type, true); // Allow nulls
         fields.push(field);
     }
-    
+
     let schema = Arc::new(Schema::new(fields));
     let mut batches = Vec::new();
-    
+
     // Split data into batches
     let total_rows = df.nrows();
     let num_batches = (total_rows + batch_size - 1) / batch_size;
-    
+
     for batch_idx in 0..num_batches {
         let start_row = batch_idx * batch_size;
         let end_row = std::cmp::min(start_row + batch_size, total_rows);
         let batch_row_count = end_row - start_row;
-        
+
         // Build arrays for this batch
         let mut arrays: Vec<ArrayRef> = Vec::new();
-        
+
         for column_name in &column_names {
             let array = build_array_from_dataframe(df, column_name, start_row, batch_row_count)?;
             arrays.push(array);
         }
-        
+
         let batch = RecordBatch::try_new(schema.clone(), arrays)
             .map_err(|e| Error::InvalidValue(format!("Failed to create RecordBatch: {}", e)))?;
         batches.push(batch);
@@ -155,64 +155,65 @@ fn extract_boolean_values(
 fn determine_arrow_type(df: &DataFrame, column_name: &str) -> Result<DataType> {
     // Get a sample of values to determine type
     let sample_size = std::cmp::min(100, df.nrows());
-    
+
     if sample_size == 0 {
         return Ok(DataType::Utf8); // Default to string for empty columns
     }
-    
+
     // Try to get column values as strings first to analyze them
     let string_values = df.get_column_string_values(column_name)?;
-    
+
     // Analyze the sample to determine type
     let mut has_ints = 0;
     let mut has_floats = 0;
     let mut has_bools = 0;
     let mut has_dates = 0;
     let mut total_non_empty = 0;
-    
+
     for value in string_values.iter().take(sample_size) {
         if value.is_empty() {
             continue;
         }
         total_non_empty += 1;
-        
+
         // Check for boolean
         let lower_val = value.to_lowercase();
         if lower_val == "true" || lower_val == "false" || lower_val == "t" || lower_val == "f" {
             has_bools += 1;
             continue;
         }
-        
+
         // Check for integer
         if value.parse::<i64>().is_ok() {
             has_ints += 1;
             continue;
         }
-        
+
         // Check for float
         if value.parse::<f64>().is_ok() {
             has_floats += 1;
             continue;
         }
-        
+
         // Check for date/timestamp (basic patterns)
         if value.contains('-') && (value.contains(':') || value.len() == 10) {
-            if chrono::DateTime::parse_from_rfc3339(value).is_ok() ||
-               chrono::NaiveDateTime::parse_from_str(value, "%Y-%m-%d %H:%M:%S").is_ok() ||
-               chrono::NaiveDate::parse_from_str(value, "%Y-%m-%d").is_ok() {
+            if chrono::DateTime::parse_from_rfc3339(value).is_ok()
+                || chrono::NaiveDateTime::parse_from_str(value, "%Y-%m-%d %H:%M:%S").is_ok()
+                || chrono::NaiveDate::parse_from_str(value, "%Y-%m-%d").is_ok()
+            {
                 has_dates += 1;
                 continue;
             }
         }
     }
-    
+
     if total_non_empty == 0 {
         return Ok(DataType::Utf8); // Default to string for empty data
     }
-    
+
     // Determine type based on majority
     let threshold = total_non_empty / 2; // At least 50% must match
-    
+
     if has_bools > threshold {
         Ok(DataType::Boolean)
     } else if has_dates > threshold {
@@ -236,11 +237,11 @@ fn build_array_from_dataframe(
 ) -> Result<ArrayRef> {
     let string_values = df.get_column_string_values(column_name)?;
     let data_type = determine_arrow_type(df, column_name)?;
-    
+
     // Extract the relevant slice
     let end_row = start_row + row_count;
     let slice = &string_values[start_row..std::cmp::min(end_row, string_values.len())];
-    
+
     match data_type {
         DataType::Boolean => {
             let mut builder = arrow::array::BooleanBuilder::new();
@@ -288,12 +289,19 @@ fn build_array_from_dataframe(
                     builder.append_null();
                 } else {
                     // Try to parse various timestamp formats
-                    let timestamp_nanos = if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(value) {
+                    let timestamp_nanos = if let Ok(dt) =
+                        chrono::DateTime::parse_from_rfc3339(value)
+                    {
                         dt.timestamp_nanos_opt().unwrap_or(0)
-                    } else if let Ok(ndt) = chrono::NaiveDateTime::parse_from_str(value, "%Y-%m-%d %H:%M:%S") {
+                    } else if let Ok(ndt) =
+                        chrono::NaiveDateTime::parse_from_str(value, "%Y-%m-%d %H:%M:%S")
+                    {
                         ndt.timestamp_nanos_opt().unwrap_or(0)
                     } else if let Ok(nd) = chrono::NaiveDate::parse_from_str(value, "%Y-%m-%d") {
-                        nd.and_hms_opt(0, 0, 0).unwrap_or_default().timestamp_nanos_opt().unwrap_or(0)
+                        nd.and_hms_opt(0, 0, 0)
+                            .unwrap_or_default()
+                            .timestamp_nanos_opt()
+                            .unwrap_or(0)
                     } else {
                         0 // Default timestamp
                     };
@@ -327,4 +335,3 @@ fn build_array_from_dataframe(
         }
     }
 }
-

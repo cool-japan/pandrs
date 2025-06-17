@@ -13,6 +13,7 @@
 use pandrs::dataframe::base::DataFrame;
 use pandrs::error::Result;
 use pandrs::series::Series;
+use std::collections::HashMap;
 
 #[cfg(feature = "excel")]
 use pandrs::io::{
@@ -66,7 +67,7 @@ fn main() -> Result<()> {
 }
 
 #[cfg(feature = "excel")]
-fn formula_preservation_example(df: &DataFrame) -> Result<()> {
+fn formula_preservation_example(_df: &DataFrame) -> Result<()> {
     println!("Demonstrating formula preservation in Excel files...");
 
     // Create Excel cells with formulas
@@ -147,7 +148,7 @@ fn formula_preservation_example(df: &DataFrame) -> Result<()> {
 }
 
 #[cfg(feature = "excel")]
-fn named_ranges_example(df: &DataFrame) -> Result<()> {
+fn named_ranges_example(_df: &DataFrame) -> Result<()> {
     println!("Demonstrating named ranges functionality...");
 
     // Create named ranges for different data sections
@@ -534,7 +535,7 @@ fn advanced_reading_example() -> Result<()> {
         println!("      - Memory mapping: {}", options.use_memory_map);
 
         // Simulate performance characteristics
-        let read_time = match scenario {
+        let read_time = match *scenario {
             "Basic reading" => 100,
             "Formula preservation" => 150,
             "Full formatting" => 250,
@@ -542,7 +543,7 @@ fn advanced_reading_example() -> Result<()> {
             _ => 120,
         };
 
-        let memory_usage = match scenario {
+        let memory_usage = match *scenario {
             "Basic reading" => 50,
             "Formula preservation" => 75,
             "Full formatting" => 120,

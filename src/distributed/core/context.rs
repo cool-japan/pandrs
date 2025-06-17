@@ -164,7 +164,7 @@ impl DistributedContext {
     pub fn validate_schema(&self, schema: &ExprSchema) -> Result<()> {
         // Create a schema validator with registered datasets
         let mut validator = SchemaValidator::new();
-        
+
         // Register schemas from our datasets
         for (name, dataset) in &self.datasets {
             // Get schema from the dataset
@@ -174,7 +174,7 @@ impl DistributedContext {
                 validator.register_schema(name.clone(), expr_schema);
             }
         }
-        
+
         // Validate that all columns referenced in the schema exist in some registered dataset
         for (column_name, _column_meta) in schema.columns() {
             let mut found = false;
@@ -184,7 +184,7 @@ impl DistributedContext {
                     break;
                 }
             }
-            
+
             if !found {
                 return Err(Error::InvalidOperation(format!(
                     "Column '{}' not found in any registered dataset",
@@ -192,7 +192,7 @@ impl DistributedContext {
                 )));
             }
         }
-        
+
         Ok(())
     }
 }
@@ -203,24 +203,29 @@ fn convert_arrow_schema_to_expr_schema(
     arrow_schema: &arrow::datatypes::SchemaRef,
 ) -> Result<ExprSchema> {
     let mut expr_schema = ExprSchema::new();
-    
+
     for field in arrow_schema.fields() {
         let data_type = match field.data_type() {
             arrow::datatypes::DataType::Boolean => crate::distributed::expr::ExprDataType::Boolean,
-            arrow::datatypes::DataType::Int8 | 
-            arrow::datatypes::DataType::Int16 | 
-            arrow::datatypes::DataType::Int32 | 
-            arrow::datatypes::DataType::Int64 => crate::distributed::expr::ExprDataType::Integer,
-            arrow::datatypes::DataType::Float32 | 
-            arrow::datatypes::DataType::Float64 => crate::distributed::expr::ExprDataType::Float,
-            arrow::datatypes::DataType::Utf8 | 
-            arrow::datatypes::DataType::LargeUtf8 => crate::distributed::expr::ExprDataType::String,
-            arrow::datatypes::DataType::Date32 | 
-            arrow::datatypes::DataType::Date64 => crate::distributed::expr::ExprDataType::Date,
-            arrow::datatypes::DataType::Timestamp(_, _) => crate::distributed::expr::ExprDataType::Timestamp,
+            arrow::datatypes::DataType::Int8
+            | arrow::datatypes::DataType::Int16
+            | arrow::datatypes::DataType::Int32
+            | arrow::datatypes::DataType::Int64 => crate::distributed::expr::ExprDataType::Integer,
+            arrow::datatypes::DataType::Float32 | arrow::datatypes::DataType::Float64 => {
+                crate::distributed::expr::ExprDataType::Float
+            }
+            arrow::datatypes::DataType::Utf8 | arrow::datatypes::DataType::LargeUtf8 => {
+                crate::distributed::expr::ExprDataType::String
+            }
+            arrow::datatypes::DataType::Date32 | arrow::datatypes::DataType::Date64 => {
+                crate::distributed::expr::ExprDataType::Date
+            }
+            arrow::datatypes::DataType::Timestamp(_, _) => {
+                crate::distributed::expr::ExprDataType::Timestamp
+            }
             _ => crate::distributed::expr::ExprDataType::String, // Default to string for unknown types
         };
-        
+
         let column_meta = crate::distributed::expr::ColumnMeta::new(
             field.name().clone(),
             data_type,
@@ -229,7 +234,7 @@ fn convert_arrow_schema_to_expr_schema(
         );
         expr_schema.add_column(column_meta);
     }
-    
+
     Ok(expr_schema)
 }
 

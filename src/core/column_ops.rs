@@ -556,10 +556,7 @@ impl ColumnFactory for DefaultColumnFactory {
         name: Option<String>,
     ) -> DateTimeColumn {
         // Convert DateTime to timestamp strings for now (simplified approach)
-        let string_data: Vec<String> = data
-            .into_iter()
-            .map(|dt| dt.to_rfc3339())
-            .collect();
+        let string_data: Vec<String> = data.into_iter().map(|dt| dt.to_rfc3339()).collect();
         let mut column = crate::column::StringColumn::new(string_data);
         if let Some(name) = name {
             column.set_name(name);

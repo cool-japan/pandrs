@@ -1,13 +1,13 @@
 //! Tests for resilience patterns and fault tolerance
-//! 
-//! This test module validates retry mechanisms, circuit breakers, and 
+//!
+//! This test module validates retry mechanisms, circuit breakers, and
 //! overall resilience management for PandRS connectors.
 
 #[cfg(feature = "resilience")]
 mod resilience_tests {
     use pandrs::config::resilience::*;
-    use std::sync::{Arc, Mutex};
     use std::sync::atomic::{AtomicU32, Ordering};
+    use std::sync::{Arc, Mutex};
     use std::time::{Duration, Instant};
 
     /// Test retry mechanism with different backoff strategies
@@ -28,19 +28,21 @@ mod resilience_tests {
         let attempt_count_clone = attempt_count.clone();
 
         let start_time = Instant::now();
-        let result = retry.execute(|| {
-            let attempts = attempt_count_clone.fetch_add(1, Ordering::SeqCst);
-            if attempts < 3 {
-                Err("TestError: Temporary failure")
-            } else {
-                Ok("Success")
-            }
-        }).await;
+        let result = retry
+            .execute(|| {
+                let attempts = attempt_count_clone.fetch_add(1, Ordering::SeqCst);
+                if attempts < 3 {
+                    Err("TestError: Temporary failure")
+                } else {
+                    Ok("Success")
+                }
+            })
+            .await;
 
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), "Success");
         assert_eq!(attempt_count.load(Ordering::SeqCst), 4);
-        
+
         // Should have some delay due to retries
         assert!(start_time.elapsed().as_millis() >= 30); // 10 + 20 + 40 ms minimum
     }
@@ -60,14 +62,16 @@ mod resilience_tests {
         let attempt_count = Arc::new(AtomicU32::new(0));
         let attempt_count_clone = attempt_count.clone();
 
-        let result = retry.execute(|| {
-            let attempts = attempt_count_clone.fetch_add(1, Ordering::SeqCst);
-            if attempts < 2 {
-                Err("RetryableError")
-            } else {
-                Ok(42)
-            }
-        }).await;
+        let result = retry
+            .execute(|| {
+                let attempts = attempt_count_clone.fetch_add(1, Ordering::SeqCst);
+                if attempts < 2 {
+                    Err("RetryableError")
+                } else {
+                    Ok(42)
+                }
+            })
+            .await;
 
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), 42);
@@ -87,10 +91,12 @@ mod resilience_tests {
         let attempt_count = Arc::new(AtomicU32::new(0));
         let attempt_count_clone = attempt_count.clone();
 
-        let result = retry.execute(|| {
-            attempt_count_clone.fetch_add(1, Ordering::SeqCst);
-            Err("NonRetryableError")
-        }).await;
+        let result = retry
+            .execute(|| {
+                attempt_count_clone.fetch_add(1, Ordering::SeqCst);
+                Err("NonRetryableError")
+            })
+            .await;
 
         assert!(result.is_err());
         // Should fail immediately without retries
@@ -209,14 +215,16 @@ mod resilience_tests {
         let attempt_count = Arc::new(AtomicU32::new(0));
         let attempt_count_clone = attempt_count.clone();
 
-        let result = manager.execute_with_resilience("test_service", || {
-            let attempts = attempt_count_clone.fetch_add(1, Ordering::SeqCst);
-            if attempts == 0 {
-                Err("TestError")
-            } else {
-                Ok("Success")
-            }
-        }).await;
+        let result = manager
+            .execute_with_resilience("test_service", || {
+                let attempts = attempt_count_clone.fetch_add(1, Ordering::SeqCst);
+                if attempts == 0 {
+                    Err("TestError")
+                } else {
+                    Ok("Success")
+                }
+            })
+            .await;
 
         assert!(result.is_ok());
         assert_eq!(attempt_count.load(Ordering::SeqCst), 2);
@@ -228,18 +236,21 @@ mod resilience_tests {
 
         // Execute operations that will trip the circuit breaker
         for _ in 0..10 {
-            let _ = manager.execute_with_resilience("failing_service", || {
-                Err::<(), _>("PersistentError")
-            }).await;
+            let _ = manager
+                .execute_with_resilience("failing_service", || Err::<(), _>("PersistentError"))
+                .await;
         }
 
         // Circuit should be open now
-        let result = manager.execute_with_resilience("failing_service", || {
-            Ok("Success")
-        }).await;
+        let result = manager
+            .execute_with_resilience("failing_service", || Ok("Success"))
+            .await;
 
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Circuit breaker is open"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Circuit breaker is open"));
     }
 
     #[test]
@@ -252,10 +263,10 @@ mod resilience_tests {
         cb.record_failure();
 
         let health_status = manager.get_health_status();
-        
+
         // Should have health information for the service
         assert!(health_status.contains_key("test_service"));
-        
+
         let service_health = &health_status["test_service"];
         assert_eq!(service_health.service_name, "test_service");
         assert_eq!(service_health.total_calls, 2);
@@ -280,18 +291,20 @@ mod resilience_tests {
         let attempt_count_clone = attempt_count.clone();
 
         let start_time = Instant::now();
-        let result = retry.execute(|| {
-            let attempts = attempt_count_clone.fetch_add(1, Ordering::SeqCst);
-            if attempts < 3 {
-                Err("TestError")
-            } else {
-                Ok("Success")
-            }
-        }).await;
+        let result = retry
+            .execute(|| {
+                let attempts = attempt_count_clone.fetch_add(1, Ordering::SeqCst);
+                if attempts < 3 {
+                    Err("TestError")
+                } else {
+                    Ok("Success")
+                }
+            })
+            .await;
 
         assert!(result.is_ok());
         assert_eq!(attempt_count.load(Ordering::SeqCst), 4);
-        
+
         // Should have used custom delays: 5 + 10 + 20 = 35ms minimum
         assert!(start_time.elapsed().as_millis() >= 35);
     }
@@ -313,18 +326,20 @@ mod resilience_tests {
         let attempt_count_clone = attempt_count.clone();
 
         let start_time = Instant::now();
-        let result = retry.execute(|| {
-            let attempts = attempt_count_clone.fetch_add(1, Ordering::SeqCst);
-            if attempts < 2 {
-                Err("TestError")
-            } else {
-                Ok("Success")
-            }
-        }).await;
+        let result = retry
+            .execute(|| {
+                let attempts = attempt_count_clone.fetch_add(1, Ordering::SeqCst);
+                if attempts < 2 {
+                    Err("TestError")
+                } else {
+                    Ok("Success")
+                }
+            })
+            .await;
 
         assert!(result.is_ok());
         assert_eq!(attempt_count.load(Ordering::SeqCst), 3);
-        
+
         // Linear backoff: 10ms (attempt 1) + 20ms (attempt 2) = 30ms minimum
         assert!(start_time.elapsed().as_millis() >= 30);
     }
@@ -367,20 +382,26 @@ mod resilience_tests {
         let attempt_count_clone = attempt_count.clone();
 
         let start_time = Instant::now();
-        let result = retry.execute(|| {
-            let attempts = attempt_count_clone.fetch_add(1, Ordering::SeqCst);
-            if attempts < 3 {
-                Err("TestError")
-            } else {
-                Ok("Success")
-            }
-        }).await;
+        let result = retry
+            .execute(|| {
+                let attempts = attempt_count_clone.fetch_add(1, Ordering::SeqCst);
+                if attempts < 3 {
+                    Err("TestError")
+                } else {
+                    Ok("Success")
+                }
+            })
+            .await;
 
         assert!(result.is_ok());
         let elapsed = start_time.elapsed().as_millis();
-        
+
         // Even with exponential backoff, delays should be capped
         // Expected: 100ms + 200ms + 200ms = 500ms maximum (plus some tolerance)
-        assert!(elapsed < 800, "Elapsed time {} ms should be less than 800ms", elapsed);
+        assert!(
+            elapsed < 800,
+            "Elapsed time {} ms should be less than 800ms",
+            elapsed
+        );
     }
 }

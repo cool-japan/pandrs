@@ -17,12 +17,10 @@ use pandrs::series::Series;
 
 #[cfg(feature = "sql")]
 use pandrs::io::sql::{
-    ColumnDefinition, DatabaseConnection, InsertMethod, PoolConfig, SqlReadOptions, SqlValue,
+    ColumnDefinition, DatabaseConnection, InsertMethod, PoolConfig,
     SqlWriteOptions, TableSchema, WriteMode,
 };
 
-#[cfg(feature = "sql")]
-use std::collections::HashMap;
 #[cfg(feature = "sql")]
 use std::time::Duration;
 
@@ -34,7 +32,7 @@ fn main() -> Result<()> {
     // Create sample datasets
     let financial_data = create_financial_dataset()?;
     let user_data = create_user_dataset()?;
-    let _large_dataset = create_large_transaction_dataset(10000)?;
+    let large_dataset = create_large_transaction_dataset(10000)?;
 
     println!("\n=== 1. Connection Pool Management ===");
     #[cfg(feature = "sql")]
@@ -69,7 +67,7 @@ fn main() -> Result<()> {
 
 #[cfg(feature = "sql")]
 #[allow(clippy::result_large_err)]
-fn connection_pool_example(df: &DataFrame) -> Result<()> {
+fn connection_pool_example(_df: &DataFrame) -> Result<()> {
     println!("Demonstrating async connection pool management...");
 
     // Connection pool configuration
@@ -356,34 +354,55 @@ fn schema_introspection_example() -> Result<()> {
                         data_type: "BIGSERIAL PRIMARY KEY".to_string(),
                         nullable: false,
                         default_value: Some("nextval('financial_data_id_seq')".to_string()),
+                        max_length: None,
+                        precision: None,
+                        scale: None,
+                        auto_increment: true,
                     },
                     ColumnDefinition {
                         name: "symbol".to_string(),
                         data_type: "VARCHAR(10)".to_string(),
                         nullable: false,
                         default_value: None,
+                        max_length: Some(10),
+                        precision: None,
+                        scale: None,
+                        auto_increment: false,
                     },
                     ColumnDefinition {
                         name: "price".to_string(),
                         data_type: "DECIMAL(10,2)".to_string(),
                         nullable: true,
                         default_value: Some("0.00".to_string()),
+                        max_length: None,
+                        precision: Some(10),
+                        scale: Some(2),
+                        auto_increment: false,
                     },
                     ColumnDefinition {
                         name: "volume".to_string(),
                         data_type: "BIGINT".to_string(),
                         nullable: true,
                         default_value: Some("0".to_string()),
+                        max_length: None,
+                        precision: None,
+                        scale: None,
+                        auto_increment: false,
                     },
                     ColumnDefinition {
                         name: "updated_at".to_string(),
                         data_type: "TIMESTAMP WITH TIME ZONE".to_string(),
                         nullable: false,
                         default_value: Some("CURRENT_TIMESTAMP".to_string()),
+                        max_length: None,
+                        precision: None,
+                        scale: None,
+                        auto_increment: false,
                     },
                 ],
                 primary_keys: vec!["id".to_string()],
                 foreign_keys: vec![],
+                indexes: vec![],
             },
             TableSchema {
                 name: "sectors".to_string(),
@@ -393,22 +412,35 @@ fn schema_introspection_example() -> Result<()> {
                         data_type: "SERIAL PRIMARY KEY".to_string(),
                         nullable: false,
                         default_value: Some("nextval('sectors_id_seq')".to_string()),
+                        max_length: None,
+                        precision: None,
+                        scale: None,
+                        auto_increment: true,
                     },
                     ColumnDefinition {
                         name: "name".to_string(),
                         data_type: "VARCHAR(50)".to_string(),
                         nullable: false,
                         default_value: None,
+                        max_length: Some(50),
+                        precision: None,
+                        scale: None,
+                        auto_increment: false,
                     },
                     ColumnDefinition {
                         name: "description".to_string(),
                         data_type: "TEXT".to_string(),
                         nullable: true,
                         default_value: None,
+                        max_length: None,
+                        precision: None,
+                        scale: None,
+                        auto_increment: false,
                     },
                 ],
                 primary_keys: vec!["id".to_string()],
                 foreign_keys: vec![],
+                indexes: vec![],
             },
         ];
 
@@ -881,31 +913,19 @@ fn performance_monitoring_example() -> Result<()> {
         ("Slowest query", 15600, "ms at 2:45 AM"),
         ("Max connections", 78, "1:15 PM"),
         ("Largest lock wait", 1250, "ms at 11:20 AM"),
-        ("Cache efficiency", (89, 96), "min 89%, max 96%"),
     ];
 
     for (metric, value, timing) in historical_trends {
-        match metric {
-            "Cache efficiency" => {
-                if let (min, max) = value {
-                    println!(
-                        "    • {}: {} ({})",
-                        metric,
-                        timing,
-                        format!("range {}%-{}%", min, max)
-                    );
-                }
-            }
-            _ => {
-                let unit = if metric.contains("time") || metric.contains("wait") {
-                    "ms"
-                } else {
-                    ""
-                };
-                println!("    • {}: {}{} ({})", metric, value, unit, timing);
-            }
-        }
+        let unit = if metric.contains("time") || metric.contains("wait") {
+            "ms"
+        } else {
+            ""
+        };
+        println!("    • {}: {}{} ({})", metric, value, unit, timing);
     }
+
+    // Cache efficiency (separate handling for tuple data)
+    println!("    • Cache efficiency: min 89%, max 96% (min 89%, max 96%)");
 
     // Performance alerts and thresholds
     println!("  Performance alerts and thresholds:");

@@ -4,32 +4,31 @@
 //! including seasonal decomposition, trend analysis, forecasting algorithms, and
 //! statistical tests for temporal data.
 
+pub mod analysis;
 pub mod core;
 pub mod decomposition;
-pub mod forecasting;
-pub mod analysis;
 pub mod features;
-pub mod stats;
+pub mod forecasting;
 pub mod preprocessing;
+pub mod stats;
 
-pub use core::{TimeSeries, TimeSeriesBuilder, TimePoint, Frequency, DateTimeIndex};
-pub use decomposition::{SeasonalDecomposition, DecompositionMethod, DecompositionResult};
-pub use forecasting::{
-    Forecaster, ForecastResult, ForecastMetrics, ArimaForecaster, ExponentialSmoothingForecaster,
-    SimpleMovingAverageForecaster, LinearTrendForecaster,
-};
 pub use analysis::{
-    TrendAnalysis, SeasonalityAnalysis, StationarityTest, AutocorrelationAnalysis,
-    ChangePointDetection,
+    AutocorrelationAnalysis, ChangePointDetection, SeasonalityAnalysis, StationarityTest,
+    TrendAnalysis,
 };
-pub use features::{TimeSeriesFeatureExtractor, FeatureSet, WindowFeatures, StatisticalFeatures};
-pub use stats::{
-    TimeSeriesStats, AugmentedDickeyFullerTest, KwiatkowskiPhillipsSchmidtShinTest,
-    SeasonalTest, WhiteNoiseTest,
+pub use core::{DateTimeIndex, Frequency, TimePoint, TimeSeries, TimeSeriesBuilder};
+pub use decomposition::{DecompositionMethod, DecompositionResult, SeasonalDecomposition};
+pub use features::{FeatureSet, StatisticalFeatures, TimeSeriesFeatureExtractor, WindowFeatures};
+pub use forecasting::{
+    ArimaForecaster, ExponentialSmoothingForecaster, ForecastMetrics, ForecastResult, Forecaster,
+    LinearTrendForecaster, SimpleMovingAverageForecaster,
 };
 pub use preprocessing::{
-    TimeSeriesPreprocessor, MissingValueStrategy, OutlierDetection, Normalization,
-    Differencing,
+    Differencing, MissingValueStrategy, Normalization, OutlierDetection, TimeSeriesPreprocessor,
+};
+pub use stats::{
+    AugmentedDickeyFullerTest, KwiatkowskiPhillipsSchmidtShinTest, SeasonalTest, TimeSeriesStats,
+    WhiteNoiseTest,
 };
 
 use crate::core::error::{Error, Result};

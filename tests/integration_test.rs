@@ -4,6 +4,8 @@
 //! both individually and in combination with each other.
 
 use std::collections::HashMap;
+use std::fs::remove_file;
+use std::path::Path;
 
 use pandrs::dataframe::DataFrame;
 use pandrs::error::Result;
@@ -242,30 +244,20 @@ fn test_alpha4_enhanced_sql_io() -> Result<()> {
     }
 
     // Create test data
-    let mut df = DataFrame::new();
+    let mut df = OptimizedDataFrame::new();
 
-    df.add_column(
-        "customer_id".to_string(),
-        pandrs::series::Series::from_vec(vec![1, 2, 3, 4], Some("customer_id".to_string())),
-    )?;
+    let customer_ids = Int64Column::new(vec![1, 2, 3, 4]);
+    let customer_names = StringColumn::new(vec![
+        "John Doe".to_string(),
+        "Jane Smith".to_string(),
+        "Bob Johnson".to_string(),
+        "Alice Brown".to_string(),
+    ]);
+    let order_amounts = Int64Column::new(vec![150, 200, 75, 300]);
 
-    df.add_column(
-        "customer_name".to_string(),
-        pandrs::series::Series::from_vec(
-            vec![
-                "John Doe".to_string(),
-                "Jane Smith".to_string(),
-                "Bob Johnson".to_string(),
-                "Alice Brown".to_string(),
-            ],
-            Some("customer_name".to_string()),
-        ),
-    )?;
-
-    df.add_column(
-        "order_amount".to_string(),
-        pandrs::series::Series::from_vec(vec![150, 200, 75, 300], Some("order_amount".to_string())),
-    )?;
+    df.add_column("customer_id", Column::Int64(customer_ids))?;
+    df.add_column("customer_name", Column::String(customer_names))?;
+    df.add_column("order_amount", Column::Int64(order_amounts))?;
 
     // Test write to SQL with different modes
 
@@ -317,7 +309,7 @@ fn test_alpha4_distributed_processing_integration() -> Result<()> {
 
     df.add_column(
         "region".to_string(),
-        pandrs::series::Series::from_vec(
+        pandrs::series::Series::new(
             vec![
                 "North".to_string(),
                 "South".to_string(),
@@ -327,20 +319,20 @@ fn test_alpha4_distributed_processing_integration() -> Result<()> {
                 "South".to_string(),
             ],
             Some("region".to_string()),
-        ),
+        )?
     )?;
 
     df.add_column(
         "sales".to_string(),
-        pandrs::series::Series::from_vec(
+        pandrs::series::Series::new(
             vec![1000, 1500, 800, 1200, 900, 1100],
             Some("sales".to_string()),
-        ),
+        )?
     )?;
 
     df.add_column(
         "quarter".to_string(),
-        pandrs::series::Series::from_vec(vec![1, 1, 1, 1, 2, 2], Some("quarter".to_string())),
+        pandrs::series::Series::new(vec![1, 1, 1, 1, 2, 2], Some("quarter".to_string()))?
     )?;
 
     // Create distributed context

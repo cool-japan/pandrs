@@ -378,7 +378,7 @@ mod sql_error_tests {
         let temp_db = std::env::temp_dir().join("test_invalid_table.db");
 
         // Try to write to table with invalid characters
-        let result = write_to_sql(&df, "invalid-table-name!", &temp_db, "replace");
+        let _result = write_to_sql(&df, "invalid-table-name!", &temp_db, "replace");
         // Behavior depends on SQL implementation - might succeed or fail
 
         fs::remove_file(&temp_db).ok();

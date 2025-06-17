@@ -283,6 +283,11 @@ impl TransactionManager {
     pub fn pool(&self) -> &AnyPool {
         &self.pool
     }
+
+    /// Set the isolation level
+    pub fn set_isolation_level_internal(&mut self, level: IsolationLevel) {
+        self.isolation_level = level;
+    }
 }
 
 /// Database operation for transactions

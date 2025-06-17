@@ -1,12 +1,12 @@
 //! Performance benchmarks comparing PandRS to pandas-equivalent operations
-//! 
+//!
 //! This benchmark suite compares PandRS performance to typical pandas operations
 //! by implementing equivalent functionality and measuring execution time, memory usage,
 //! and throughput characteristics.
 
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
-use pandrs::error::Result;
 use pandrs::core::dataframe::DataFrame;
+use pandrs::error::Result;
 use pandrs::optimized::OptimizedDataFrame;
 use std::time::{Duration, Instant};
 
@@ -20,12 +20,12 @@ fn create_pandas_equivalent_data(size: usize) -> Result<DataFrame> {
     //     'value': np.random.normal(100, 15, size),
     //     'timestamp': pd.date_range('2023-01-01', periods=size, freq='1H')
     // })
-    
+
     let categories = ["A", "B", "C", "D"];
     let mut id_data = Vec::with_capacity(size);
     let mut category_data = Vec::with_capacity(size);
     let mut value_data = Vec::with_capacity(size);
-    
+
     for i in 0..size {
         id_data.push(format!("{}", i));
         category_data.push(categories[i % categories.len()].to_string());
@@ -46,7 +46,7 @@ fn create_optimized_pandas_data(size: usize) -> Result<OptimizedDataFrame> {
     let mut id_data = Vec::with_capacity(size);
     let mut category_data = Vec::with_capacity(size);
     let mut value_data = Vec::with_capacity(size);
-    
+
     for i in 0..size {
         id_data.push(i.to_string());
         category_data.push(categories[i % categories.len()].to_string());
@@ -92,7 +92,7 @@ fn benchmark_basic_operations_vs_pandas(c: &mut Criterion) {
     group.measurement_time(Duration::from_secs(10));
 
     let sizes = [10_000, 100_000, 500_000];
-    
+
     for size in sizes.iter() {
         let df_standard = create_pandas_equivalent_data(*size).unwrap();
         let df_optimized = create_optimized_pandas_data(*size).unwrap();
@@ -311,9 +311,10 @@ fn benchmark_io_vs_pandas(c: &mut Criterion) {
                         let id_col = df.get_string_column("id").unwrap();
                         let cat_col = df.get_string_column("category").unwrap();
                         let val_col = df.get_float_column("value").unwrap();
-                        
-                        if let (Some(Some(id)), Some(Some(cat)), Some(Some(val))) = 
-                            (id_col.get(i), cat_col.get(i), val_col.get(i)) {
+
+                        if let (Some(Some(id)), Some(Some(cat)), Some(Some(val))) =
+                            (id_col.get(i), cat_col.get(i), val_col.get(i))
+                        {
                             csv_data.push(format!("{},{},{}", id, cat, val));
                         }
                     }
@@ -329,7 +330,7 @@ fn benchmark_io_vs_pandas(c: &mut Criterion) {
 /// Performance comparison summary and analysis
 fn benchmark_performance_analysis(c: &mut Criterion) {
     let mut group = c.benchmark_group("pandas_comparison_analysis");
-    
+
     // Comprehensive test with multiple operations
     let size = 100_000;
     let df_standard = create_pandas_equivalent_data(size).unwrap();
@@ -341,13 +342,13 @@ fn benchmark_performance_analysis(c: &mut Criterion) {
             // df = pd.DataFrame(data)
             // result = df.groupby('category')['value'].agg(['sum', 'mean', 'count'])
             // filtered = df[df['value'] > df['value'].mean()]
-            
+
             let start = Instant::now();
-            
+
             // 1. Get column access
             let value_col = df_standard.get_float_column("value").unwrap();
             let category_col = df_standard.get_string_column("category").unwrap();
-            
+
             // 2. Calculate mean
             let mut sum = 0.0;
             let mut count = 0;
@@ -358,7 +359,7 @@ fn benchmark_performance_analysis(c: &mut Criterion) {
                 }
             }
             let mean = if count > 0 { sum / count as f64 } else { 0.0 };
-            
+
             // 3. Filter operation simulation
             let mut filtered_count = 0;
             for i in 0..value_col.len() {
@@ -368,7 +369,7 @@ fn benchmark_performance_analysis(c: &mut Criterion) {
                     }
                 }
             }
-            
+
             let duration = start.elapsed();
             black_box((sum, mean, filtered_count, duration));
         });
@@ -377,15 +378,15 @@ fn benchmark_performance_analysis(c: &mut Criterion) {
     group.bench_function("comprehensive_pandas_workflow_optimized", |b| {
         b.iter(|| {
             let start = Instant::now();
-            
+
             // 1. Optimized operations
             let sum = df_optimized.sum("value").unwrap();
             let mean = df_optimized.mean("value").unwrap();
-            
+
             // 2. GroupBy operation
             let grouped = df_optimized.groupby(&["category"]).unwrap();
             let group_sum = grouped.sum("value").unwrap();
-            
+
             let duration = start.elapsed();
             black_box((sum, mean, group_sum, duration));
         });

@@ -187,8 +187,114 @@ impl MinMaxScaler {
         self
     }
 
-    // Implementation details omitted for brevity
-    // Similar to StandardScaler, but scales to [min, max] range
+    /// Fit the scaler to the data
+    pub fn fit(&mut self, df: &DataFrame) -> Result<()> {
+        let columns = match &self.columns {
+            Some(cols) => cols.clone(),
+            None => df.column_names().into_iter().collect(),
+        };
+
+        let mut min_values = HashMap::new();
+        let mut max_values = HashMap::new();
+
+        for col_name in columns {
+            if !df.has_column(&col_name) {
+                return Err(Error::ColumnNotFound(col_name.to_string()));
+            }
+
+            let col = df.get_column::<f64>(&col_name)?;
+
+            // Skip non-numeric columns
+            if let Ok(numeric_data) = col.as_f64() {
+                if numeric_data.is_empty() {
+                    continue;
+                }
+
+                // Calculate min and max
+                let min_val = *numeric_data
+                    .iter()
+                    .min_by(|a, b| a.partial_cmp(b).unwrap())
+                    .unwrap();
+                let max_val = *numeric_data
+                    .iter()
+                    .max_by(|a, b| a.partial_cmp(b).unwrap())
+                    .unwrap();
+                
+                min_values.insert(col_name.to_string(), min_val);
+                max_values.insert(col_name.to_string(), max_val);
+            }
+        }
+
+        self.min_values = Some(min_values);
+        self.max_values = Some(max_values);
+
+        Ok(())
+    }
+
+    /// Transform data using the fitted scaler
+    pub fn transform(&self, df: &DataFrame) -> Result<DataFrame> {
+        if self.min_values.is_none() || self.max_values.is_none() {
+            return Err(Error::InvalidValue("MinMaxScaler not fitted".into()));
+        }
+
+        let min_values = self.min_values.as_ref().unwrap();
+        let max_values = self.max_values.as_ref().unwrap();
+        let (feature_min, feature_max) = self.feature_range;
+
+        let mut result = DataFrame::new();
+
+        // Add all columns from original DataFrame
+        for col_name in df.column_names() {
+            let col = df.get_column::<f64>(&col_name)?;
+
+            // If this is a column we're scaling
+            if min_values.contains_key(&col_name) && max_values.contains_key(&col_name) {
+                let min_val = min_values[&col_name];
+                let max_val = max_values[&col_name];
+
+                if let Ok(numeric_data) = col.as_f64() {
+                    // Avoid division by zero
+                    if (max_val - min_val).abs() > 1e-10 {
+                        let scaled_data: Vec<f64> = numeric_data
+                            .iter()
+                            .map(|&x| {
+                                let scaled = (x - min_val) / (max_val - min_val);
+                                scaled * (feature_max - feature_min) + feature_min
+                            })
+                            .collect();
+
+                        result.add_column(
+                            col_name.to_string(),
+                            Series::new(scaled_data, Some(col_name.to_string()))?,
+                        )?;
+                    } else {
+                        // If range is zero, set all values to feature_min
+                        let scaled_data = vec![feature_min; numeric_data.len()];
+                        result.add_column(
+                            col_name.to_string(),
+                            Series::new(scaled_data, Some(col_name.to_string()))?,
+                        )?;
+                    }
+                } else {
+                    // Non-numeric column, add as is
+                    let col_clone = col.clone();
+                    result.add_column(col_name.to_string(), col_clone)?;
+                }
+            } else {
+                // Column not being scaled, add as is
+                let col_clone = col.clone();
+                result.add_column(col_name.to_string(), col_clone)?;
+            }
+        }
+
+        Ok(result)
+    }
+
+    /// Fit the scaler to the data and transform it in one step
+    pub fn fit_transform(&mut self, df: &DataFrame) -> Result<DataFrame> {
+        self.fit(df)?;
+        self.transform(df)
+    }
 }
 
 /// One-hot encoder for categorical variables
