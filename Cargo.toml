@@ -1,14 +1,15 @@
 [package]
 name = "pandrs"
-version = "0.1.0"
+version = "0.1.0-alpha.5"
 edition = "2021"
-description = "A Rust implementation of pandas-like DataFrame for data analysis"
+description = "High-performance DataFrame library for Rust with pandas-like API, GPU acceleration, and distributed computing (Final Alpha Release)"
 authors = ["Cool Japan"]
 license = "Apache-2.0"
 repository = "https://github.com/cool-japan/pandrs"
 readme = "README.md"
 keywords = ["dataframe", "data", "analytics", "pandas", "statistics"]
 categories = ["data-structures", "science", "mathematics"]
+exclude = ["tests/", "benches/", "docs/", "examples/", ".github/"]
 
 [dependencies]
 num-traits = "0.2.19"

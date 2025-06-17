@@ -6,6 +6,8 @@
 
 A high-performance DataFrame library for data analysis implemented in Rust. Inspired by Python's pandas library, PandRS combines fast data processing with type safety and distributed computing capabilities.
 
+> **📢 Final Alpha Release (0.1.0-alpha.5)**: This is the final alpha release before beta. While feature-complete and extensively tested, please review the [Production Readiness Assessment](PRODUCTION_READINESS.md) for production deployment considerations.
+
 ## Quick Start
 
 ```rust
@@ -79,28 +81,28 @@ Add to your Cargo.toml:
 
 ```toml
 [dependencies]
-pandrs = "0.1.0"
+pandrs = "0.1.0-alpha.5"
 ```
 
 For GPU acceleration (requires CUDA toolkit):
 
 ```toml
 [dependencies]
-pandrs = { version = "0.1.0", features = ["cuda"] }
+pandrs = { version = "0.1.0-alpha.5", features = ["cuda"] }
 ```
 
 For distributed processing:
 
 ```toml
 [dependencies]
-pandrs = { version = "0.1.0", features = ["distributed"] }
+pandrs = { version = "0.1.0-alpha.5", features = ["distributed"] }
 ```
 
 Multiple features can be combined:
 
 ```toml
 [dependencies]
-pandrs = { version = "0.1.0", features = ["cuda", "distributed", "python"] }
+pandrs = { version = "0.1.0-alpha.5", features = ["cuda", "distributed", "python"] }
 ```
 
 ## Examples
@@ -242,6 +244,9 @@ cargo test --all-features
 - [API Guide](docs/API_GUIDE.md)
 - [Ecosystem Integration](docs/ECOSYSTEM_INTEGRATION_GUIDE.md)
 - [Performance Optimization](docs/PERFORMANCE_PLAN.md)
+- [Production Readiness Assessment](PRODUCTION_READINESS.md) 📋
+- [GPU Acceleration Guide](docs/GPU_ACCELERATION_GUIDE.md)
+- [JIT Compilation Guide](docs/JIT_COMPILATION.md)
 
 ## Contributing
 
