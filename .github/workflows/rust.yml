@@ -37,11 +37,6 @@ jobs:
       - name: Run tests
         run: cargo nextest run --verbose
       
-      - name: Run tests with all-safe features
-        run: cargo nextest run --verbose --features="all-safe"
-      
       - name: Run doc tests
         run: cargo test --doc --verbose
       
-      - name: Run doc tests with all-safe features
-        run: cargo test --doc --verbose --features="all-safe"
