@@ -11,6 +11,7 @@ use std::time::{Duration, Instant};
 
 use pandrs::optimized::jit::JitCompilable;
 
+#[allow(clippy::result_large_err)]
 fn main() -> Result<(), Box<dyn Error>> {
     println!("Parallel JIT Execution Example");
     println!("==============================");

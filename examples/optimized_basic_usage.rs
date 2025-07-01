@@ -13,6 +13,7 @@ fn main() {
 
 // Translated Japanese comments and strings into English
 #[cfg(feature = "optimized")]
+#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     println!("=== PandRS Optimized Basic Usage Example ===");
 

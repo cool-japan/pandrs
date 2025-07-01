@@ -13,6 +13,8 @@ pub mod test_utils {
     use super::*;
     
     /// Create a sample DataFrame for testing
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
     pub fn create_test_dataframe() -> Result<DataFrame> {
         let mut df = DataFrame::new();
         
@@ -32,6 +34,8 @@ pub mod test_utils {
     }
     
     /// Create a large DataFrame for performance testing
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
     pub fn create_large_test_dataframe(rows: usize) -> Result<DataFrame> {
         let mut df = DataFrame::new();
         
@@ -96,11 +100,15 @@ pub mod mock_database {
     }
     
     impl DatabaseConnector for MockDatabaseConnector {
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
         async fn connect(&mut self, _config: &DatabaseConfig) -> Result<()> {
             self.connected = true;
             Ok(())
         }
         
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
         async fn query(&self, sql: &str) -> Result<DataFrame> {
             if !self.connected {
                 return Err(pandrs::core::error::Error::ConnectionError(
@@ -116,10 +124,14 @@ pub mod mock_database {
             }
         }
         
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
         async fn query_with_params(&self, sql: &str, _params: &[&dyn std::fmt::Display]) -> Result<DataFrame> {
             self.query(sql).await
         }
         
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
         async fn write_table(&self, _df: &DataFrame, table_name: &str, _if_exists: WriteMode) -> Result<()> {
             if !self.connected {
                 return Err(pandrs::core::error::Error::ConnectionError(
@@ -132,10 +144,14 @@ pub mod mock_database {
             Ok(())
         }
         
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
         async fn list_tables(&self) -> Result<Vec<String>> {
             Ok(self.tables.keys().cloned().collect())
         }
         
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
         async fn get_table_info(&self, table_name: &str) -> Result<TableInfo> {
             if let Some(df) = self.tables.get(table_name) {
                 let columns = df.column_names().into_iter().map(|name| ColumnInfo {
@@ -159,6 +175,8 @@ pub mod mock_database {
             }
         }
         
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
         async fn execute(&self, sql: &str) -> Result<u64> {
             if !self.connected {
                 return Err(pandrs::core::error::Error::ConnectionError(
@@ -176,6 +194,8 @@ pub mod mock_database {
             }
         }
         
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
         async fn begin_transaction(&self) -> Result<String> {
             Ok(format!("mock_tx_{}", std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -183,6 +203,8 @@ pub mod mock_database {
                 .as_secs()))
         }
         
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
         async fn close(&mut self) -> Result<()> {
             self.connected = false;
             Ok(())
@@ -232,11 +254,15 @@ pub mod mock_cloud {
     }
     
     impl CloudConnector for MockCloudConnector {
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
         async fn connect(&mut self, _config: &CloudConfig) -> Result<()> {
             self.connected = true;
             Ok(())
         }
         
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
         async fn list_objects(&self, bucket: &str, prefix: Option<&str>) -> Result<Vec<CloudObject>> {
             if !self.connected {
                 return Err(pandrs::core::error::Error::ConnectionError(
@@ -268,6 +294,8 @@ pub mod mock_cloud {
             Ok(objects)
         }
         
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
         async fn read_dataframe(&self, bucket: &str, key: &str, _format: FileFormat) -> Result<DataFrame> {
             if !self.connected {
                 return Err(pandrs::core::error::Error::ConnectionError(
@@ -286,6 +314,8 @@ pub mod mock_cloud {
             }
         }
         
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
         async fn write_dataframe(&self, _df: &DataFrame, bucket: &str, key: &str, _format: FileFormat) -> Result<()> {
             if !self.connected {
                 return Err(pandrs::core::error::Error::ConnectionError(
@@ -298,6 +328,8 @@ pub mod mock_cloud {
             Ok(())
         }
         
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
         async fn download_object(&self, bucket: &str, key: &str, local_path: &str) -> Result<()> {
             let full_key = self.get_full_key(bucket, key);
             if let Some(data) = self.objects.get(&full_key) {
@@ -311,6 +343,8 @@ pub mod mock_cloud {
             }
         }
         
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
         async fn upload_object(&self, local_path: &str, bucket: &str, key: &str) -> Result<()> {
             if !self.connected {
                 return Err(pandrs::core::error::Error::ConnectionError(
@@ -323,11 +357,15 @@ pub mod mock_cloud {
             Ok(())
         }
         
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
         async fn delete_object(&self, bucket: &str, key: &str) -> Result<()> {
             println!("Mock: Deleted {}/{}", bucket, key);
             Ok(())
         }
         
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
         async fn get_object_metadata(&self, bucket: &str, key: &str) -> Result<ObjectMetadata> {
             let full_key = self.get_full_key(bucket, key);
             if let Some(metadata) = self.metadata.get(&full_key) {
@@ -339,16 +377,22 @@ pub mod mock_cloud {
             }
         }
         
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
         async fn object_exists(&self, bucket: &str, key: &str) -> Result<bool> {
             let full_key = self.get_full_key(bucket, key);
             Ok(self.objects.contains_key(&full_key))
         }
         
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
         async fn create_bucket(&self, bucket: &str) -> Result<()> {
             println!("Mock: Created bucket {}", bucket);
             Ok(())
         }
         
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
         async fn delete_bucket(&self, bucket: &str) -> Result<()> {
             println!("Mock: Deleted bucket {}", bucket);
             Ok(())

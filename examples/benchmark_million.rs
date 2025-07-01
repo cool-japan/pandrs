@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 #[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     println!("=== Benchmark with One Million Rows ===\n");
 

@@ -2,6 +2,7 @@ use pandrs::dataframe::TransformExt;
 use pandrs::{DataFrame, MeltOptions, Series, StackOptions, UnstackOptions};
 use std::error::Error;
 
+#[allow(clippy::result_large_err)]
 fn main() -> Result<(), Box<dyn Error>> {
     println!("=== Example of Data Transformation ===\n");
 

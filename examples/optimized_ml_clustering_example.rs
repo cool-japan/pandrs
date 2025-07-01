@@ -23,6 +23,7 @@ fn main() {
 }
 
 #[cfg(feature = "optimized")]
+#[allow(clippy::result_large_err)]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Generate pseudo clustering data
     println!("✅ Example of Clustering Algorithms");
@@ -34,7 +35,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let n_clusters = 3;
 
     // Generate data from different centers for each cluster
-    let cluster_centers = vec![
+    let cluster_centers = [
         (0.0, 0.0),  // Center of cluster 1
         (5.0, 5.0),  // Center of cluster 2
         (-5.0, 5.0), // Center of cluster 3

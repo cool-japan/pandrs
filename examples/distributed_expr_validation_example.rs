@@ -11,6 +11,7 @@ use pandrs::distributed::DistributedContext;
 use pandrs::error::Result;
 
 #[cfg(feature = "distributed")]
+#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     // Create a schema for validation
     let mut schema = ExprSchema::new();

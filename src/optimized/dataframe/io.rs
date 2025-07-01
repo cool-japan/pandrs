@@ -78,10 +78,14 @@ impl OptimizedDataFrame {
         // Set index if available
         if let Some(ref index) = self.index {
             // Extract Index<String> from DataFrameIndex
-            if let crate::index::DataFrameIndex::Simple(simple_index) = index {
-                split_df.set_index_from_simple_index(simple_index.clone())?;
+            match index {
+                crate::index::DataFrameIndex::Simple(simple_index) => {
+                    split_df.set_index_from_simple_index(simple_index.clone())?;
+                }
+                crate::index::DataFrameIndex::Multi(multi_index) => {
+                    split_df.set_index(crate::index::DataFrameIndex::Multi(multi_index.clone()))?;
+                }
             }
-            // TODO: Handle multi-index case
         }
 
         // Call to_csv from SplitDataFrame
@@ -180,10 +184,14 @@ impl OptimizedDataFrame {
         // Set index if available
         if let Some(ref index) = self.index {
             // Extract Index<String> from DataFrameIndex
-            if let crate::index::DataFrameIndex::Simple(simple_index) = index {
-                split_df.set_index_from_simple_index(simple_index.clone())?;
+            match index {
+                crate::index::DataFrameIndex::Simple(simple_index) => {
+                    split_df.set_index_from_simple_index(simple_index.clone())?;
+                }
+                crate::index::DataFrameIndex::Multi(multi_index) => {
+                    split_df.set_index(crate::index::DataFrameIndex::Multi(multi_index.clone()))?;
+                }
             }
-            // TODO: Handle multi-index case
         }
 
         // Convert compression settings
@@ -293,10 +301,14 @@ impl OptimizedDataFrame {
         // Set index if available
         if let Some(ref index) = self.index {
             // Extract Index<String> from DataFrameIndex
-            if let crate::index::DataFrameIndex::Simple(simple_index) = index {
-                split_df.set_index_from_simple_index(simple_index.clone())?;
+            match index {
+                crate::index::DataFrameIndex::Simple(simple_index) => {
+                    split_df.set_index_from_simple_index(simple_index.clone())?;
+                }
+                crate::index::DataFrameIndex::Multi(multi_index) => {
+                    split_df.set_index(crate::index::DataFrameIndex::Multi(multi_index.clone()))?;
+                }
             }
-            // TODO: Handle multi-index case
         }
 
         // Convert JSON output format

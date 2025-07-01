@@ -8,6 +8,8 @@ use pandrs::connectors::cloud::*;
 use pandrs::core::error::Result;
 
 #[tokio::test]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 async fn test_cloud_connection() -> Result<()> {
     let mut connector = MockCloudConnector::new();
     let config = CloudConfig::new(
@@ -26,6 +28,8 @@ async fn test_cloud_connection() -> Result<()> {
 }
 
 #[tokio::test]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 async fn test_cloud_configuration() -> Result<()> {
     // Test AWS configuration
     let aws_config = CloudConfig::new(
@@ -70,8 +74,10 @@ async fn test_cloud_configuration() -> Result<()> {
 }
 
 #[tokio::test]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 async fn test_cloud_list_objects() -> Result<()> {
-    let test_data = vec![1, 2, 3, 4, 5];
+    let test_data = [1, 2, 3, 4, 5];
     let mut connector = MockCloudConnector::new()
         .with_object("test-bucket", "data/file1.csv", test_data.clone())
         .with_object("test-bucket", "data/file2.parquet", test_data.clone())
@@ -101,6 +107,8 @@ async fn test_cloud_list_objects() -> Result<()> {
 }
 
 #[tokio::test]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 async fn test_cloud_read_dataframe() -> Result<()> {
     let test_data = b"id,name,age\n1,John,25\n2,Jane,30".to_vec();
     let mut connector = MockCloudConnector::new()
@@ -131,6 +139,8 @@ async fn test_cloud_read_dataframe() -> Result<()> {
 }
 
 #[tokio::test]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 async fn test_cloud_write_dataframe() -> Result<()> {
     let mut connector = MockCloudConnector::new();
     let config = CloudConfig::new(CloudProvider::AWS, CloudCredentials::Environment);
@@ -164,6 +174,8 @@ async fn test_cloud_write_dataframe() -> Result<()> {
 }
 
 #[tokio::test]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 async fn test_cloud_object_operations() -> Result<()> {
     let test_data = b"test file content".to_vec();
     let mut connector = MockCloudConnector::new()
@@ -197,6 +209,8 @@ async fn test_cloud_object_operations() -> Result<()> {
 }
 
 #[tokio::test]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 async fn test_cloud_bucket_operations() -> Result<()> {
     let mut connector = MockCloudConnector::new();
     let config = CloudConfig::new(CloudProvider::AWS, CloudCredentials::Environment);
@@ -212,6 +226,8 @@ async fn test_cloud_bucket_operations() -> Result<()> {
 }
 
 #[tokio::test]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 async fn test_file_format_detection() -> Result<()> {
     // Test automatic format detection
     let csv_format = FileFormat::from_extension("data.csv").unwrap();
@@ -234,6 +250,8 @@ async fn test_file_format_detection() -> Result<()> {
 }
 
 #[tokio::test]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 async fn test_cloud_error_handling() -> Result<()> {
     let mut connector = MockCloudConnector::new();
     
@@ -256,6 +274,8 @@ async fn test_cloud_error_handling() -> Result<()> {
 }
 
 #[tokio::test]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 async fn test_cloud_large_dataset_handling() -> Result<()> {
     let mut connector = MockCloudConnector::new();
     let config = CloudConfig::new(CloudProvider::AWS, CloudCredentials::Environment);
@@ -276,10 +296,12 @@ async fn test_cloud_large_dataset_handling() -> Result<()> {
 }
 
 #[tokio::test]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 async fn test_cloud_concurrent_operations() -> Result<()> {
     use tokio::task;
     
-    let test_data = vec![1, 2, 3, 4, 5];
+    let test_data = [1, 2, 3, 4, 5];
     let mut connector = MockCloudConnector::new();
     
     // Add multiple objects
@@ -298,7 +320,7 @@ async fn test_cloud_concurrent_operations() -> Result<()> {
     let handles: Vec<_> = (0..5).map(|i| {
         task::spawn(async move {
             // Create new connector for each task
-            let test_data = vec![1, 2, 3, 4, 5];
+            let test_data = [1, 2, 3, 4, 5];
             let mut local_connector = MockCloudConnector::new()
                 .with_object("test-bucket", &format!("data/file_{}.csv", i), test_data);
             
@@ -323,6 +345,8 @@ async fn test_cloud_concurrent_operations() -> Result<()> {
 }
 
 #[tokio::test]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 async fn test_cloud_provider_specific_features() -> Result<()> {
     // Test AWS-specific configuration
     let aws_config = CloudConfig::new(
@@ -363,6 +387,8 @@ async fn test_cloud_provider_specific_features() -> Result<()> {
 }
 
 #[tokio::test]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 async fn test_cloud_performance_characteristics() -> Result<()> {
     use std::time::Instant;
     
@@ -386,7 +412,7 @@ async fn test_cloud_performance_characteristics() -> Result<()> {
     assert!(write_duration.as_millis() < 100);
     
     // Add test object for read test
-    connector = connector.with_object("perf-bucket", "test/data.csv", vec![1, 2, 3]);
+    connector = connector.with_object("perf-bucket", "test/data.csv", [1, 2, 3]);
     connector.connect(&config).await?;
     
     // Measure read performance

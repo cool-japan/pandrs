@@ -1,6 +1,7 @@
 use pandrs::{DataFrame, NASeries, ParallelUtils, Series, NA};
 use std::error::Error;
 
+#[allow(clippy::result_large_err)]
 fn main() -> Result<(), Box<dyn Error>> {
     println!("=== Example of Parallel Processing Features ===\n");
 

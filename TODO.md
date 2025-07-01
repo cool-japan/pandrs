@@ -4,7 +4,7 @@ A high-performance DataFrame library for Rust with comprehensive data analysis c
 
 ## Current Status
 
-**Version:** 0.1.0  
+**Version:** 0.1.0  beta.1
 **Status:** Production Ready  
 **Test Coverage:** 345+ passing tests  
 
@@ -46,19 +46,19 @@ A high-performance DataFrame library for Rust with comprehensive data analysis c
 
 ## Upcoming Features
 
-### v0.2.0 - Advanced Analytics
+### v0.1.0 - Advanced Analytics
 - Enhanced ML pipeline features
 - Streaming data processing
 - Advanced statistical computing
 - Real-time analytics capabilities
 
-### v0.3.0 - Enterprise Features
+### v0.1.0 - Enterprise Features
 - Enhanced security and encryption
 - Data governance and lineage tracking
 - Role-based access control
 - Compliance frameworks (GDPR, HIPAA)
 
-### v0.4.0 - Ecosystem Expansion
+### v0.1.0 - Ecosystem Expansion
 - R language integration
 - Enhanced cloud-native features
 - Advanced visualization capabilities

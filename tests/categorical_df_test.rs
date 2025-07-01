@@ -10,7 +10,7 @@ fn test_astype_categorical() {
     let mut df = DataFrame::new();
 
     // Add columns
-    let regions = vec!["Tokyo", "Osaka", "Tokyo", "Nagoya"];
+    let regions = ["Tokyo", "Osaka", "Tokyo", "Nagoya"];
     let regions_str = regions.iter().map(|s| s.to_string()).collect();
     let series = Series::new(regions_str, Some("region".to_string())).unwrap();
 
@@ -35,7 +35,7 @@ fn test_get_categorical() {
     let mut df = DataFrame::new();
 
     // Add columns
-    let colors = vec!["Red", "Blue", "Red", "Green"];
+    let colors = ["Red", "Blue", "Red", "Green"];
     let colors_str = colors.iter().map(|s| s.to_string()).collect();
     let series = Series::new(colors_str, Some("color".to_string())).unwrap();
 
@@ -61,9 +61,9 @@ fn test_get_categorical() {
 
     // Check categorical content
     // The length might vary depending on implementation
-    assert!(cat.len() > 0);
+    assert!(!cat.is_empty());
     // Categories might be different depending on implementation
-    assert!(cat.categories().len() > 0);
+    assert!(!cat.categories().is_empty());
     // Order property is not verified since it may not be preserved in the test environment
 
     // Non-existent column
@@ -84,7 +84,7 @@ fn test_value_counts() {
     let mut df = DataFrame::new();
 
     // Add column (with duplicates)
-    let regions = vec!["Tokyo", "Osaka", "Tokyo", "Nagoya", "Osaka"];
+    let regions = ["Tokyo", "Osaka", "Tokyo", "Nagoya", "Osaka"];
     let regions_str = regions.iter().map(|s| s.to_string()).collect();
     let series = Series::new(regions_str, Some("region".to_string())).unwrap();
 
@@ -94,7 +94,7 @@ fn test_value_counts() {
     let counts = df.value_counts("region").unwrap();
 
     // Check results
-    assert!(counts.len() > 0); // Should have some values
+    assert!(!counts.is_empty()); // Should have some values
     assert!(counts.name().is_some());
 
     // For categorical conversion
@@ -102,7 +102,7 @@ fn test_value_counts() {
     let cat_counts = df_cat.value_counts("region").unwrap();
 
     // Check results (counting works with categorical too)
-    assert!(cat_counts.len() > 0);
+    assert!(!cat_counts.is_empty());
     // Name might be different in different implementations
     assert!(cat_counts.name().is_some());
 
@@ -117,7 +117,7 @@ fn test_add_categorical_column() {
     let mut df = DataFrame::new();
 
     // Create categorical data
-    let values = vec!["Red", "Blue", "Red", "Green"];
+    let values = ["Red", "Blue", "Red", "Green"];
     let values_str = values.iter().map(|s| s.to_string()).collect();
     let cat = StringCategorical::new(values_str, None, false).unwrap();
 
@@ -133,11 +133,11 @@ fn test_add_categorical_column() {
 #[test]
 fn test_from_categoricals() {
     // Create categorical data
-    let values1 = vec!["Red", "Blue", "Red", "Green"];
+    let values1 = ["Red", "Blue", "Red", "Green"];
     let values1_str = values1.iter().map(|s| s.to_string()).collect();
     let cat1 = StringCategorical::new(values1_str, None, false).unwrap();
 
-    let values2 = vec!["Large", "Medium", "Large", "Small"];
+    let values2 = ["Large", "Medium", "Large", "Small"];
     let values2_str = values2.iter().map(|s| s.to_string()).collect();
     let cat2 = StringCategorical::new(values2_str, None, true).unwrap();
 
@@ -164,7 +164,7 @@ fn test_modify_categorical() {
     let mut df = DataFrame::new();
 
     // Add columns
-    let colors = vec!["Red", "Blue", "Red", "Green"];
+    let colors = ["Red", "Blue", "Red", "Green"];
     let colors_str = colors.iter().map(|s| s.to_string()).collect();
     let series = Series::new(colors_str, Some("color".to_string())).unwrap();
 
@@ -174,12 +174,12 @@ fn test_modify_categorical() {
     let _cat_df = df.astype_categorical("color", None, None).unwrap();
 
     // Considering test environment constraints, only test basic interface
-    let _new_cats = vec!["Yellow".to_string(), "Purple".to_string()];
+    let _new_cats = ["Yellow".to_string(), "Purple".to_string()];
 
     // To simplify test results, recreate everything before each categorical operation
     // Re-add column (assign to new variable)
     let mut new_df = DataFrame::new();
-    let colors = vec!["Red", "Blue", "Red", "Green"];
+    let colors = ["Red", "Blue", "Red", "Green"];
     let colors_str: Vec<String> = colors.iter().map(|s| s.to_string()).collect();
     let series = Series::new(colors_str, Some("color".to_string())).unwrap();
     new_df.add_column("color".to_string(), series).unwrap();
@@ -189,7 +189,7 @@ fn test_modify_categorical() {
 
     // Verify basic categorical operations (specific value checks are skipped due to test environment differences)
     let cat = df.get_categorical::<String>("color").unwrap();
-    assert!(cat.len() > 0);
+    assert!(!cat.is_empty());
 
     // Change category order (adjust to current number of categories)
     // Get current categories
@@ -215,10 +215,8 @@ fn test_modify_categorical() {
     });
 
     // Attempt to change order if category counts match
-    if reordered.len() == current_categories.len() {
-        if let Err(_) = df.reorder_categories("color", reordered) {
-            // Ignore failures in test environment
-        }
+    if reordered.len() == current_categories.len() && df.reorder_categories("color", reordered).is_err() {
+        // Ignore failures in test environment
     }
 
     // Verify basic operations
@@ -227,14 +225,14 @@ fn test_modify_categorical() {
     df.add_categories("color", to_add).unwrap();
 
     // Remove categories (ignore errors in test environment)
-    let to_remove = vec!["Nonexistent".to_string()];
-    if let Err(_) = df.remove_categories("color", &to_remove) {
+    let to_remove = ["Nonexistent".to_string()];
+    if df.remove_categories("color", &to_remove).is_err() {
         // Ignore errors
     }
 
     // Verify successful operations by re-fetching categorical data
     let cat3 = df.get_categorical::<String>("color").unwrap();
-    assert!(cat3.len() > 0);
+    assert!(!cat3.is_empty());
 
     // Attempt to operate on non-existent column
     let result = df.add_categories("invalid", vec!["test".to_string()]);
@@ -247,7 +245,7 @@ fn test_set_categorical_ordered() {
     let mut df = DataFrame::new();
 
     // Add columns
-    let sizes = vec!["Large", "Medium", "Large", "Small"];
+    let sizes = ["Large", "Medium", "Large", "Small"];
     let sizes_str = sizes.iter().map(|s| s.to_string()).collect();
     let series = Series::new(sizes_str, Some("size".to_string())).unwrap();
 
@@ -282,13 +280,13 @@ fn test_get_categorical_aggregates() {
     let mut df = DataFrame::new();
 
     // Add data
-    let products = vec!["A", "B", "A", "C", "B", "A"];
+    let products = ["A", "B", "A", "C", "B", "A"];
     let products_str = products.iter().map(|s| s.to_string()).collect();
 
-    let colors = vec!["Red", "Blue", "Red", "Green", "Blue", "Yellow"];
+    let colors = ["Red", "Blue", "Red", "Green", "Blue", "Yellow"];
     let colors_str = colors.iter().map(|s| s.to_string()).collect();
 
-    let quantities = vec!["10", "20", "30", "15", "25", "5"];
+    let quantities = ["10", "20", "30", "15", "25", "5"];
     let quantities_str = quantities.iter().map(|s| s.to_string()).collect();
 
     df.add_column(
@@ -309,21 +307,21 @@ fn test_get_categorical_aggregates() {
 
     // First manually calculate to verify correct aggregation
     // Calculate quantity by product manually
-    let a_values = vec!["10", "30", "5"];
+    let a_values = ["10", "30", "5"];
     let a_sum: usize = a_values
         .iter()
         .filter_map(|v| v.parse::<usize>().ok())
         .sum();
     assert_eq!(a_sum, 45);
 
-    let b_values = vec!["20", "25"];
+    let b_values = ["20", "25"];
     let b_sum: usize = b_values
         .iter()
         .filter_map(|v| v.parse::<usize>().ok())
         .sum();
     assert_eq!(b_sum, 45);
 
-    let c_values = vec!["15"];
+    let c_values = ["15"];
     let c_sum: usize = c_values
         .iter()
         .filter_map(|v| v.parse::<usize>().ok())
@@ -342,14 +340,14 @@ fn test_get_categorical_aggregates() {
 
     // Also test cross-tabulation of product and color
     // First manually calculate expected results
-    let a_red_values = vec!["10", "30"];
+    let a_red_values = ["10", "30"];
     let a_red_sum: usize = a_red_values
         .iter()
         .filter_map(|v| v.parse::<usize>().ok())
         .sum();
     assert_eq!(a_red_sum, 40);
 
-    let a_yellow_values = vec!["5"];
+    let a_yellow_values = ["5"];
     let a_yellow_sum: usize = a_yellow_values
         .iter()
         .filter_map(|v| v.parse::<usize>().ok())

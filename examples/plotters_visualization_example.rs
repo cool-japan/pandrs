@@ -19,6 +19,7 @@ fn main() {
 }
 
 #[cfg(feature = "visualization")]
+#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     // 1. Example of plotting a single Series
     println!("Sample 1: Creating a plot for a single Series");

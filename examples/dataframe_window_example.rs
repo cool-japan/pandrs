@@ -3,6 +3,7 @@ use pandrs::error::Result;
 use pandrs::series::Series;
 
 #[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     println!("=== Example of DataFrame Window Operations ===\n");
 
@@ -78,6 +79,7 @@ fn main() -> Result<()> {
 }
 
 // Helper function to create a sample DataFrame
+#[allow(clippy::result_large_err)]
 #[allow(clippy::result_large_err)]
 fn create_sample_dataframe() -> Result<DataFrame> {
     let mut df = DataFrame::new();

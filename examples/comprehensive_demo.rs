@@ -6,6 +6,7 @@ use pandrs::error::Result;
 use pandrs::series::base::Series;
 use std::time::Instant;
 
+#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     println!("=== Phase 4 Alpha.8-9: Complete Expression Engine and Query Capabilities ===\n");
     println!("This example demonstrates all Phase 4 features working together:\n");
@@ -93,6 +94,7 @@ fn main() -> Result<()> {
 }
 
 /// Create comprehensive financial dataset
+#[allow(clippy::result_large_err)]
 fn create_financial_dataset() -> Result<DataFrame> {
     let mut df = DataFrame::new();
     let size = 1000;
@@ -174,6 +176,7 @@ fn create_financial_dataset() -> Result<DataFrame> {
 }
 
 /// Create sample financial data for demonstrations
+#[allow(clippy::result_large_err)]
 fn create_sample_financial_data() -> Result<DataFrame> {
     let mut df = DataFrame::new();
 
@@ -249,6 +252,7 @@ fn create_sample_financial_data() -> Result<DataFrame> {
 }
 
 /// Test basic query engine features
+#[allow(clippy::result_large_err)]
 fn test_basic_query_features(df: &DataFrame) -> Result<()> {
     println!("Testing basic query engine features:");
 
@@ -290,6 +294,7 @@ fn test_basic_query_features(df: &DataFrame) -> Result<()> {
 }
 
 /// Test advanced indexing with queries
+#[allow(clippy::result_large_err)]
 fn test_advanced_indexing_with_queries(_df: &DataFrame) -> Result<()> {
     println!("Testing advanced indexing integration:");
 
@@ -321,6 +326,7 @@ fn test_advanced_indexing_with_queries(_df: &DataFrame) -> Result<()> {
 }
 
 /// Test mathematical expression evaluation
+#[allow(clippy::result_large_err)]
 fn test_mathematical_expressions(df: &DataFrame) -> Result<()> {
     println!("Testing mathematical expression evaluation:");
 
@@ -358,6 +364,7 @@ fn test_mathematical_expressions(df: &DataFrame) -> Result<()> {
 }
 
 /// Test boolean expression optimization
+#[allow(clippy::result_large_err)]
 fn test_boolean_optimizations(df: &DataFrame) -> Result<()> {
     println!("Testing boolean expression optimizations:");
 
@@ -405,6 +412,7 @@ fn test_boolean_optimizations(df: &DataFrame) -> Result<()> {
 }
 
 /// Test complex query scenarios
+#[allow(clippy::result_large_err)]
 fn test_complex_query_scenarios(df: &DataFrame) -> Result<()> {
     println!("Testing complex real-world query scenarios:");
 
@@ -450,6 +458,7 @@ fn test_complex_query_scenarios(df: &DataFrame) -> Result<()> {
 }
 
 /// Test performance features
+#[allow(clippy::result_large_err)]
 fn test_performance_features(df: &DataFrame) -> Result<()> {
     println!("Testing performance optimization features:");
 
@@ -509,6 +518,7 @@ fn test_performance_features(df: &DataFrame) -> Result<()> {
 }
 
 /// Test comprehensive error handling
+#[allow(clippy::result_large_err)]
 fn test_error_handling(df: &DataFrame) -> Result<()> {
     println!("Testing comprehensive error handling:");
 
@@ -562,6 +572,7 @@ fn test_error_handling(df: &DataFrame) -> Result<()> {
 }
 
 /// Showcase integrated features working together
+#[allow(clippy::result_large_err)]
 fn showcase_integrated_features(df: &DataFrame) -> Result<()> {
     println!("Showcasing integrated Phase 4 features:");
 

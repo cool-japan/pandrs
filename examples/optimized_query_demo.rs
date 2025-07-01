@@ -6,6 +6,7 @@ use pandrs::error::Result;
 use pandrs::series::base::Series;
 use std::time::Instant;
 
+#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     println!("=== Alpha 8: Optimized Query Engine Example ===\n");
 
@@ -77,6 +78,7 @@ fn main() -> Result<()> {
 }
 
 /// Create a small sample dataset for demonstration
+#[allow(clippy::result_large_err)]
 fn create_sample_dataset() -> Result<DataFrame> {
     let mut df = DataFrame::new();
 
@@ -117,6 +119,7 @@ fn create_sample_dataset() -> Result<DataFrame> {
 }
 
 /// Create a large dataset for performance testing
+#[allow(clippy::result_large_err)]
 fn create_large_sample_dataset(size: usize) -> Result<DataFrame> {
     let mut df = DataFrame::new();
 
@@ -147,6 +150,7 @@ fn create_large_sample_dataset(size: usize) -> Result<DataFrame> {
 }
 
 /// Test short-circuiting for AND operations
+#[allow(clippy::result_large_err)]
 fn test_short_circuiting_and(df: &DataFrame) -> Result<()> {
     println!("Testing: false && expensive_operation()");
 
@@ -168,6 +172,7 @@ fn test_short_circuiting_and(df: &DataFrame) -> Result<()> {
 }
 
 /// Test short-circuiting for OR operations
+#[allow(clippy::result_large_err)]
 fn test_short_circuiting_or(df: &DataFrame) -> Result<()> {
     println!("Testing: true || expensive_operation()");
 
@@ -187,6 +192,7 @@ fn test_short_circuiting_or(df: &DataFrame) -> Result<()> {
 }
 
 /// Test constant folding optimizations
+#[allow(clippy::result_large_err)]
 fn test_constant_folding(df: &DataFrame) -> Result<()> {
     println!("Testing constant folding optimizations:");
 
@@ -221,6 +227,7 @@ fn test_constant_folding(df: &DataFrame) -> Result<()> {
 }
 
 /// Test vectorized operations
+#[allow(clippy::result_large_err)]
 fn test_vectorized_operations(df: &DataFrame) -> Result<()> {
     println!("Testing vectorized column comparisons:");
 
@@ -254,6 +261,7 @@ fn test_vectorized_operations(df: &DataFrame) -> Result<()> {
 }
 
 /// Compare performance between optimized and standard evaluators
+#[allow(clippy::result_large_err)]
 fn compare_evaluator_performance(df: &DataFrame) -> Result<()> {
     println!("Comparing Standard vs Optimized Evaluators:");
 
@@ -311,6 +319,7 @@ fn compare_evaluator_performance(df: &DataFrame) -> Result<()> {
 }
 
 /// Test complex query optimizations
+#[allow(clippy::result_large_err)]
 fn test_complex_query_optimizations(df: &DataFrame) -> Result<()> {
     println!("Testing complex query optimizations:");
 
@@ -351,6 +360,7 @@ fn test_complex_query_optimizations(df: &DataFrame) -> Result<()> {
 }
 
 /// Test algebraic simplifications
+#[allow(clippy::result_large_err)]
 fn test_algebraic_simplifications(_df: &DataFrame) -> Result<()> {
     println!("Testing algebraic simplifications:");
 

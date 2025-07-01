@@ -11,6 +11,7 @@ use std::fs::File;
 use std::io::Write;
 use tempfile::tempdir;
 
+#[allow(clippy::result_large_err)]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("🚀 PandRS Zero-Copy Data Views and Cache-Aware Memory Management Example");
     println!("=========================================================================\n");
@@ -34,6 +35,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+#[allow(clippy::result_large_err)]
 fn demonstrate_cache_topology() -> Result<(), Box<dyn std::error::Error>> {
     println!("🏗️  Cache Topology Detection");
     println!("----------------------------");
@@ -77,6 +79,7 @@ fn demonstrate_cache_topology() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+#[allow(clippy::result_large_err)]
 fn demonstrate_zero_copy_views() -> Result<(), Box<dyn std::error::Error>> {
     println!("📋 Zero-Copy Views");
     println!("------------------");
@@ -129,6 +132,7 @@ fn demonstrate_zero_copy_views() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+#[allow(clippy::result_large_err)]
 fn demonstrate_memory_mapped_views() -> Result<(), Box<dyn std::error::Error>> {
     println!("🗺️  Memory-Mapped Views");
     println!("------------------------");
@@ -192,6 +196,7 @@ fn demonstrate_memory_mapped_views() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+#[allow(clippy::result_large_err)]
 fn demonstrate_cache_aware_operations() -> Result<(), Box<dyn std::error::Error>> {
     println!("⚡ Cache-Aware Operations");
     println!("-------------------------");
@@ -261,6 +266,7 @@ fn demonstrate_cache_aware_operations() -> Result<(), Box<dyn std::error::Error>
     Ok(())
 }
 
+#[allow(clippy::result_large_err)]
 fn demonstrate_performance_optimizations() -> Result<(), Box<dyn std::error::Error>> {
     println!("🏎️  Performance Optimizations");
     println!("------------------------------");

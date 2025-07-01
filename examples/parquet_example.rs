@@ -1,6 +1,7 @@
 use pandrs::{DataFrame, Series};
 use std::error::Error;
 
+#[allow(clippy::result_large_err)]
 fn main() -> Result<(), Box<dyn Error>> {
     // Create a sample DataFrame
     let mut df = DataFrame::new();

@@ -225,16 +225,52 @@ pub(crate) fn select_rows_by_indices_impl(
         result.add_column(name.clone(), selected_col)?;
     }
 
-    // Get index
+    // Get index and select appropriate index values for selected rows
     if let Some(ref idx) = df.get_index() {
-        // TODO: Process index selection
+        // Process index selection based on the selected row indices
         match idx {
             crate::index::DataFrameIndex::Simple(simple_idx) => {
-                result.set_index_from_simple_index(simple_idx.clone())?;
+                // Create new index with values corresponding to selected rows
+                let selected_index_values: Vec<String> = indices
+                    .iter()
+                    .filter_map(|&row_idx| {
+                        if row_idx < simple_idx.len() {
+                            simple_idx.get_value(row_idx).cloned()
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+                
+                // Create new simple index from selected values
+                let new_index = crate::index::Index::new(selected_index_values)?;
+                result.set_index(crate::index::DataFrameIndex::Simple(new_index))?;
             }
-            _ => {
-                // Temporary: Set default index
-                result.set_default_index()?;
+            crate::index::DataFrameIndex::Multi(multi_idx) => {
+                // For multi-index, extract the corresponding rows
+                let selected_multi_values: Vec<Vec<String>> = indices
+                    .iter()
+                    .filter_map(|&row_idx| {
+                        if row_idx < multi_idx.len() {
+                            multi_idx.get_tuple(row_idx)
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+                
+                // Create new multi-index from selected rows
+                if !selected_multi_values.is_empty() {
+                    let level_names: Vec<Option<String>> = multi_idx.names().iter().cloned().collect();
+                    let new_multi_index = crate::index::MultiIndex::from_tuples(
+                        selected_multi_values, 
+                        Some(level_names)
+                    )?;
+                    result.set_index(crate::index::DataFrameIndex::Multi(new_multi_index))?;
+                } else {
+                    // Fallback to default index if no valid rows selected
+                    result.set_default_index()?;
+                }
             }
         }
     }

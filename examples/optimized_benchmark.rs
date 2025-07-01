@@ -58,6 +58,7 @@ where
 }
 
 #[cfg(feature = "optimized")]
+#[allow(clippy::result_large_err)]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n=== Optimized Implementation Performance Benchmark ===\n");
 
@@ -175,9 +176,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let view = optimized_df.column("int_col").unwrap();
                 if let Some(int_col) = view.as_int64() {
                     let mut filter = vec![false; int_col.len()];
-                    for i in 0..int_col.len() {
+                    for (i, filter_val) in filter.iter_mut().enumerate().take(int_col.len()) {
                         if let Ok(Some(val)) = int_col.get(i) {
-                            filter[i] = val > 50;
+                            *filter_val = val > 50;
                         }
                     }
                     BooleanColumn::new(filter)
@@ -193,8 +194,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .unwrap();
 
         let (optimized_filter_time, _) = bench("Optimized Implementation - Filtering", || {
-            let filtered = df_with_filter.filter("filter").unwrap();
-            filtered
+            df_with_filter.filter("filter").unwrap()
         });
 
         // Optimized Implementation: Grouping and Aggregation
@@ -215,7 +215,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             || {
                 // Grouping and aggregation using LazyFrame
                 let lazy_df = LazyFrame::new(df_with_group.clone());
-                let result = lazy_df
+                lazy_df
                     .aggregate(
                         vec!["group".to_string()],
                         vec![
@@ -232,8 +232,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         ],
                     )
                     .execute()
-                    .unwrap();
-                result
+                    .unwrap()
             },
         );
 
@@ -405,7 +404,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("| Create DataFrame with 1M rows | 216ms | 831ms | 0.007ms | 30,857x faster |");
     println!("| Filtering | 112ms | 596ms | 162ms | 0.69x (31% slower) |");
     println!("| Grouping and Aggregation | 98ms | 544ms | 108ms | 0.91x (9% slower) |");
-    println!("");
+    println!();
     println!("Note: pandas measurements are reference values from a different environment, so direct comparison is difficult.");
     println!("To directly compare, pandas needs to be re-benchmarked in the same environment.");
 

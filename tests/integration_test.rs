@@ -4,8 +4,6 @@
 //! both individually and in combination with each other.
 
 use std::collections::HashMap;
-use std::fs::remove_file;
-use std::path::Path;
 
 use pandrs::dataframe::DataFrame;
 use pandrs::error::Result;
@@ -22,6 +20,8 @@ use pandrs::io::sql::{read_sql, write_to_sql};
 
 /// Test the new DataFrame operations introduced in alpha.4
 #[test]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 #[allow(clippy::result_large_err)]
 fn test_alpha4_dataframe_operations() -> Result<()> {
     // Create a test DataFrame
@@ -47,7 +47,7 @@ fn test_alpha4_dataframe_operations() -> Result<()> {
     )?;
 
     // Test initial state
-    assert_eq!(df.column_names(), vec!["name", "age", "salary"]);
+    assert_eq!(df.column_names(), ["name", "age", "salary"]);
     assert_eq!(df.row_count(), 3);
 
     // Test rename_columns (alpha.4 feature)
@@ -60,7 +60,7 @@ fn test_alpha4_dataframe_operations() -> Result<()> {
     // Verify rename worked
     assert_eq!(
         df.column_names(),
-        vec!["employee_name", "employee_age", "salary"]
+        ["employee_name", "employee_age", "salary"]
     );
     assert!(df.contains_column("employee_name"));
     assert!(df.contains_column("employee_age"));
@@ -79,21 +79,23 @@ fn test_alpha4_dataframe_operations() -> Result<()> {
     // Verify set_column_names worked
     assert_eq!(
         df.column_names(),
-        vec!["worker_name", "worker_age", "worker_salary"]
+        ["worker_name", "worker_age", "worker_salary"]
     );
 
     // Test data integrity after operations
     let name_data = df.get_column_string_values("worker_name")?;
-    assert_eq!(name_data, vec!["Alice", "Bob", "Carol"]);
+    assert_eq!(name_data, ["Alice", "Bob", "Carol"]);
 
     let age_data = df.get_column_string_values("worker_age")?;
-    assert_eq!(age_data, vec!["25", "30", "35"]);
+    assert_eq!(age_data, ["25", "30", "35"]);
 
     Ok(())
 }
 
 /// Test OptimizedDataFrame with alpha.4 features
 #[test]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 #[allow(clippy::result_large_err)]
 fn test_alpha4_optimized_dataframe_operations() -> Result<()> {
     let mut df = OptimizedDataFrame::new();
@@ -144,7 +146,7 @@ fn test_alpha4_optimized_dataframe_operations() -> Result<()> {
     // Verify all names changed
     assert_eq!(
         df.column_names(),
-        vec!["emp_name", "emp_age", "emp_salary", "emp_active"]
+        ["emp_name", "emp_age", "emp_salary", "emp_active"]
     );
 
     // Test data integrity
@@ -166,7 +168,12 @@ fn test_alpha4_optimized_dataframe_operations() -> Result<()> {
 /// Test enhanced Parquet I/O with real data (alpha.4 feature)
 #[cfg(feature = "parquet")]
 #[test]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn test_alpha4_enhanced_parquet_io() -> Result<()> {
+    use std::fs::remove_file;
+    use std::path::Path;
+    
     let test_file = "test_alpha4_parquet.parquet";
 
     // Clean up any existing test file
@@ -235,7 +242,12 @@ fn test_alpha4_enhanced_parquet_io() -> Result<()> {
 /// Test enhanced SQL I/O with real data (alpha.4 feature)
 #[cfg(feature = "sql")]
 #[test]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn test_alpha4_enhanced_sql_io() -> Result<()> {
+    use std::fs::remove_file;
+    use std::path::Path;
+    
     let db_file = "test_alpha4.db";
 
     // Clean up any existing test file
@@ -303,6 +315,8 @@ fn test_alpha4_enhanced_sql_io() -> Result<()> {
 /// Test distributed processing integration (alpha.4 feature)
 #[cfg(feature = "distributed")]
 #[test]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn test_alpha4_distributed_processing_integration() -> Result<()> {
     // Create test data
     let mut df = DataFrame::new();
@@ -325,7 +339,7 @@ fn test_alpha4_distributed_processing_integration() -> Result<()> {
     df.add_column(
         "sales".to_string(),
         pandrs::series::Series::new(
-            vec![1000, 1500, 800, 1200, 900, 1100],
+            [1000, 1500, 800, 1200, 900, 1100],
             Some("sales".to_string()),
         )?,
     )?;
@@ -366,7 +380,12 @@ fn test_alpha4_distributed_processing_integration() -> Result<()> {
 /// Test cross-feature integration: DataFusion + Parquet + new DataFrame operations
 #[cfg(all(feature = "distributed", feature = "parquet"))]
 #[test]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn test_alpha4_cross_feature_integration() -> Result<()> {
+    use std::fs::remove_file;
+    use std::path::Path;
+    
     let test_file = "test_cross_feature.parquet";
 
     // Clean up any existing test file
@@ -452,6 +471,8 @@ fn test_alpha4_cross_feature_integration() -> Result<()> {
 /// Test error handling and edge cases in alpha.4 features
 #[test]
 #[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn test_alpha4_error_handling() -> Result<()> {
     let mut df = DataFrame::new();
 
@@ -483,6 +504,8 @@ fn test_alpha4_error_handling() -> Result<()> {
 
 /// Test performance characteristics of alpha.4 features
 #[test]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 #[allow(clippy::result_large_err)]
 fn test_alpha4_performance_characteristics() -> Result<()> {
     // Create a larger dataset for performance testing

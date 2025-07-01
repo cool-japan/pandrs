@@ -8,6 +8,7 @@ use pandrs::distributed::DistributedContext;
 use pandrs::error::Result;
 
 #[cfg(feature = "distributed")]
+#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     // Create a new distributed context
     let mut context = DistributedContext::new_local(4)?;

@@ -7,6 +7,7 @@ use pandrs::error::Result;
 use pandrs::series::base::Series;
 use std::time::Instant;
 
+#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     println!("=== Integrated JIT Performance Showcase ===\n");
     println!("This example demonstrates the complete integration of:");
@@ -70,6 +71,7 @@ fn main() -> Result<()> {
 }
 
 /// Create a comprehensive financial dataset with multiple columns
+#[allow(clippy::result_large_err)]
 fn create_comprehensive_dataset(size: usize) -> Result<DataFrame> {
     let mut df = DataFrame::new();
 
@@ -238,6 +240,7 @@ fn benchmark_query_window_integration(
 }
 
 /// Benchmark rolling operations performance
+#[allow(clippy::result_large_err)]
 fn benchmark_rolling_operations(df: &DataFrame, jit_context: &JitWindowContext) -> Result<()> {
     println!("   Comprehensive Rolling Operations Benchmark:");
 
@@ -359,6 +362,7 @@ fn benchmark_technical_analysis_pipeline(
 }
 
 /// Benchmark large-scale data processing
+#[allow(clippy::result_large_err)]
 fn benchmark_large_scale_processing(df: &DataFrame, jit_context: &JitWindowContext) -> Result<()> {
     println!("   Large-scale Data Processing ({} rows):", df.row_count());
 
@@ -395,6 +399,7 @@ fn benchmark_large_scale_processing(df: &DataFrame, jit_context: &JitWindowConte
 }
 
 /// Benchmark memory efficiency and cache performance
+#[allow(clippy::result_large_err)]
 fn benchmark_memory_efficiency(jit_context: &JitWindowContext) -> Result<()> {
     println!("   Memory Efficiency and Cache Performance:");
 
@@ -432,6 +437,7 @@ fn benchmark_memory_efficiency(jit_context: &JitWindowContext) -> Result<()> {
 }
 
 /// Display final statistics and performance summary
+#[allow(clippy::result_large_err)]
 fn display_final_statistics(jit_context: &JitWindowContext) -> Result<()> {
     let stats = jit_context.stats();
 

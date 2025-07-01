@@ -4,6 +4,7 @@ use pandrs::series::{WindowExt, WindowOps};
 use pandrs::{DataFrame, Series};
 
 #[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     println!("=== Comprehensive Window Operations Example ===\n");
 
@@ -192,6 +193,7 @@ fn main() -> Result<()> {
 
 /// Demonstrate performance scenarios
 #[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn demonstrate_performance_scenarios() -> Result<()> {
     println!("--- Performance Scenarios ---");
 
@@ -221,6 +223,7 @@ fn demonstrate_performance_scenarios() -> Result<()> {
 }
 
 /// Demonstrate edge cases and error handling
+#[allow(clippy::result_large_err)]
 #[allow(clippy::result_large_err)]
 fn demonstrate_edge_cases() -> Result<()> {
     println!("--- Edge Cases ---");

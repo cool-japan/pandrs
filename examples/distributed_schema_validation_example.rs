@@ -13,6 +13,7 @@ use pandrs::error::Result;
 use pandrs::series::Series;
 
 #[cfg(feature = "distributed")]
+#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     // Create a test DataFrame
     let mut df = DataFrame::new();

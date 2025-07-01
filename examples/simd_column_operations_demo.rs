@@ -21,6 +21,7 @@ use pandrs::core::error::Result;
 use pandrs::optimized::jit::ComparisonOp;
 use std::time::Instant;
 
+#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     println!("PandRS Comprehensive SIMD Column Operations Demo");
     println!("===============================================");
@@ -54,6 +55,7 @@ fn main() -> Result<()> {
 }
 
 /// Demonstrate basic element-wise arithmetic operations
+#[allow(clippy::result_large_err)]
 fn demo_basic_arithmetic() -> Result<()> {
     println!("🧮 Basic Arithmetic Operations");
     println!("==============================");
@@ -89,6 +91,7 @@ fn demo_basic_arithmetic() -> Result<()> {
 }
 
 /// Demonstrate scalar operations with broadcasting
+#[allow(clippy::result_large_err)]
 fn demo_scalar_operations() -> Result<()> {
     println!("📊 Scalar Operations");
     println!("===================");
@@ -122,6 +125,7 @@ fn demo_scalar_operations() -> Result<()> {
 }
 
 /// Demonstrate mathematical functions
+#[allow(clippy::result_large_err)]
 fn demo_mathematical_functions() -> Result<()> {
     println!("🔢 Mathematical Functions");
     println!("========================");
@@ -159,6 +163,7 @@ fn demo_mathematical_functions() -> Result<()> {
 }
 
 /// Demonstrate comparison operations
+#[allow(clippy::result_large_err)]
 fn demo_comparison_operations() -> Result<()> {
     println!("⚖️  Comparison Operations");
     println!("========================");
@@ -198,6 +203,7 @@ fn demo_comparison_operations() -> Result<()> {
 }
 
 /// Demonstrate mixed-type operations with automatic promotion
+#[allow(clippy::result_large_err)]
 fn demo_mixed_type_operations() -> Result<()> {
     println!("🔄 Mixed-Type Operations");
     println!("=======================");
@@ -231,6 +237,7 @@ fn demo_mixed_type_operations() -> Result<()> {
 }
 
 /// Compare performance between SIMD and scalar implementations
+#[allow(clippy::result_large_err)]
 fn demo_performance_comparison() -> Result<()> {
     println!("🚀 Performance Comparison");
     println!("========================");
@@ -320,6 +327,7 @@ fn demo_performance_comparison() -> Result<()> {
 }
 
 /// Demonstrate operations on large-scale datasets
+#[allow(clippy::result_large_err)]
 fn demo_large_scale_operations() -> Result<()> {
     println!("📈 Large-Scale Operations");
     println!("========================");

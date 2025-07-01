@@ -31,6 +31,7 @@ use pandrs::Series;
 use std::time::Instant;
 
 #[cfg(all(feature = "cuda", feature = "optimized"))]
+#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     println!("PandRS GPU-accelerated DataFrame Example");
     println!("----------------------------------------");
@@ -95,6 +96,7 @@ fn main() {
 }
 
 #[cfg(all(feature = "cuda", feature = "optimized"))]
+#[allow(clippy::result_large_err)]
 fn create_sample_dataframe(size: usize) -> Result<DataFrame> {
     // Create data for columns
     let mut ids = Vec::with_capacity(size);
@@ -135,6 +137,7 @@ fn create_sample_dataframe(size: usize) -> Result<DataFrame> {
 }
 
 #[cfg(all(feature = "cuda", feature = "optimized"))]
+#[allow(clippy::result_large_err)]
 fn create_optimized_dataframe(size: usize) -> Result<OptimizedDataFrame> {
     // Create data for columns
     let mut ids = Vec::with_capacity(size);
@@ -163,6 +166,7 @@ fn create_optimized_dataframe(size: usize) -> Result<OptimizedDataFrame> {
 }
 
 #[cfg(all(feature = "cuda", feature = "optimized"))]
+#[allow(clippy::result_large_err)]
 fn benchmark_dataframe_operations(df: &mut DataFrame) -> Result<()> {
     println!("\nDataFrame Operations Benchmark");
     println!("-------------------------------");
@@ -251,6 +255,7 @@ fn benchmark_dataframe_operations(df: &mut DataFrame) -> Result<()> {
 }
 
 #[cfg(all(feature = "cuda", feature = "optimized"))]
+#[allow(clippy::result_large_err)]
 fn benchmark_optimized_dataframe_operations(df: &mut OptimizedDataFrame) -> Result<()> {
     println!("\nOptimizedDataFrame Operations Benchmark");
     println!("----------------------------------------");

@@ -6,6 +6,7 @@ use pandrs::{LazyFrame, OptimizedDataFrame, TTestResult};
 use rand::{rng, Rng};
 
 #[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     println!("PandRS Optimized Statistical Module Sample\n");
 
@@ -21,6 +22,7 @@ fn main() -> Result<()> {
     Ok(())
 }
 
+#[allow(clippy::result_large_err)]
 #[allow(clippy::result_large_err)]
 fn optimized_descriptive_stats_example() -> Result<()> {
     println!("1. Example of Descriptive Statistics with Optimized Implementation");
@@ -64,6 +66,7 @@ fn optimized_descriptive_stats_example() -> Result<()> {
     Ok(())
 }
 
+#[allow(clippy::result_large_err)]
 #[allow(clippy::result_large_err)]
 fn optimized_ttest_example() -> Result<()> {
     println!("2. Example of t-test with Optimized Implementation");
@@ -115,6 +118,7 @@ fn print_ttest_result(result: &TTestResult) {
     );
 }
 
+#[allow(clippy::result_large_err)]
 #[allow(clippy::result_large_err)]
 fn optimized_regression_example() -> Result<()> {
     println!("3. Example of Regression Analysis with Optimized Implementation");

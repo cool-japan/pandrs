@@ -191,10 +191,10 @@ fn test_optimized_dataframe_rename_columns() {
     // Create a DataFrame with test columns
     let mut df = OptimizedDataFrame::new();
 
-    df.add_int_column("old_col1", vec![1, 2, 3]).unwrap();
+    df.add_int_column("old_col1", [1, 2, 3].to_vec()).unwrap();
     df.add_string_column(
         "old_col2",
-        vec!["a".to_string(), "b".to_string(), "c".to_string()],
+        ["a".to_string(), "b".to_string(), "c".to_string()].to_vec(),
     )
     .unwrap();
     df.add_float_column("old_col3", vec![1.0, 2.0, 3.0])
@@ -226,10 +226,10 @@ fn test_optimized_dataframe_rename_columns() {
 #[test]
 fn test_optimized_dataframe_rename_columns_errors() {
     let mut df = OptimizedDataFrame::new();
-    df.add_int_column("col1", vec![1, 2, 3]).unwrap();
+    df.add_int_column("col1", [1, 2, 3].to_vec()).unwrap();
     df.add_string_column(
         "col2",
-        vec!["a".to_string(), "b".to_string(), "c".to_string()],
+        ["a".to_string(), "b".to_string(), "c".to_string()].to_vec(),
     )
     .unwrap();
 
@@ -261,10 +261,10 @@ fn test_optimized_dataframe_set_column_names() {
     // Create a DataFrame with test columns
     let mut df = OptimizedDataFrame::new();
 
-    df.add_int_column("col1", vec![1, 2, 3]).unwrap();
+    df.add_int_column("col1", [1, 2, 3].to_vec()).unwrap();
     df.add_string_column(
         "col2",
-        vec!["a".to_string(), "b".to_string(), "c".to_string()],
+        ["a".to_string(), "b".to_string(), "c".to_string()].to_vec(),
     )
     .unwrap();
     df.add_float_column("col3", vec![1.0, 2.0, 3.0]).unwrap();
@@ -297,10 +297,10 @@ fn test_optimized_dataframe_set_column_names() {
 #[test]
 fn test_optimized_dataframe_set_column_names_errors() {
     let mut df = OptimizedDataFrame::new();
-    df.add_int_column("col1", vec![1, 2, 3]).unwrap();
+    df.add_int_column("col1", [1, 2, 3].to_vec()).unwrap();
     df.add_string_column(
         "col2",
-        vec!["a".to_string(), "b".to_string(), "c".to_string()],
+        ["a".to_string(), "b".to_string(), "c".to_string()].to_vec(),
     )
     .unwrap();
 

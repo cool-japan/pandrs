@@ -6,6 +6,7 @@ use rand::{thread_rng, Rng};
 
 // Translated Japanese comments and strings into English
 #[cfg(feature = "visualization")]
+#[allow(clippy::result_large_err)]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Generate random data
     let mut rng = thread_rng();

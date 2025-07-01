@@ -9,6 +9,7 @@ use crate::optimized_io_test_utils::ParquetCompression;
 #[cfg(feature = "parquet")]
 use pandrs::optimized::split_dataframe::io::ParquetCompression;
 
+#[allow(unused_imports)]
 use crate::optimized_io_test_utils::{ExcelExt, ParquetExt};
 use std::fs;
 use std::fs::File;
@@ -16,6 +17,8 @@ use std::io::Write;
 use tempfile::tempdir;
 
 #[test]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn test_optimized_csv_io() -> Result<()> {
     // Create temporary directory
     let dir = tempdir().expect("Failed to create temporary directory");
@@ -81,6 +84,8 @@ fn test_optimized_csv_io() -> Result<()> {
 }
 
 #[test]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn test_optimized_csv_without_header() -> Result<()> {
     // Create temporary directory
     let dir = tempdir().expect("Failed to create temporary directory");
@@ -121,6 +126,8 @@ fn test_optimized_csv_without_header() -> Result<()> {
 }
 
 #[test]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn test_optimized_csv_empty_dataframe() -> Result<()> {
     // Create temporary directory
     let dir = tempdir().expect("Failed to create temporary directory");
@@ -148,6 +155,8 @@ fn test_optimized_csv_empty_dataframe() -> Result<()> {
 }
 
 #[test]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn test_excel_io() -> Result<()> {
     // Create temporary directory
     let dir = tempdir()?;
@@ -193,7 +202,7 @@ fn test_excel_io() -> Result<()> {
     // We can check for at least some of our columns
     let column_names = loaded_df.column_names();
     println!("Loaded columns from Excel: {:?}", column_names);
-    assert!(column_names.len() > 0);
+    assert!(!column_names.is_empty());
 
     // Just verify column view is valid
     if loaded_df.column_count() > 0 {
@@ -216,6 +225,8 @@ fn test_excel_io() -> Result<()> {
 }
 
 #[test]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn test_parquet_io() -> Result<()> {
     // Create temporary directory
     let dir = tempdir()?;
@@ -261,7 +272,7 @@ fn test_parquet_io() -> Result<()> {
     // We can check for at least some of our columns
     let column_names = loaded_df.column_names();
     println!("Loaded columns from Parquet: {:?}", column_names);
-    assert!(column_names.len() > 0);
+    assert!(!column_names.is_empty());
 
     // Just verify column view is valid
     if loaded_df.column_count() > 0 {
@@ -284,6 +295,8 @@ fn test_parquet_io() -> Result<()> {
 }
 
 #[test]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn test_sql_io() -> Result<()> {
     // Skip SQLite test (may not be available in CI environments)
     // Or might fail due to Rusqlite dependency issues
@@ -293,6 +306,8 @@ fn test_sql_io() -> Result<()> {
 }
 
 #[test]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn test_csv_parquet_integration() -> Result<()> {
     // Create temporary directory
     let dir = tempdir()?;

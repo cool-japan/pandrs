@@ -13,6 +13,7 @@ use pandrs::storage::{
 };
 use std::sync::{Arc, Mutex};
 
+#[allow(clippy::result_large_err)]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("🧠 PandRS ML-Based Storage Strategy Selection Example");
     println!("=====================================================\n");
@@ -44,6 +45,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+#[allow(clippy::result_large_err)]
 fn demonstrate_workload_features() -> Result<(), Box<dyn std::error::Error>> {
     println!("📊 Workload Feature Extraction");
     println!("------------------------------");
@@ -114,6 +116,7 @@ fn demonstrate_workload_features() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+#[allow(clippy::result_large_err)]
 fn demonstrate_ml_strategy_selection() -> Result<(), Box<dyn std::error::Error>> {
     println!("🤖 ML Strategy Selection");
     println!("------------------------");
@@ -266,6 +269,7 @@ fn demonstrate_adaptive_learning(
     Ok(())
 }
 
+#[allow(clippy::result_large_err)]
 fn demonstrate_performance_prediction() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n🎯 Performance Prediction");
     println!("-------------------------");

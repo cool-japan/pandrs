@@ -33,7 +33,7 @@ mod csv_error_tests {
     #[test]
     fn test_csv_write_invalid_path() {
         let mut df = OptimizedDataFrame::new();
-        df.add_int_column("test", vec![1, 2, 3]).unwrap();
+        df.add_int_column("test", [1, 2, 3].to_vec()).unwrap();
 
         // Try to write to invalid path (directory doesn't exist)
         let result = df.to_csv("/nonexistent_directory/test.csv", true);
@@ -61,8 +61,8 @@ mod csv_error_tests {
         }
 
         let mut df = OptimizedDataFrame::new();
-        df.add_int_column("col1", vec![3]).unwrap();
-        df.add_int_column("col2", vec![4]).unwrap();
+        df.add_int_column("col1", [3].to_vec()).unwrap();
+        df.add_int_column("col2", [4].to_vec()).unwrap();
 
         // Try to overwrite read-only file
         let result = df.to_csv(&temp_path, true);
@@ -254,7 +254,7 @@ mod parquet_error_tests {
     #[test]
     fn test_parquet_write_invalid_path() {
         let mut df = OptimizedDataFrame::new();
-        df.add_int_column("test", vec![1, 2, 3]).unwrap();
+        df.add_int_column("test", [1, 2, 3].to_vec()).unwrap();
 
         // Try to write to invalid path
         let result = write_parquet(
@@ -295,10 +295,10 @@ mod parquet_error_tests {
     #[test]
     fn test_parquet_compression_options() {
         let mut df = OptimizedDataFrame::new();
-        df.add_int_column("test", vec![1, 2, 3]).unwrap();
+        df.add_int_column("test", [1, 2, 3].to_vec()).unwrap();
         df.add_string_column(
             "text",
-            vec!["a".to_string(), "b".to_string(), "c".to_string()],
+            ["a".to_string(), "b".to_string(), "c".to_string()].to_vec(),
         )
         .unwrap();
 
@@ -373,7 +373,7 @@ mod sql_error_tests {
     #[test]
     fn test_sql_write_invalid_table_name() {
         let mut df = OptimizedDataFrame::new();
-        df.add_int_column("id", vec![1, 2, 3]).unwrap();
+        df.add_int_column("id", [1, 2, 3].to_vec()).unwrap();
 
         let temp_db = std::env::temp_dir().join("test_invalid_table.db");
 
@@ -387,7 +387,7 @@ mod sql_error_tests {
     #[test]
     fn test_sql_write_if_exists_options() {
         let mut df = OptimizedDataFrame::new();
-        df.add_int_column("id", vec![1, 2, 3]).unwrap();
+        df.add_int_column("id", [1, 2, 3].to_vec()).unwrap();
 
         let temp_db = std::env::temp_dir().join("test_if_exists.db");
 
@@ -481,7 +481,7 @@ mod general_io_tests {
             fs::set_permissions(&temp_dir, perms).unwrap();
 
             let mut df = OptimizedDataFrame::new();
-            df.add_int_column("test", vec![1, 2, 3]).unwrap();
+            df.add_int_column("test", [1, 2, 3].to_vec()).unwrap();
 
             let test_file = temp_dir.join("test.csv");
             let result = df.to_csv(&test_file, true);
@@ -547,7 +547,7 @@ mod general_io_tests {
         // Create initial file
         {
             let mut df = OptimizedDataFrame::new();
-            df.add_int_column("test", vec![1, 2, 3]).unwrap();
+            df.add_int_column("test", [1, 2, 3].to_vec()).unwrap();
             df.to_csv(&temp_path, true).unwrap();
         }
 

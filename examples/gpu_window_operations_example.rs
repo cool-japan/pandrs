@@ -27,6 +27,7 @@ use pandrs::series::Series;
 use std::time::Instant;
 
 #[cfg(all(feature = "cuda", feature = "optimized"))]
+#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     println!("PandRS GPU-Accelerated Window Operations Example");
     println!("================================================");
@@ -100,12 +101,14 @@ fn main() {
 }
 
 #[cfg(all(feature = "cuda", feature = "optimized"))]
+#[allow(clippy::result_large_err)]
 fn init_gpu_with_config(config: GpuConfig) -> Result<crate::gpu::GpuDeviceStatus> {
     use pandrs::gpu::init_gpu_with_config;
     init_gpu_with_config(config)
 }
 
 #[cfg(all(feature = "cuda", feature = "optimized"))]
+#[allow(clippy::result_large_err)]
 fn small_dataset_comparison(gpu_context: &GpuWindowContext) -> Result<()> {
     println!("Testing with 5,000 data points (below GPU threshold)...");
 
@@ -135,6 +138,7 @@ fn small_dataset_comparison(gpu_context: &GpuWindowContext) -> Result<()> {
 }
 
 #[cfg(all(feature = "cuda", feature = "optimized"))]
+#[allow(clippy::result_large_err)]
 fn large_dataset_comparison(gpu_context: &GpuWindowContext) -> Result<()> {
     println!("Testing with 100,000 data points (above GPU threshold)...");
 
@@ -172,6 +176,7 @@ fn large_dataset_comparison(gpu_context: &GpuWindowContext) -> Result<()> {
 }
 
 #[cfg(all(feature = "cuda", feature = "optimized"))]
+#[allow(clippy::result_large_err)]
 fn financial_analysis_example(gpu_context: &GpuWindowContext) -> Result<()> {
     println!("Analyzing financial time series data with multiple window operations...");
 
@@ -230,6 +235,7 @@ fn financial_analysis_example(gpu_context: &GpuWindowContext) -> Result<()> {
 }
 
 #[cfg(all(feature = "cuda", feature = "optimized"))]
+#[allow(clippy::result_large_err)]
 fn advanced_operations_example(gpu_context: &GpuWindowContext) -> Result<()> {
     println!("Demonstrating advanced GPU window operations...");
 
@@ -271,6 +277,7 @@ fn advanced_operations_example(gpu_context: &GpuWindowContext) -> Result<()> {
 }
 
 #[cfg(all(feature = "cuda", feature = "optimized"))]
+#[allow(clippy::result_large_err)]
 fn performance_monitoring_example(gpu_context: &GpuWindowContext) -> Result<()> {
     println!("GPU performance monitoring and statistics...");
 
@@ -340,6 +347,7 @@ fn performance_monitoring_example(gpu_context: &GpuWindowContext) -> Result<()> 
 }
 
 #[cfg(all(feature = "cuda", feature = "optimized"))]
+#[allow(clippy::result_large_err)]
 fn create_sample_dataframe(size: usize) -> Result<DataFrame> {
     let mut df = DataFrame::new();
 
@@ -397,6 +405,7 @@ fn create_sample_dataframe(size: usize) -> Result<DataFrame> {
 }
 
 #[cfg(all(feature = "cuda", feature = "optimized"))]
+#[allow(clippy::result_large_err)]
 fn create_financial_dataset(size: usize) -> Result<DataFrame> {
     let mut df = create_sample_dataframe(size)?;
 
@@ -453,6 +462,7 @@ fn create_financial_dataset(size: usize) -> Result<DataFrame> {
 }
 
 #[cfg(all(feature = "cuda", feature = "optimized"))]
+#[allow(clippy::result_large_err)]
 fn create_advanced_dataset(size: usize) -> Result<DataFrame> {
     let mut df = DataFrame::new();
 
@@ -547,6 +557,7 @@ fn verify_results_similarity(
 }
 
 #[cfg(all(feature = "cuda", feature = "optimized"))]
+#[allow(clippy::result_large_err)]
 fn display_sample_results(df: &DataFrame, num_rows: usize) -> Result<()> {
     let row_count = df.row_count();
     let start_row = if row_count > num_rows {

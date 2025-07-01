@@ -4,6 +4,8 @@ mod tests {
     use pandrs::{Column, OptimizedDataFrame, StringColumn};
 
     #[test]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
     fn test_optimized_melt() -> Result<()> {
         // Create test dataframe
         let mut df = OptimizedDataFrame::new();
@@ -40,6 +42,8 @@ mod tests {
     }
 
     #[test]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
     fn test_optimized_concat() -> Result<()> {
         // First dataframe
         let mut df1 = OptimizedDataFrame::new();
@@ -74,6 +78,8 @@ mod tests {
     }
 
     #[test]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
     fn test_optimized_concat_different_columns() -> Result<()> {
         // First dataframe
         let mut df1 = OptimizedDataFrame::new();

@@ -11,6 +11,7 @@ use pandrs::error::Result;
 
 /// Example showing fault tolerance in action with retries
 #[cfg(feature = "distributed")]
+#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     // Configure the distributed processing
     let config = DistributedConfig::new()
@@ -83,6 +84,7 @@ fn main() {
 
 /// Register test data for the example
 #[cfg(feature = "distributed")]
+#[allow(clippy::result_large_err)]
 fn register_test_data(context: &mut DataFusionContext) -> Result<()> {
     // Create a simple dataframe with test data
     let mut df = pandrs::dataframe::DataFrame::new();
@@ -142,6 +144,7 @@ impl FailureSimulation {
     }
 
     /// Run an example with simulated failures
+#[allow(clippy::result_large_err)]
     fn run_with_simulated_failures(&mut self) -> Result<()> {
         // Set up handler with visible reporting
         let new_handler = FaultToleranceHandler::new(

@@ -11,6 +11,7 @@ fn main() {
 }
 
 #[cfg(feature = "optimized")]
+#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     println!("=== Example of Optimized Data Transformation ===\n");
 
@@ -94,6 +95,7 @@ fn main() -> Result<()> {
     let mut is_high_sales = vec![false; df.row_count()];
 
     if let Some(int_col) = feb_sales.as_int64() {
+        #[allow(clippy::needless_range_loop)]
         for i in 0..df.row_count() {
             if let Ok(Some(value)) = int_col.get(i) {
                 is_high_sales[i] = value >= 1000;

@@ -13,6 +13,7 @@ use pandrs::dataframe::{utils, ColorScheme, DataFrame, EnhancedPlotExt, PlotThem
 use std::collections::HashMap;
 
 #[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     println!("🎨 Enhanced Plotting Integration Example for PandRS Alpha 4");
     println!("===========================================================\n");
@@ -187,6 +188,7 @@ fn main() -> Result<()> {
     Ok(())
 }
 
+#[allow(clippy::result_large_err)]
 #[allow(clippy::result_large_err)]
 fn create_sample_data() -> Result<DataFrame> {
     // Create comprehensive sample data for plotting demonstrations

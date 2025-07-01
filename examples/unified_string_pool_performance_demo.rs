@@ -19,6 +19,7 @@ use pandrs::storage::SimpleUnifiedStringPool;
 use std::sync::Arc;
 use std::time::Instant;
 
+#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     println!("PandRS Unified Zero-Copy String Pool Performance Demo");
     println!("===================================================");
@@ -46,12 +47,13 @@ fn main() -> Result<()> {
 }
 
 /// Demonstrate string deduplication capabilities
+#[allow(clippy::result_large_err)]
 fn demo_string_deduplication() -> Result<()> {
     println!("🔗 String Deduplication Demonstration");
     println!("=====================================");
 
     // Create a dataset with many duplicate strings (simulating real-world data)
-    let cities = vec![
+    let cities = [
         "New York",
         "Los Angeles",
         "Chicago",
@@ -110,6 +112,7 @@ fn demo_string_deduplication() -> Result<()> {
 }
 
 /// Demonstrate memory efficiency improvements
+#[allow(clippy::result_large_err)]
 fn demo_memory_efficiency() -> Result<()> {
     println!("💾 Memory Efficiency Demonstration");
     println!("==================================");
@@ -148,6 +151,7 @@ fn demo_memory_efficiency() -> Result<()> {
 }
 
 /// Demonstrate zero-copy operations
+#[allow(clippy::result_large_err)]
 fn demo_zero_copy_operations() -> Result<()> {
     println!("⚡ Zero-Copy Operations Demonstration");
     println!("====================================");
@@ -198,6 +202,7 @@ fn demo_zero_copy_operations() -> Result<()> {
 }
 
 /// Compare performance with traditional string column
+#[allow(clippy::result_large_err)]
 fn demo_performance_comparison() -> Result<()> {
     println!("📊 Performance Comparison");
     println!("========================");
@@ -278,6 +283,7 @@ fn demo_performance_comparison() -> Result<()> {
 }
 
 /// Demonstrate shared pool benefits
+#[allow(clippy::result_large_err)]
 fn demo_shared_pool_benefits() -> Result<()> {
     println!("🤝 Shared Pool Benefits");
     println!("======================");
@@ -344,22 +350,22 @@ fn create_low_duplication_dataset(size: usize) -> Vec<String> {
 }
 
 fn create_medium_duplication_dataset(size: usize) -> Vec<String> {
-    let patterns = vec!["alpha", "beta", "gamma", "delta", "epsilon"];
+    let patterns = ["alpha", "beta", "gamma", "delta", "epsilon"];
     (0..size)
         .map(|i| format!("{}_{}", patterns[i % patterns.len()], i / patterns.len()))
         .collect()
 }
 
 fn create_high_duplication_dataset(size: usize) -> Vec<String> {
-    let base_strings = vec!["common", "frequent", "repeated"];
+    let base_strings = ["common", "frequent", "repeated"];
     (0..size)
         .map(|i| base_strings[i % base_strings.len()].to_string())
         .collect()
 }
 
 fn create_realistic_dataset(size: usize) -> Vec<String> {
-    let prefixes = vec!["user", "data", "config", "temp", "cache"];
-    let suffixes = vec!["primary", "secondary", "backup", "test", "prod"];
+    let prefixes = ["user", "data", "config", "temp", "cache"];
+    let suffixes = ["primary", "secondary", "backup", "test", "prod"];
     let mut data = Vec::with_capacity(size);
 
     for i in 0..size {

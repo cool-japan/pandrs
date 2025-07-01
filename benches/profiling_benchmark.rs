@@ -361,11 +361,11 @@ fn profile_io_operations(c: &mut Criterion) {
         });
 
         // Profile Parquet operations
-        group.bench_with_input(BenchmarkId::new("parquet_write", size), &df, |b, _df| {
+        group.bench_with_input(BenchmarkId::new("parquet_write", size), &df, |b, df| {
             b.iter_custom(|iters| {
                 let start = Instant::now();
 
-                for _i in 0..iters {
+                for i in 0..iters {
                     #[cfg(feature = "parquet")]
                     {
                         use pandrs::io::{write_parquet, ParquetCompression};

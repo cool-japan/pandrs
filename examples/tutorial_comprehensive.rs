@@ -7,6 +7,7 @@
 use pandrs::optimized::OptimizedDataFrame;
 use std::collections::HashMap;
 
+#[allow(clippy::result_large_err)]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("PandRS Comprehensive Tutorial");
     println!("============================\n");
@@ -34,6 +35,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 /// Step 1: Creating and populating DataFrames
+#[allow(clippy::result_large_err)]
 fn tutorial_step_1_data_creation() -> Result<(), Box<dyn std::error::Error>> {
     println!("Step 1: Data Creation and Basic Operations");
     println!("==========================================");
@@ -127,6 +129,7 @@ fn tutorial_step_1_data_creation() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 /// Step 2: Data cleaning and validation
+#[allow(clippy::result_large_err)]
 fn tutorial_step_2_data_cleaning() -> Result<(), Box<dyn std::error::Error>> {
     println!("Step 2: Data Cleaning and Validation");
     println!("====================================");
@@ -201,6 +204,7 @@ fn tutorial_step_2_data_cleaning() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 /// Step 3: Data transformation and feature engineering
+#[allow(clippy::result_large_err)]
 fn tutorial_step_3_transformation() -> Result<(), Box<dyn std::error::Error>> {
     println!("Step 3: Data Transformation and Feature Engineering");
     println!("===================================================");
@@ -302,6 +306,7 @@ fn tutorial_step_3_transformation() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 /// Step 4: Statistical analysis
+#[allow(clippy::result_large_err)]
 fn tutorial_step_4_analysis() -> Result<(), Box<dyn std::error::Error>> {
     println!("Step 4: Statistical Analysis");
     println!("============================");
@@ -383,6 +388,7 @@ fn tutorial_step_4_analysis() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 /// Step 5: Grouping and aggregation
+#[allow(clippy::result_large_err)]
 fn tutorial_step_5_grouping() -> Result<(), Box<dyn std::error::Error>> {
     println!("Step 5: Grouping and Aggregation");
     println!("=================================");
@@ -488,6 +494,7 @@ fn tutorial_step_5_grouping() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 /// Step 6: Data persistence and export
+#[allow(clippy::result_large_err)]
 fn tutorial_step_6_persistence() -> Result<(), Box<dyn std::error::Error>> {
     println!("Step 6: Data Persistence and Export");
     println!("===================================");

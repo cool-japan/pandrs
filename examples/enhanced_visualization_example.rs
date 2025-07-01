@@ -17,6 +17,7 @@ fn main() {
 }
 
 #[cfg(feature = "visualization")]
+#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     println!("Enhanced Visualization Example");
     println!("=============================");
@@ -44,6 +45,7 @@ fn main() -> Result<()> {
 
 #[cfg(feature = "visualization")]
 // Helper function to create a sample Series
+#[allow(clippy::result_large_err)]
 fn create_sample_series() -> Result<Series<f64>> {
     let values = vec![2.5, 3.1, 4.8, 6.3, 5.2, 7.5, 8.1, 7.9, 6.2, 5.5, 4.3, 3.8];
     Series::new(values, Some("Monthly Data".to_string()))
@@ -51,6 +53,7 @@ fn create_sample_series() -> Result<Series<f64>> {
 
 #[cfg(feature = "visualization")]
 // Helper function to create a sample DataFrame
+#[allow(clippy::result_large_err)]
 fn create_sample_dataframe() -> Result<DataFrame> {
     let mut df = DataFrame::new();
 
@@ -100,6 +103,7 @@ fn create_sample_dataframe() -> Result<DataFrame> {
 
 #[cfg(feature = "visualization")]
 // Example of direct Series plots
+#[allow(clippy::result_large_err)]
 fn example_series_plots(s: &Series<f64>) -> Result<()> {
     println!("\nDirect Series Plotting Examples:");
 
@@ -146,6 +150,7 @@ fn example_series_plots(s: &Series<f64>) -> Result<()> {
 
 #[cfg(feature = "visualization")]
 // Example of direct DataFrame plots
+#[allow(clippy::result_large_err)]
 fn example_dataframe_plots(df: &DataFrame) -> Result<()> {
     println!("\nDirect DataFrame Plotting Examples:");
 
@@ -200,6 +205,7 @@ fn example_dataframe_plots(df: &DataFrame) -> Result<()> {
 
 #[cfg(feature = "visualization")]
 // Example of multi-series plots
+#[allow(clippy::result_large_err)]
 fn example_multi_series_plots(df: &DataFrame) -> Result<()> {
     println!("\nMulti-Series Plotting Examples:");
 
@@ -234,6 +240,7 @@ fn example_multi_series_plots(df: &DataFrame) -> Result<()> {
 
 #[cfg(feature = "visualization")]
 // Example of box plots and categorical visualization
+#[allow(clippy::result_large_err)]
 fn example_box_plots(df: &DataFrame) -> Result<()> {
     println!("\nBox Plot and Categorical Data Examples:");
 

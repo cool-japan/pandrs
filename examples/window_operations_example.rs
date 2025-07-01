@@ -6,6 +6,7 @@ use std::str::FromStr;
 
 // Translated Japanese comments and strings into English
 #[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     println!("=== Example of Window Operations ===\n");
 

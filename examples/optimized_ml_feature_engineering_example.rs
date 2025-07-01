@@ -23,6 +23,7 @@ fn main() {
 }
 
 #[cfg(feature = "optimized")]
+#[allow(clippy::result_large_err)]
 fn main() -> Result<(), PandRSError> {
     println!("=== Example of Optimized Machine Learning: Feature Engineering ===\n");
 
@@ -172,6 +173,7 @@ fn main() -> Result<(), PandRSError> {
 
 #[cfg(feature = "optimized")]
 // Create sample data
+#[allow(clippy::result_large_err)]
 fn create_sample_data() -> Result<DataFrame, PandRSError> {
     let mut rng = rand::rng();
 
@@ -179,7 +181,7 @@ fn create_sample_data() -> Result<DataFrame, PandRSError> {
     let n = 50;
 
     // Categorical data
-    let categories = vec!["A", "B", "C"];
+    let categories = ["A", "B", "C"];
     let cat_data: Vec<String> = (0..n)
         .map(|_| categories[rng.random_range(0..categories.len())].to_string())
         .collect();
@@ -221,6 +223,7 @@ fn create_sample_data() -> Result<DataFrame, PandRSError> {
 
 #[cfg(feature = "optimized")]
 // Function to convert regular DataFrame to OptimizedDataFrame
+#[allow(clippy::result_large_err)]
 fn convert_to_optimized_df(_df: &DataFrame) -> Result<OptimizedDataFrame, PandRSError> {
     let mut opt_df = OptimizedDataFrame::new();
 

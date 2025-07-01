@@ -9,6 +9,7 @@ use pandrs::dataframe::DataFrame;
 use pandrs::series::base::Series;
 use std::collections::HashMap;
 
+#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     println!("🌐 PandRS Ecosystem Integration Demo");
     println!("====================================\n");
@@ -46,6 +47,7 @@ fn main() -> Result<()> {
 }
 
 /// Create a sample dataset for demonstration
+#[allow(clippy::result_large_err)]
 fn create_sample_dataset() -> Result<DataFrame> {
     let mut columns = HashMap::new();
 
@@ -89,7 +91,7 @@ fn create_sample_dataset() -> Result<DataFrame> {
         Series::new(categories, Some("category".to_string())),
     );
 
-    let _column_order = vec![
+    let _column_order = [
         "customer_id".to_string(),
         "name".to_string(),
         "score".to_string(),
@@ -105,6 +107,7 @@ fn create_sample_dataset() -> Result<DataFrame> {
 }
 
 /// Demonstrate Arrow integration capabilities
+#[allow(clippy::result_large_err)]
 fn arrow_integration_demo(_df: &DataFrame) -> Result<()> {
     #[cfg(feature = "distributed")]
     {
@@ -143,6 +146,7 @@ fn arrow_integration_demo(_df: &DataFrame) -> Result<()> {
 }
 
 /// Demonstrate database connectivity
+#[allow(clippy::result_large_err)]
 fn database_connectivity_demo(_df: &DataFrame) -> Result<()> {
     use pandrs::connectors::{DatabaseConfig, DatabaseConnectorFactory};
 
@@ -203,6 +207,7 @@ fn database_connectivity_demo(_df: &DataFrame) -> Result<()> {
 }
 
 /// Demonstrate cloud storage integration
+#[allow(clippy::result_large_err)]
 fn cloud_storage_demo(_df: &DataFrame) -> Result<()> {
     use pandrs::connectors::{CloudConfig, CloudConnectorFactory, CloudCredentials, CloudProvider};
 
@@ -261,6 +266,7 @@ fn cloud_storage_demo(_df: &DataFrame) -> Result<()> {
 }
 
 /// Demonstrate unified data access patterns
+#[allow(clippy::result_large_err)]
 fn unified_data_access_demo() -> Result<()> {
     println!("  🔗 Unified Data Access Patterns:");
 
@@ -300,6 +306,7 @@ fn unified_data_access_demo() -> Result<()> {
 }
 
 /// Demonstrate performance and compatibility features
+#[allow(clippy::result_large_err)]
 fn performance_demo(_df: &DataFrame) -> Result<()> {
     println!("  ⚡ Performance & Compatibility Features:");
 

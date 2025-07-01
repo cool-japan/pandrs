@@ -22,6 +22,7 @@ use pandrs::gpu::{get_gpu_manager, init_gpu, init_gpu_with_config, GpuConfig, Gp
 use std::time::Instant;
 
 #[cfg(feature = "cuda")]
+#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     println!("PandRS GPU-accelerated Matrix Operations Example");
     println!("-----------------------------------------------");
@@ -149,6 +150,7 @@ fn print_matrix(matrix: &Array2<f64>) {
 }
 
 #[cfg(feature = "cuda")]
+#[allow(clippy::result_large_err)]
 fn run_performance_benchmark() -> Result<()> {
     // Create larger matrices for benchmarking
     let sizes = [100, 500, 1000, 2000];

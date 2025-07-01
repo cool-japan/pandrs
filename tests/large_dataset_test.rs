@@ -8,6 +8,8 @@ use tempfile::{tempdir, NamedTempFile};
 
 // Helper function to create a test CSV file
 #[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn create_test_csv() -> Result<NamedTempFile> {
     let mut temp_file = NamedTempFile::new().unwrap();
 
@@ -34,6 +36,8 @@ fn create_test_csv() -> Result<NamedTempFile> {
 }
 
 #[test]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 #[allow(clippy::result_large_err)]
 fn test_chunked_dataframe() -> Result<()> {
     let test_file = create_test_csv()?;
@@ -84,6 +88,8 @@ fn test_chunked_dataframe() -> Result<()> {
 
 #[test]
 #[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn test_disk_based_dataframe() -> Result<()> {
     let test_file = create_test_csv()?;
 
@@ -109,6 +115,8 @@ fn test_disk_based_dataframe() -> Result<()> {
 // Test for memory-mapped file handling
 #[test]
 #[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn test_memory_mapping() -> Result<()> {
     let test_file = create_test_csv()?;
 
@@ -133,6 +141,8 @@ fn test_memory_mapping() -> Result<()> {
 // Test for spill-to-disk functionality
 #[test]
 #[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn test_spill_to_disk() -> Result<()> {
     let test_file = create_test_csv()?;
 
@@ -156,6 +166,8 @@ fn test_spill_to_disk() -> Result<()> {
 
 // Test for custom temporary directory
 #[test]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 #[allow(clippy::result_large_err)]
 fn test_custom_temp_dir() -> Result<()> {
     let test_file = create_test_csv()?;

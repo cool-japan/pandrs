@@ -54,7 +54,7 @@ use pandrs::stats::{
 #[test]
 fn test_comprehensive_hypothesis_testing() {
     // Test one-sample t-test
-    let data = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0];
+    let data = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0];
     let result = one_sample_ttest(&data, 5.5, AlternativeHypothesis::TwoSided).unwrap();
 
     assert_eq!(result.test_name, "One-sample t-test");
@@ -64,8 +64,8 @@ fn test_comprehensive_hypothesis_testing() {
     assert!(result.confidence_interval.is_some());
 
     // Test independent samples t-test
-    let group1 = vec![1.0, 2.0, 3.0, 4.0, 5.0];
-    let group2 = vec![3.0, 4.0, 5.0, 6.0, 7.0];
+    let group1 = [1.0, 2.0, 3.0, 4.0, 5.0];
+    let group2 = [3.0, 4.0, 5.0, 6.0, 7.0];
     let result =
         independent_ttest(&group1, &group2, AlternativeHypothesis::TwoSided, true).unwrap();
 
@@ -75,8 +75,8 @@ fn test_comprehensive_hypothesis_testing() {
     assert!(result.degrees_of_freedom.is_some());
 
     // Test paired t-test
-    let before = vec![10.0, 12.0, 14.0, 16.0, 18.0];
-    let after = vec![11.0, 13.0, 15.0, 17.0, 19.0];
+    let before = [10.0, 12.0, 14.0, 16.0, 18.0];
+    let after = [11.0, 13.0, 15.0, 17.0, 19.0];
     let result = paired_ttest(&before, &after, AlternativeHypothesis::TwoSided).unwrap();
 
     assert_eq!(result.test_name, "Paired samples t-test");
@@ -84,10 +84,10 @@ fn test_comprehensive_hypothesis_testing() {
     assert!(result.additional_info.contains_key("mean_after"));
 
     // Test one-way ANOVA
-    let group1 = vec![1.0, 2.0, 3.0];
-    let group2 = vec![4.0, 5.0, 6.0];
-    let group3 = vec![7.0, 8.0, 9.0];
-    let groups = vec![group1.as_slice(), group2.as_slice(), group3.as_slice()];
+    let group1 = [1.0, 2.0, 3.0];
+    let group2 = [4.0, 5.0, 6.0];
+    let group3 = [7.0, 8.0, 9.0];
+    let groups = [group1.as_slice(), group2.as_slice(), group3.as_slice()];
     let result = one_way_anova(&groups).unwrap();
 
     assert_eq!(result.test_name, "One-way ANOVA");
@@ -100,7 +100,7 @@ fn test_comprehensive_hypothesis_testing() {
 #[test]
 fn test_chi_square_and_correlation() {
     // Test chi-square test of independence (using new API)
-    let observed = vec![vec![10.0, 15.0, 25.0], vec![20.0, 10.0, 15.0]];
+    let observed = [vec![10.0, 15.0, 25.0], vec![20.0, 10.0, 15.0]];
     let result = chi_square_test_independence(&observed).unwrap();
 
     assert_eq!(result.test_name, "Chi-square test of independence");
@@ -109,8 +109,8 @@ fn test_chi_square_and_correlation() {
     assert!(result.additional_info.contains_key("cramers_v"));
 
     // Test correlation test
-    let x = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0];
-    let y = vec![2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0, 20.0]; // Perfect correlation
+    let x = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0];
+    let y = [2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0, 20.0]; // Perfect correlation
     let result = correlation_test(&x, &y, AlternativeHypothesis::TwoSided).unwrap();
 
     assert_eq!(result.test_name, "Pearson correlation test");
@@ -122,7 +122,7 @@ fn test_chi_square_and_correlation() {
 #[test]
 fn test_normality_and_multiple_comparisons() {
     // Test Shapiro-Wilk normality test
-    let normal_data = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0];
+    let normal_data = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0];
     let result = shapiro_wilk_test(&normal_data).unwrap();
 
     assert_eq!(
@@ -132,7 +132,7 @@ fn test_normality_and_multiple_comparisons() {
     assert!(result.additional_info.contains_key("note")); // Indicates approximation
 
     // Test multiple comparison corrections
-    let p_values = vec![0.01, 0.02, 0.03, 0.04, 0.05];
+    let p_values = [0.01, 0.02, 0.03, 0.04, 0.05];
 
     // Bonferroni correction
     let bonferroni = adjust_p_values(&p_values, MultipleComparisonCorrection::Bonferroni).unwrap();
@@ -208,8 +208,8 @@ fn test_probability_distributions() {
 #[test]
 fn test_nonparametric_tests() {
     // Test Mann-Whitney U test
-    let group1 = vec![1.0, 2.0, 3.0, 4.0, 5.0];
-    let group2 = vec![6.0, 7.0, 8.0, 9.0, 10.0];
+    let group1 = [1.0, 2.0, 3.0, 4.0, 5.0];
+    let group2 = [6.0, 7.0, 8.0, 9.0, 10.0];
     let result = mann_whitney_u_test(&group1, &group2, AlternativeHypothesis::TwoSided).unwrap();
 
     assert_eq!(result.test_name, "Mann-Whitney U test");
@@ -219,8 +219,8 @@ fn test_nonparametric_tests() {
     assert!(result.additional_info.contains_key("u2"));
 
     // Test Wilcoxon signed-rank test
-    let before = vec![1.0, 2.0, 3.0, 4.0, 5.0];
-    let after = vec![2.0, 3.0, 4.0, 5.0, 6.0]; // All increased by 1
+    let before = [1.0, 2.0, 3.0, 4.0, 5.0];
+    let after = [2.0, 3.0, 4.0, 5.0, 6.0]; // All increased by 1
     let result =
         wilcoxon_signed_rank_test(&before, &after, AlternativeHypothesis::TwoSided).unwrap();
 
@@ -230,10 +230,10 @@ fn test_nonparametric_tests() {
     assert!(result.additional_info.contains_key("w_minus"));
 
     // Test Kruskal-Wallis test
-    let group1 = vec![1.0, 2.0, 3.0];
-    let group2 = vec![4.0, 5.0, 6.0];
-    let group3 = vec![7.0, 8.0, 9.0];
-    let groups = vec![group1.as_slice(), group2.as_slice(), group3.as_slice()];
+    let group1 = [1.0, 2.0, 3.0];
+    let group2 = [4.0, 5.0, 6.0];
+    let group3 = [7.0, 8.0, 9.0];
+    let groups = [group1.as_slice(), group2.as_slice(), group3.as_slice()];
     let result = kruskal_wallis_test(&groups).unwrap();
 
     assert_eq!(result.test_name, "Kruskal-Wallis test");
@@ -272,7 +272,7 @@ fn test_nonparametric_tests() {
 #[test]
 fn test_bootstrap_and_permutation() {
     // Test bootstrap confidence interval
-    let data = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0];
+    let data = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0];
 
     // Bootstrap CI for the mean
     let (lower, upper) = bootstrap_confidence_interval(
@@ -287,8 +287,8 @@ fn test_bootstrap_and_permutation() {
     assert!(lower < actual_mean && actual_mean < upper);
 
     // Test permutation test
-    let group1 = vec![1.0, 2.0, 3.0];
-    let group2 = vec![4.0, 5.0, 6.0];
+    let group1 = [1.0, 2.0, 3.0];
+    let group2 = [4.0, 5.0, 6.0];
 
     let result = permutation_test(
         &group1,
@@ -310,7 +310,7 @@ fn test_bootstrap_and_permutation() {
 #[test]
 fn test_descriptive_statistics() {
     // Test comprehensive descriptive statistics
-    let data = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 100.0]; // Include outlier
+    let data = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 100.0]; // Include outlier
     let summary = describe(&data).unwrap();
 
     assert_eq!(summary.count, 11);
@@ -336,14 +336,14 @@ fn test_descriptive_statistics() {
     assert!(summary.outliers.iqr_outliers.contains(&100.0));
 
     // Test percentile calculation
-    let sorted_data = vec![1.0, 2.0, 3.0, 4.0, 5.0];
+    let sorted_data = [1.0, 2.0, 3.0, 4.0, 5.0];
     assert_eq!(percentile(&sorted_data, 0.0).unwrap(), 1.0);
     assert_eq!(percentile(&sorted_data, 50.0).unwrap(), 3.0);
     assert_eq!(percentile(&sorted_data, 100.0).unwrap(), 5.0);
 
     // Test correlation functions
-    let x = vec![1.0, 2.0, 3.0, 4.0, 5.0];
-    let y = vec![2.0, 4.0, 6.0, 8.0, 10.0];
+    let x = [1.0, 2.0, 3.0, 4.0, 5.0];
+    let y = [2.0, 4.0, 6.0, 8.0, 10.0];
 
     let pearson = pearson_correlation(&x, &y).unwrap();
     assert!((pearson - 1.0).abs() < 1e-10); // Perfect correlation
@@ -441,7 +441,7 @@ fn test_statistical_analyzer() {
     assert!(test_result.test_name.contains("t-test"));
 
     // Test correlation matrix
-    let columns = vec!["x1".to_string(), "x2".to_string(), "x3".to_string()];
+    let columns = ["x1".to_string(), "x2".to_string(), "x3".to_string()];
     let matrix = analyzer
         .correlation_matrix(&df, &columns, CorrelationMethod::Pearson)
         .unwrap();
@@ -458,31 +458,31 @@ fn test_statistical_analyzer() {
 #[test]
 fn test_edge_cases_and_error_handling() {
     // Test with empty data
-    let empty_data: Vec<f64> = vec![];
+    let empty_data: Vec<_> = [].to_vec();
     assert!(describe(&empty_data).is_err());
     assert!(pearson_correlation(&empty_data, &empty_data).is_err());
 
     // Test with mismatched lengths
-    let x = vec![1.0, 2.0, 3.0];
-    let y = vec![1.0, 2.0];
+    let x = [1.0, 2.0, 3.0];
+    let y = [1.0, 2.0];
     assert!(pearson_correlation(&x, &y).is_err());
     // Independent t-test might handle mismatched lengths gracefully
     // assert!(independent_ttest(&x, &y, AlternativeHypothesis::TwoSided, true).is_err());
 
     // Test with single element
-    let single = vec![1.0];
+    let single = [1.0];
     // Describe might not work with single element
     // assert!(describe(&single).is_ok()); // Should work for describe
     assert!(pearson_correlation(&single, &single).is_err()); // Should fail for correlation
 
     // Test with constant data (zero variance)
-    let constant = vec![5.0, 5.0, 5.0, 5.0, 5.0];
+    let constant = [5.0, 5.0, 5.0, 5.0, 5.0];
     let summary = describe(&constant).unwrap();
     assert_eq!(summary.std, 0.0);
     assert_eq!(summary.variance, 0.0);
 
     // Test percentile edge cases
-    let data = vec![1.0, 2.0, 3.0, 4.0, 5.0];
+    let data = [1.0, 2.0, 3.0, 4.0, 5.0];
     assert!(percentile(&data, -1.0).is_err()); // Invalid percentile
     assert!(percentile(&data, 101.0).is_err()); // Invalid percentile
 
@@ -492,7 +492,7 @@ fn test_edge_cases_and_error_handling() {
     assert!(normal.inverse_cdf(1.0).is_nan());
 
     // Test hypothesis test edge cases
-    let identical_groups = vec![1.0, 2.0, 3.0];
+    let identical_groups = [1.0, 2.0, 3.0];
     let result = independent_ttest(
         &identical_groups,
         &identical_groups,
@@ -507,8 +507,8 @@ fn test_edge_cases_and_error_handling() {
 #[test]
 fn test_statistical_consistency() {
     // Test that different methods give consistent results where expected
-    let data1 = vec![1.0, 2.0, 3.0, 4.0, 5.0];
-    let data2 = vec![6.0, 7.0, 8.0, 9.0, 10.0];
+    let data1 = [1.0, 2.0, 3.0, 4.0, 5.0];
+    let data2 = [6.0, 7.0, 8.0, 9.0, 10.0];
 
     // Compare parametric and non-parametric tests
     let t_test_result =
@@ -521,7 +521,7 @@ fn test_statistical_consistency() {
     assert!(mann_whitney_result.reject_null);
 
     // Compare ANOVA and Kruskal-Wallis
-    let groups = vec![data1.as_slice(), data2.as_slice()];
+    let groups = [data1.as_slice(), data2.as_slice()];
     let _anova_result = one_way_anova(&groups).unwrap();
     let _kw_result = kruskal_wallis_test(&groups).unwrap();
 
@@ -530,8 +530,8 @@ fn test_statistical_consistency() {
     // assert!(kw_result.reject_null);
 
     // Test relationship between one-sample and paired t-tests
-    let before = vec![1.0, 2.0, 3.0, 4.0, 5.0];
-    let after = vec![2.0, 3.0, 4.0, 5.0, 6.0];
+    let before = [1.0, 2.0, 3.0, 4.0, 5.0];
+    let after = [2.0, 3.0, 4.0, 5.0, 6.0];
     let differences: Vec<f64> = before
         .iter()
         .zip(after.iter())

@@ -2,6 +2,8 @@ use pandrs::error::Result;
 use pandrs::{Column, Int64Column, OptimizedDataFrame, StringColumn};
 
 #[test]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn test_inner_join() -> Result<()> {
     // Left dataframe
     let mut left_df = OptimizedDataFrame::new();
@@ -41,6 +43,8 @@ fn test_inner_join() -> Result<()> {
 }
 
 #[test]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn test_left_join() -> Result<()> {
     // Left dataframe
     let mut left_df = OptimizedDataFrame::new();
@@ -80,6 +84,8 @@ fn test_left_join() -> Result<()> {
 }
 
 #[test]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn test_right_join() -> Result<()> {
     // Left dataframe
     let mut left_df = OptimizedDataFrame::new();
@@ -119,6 +125,8 @@ fn test_right_join() -> Result<()> {
 }
 
 #[test]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn test_outer_join() -> Result<()> {
     // Left dataframe
     let mut left_df = OptimizedDataFrame::new();
@@ -158,6 +166,8 @@ fn test_outer_join() -> Result<()> {
 }
 
 #[test]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn test_join_different_column_names() -> Result<()> {
     // Left dataframe
     let mut left_df = OptimizedDataFrame::new();
@@ -197,6 +207,8 @@ fn test_join_different_column_names() -> Result<()> {
 }
 
 #[test]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn test_empty_join() -> Result<()> {
     // Join with empty DataFrames
     let empty_df = OptimizedDataFrame::new();

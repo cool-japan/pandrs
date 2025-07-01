@@ -3,6 +3,8 @@ use pandrs::{Column, OptimizedDataFrame, StringColumn};
 
 #[test]
 #[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn test_optimized_multi_index_simulation() -> Result<()> {
     // Simulate multi-index in OptimizedDataFrame
     // This is a test until actual multi-index functionality is implemented
@@ -27,8 +29,8 @@ fn test_optimized_multi_index_simulation() -> Result<()> {
     df.add_column("level2", Column::String(level2_col))?;
 
     // Add value column
-    let values = vec![100, 200, 300, 400];
-    let value_col = pandrs::Int64Column::new(values);
+    let values = [100, 200, 300, 400];
+    let value_col = pandrs::Int64Column::new(values.to_vec());
     df.add_column("value", Column::Int64(value_col))?;
 
     // Validation
@@ -40,7 +42,7 @@ fn test_optimized_multi_index_simulation() -> Result<()> {
     // Simulate aggregation using multi-index
     let result = pandrs::LazyFrame::new(df)
         .aggregate(
-            vec!["level1".to_string(), "level2".to_string()],
+            ["level1".to_string(), "level2".to_string()],
             vec![(
                 "value".to_string(),
                 pandrs::AggregateOp::Sum,

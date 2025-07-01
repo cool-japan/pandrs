@@ -11,6 +11,7 @@ use pandrs::dataframe::hierarchical_groupby::{
 use pandrs::error::Result;
 use pandrs::series::base::Series;
 
+#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     println!("=== Business Analytics with Hierarchical GroupBy ===\n");
     println!("Real-world business analytics scenarios demonstrating:");
@@ -256,6 +257,7 @@ fn main() -> Result<()> {
 }
 
 /// Create corporate sales dataset with organizational hierarchy
+#[allow(clippy::result_large_err)]
 fn create_corporate_sales_dataset() -> Result<DataFrame> {
     let mut df = DataFrame::new();
 
@@ -339,6 +341,7 @@ fn create_corporate_sales_dataset() -> Result<DataFrame> {
 }
 
 /// Create financial dataset with geographic hierarchy
+#[allow(clippy::result_large_err)]
 fn create_financial_dataset() -> Result<DataFrame> {
     let mut df = DataFrame::new();
 
@@ -413,6 +416,7 @@ fn create_financial_dataset() -> Result<DataFrame> {
 }
 
 /// Create retail dataset with product hierarchy
+#[allow(clippy::result_large_err)]
 fn create_retail_dataset() -> Result<DataFrame> {
     let mut df = DataFrame::new();
 
@@ -494,6 +498,7 @@ fn create_retail_dataset() -> Result<DataFrame> {
 }
 
 /// Create employee performance dataset
+#[allow(clippy::result_large_err)]
 fn create_employee_performance_dataset() -> Result<DataFrame> {
     let mut df = DataFrame::new();
 
@@ -582,6 +587,7 @@ fn create_employee_performance_dataset() -> Result<DataFrame> {
 }
 
 /// Create customer segmentation dataset
+#[allow(clippy::result_large_err)]
 fn create_customer_segmentation_dataset() -> Result<DataFrame> {
     let mut df = DataFrame::new();
 
@@ -647,6 +653,7 @@ fn create_customer_segmentation_dataset() -> Result<DataFrame> {
 }
 
 /// Display sample data from DataFrame
+#[allow(clippy::result_large_err)]
 fn display_sample_data(df: &DataFrame, rows: usize) -> Result<()> {
     let display_rows = rows.min(df.row_count());
 
@@ -668,6 +675,7 @@ fn display_sample_data(df: &DataFrame, rows: usize) -> Result<()> {
 }
 
 /// Display a sample of DataFrame with title
+#[allow(clippy::result_large_err)]
 fn display_results(df: &DataFrame, title: &str, max_rows: usize) -> Result<()> {
     println!("   {}:", title);
     if df.row_count() == 0 {

@@ -287,14 +287,15 @@ impl RetryMechanism {
         E: std::fmt::Display + std::fmt::Debug,
     {
         let mut attempt = 0;
-        let mut last_error = None;
+        #[allow(unused_assignments)]
+        let mut last_error_msg = None;
 
         loop {
             attempt += 1;
             match operation() {
                 Ok(result) => return Ok(result),
                 Err(error) => {
-                    last_error = Some(format!("{}", error));
+                    last_error_msg = Some(format!("{}", error));
 
                     // Check if this error type is retryable
                     let error_str = format!("{}", error);
@@ -319,7 +320,7 @@ impl RetryMechanism {
         Err(Error::OperationFailed(format!(
             "Operation failed after {} attempts. Last error: {}",
             attempt,
-            last_error.unwrap_or_else(|| "Unknown error".to_string())
+            last_error_msg.unwrap_or_else(|| "Unknown error".to_string())
         )))
     }
 

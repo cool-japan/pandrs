@@ -5,6 +5,7 @@ use pandrs::{
     AggregateOp, Column, Float64Column, Int64Column, LazyFrame, OptimizedDataFrame, StringColumn,
 };
 
+#[allow(clippy::result_large_err)]
 fn main() -> Result<(), Box<dyn Error>> {
     println!("Performance Evaluation with Lazy Evaluation and Parallel Processing\n");
 
@@ -155,6 +156,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 }
 
 // Function to generate a large DataFrame
+#[allow(clippy::result_large_err)]
 fn generate_large_dataframe(rows: usize) -> Result<OptimizedDataFrame, Box<dyn Error>> {
     use rand::rngs::StdRng;
     use rand::{Rng, SeedableRng};

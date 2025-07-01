@@ -11,6 +11,7 @@ use pandrs::core::error::Result;
 use pandrs::optimized::OptimizedDataFrame;
 use std::time::Instant;
 
+#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     println!("PandRS Direct Aggregation Performance Demo");
     println!("==========================================");
@@ -47,6 +48,7 @@ fn main() -> Result<()> {
     Ok(())
 }
 
+#[allow(clippy::result_large_err)]
 fn create_test_dataframe(size: usize) -> Result<OptimizedDataFrame> {
     let mut df = OptimizedDataFrame::new();
 
@@ -63,6 +65,7 @@ fn create_test_dataframe(size: usize) -> Result<OptimizedDataFrame> {
     Ok(df)
 }
 
+#[allow(clippy::result_large_err)]
 fn benchmark_aggregations(test_name: &str, df: &OptimizedDataFrame) -> Result<()> {
     println!("{}", test_name);
     println!("{}", "=".repeat(test_name.len()));

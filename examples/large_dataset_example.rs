@@ -4,6 +4,7 @@ use pandrs::{DiskBasedDataFrame, DiskConfig};
 use std::collections::HashMap;
 
 #[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     // Path to a large CSV file (replace with actual path)
     let file_path = "examples/data/large_dataset.csv";

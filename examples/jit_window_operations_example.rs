@@ -7,6 +7,7 @@ use pandrs::error::Result;
 use pandrs::series::base::Series;
 use std::time::Instant;
 
+#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     println!("=== JIT-Optimized Window Operations for PandRS ===\n");
     println!("This example demonstrates JIT (Just-In-Time) compilation optimizations");
@@ -74,6 +75,7 @@ fn main() -> Result<()> {
 }
 
 /// Create a financial dataset for testing
+#[allow(clippy::result_large_err)]
 fn create_financial_dataset(size: usize) -> Result<DataFrame> {
     let mut df = DataFrame::new();
 
@@ -133,6 +135,7 @@ fn create_financial_dataset(size: usize) -> Result<DataFrame> {
 }
 
 /// Create a small sample dataset for display
+#[allow(clippy::result_large_err)]
 fn create_sample_dataset() -> Result<DataFrame> {
     let mut df = DataFrame::new();
 
@@ -174,6 +177,7 @@ fn create_sample_dataset() -> Result<DataFrame> {
 }
 
 /// Test rolling mean performance with JIT compilation
+#[allow(clippy::result_large_err)]
 fn test_rolling_mean_performance(df: &DataFrame, jit_context: &JitWindowContext) -> Result<()> {
     println!("   Testing rolling mean with window size 20:");
 
@@ -230,6 +234,7 @@ fn test_rolling_mean_performance(df: &DataFrame, jit_context: &JitWindowContext)
 }
 
 /// Test rolling standard deviation performance with JIT compilation
+#[allow(clippy::result_large_err)]
 fn test_rolling_std_performance(df: &DataFrame, jit_context: &JitWindowContext) -> Result<()> {
     println!("   Testing rolling standard deviation with window size 10:");
 
@@ -284,6 +289,7 @@ fn test_rolling_std_performance(df: &DataFrame, jit_context: &JitWindowContext) 
 }
 
 /// Test multiple operations with JIT compilation
+#[allow(clippy::result_large_err)]
 fn test_multiple_operations_jit(df: &DataFrame, jit_context: &JitWindowContext) -> Result<()> {
     println!("   Testing multiple window operations with JIT:");
 
@@ -330,6 +336,7 @@ fn test_multiple_operations_jit(df: &DataFrame, jit_context: &JitWindowContext) 
 }
 
 /// Demonstrate JIT statistics and cache management
+#[allow(clippy::result_large_err)]
 fn demonstrate_jit_statistics(jit_context: &JitWindowContext) -> Result<()> {
     println!("   JIT Compilation and Cache Statistics:");
 
@@ -373,6 +380,7 @@ fn demonstrate_jit_statistics(jit_context: &JitWindowContext) -> Result<()> {
 }
 
 /// Complex financial analysis using JIT-optimized window operations
+#[allow(clippy::result_large_err)]
 fn complex_financial_analysis(df: &DataFrame, jit_context: &JitWindowContext) -> Result<()> {
     println!("   Financial Analysis Pipeline with JIT Optimization:");
 

@@ -2,6 +2,7 @@ use pandrs::optimized::OptimizedDataFrame;
 use pandrs::Series;
 use std::collections::HashMap;
 
+#[allow(clippy::result_large_err)]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("PandRS Alpha 4 New Features Demo");
     println!("=================================\n");

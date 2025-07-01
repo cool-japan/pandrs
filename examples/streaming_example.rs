@@ -6,6 +6,7 @@ use pandrs::streaming::{
     StreamConnector, StreamProcessor, StreamRecord,
 };
 #[cfg(feature = "streaming")]
+#[allow(clippy::single_component_path_imports)]
 use rand;
 #[cfg(feature = "streaming")]
 use std::collections::HashMap;
@@ -22,6 +23,7 @@ fn main() {
 }
 
 #[cfg(feature = "streaming")]
+#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     // This example demonstrates various streaming data processing capabilities
     println!("Streaming Data Processing Example");
@@ -48,6 +50,7 @@ fn main() -> Result<()> {
 
 // Example showing how to process a CSV file as a stream
 #[cfg(feature = "streaming")]
+#[allow(clippy::result_large_err)]
 fn csv_stream_example() -> Result<()> {
     // Create a stream from a CSV file (replace with actual file path)
     let config = StreamConfig {
@@ -124,6 +127,7 @@ fn csv_stream_example() -> Result<()> {
 
 // Example demonstrating stream aggregation
 #[cfg(feature = "streaming")]
+#[allow(clippy::result_large_err)]
 fn stream_aggregation_example() -> Result<()> {
     let headers = vec![
         "timestamp".to_string(),
@@ -182,6 +186,7 @@ fn stream_aggregation_example() -> Result<()> {
 
 // Example demonstrating real-time analytics
 #[cfg(feature = "streaming")]
+#[allow(clippy::result_large_err)]
 fn realtime_analytics_example() -> Result<()> {
     let headers = vec![
         "timestamp".to_string(),
@@ -262,6 +267,7 @@ fn realtime_analytics_example() -> Result<()> {
 
 // Example demonstrating a custom stream connector
 #[cfg(feature = "streaming")]
+#[allow(clippy::result_large_err)]
 fn custom_connector_example() -> Result<()> {
     let headers = vec![
         "timestamp".to_string(),

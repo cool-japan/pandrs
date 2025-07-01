@@ -3,13 +3,15 @@ use pandrs::error::Result;
 use pandrs::{Column, OptimizedDataFrame, StringColumn};
 
 #[test]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn test_optimized_categorical_representation() -> Result<()> {
     // In the optimized version, StringColumn and CategoricalOptimizationMode are used
     // Create a dataframe with categorical values
     let mut df = OptimizedDataFrame::new();
 
     // String column with categorical data
-    let values = vec!["a", "b", "a", "c", "b", "a"]
+    let values = ["a", "b", "a", "c", "b", "a"]
         .iter()
         .map(|s| s.to_string())
         .collect::<Vec<String>>();
@@ -36,7 +38,7 @@ fn test_optimized_categorical_representation() -> Result<()> {
         // Not validating exact count as it may vary by implementation
         // Just verifying that unique values exist
         assert!(
-            unique_values.len() > 0,
+            !unique_values.is_empty(),
             "There should be at least one unique value"
         );
         // Not checking specific values, just confirming unique values exist
@@ -52,12 +54,14 @@ fn test_optimized_categorical_representation() -> Result<()> {
 }
 
 #[test]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn test_optimized_categorical_operations() -> Result<()> {
     // Create data with categorical values
     let mut df = OptimizedDataFrame::new();
 
     // City data (categorical)
-    let cities = vec![
+    let cities = [
         "Tokyo", "New York", "London", "Tokyo", "Paris", "New York", "Tokyo", "London",
     ]
     .iter()
@@ -78,7 +82,7 @@ fn test_optimized_categorical_operations() -> Result<()> {
     // Use LazyFrame for grouping operations (typical use of categorical data)
     let result = pandrs::LazyFrame::new(df)
         .aggregate(
-            vec!["city".to_string()],
+            ["city".to_string()],
             vec![
                 (
                     "population".to_string(),

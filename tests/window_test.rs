@@ -19,10 +19,10 @@ fn test_rolling_window_basic_operations() {
     .unwrap();
 
     // Create values (1, 2, 3, 4, 5, 6, 7)
-    let values = (1..=7).map(|i| NA::Value(i as f64)).collect();
+    let values: Vec<_> = (1..=7).map(|i| NA::Value(i as f64)).collect();
 
     // Create TimeSeries
-    let ts = pandrs::temporal::TimeSeries::new(values, dates, None).unwrap();
+    let ts = pandrs::temporal::TimeSeries::new(values.to_vec(), dates, None).unwrap();
 
     // 1. Moving average (window size: 3)
     let rolling_mean = ts.rolling(3).unwrap().mean().unwrap();
@@ -93,7 +93,7 @@ fn test_expanding_window_operations() {
     .unwrap();
 
     // Create values (10, 20, 30, 40, 50)
-    let values = vec![
+    let values = [
         NA::Value(10.0),
         NA::Value(20.0),
         NA::Value(30.0),
@@ -102,7 +102,7 @@ fn test_expanding_window_operations() {
     ];
 
     // Create TimeSeries
-    let ts = pandrs::temporal::TimeSeries::new(values, dates, None).unwrap();
+    let ts = pandrs::temporal::TimeSeries::new(values.to_vec(), dates, None).unwrap();
 
     // Expanding window mean (minimum period: 2)
     let expanding_mean = ts.expanding(2).unwrap().mean().unwrap();
@@ -153,7 +153,7 @@ fn test_ewm_operations() {
     .unwrap();
 
     // Create values (10, 20, 30, 40, 50)
-    let values = vec![
+    let values = [
         NA::Value(10.0),
         NA::Value(20.0),
         NA::Value(30.0),
@@ -162,7 +162,7 @@ fn test_ewm_operations() {
     ];
 
     // Create TimeSeries
-    let ts = pandrs::temporal::TimeSeries::new(values, dates, None).unwrap();
+    let ts = pandrs::temporal::TimeSeries::new(values.to_vec(), dates, None).unwrap();
 
     // Exponentially weighted moving average (alpha=0.5)
     let ewm_mean = ts.ewm(None, Some(0.5), false).unwrap().mean().unwrap();
@@ -228,7 +228,7 @@ fn test_window_with_na_values() {
     .unwrap();
 
     // Create values (10, NA, 30, 40, NA, 60, 70)
-    let values = vec![
+    let values = [
         NA::Value(10.0),
         NA::NA,
         NA::Value(30.0),
@@ -239,7 +239,7 @@ fn test_window_with_na_values() {
     ];
 
     // Create TimeSeries
-    let ts = pandrs::temporal::TimeSeries::new(values, dates, None).unwrap();
+    let ts = pandrs::temporal::TimeSeries::new(values.to_vec(), dates, None).unwrap();
 
     // Moving average (window size: 3)
     let rolling_mean = ts.rolling(3).unwrap().mean().unwrap();
@@ -272,7 +272,7 @@ fn test_custom_aggregate_function() {
     .unwrap();
 
     // Create values (10, 20, 30, 40, 50)
-    let values = vec![
+    let values = [
         NA::Value(10.0),
         NA::Value(20.0),
         NA::Value(30.0),
@@ -281,7 +281,7 @@ fn test_custom_aggregate_function() {
     ];
 
     // Create TimeSeries
-    let ts = pandrs::temporal::TimeSeries::new(values, dates, None).unwrap();
+    let ts = pandrs::temporal::TimeSeries::new(values.to_vec(), dates, None).unwrap();
 
     // Custom function for calculating median
     let median = |values: &[f64]| -> f64 {
@@ -413,10 +413,10 @@ fn test_window_edge_cases() {
     .unwrap();
 
     // Create values (10, 20, 30)
-    let values = vec![NA::Value(10.0), NA::Value(20.0), NA::Value(30.0)];
+    let values = [NA::Value(10.0), NA::Value(20.0), NA::Value(30.0)];
 
     // Create TimeSeries
-    let ts = pandrs::temporal::TimeSeries::new(values, dates, None).unwrap();
+    let ts = pandrs::temporal::TimeSeries::new(values.to_vec(), dates, None).unwrap();
 
     // Edge case 1: Window size larger than data size
     // Library implementation may allow larger window sizes in some cases

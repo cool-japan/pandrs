@@ -5,6 +5,7 @@ use pandrs::dataframe::query::{LiteralValue, QueryContext, QueryEngine, QueryExt
 use pandrs::error::Result;
 use pandrs::series::base::Series;
 
+#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     println!("=== Alpha 4 Query and Eval Expression Engine Example ===\n");
 
@@ -256,6 +257,7 @@ fn main() -> Result<()> {
 }
 
 /// Demonstrate performance with larger dataset
+#[allow(clippy::result_large_err)]
 fn demonstrate_performance() -> Result<()> {
     println!("--- Performance with Large Dataset ---");
 
@@ -306,6 +308,7 @@ fn demonstrate_performance() -> Result<()> {
 }
 
 /// Demonstrate error handling
+#[allow(clippy::result_large_err)]
 fn demonstrate_error_handling(df: &DataFrame) -> Result<()> {
     println!("--- Error Handling Examples ---");
 

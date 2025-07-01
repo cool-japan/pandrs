@@ -15,6 +15,8 @@ use pandrs::optimized::jit::simd::{avx2_available, simd_available, simd_capabili
 use pandrs::optimized::OptimizedDataFrame;
 use std::time::Instant;
 
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     println!("PandRS SIMD-Enhanced Aggregation Performance Demo");
     println!("================================================");
@@ -49,6 +51,8 @@ fn main() -> Result<()> {
     Ok(())
 }
 
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn create_test_dataframe(size: usize, prefix: &str) -> Result<OptimizedDataFrame> {
     let mut df = OptimizedDataFrame::new();
 
@@ -75,6 +79,8 @@ fn create_test_dataframe(size: usize, prefix: &str) -> Result<OptimizedDataFrame
     Ok(df)
 }
 
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn benchmark_all_methods(test_name: &str, df: &OptimizedDataFrame) -> Result<()> {
     println!("{}", test_name);
     println!("{}", "=".repeat(test_name.len()));
@@ -111,6 +117,7 @@ struct BenchmarkResults {
     min_time_ms: f64,
 }
 
+#[allow(clippy::result_large_err)]
 fn benchmark_direct_methods(
     df: &OptimizedDataFrame,
     float_col: &str,
@@ -174,6 +181,7 @@ fn benchmark_direct_methods(
     })
 }
 
+#[allow(clippy::result_large_err)]
 fn benchmark_simd_methods(
     df: &OptimizedDataFrame,
     float_col: &str,
@@ -275,6 +283,7 @@ fn print_performance_comparison(direct: &BenchmarkResults, simd: &BenchmarkResul
     }
 }
 
+#[allow(clippy::result_large_err)]
 fn verify_method_consistency(
     df: &OptimizedDataFrame,
     float_col: &str,

@@ -10,6 +10,7 @@ use pandrs::dataframe::SpecializedIndexingExt as AdvancedIndexingExt;
 use pandrs::error::Result;
 use pandrs::series::base::Series;
 
+#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     println!("=== Alpha 8: Advanced Indexing Types Example ===\n");
 
@@ -422,6 +423,7 @@ fn main() -> Result<()> {
 }
 
 /// Demonstrate performance with larger datasets
+#[allow(clippy::result_large_err)]
 fn demonstrate_performance() -> Result<()> {
     println!("--- Performance with Large Dataset ---");
 
@@ -512,6 +514,7 @@ fn demonstrate_performance() -> Result<()> {
 }
 
 /// Demonstrate error handling
+#[allow(clippy::result_large_err)]
 fn demonstrate_error_handling() -> Result<()> {
     println!("--- Error Handling Examples ---");
 

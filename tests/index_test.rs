@@ -40,8 +40,8 @@ fn test_string_index_creation() {
 #[test]
 fn test_duplicate_index_values() {
     // Creating index with duplicate values (should result in error)
-    let values = vec![1, 2, 3, 2, 4];
-    let result = Index::new(values);
+    let values = [1, 2, 3, 2, 4];
+    let result = Index::new(values.to_vec());
 
     assert!(result.is_err());
 }

@@ -3,6 +3,8 @@ use pandrs::{AggregateOp, Column, Int64Column, LazyFrame, OptimizedDataFrame, St
 
 #[test]
 #[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn test_optimized_groupby_creation() -> Result<()> {
     // Create test dataframe
     let mut df = OptimizedDataFrame::new();
@@ -32,6 +34,8 @@ fn test_optimized_groupby_creation() -> Result<()> {
 
 #[test]
 #[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn test_optimized_groupby_aggregation() -> Result<()> {
     // Create test dataframe
     let mut df = OptimizedDataFrame::new();
@@ -53,8 +57,8 @@ fn test_optimized_groupby_aggregation() -> Result<()> {
     // Calculate sum for each group
     let result = LazyFrame::new(df.clone())
         .aggregate(
-            vec!["keys".to_string()],
-            vec![("values".to_string(), AggregateOp::Sum, "sum".to_string())],
+            ["keys".to_string()],
+            [("values".to_string(), AggregateOp::Sum, "sum".to_string())],
         )
         .execute()?;
 
@@ -67,8 +71,8 @@ fn test_optimized_groupby_aggregation() -> Result<()> {
     // Calculate mean for each group
     let result_mean = LazyFrame::new(df.clone())
         .aggregate(
-            vec!["keys".to_string()],
-            vec![("values".to_string(), AggregateOp::Mean, "mean".to_string())],
+            ["keys".to_string()],
+            [("values".to_string(), AggregateOp::Mean, "mean".to_string())],
         )
         .execute()?;
 
@@ -81,6 +85,8 @@ fn test_optimized_groupby_aggregation() -> Result<()> {
 }
 
 #[test]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 #[allow(clippy::result_large_err)]
 fn test_optimized_groupby_multiple_aggregations() -> Result<()> {
     // Create test dataframe
@@ -103,7 +109,7 @@ fn test_optimized_groupby_multiple_aggregations() -> Result<()> {
     let lazy_df = LazyFrame::new(df);
     let result = lazy_df
         .aggregate(
-            vec!["keys".to_string()],
+            ["keys".to_string()],
             vec![
                 (
                     "values".to_string(),
@@ -134,6 +140,8 @@ fn test_optimized_groupby_multiple_aggregations() -> Result<()> {
 }
 
 #[test]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 #[allow(clippy::result_large_err)]
 fn test_optimized_groupby_multiple_keys() -> Result<()> {
     // Create test dataframe
@@ -174,8 +182,8 @@ fn test_optimized_groupby_multiple_keys() -> Result<()> {
     let lazy_df = LazyFrame::new(df);
     let result = lazy_df
         .aggregate(
-            vec!["category".to_string(), "group".to_string()],
-            vec![("values".to_string(), AggregateOp::Sum, "sum".to_string())],
+            ["category".to_string(), "group".to_string()],
+            [("values".to_string(), AggregateOp::Sum, "sum".to_string())],
         )
         .execute()?;
 

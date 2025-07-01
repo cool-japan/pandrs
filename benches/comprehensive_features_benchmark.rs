@@ -206,10 +206,9 @@ fn bench_enhanced_io(c: &mut Criterion) {
             |b, df| {
                 b.iter(|| {
                     let temp_file = NamedTempFile::new().unwrap();
-                    black_box(
-                        write_parquet(df, temp_file.path(), Some(ParquetCompression::Snappy))
-                            .unwrap(),
-                    )
+                    write_parquet(df, temp_file.path(), Some(ParquetCompression::Snappy))
+                        .unwrap();
+                    black_box(())
                 })
             },
         );
@@ -220,10 +219,9 @@ fn bench_enhanced_io(c: &mut Criterion) {
             |b, df| {
                 b.iter(|| {
                     let temp_file = NamedTempFile::new().unwrap();
-                    black_box(
-                        write_parquet(df, temp_file.path(), Some(ParquetCompression::Gzip))
-                            .unwrap(),
-                    )
+                    write_parquet(df, temp_file.path(), Some(ParquetCompression::Gzip))
+                        .unwrap();
+                    black_box(())
                 })
             },
         );

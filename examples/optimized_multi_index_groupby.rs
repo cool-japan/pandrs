@@ -2,6 +2,7 @@ use pandrs::error::Result;
 use pandrs::optimized::OptimizedDataFrame;
 
 #[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     println!("=== Multi-Index GroupBy Example ===");
 

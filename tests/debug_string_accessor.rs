@@ -13,8 +13,8 @@ fn debug_isalnum() {
     ];
 
     for (input, expected) in test_cases {
-        let data = vec![input.to_string()];
-        let series = Series::new(data, None).unwrap();
+        let data = [input.to_string()];
+        let series = Series::new(data.to_vec(), None).unwrap();
         let result = series.str().unwrap().isalnum().unwrap();
         let actual = result.values()[0];
 

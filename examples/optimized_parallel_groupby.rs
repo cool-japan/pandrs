@@ -3,6 +3,7 @@ use pandrs::optimized::OptimizedDataFrame;
 use std::time::Instant;
 
 #[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     println!("PandRS Parallel GroupBy Operations Example");
     println!("=========================================");
@@ -73,6 +74,7 @@ fn main() -> Result<()> {
     Ok(())
 }
 
+#[allow(clippy::result_large_err)]
 #[allow(clippy::result_large_err)]
 fn create_dataset(size: usize) -> Result<OptimizedDataFrame> {
     let mut df = OptimizedDataFrame::new();

@@ -11,6 +11,8 @@ mod tests {
     use pandrs::PandRSError;
 
     // Helper function to prepare test data
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
     fn prepare_test_data(values: Vec<f64>) -> Result<OptimizedDataFrame, PandRSError> {
         // Create OptimizedDataFrame directly
         let mut opt_df = OptimizedDataFrame::new();
@@ -28,13 +30,15 @@ mod tests {
     }
 
     #[test]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
     fn test_standard_scaler() -> Result<(), PandRSError> {
         // Prepare test data
-        let data = vec![1.0, 2.0, 3.0, 4.0, 5.0];
-        let opt_df = prepare_test_data(data.clone())?;
+        let data = [1.0, 2.0, 3.0, 4.0, 5.0];
+        let opt_df = prepare_test_data(data.to_vec())?;
 
         // Create StandardScaler with the needed parameters
-        let mut scaler = StandardScaler::new().with_columns(vec!["feature".to_string()]);
+        let mut scaler = StandardScaler::new().with_columns(["feature".to_string()].to_vec());
 
         // Use the Transformer trait to call fit_transform (this uses the compatibility layer)
         let transformed_df = <StandardScaler as Transformer>::fit_transform(&mut scaler, &opt_df)?;
@@ -113,14 +117,16 @@ mod tests {
     }
 
     #[test]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
     fn test_minmax_scaler() -> Result<(), PandRSError> {
         // Prepare test data
-        let data = vec![10.0, 20.0, 30.0, 40.0, 50.0];
-        let opt_df = prepare_test_data(data.clone())?;
+        let data = [10.0, 20.0, 30.0, 40.0, 50.0];
+        let opt_df = prepare_test_data(data.to_vec())?;
 
         // Create and apply MinMaxScaler
         let mut scaler = MinMaxScaler::new()
-            .with_columns(vec!["feature".to_string()])
+            .with_columns(["feature".to_string()].to_vec())
             .with_range(0.0, 1.0);
 
         // Use the Transformer trait to call fit_transform (this uses the compatibility layer)

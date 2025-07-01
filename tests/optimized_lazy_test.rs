@@ -102,7 +102,7 @@ fn test_lazy_frame_aggregate() {
     // Grouping and aggregation
     let result = LazyFrame::new(df)
         .aggregate(
-            vec!["category".to_string()],
+            ["category".to_string()],
             vec![
                 (
                     "value".to_string(),
@@ -163,8 +163,8 @@ fn test_lazy_frame_chained_operations() {
         .select(&["category", "value", "filter_condition"])
         .filter("filter_condition")  // Filter using boolean column
         .aggregate(
-            vec!["category".to_string()],
-            vec![("value".to_string(), AggregateOp::Sum, "sum_value".to_string())]
+            ["category".to_string()],
+            [("value".to_string(), AggregateOp::Sum, "sum_value".to_string())]
         )
         .execute()
         .unwrap();

@@ -6,6 +6,7 @@ use pandrs::error::Result;
 use pandrs::series::base::Series;
 use std::time::Instant;
 
+#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     println!("=== Alpha 8: JIT Compilation for Repeated Expressions ===\n");
 
@@ -79,6 +80,7 @@ fn main() -> Result<()> {
 }
 
 /// Create a dataset for JIT testing
+#[allow(clippy::result_large_err)]
 fn create_jit_test_dataset(size: usize) -> Result<DataFrame> {
     let mut df = DataFrame::new();
 
@@ -111,6 +113,7 @@ fn create_jit_test_dataset(size: usize) -> Result<DataFrame> {
 }
 
 /// Create a small sample dataset for demonstration
+#[allow(clippy::result_large_err)]
 fn create_small_sample_dataset() -> Result<DataFrame> {
     let mut df = DataFrame::new();
 
@@ -151,6 +154,7 @@ fn create_small_sample_dataset() -> Result<DataFrame> {
 }
 
 /// Test basic JIT compilation functionality
+#[allow(clippy::result_large_err)]
 fn test_basic_jit_compilation(df: &DataFrame) -> Result<()> {
     println!("Testing basic JIT compilation:");
 
@@ -185,6 +189,7 @@ fn test_basic_jit_compilation(df: &DataFrame) -> Result<()> {
 }
 
 /// Test automatic JIT compilation for repeated expressions
+#[allow(clippy::result_large_err)]
 fn test_automatic_jit_compilation(df: &DataFrame) -> Result<()> {
     println!("Testing automatic JIT compilation:");
 
@@ -231,6 +236,7 @@ fn test_automatic_jit_compilation(df: &DataFrame) -> Result<()> {
 }
 
 /// Compare JIT vs non-JIT performance
+#[allow(clippy::result_large_err)]
 fn compare_jit_performance(df: &DataFrame) -> Result<()> {
     println!("Comparing JIT vs Non-JIT performance:");
 
@@ -282,6 +288,7 @@ fn compare_jit_performance(df: &DataFrame) -> Result<()> {
 }
 
 /// Demonstrate JIT compilation statistics
+#[allow(clippy::result_large_err)]
 fn demonstrate_jit_statistics(df: &DataFrame) -> Result<()> {
     println!("JIT compilation statistics and cache management:");
 
@@ -336,6 +343,7 @@ fn demonstrate_jit_statistics(df: &DataFrame) -> Result<()> {
 }
 
 /// Test different expression types for JIT compilation
+#[allow(clippy::result_large_err)]
 fn test_expression_types_jit(_df: &DataFrame) -> Result<()> {
     println!("Testing different expression types for JIT compilation:");
 
@@ -404,6 +412,7 @@ fn test_expression_types_jit(_df: &DataFrame) -> Result<()> {
 }
 
 /// Test JIT configuration options
+#[allow(clippy::result_large_err)]
 fn test_jit_configuration(df: &DataFrame) -> Result<()> {
     println!("Testing JIT configuration and performance tuning:");
 
@@ -452,6 +461,7 @@ fn test_jit_configuration(df: &DataFrame) -> Result<()> {
 }
 
 /// Demonstrate real-world JIT compilation scenarios
+#[allow(clippy::result_large_err)]
 fn demonstrate_real_world_jit(df: &DataFrame) -> Result<()> {
     println!("Real-world JIT compilation scenarios:");
 
