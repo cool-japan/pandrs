@@ -14,6 +14,8 @@
 use pandrs::dataframe::base::DataFrame;
 use pandrs::error::Result;
 use pandrs::series::Series;
+
+#[cfg(feature = "excel")]
 use std::path::Path;
 
 #[cfg(feature = "parquet")]
@@ -74,7 +76,6 @@ fn excel_enhancement_examples(df: &DataFrame) -> Result<()> {
 
     #[cfg(feature = "excel")]
     {
-        use std::path::Path;
         // 1. Enhanced Excel Writing with Formatting
         let write_options = ExcelWriteOptions {
             preserve_formulas: true,
