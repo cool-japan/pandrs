@@ -54,7 +54,7 @@ fn main() -> Result<()> {
     let window_size = 3;
     let moving_avg = time_series.rolling_mean(window_size)?;
 
-    println!("\n=== Moving Average (Window Size: {}) ===", window_size);
+    println!("\n=== Moving Average (Window Size: {window_size}) ===");
     println!("Moving average length: {}", moving_avg.len());
 
     // Display first few values
@@ -63,14 +63,14 @@ fn main() -> Result<()> {
     for i in 0..10.min(time_series.len()) {
         let date = time_series.timestamps()[i];
         let original = match time_series.values()[i] {
-            NA::Value(v) => format!("{:.2}", v),
+            NA::Value(v) => format!("{v:.2}"),
             NA::NA => "NA".to_string(),
         };
         let ma = match moving_avg.values()[i] {
-            NA::Value(v) => format!("{:.2}", v),
+            NA::Value(v) => format!("{v:.2}"),
             NA::NA => "NA".to_string(),
         };
-        println!("{}\t{}\t\t{}", date, original, ma);
+        println!("{date}\t{original}\t\t{ma}");
     }
 
     // Resample to weekly
@@ -86,10 +86,10 @@ fn main() -> Result<()> {
     for i in 0..weekly.len() {
         let date = weekly.timestamps()[i];
         let value = match weekly.values()[i] {
-            NA::Value(v) => format!("{:.2}", v),
+            NA::Value(v) => format!("{v:.2}"),
             NA::NA => "NA".to_string(),
         };
-        println!("{}\t{}", date, value);
+        println!("{date}\t{value}");
     }
 
     println!("\n=== Time Series Sample Completed ===");

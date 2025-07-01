@@ -22,7 +22,7 @@ fn main() -> Result<()> {
     // Display sample of the data
     println!("\nSample data (first 5 rows):");
     let sample_df = create_sample_dataset()?;
-    println!("{:?}", sample_df);
+    println!("{sample_df:?}");
 
     println!("\n=== Short-Circuiting Optimization ===\n");
 
@@ -161,9 +161,9 @@ fn test_short_circuiting_and(df: &DataFrame) -> Result<()> {
     let result = df.query(query)?;
     let duration = start.elapsed();
 
-    println!("  Query: {}", query);
+    println!("  Query: {query}");
     println!("  Result rows: {}", result.row_count());
-    println!("  Execution time: {:?}", duration);
+    println!("  Execution time: {duration:?}");
     println!("  Short-circuiting: The second condition (Score > 90) should not be evaluated for rows where Active == false");
 
     println!("  Expected behavior: Only evaluate second condition when first is true");
@@ -183,9 +183,9 @@ fn test_short_circuiting_or(df: &DataFrame) -> Result<()> {
     let result = df.query(query)?;
     let duration = start.elapsed();
 
-    println!("  Query: {}", query);
+    println!("  Query: {query}");
     println!("  Result rows: {}", result.row_count());
-    println!("  Execution time: {:?}", duration);
+    println!("  Execution time: {duration:?}");
     println!("  Short-circuiting: The second condition (Score < 80) should not be evaluated for rows where Active == true");
 
     Ok(())
@@ -199,7 +199,7 @@ fn test_constant_folding(df: &DataFrame) -> Result<()> {
     // Test 1: Arithmetic constant folding
     println!("\n  Test 1: Arithmetic Constant Folding");
     let query1 = "Age > (20 + 10)"; // Should be optimized to Age > 30
-    println!("    Original: {}", query1);
+    println!("    Original: {query1}");
     println!("    Optimized: Age > 30");
 
     let result1 = df.query(query1)?;
@@ -208,7 +208,7 @@ fn test_constant_folding(df: &DataFrame) -> Result<()> {
     // Test 2: Boolean constant folding
     println!("\n  Test 2: Boolean Constant Folding");
     let query2 = "Active == true && true"; // Should be optimized to Active == true
-    println!("    Original: {}", query2);
+    println!("    Original: {query2}");
     println!("    Optimized: Active == true");
 
     let result2 = df.query(query2)?;
@@ -217,7 +217,7 @@ fn test_constant_folding(df: &DataFrame) -> Result<()> {
     // Test 3: Mixed constant folding
     println!("\n  Test 3: Mixed Constant Folding");
     let query3 = "(10 * 2) > Age && false"; // Should be optimized to false
-    println!("    Original: {}", query3);
+    println!("    Original: {query3}");
     println!("    Optimized: false");
 
     let result3 = df.query(query3)?;
@@ -239,9 +239,9 @@ fn test_vectorized_operations(df: &DataFrame) -> Result<()> {
     let result1 = df.query(query1)?;
     let duration1 = start.elapsed();
 
-    println!("    Query: {}", query1);
+    println!("    Query: {query1}");
     println!("    Result rows: {}", result1.row_count());
-    println!("    Execution time: {:?}", duration1);
+    println!("    Execution time: {duration1:?}");
     println!("    Optimization: Should use vectorized numeric comparison");
 
     // String equality comparison (should use vectorized path)
@@ -252,9 +252,9 @@ fn test_vectorized_operations(df: &DataFrame) -> Result<()> {
     let result2 = df.query(query2)?;
     let duration2 = start.elapsed();
 
-    println!("    Query: {}", query2);
+    println!("    Query: {query2}");
     println!("    Result rows: {}", result2.row_count());
-    println!("    Execution time: {:?}", duration2);
+    println!("    Execution time: {duration2:?}");
     println!("    Optimization: Should use vectorized string equality");
 
     Ok(())
@@ -310,9 +310,9 @@ fn compare_evaluator_performance(df: &DataFrame) -> Result<()> {
 
         let speedup = standard_duration.as_nanos() as f64 / optimized_duration.as_nanos() as f64;
 
-        println!("    Standard evaluator: {:?}", standard_duration);
-        println!("    Optimized evaluator: {:?}", optimized_duration);
-        println!("    Speedup: {:.2}x", speedup);
+        println!("    Standard evaluator: {standard_duration:?}");
+        println!("    Optimized evaluator: {optimized_duration:?}");
+        println!("    Speedup: {speedup:.2}x");
     }
 
     Ok(())
@@ -327,7 +327,7 @@ fn test_complex_query_optimizations(df: &DataFrame) -> Result<()> {
     let complex_query =
         "(Age > 25 && true) || (false && Score > 90) || Department == 'Engineering'";
 
-    println!("\n  Original query: {}", complex_query);
+    println!("\n  Original query: {complex_query}");
     println!("  Potential optimizations:");
     println!("    - (Age > 25 && true) -> Age > 25");
     println!("    - (false && Score > 90) -> false");
@@ -338,7 +338,7 @@ fn test_complex_query_optimizations(df: &DataFrame) -> Result<()> {
     let duration = start.elapsed();
 
     println!("  Result rows: {}", result.row_count());
-    println!("  Execution time: {:?}", duration);
+    println!("  Execution time: {duration:?}");
 
     // Test equivalent simplified query
     let simplified_query = "Age > 25 || Department == 'Engineering'";
@@ -347,9 +347,9 @@ fn test_complex_query_optimizations(df: &DataFrame) -> Result<()> {
     let simplified_result = df.query(simplified_query)?;
     let simplified_duration = start.elapsed();
 
-    println!("\n  Simplified query: {}", simplified_query);
+    println!("\n  Simplified query: {simplified_query}");
     println!("  Result rows: {}", simplified_result.row_count());
-    println!("  Execution time: {:?}", simplified_duration);
+    println!("  Execution time: {simplified_duration:?}");
 
     println!(
         "  Results match: {}",
@@ -375,7 +375,7 @@ fn test_algebraic_simplifications(_df: &DataFrame) -> Result<()> {
     ];
 
     for (original, simplified) in simplification_tests {
-        println!("\n  {} -> {}", original, simplified);
+        println!("\n  {original} -> {simplified}");
 
         // Note: For this demo, we're showing what the optimizations would do
         // The actual query needs to be valid for the DataFrame

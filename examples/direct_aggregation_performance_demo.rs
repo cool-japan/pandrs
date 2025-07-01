@@ -67,7 +67,7 @@ fn create_test_dataframe(size: usize) -> Result<OptimizedDataFrame> {
 
 #[allow(clippy::result_large_err)]
 fn benchmark_aggregations(test_name: &str, df: &OptimizedDataFrame) -> Result<()> {
-    println!("{}", test_name);
+    println!("{test_name}");
     println!("{}", "=".repeat(test_name.len()));
 
     let num_iterations = if df.row_count() > 100_000 { 10 } else { 100 };
@@ -115,7 +115,7 @@ fn benchmark_aggregations(test_name: &str, df: &OptimizedDataFrame) -> Result<()
     let count_result = df.count("float_col")?;
 
     // Display results
-    println!("Performance Results ({} iterations):", num_iterations);
+    println!("Performance Results ({num_iterations} iterations):");
     println!(
         "  • Sum:   {:.2}ms/op -> Result: {:.2}",
         sum_duration.as_secs_f64() * 1000.0 / num_iterations as f64,

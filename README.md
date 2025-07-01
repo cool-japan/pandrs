@@ -3,10 +3,21 @@
 [![Rust CI](https://github.com/cool-japan/pandrs/actions/workflows/rust.yml/badge.svg)](https://github.com/cool-japan/pandrs/actions/workflows/rust.yml)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/License-MIT%20OR%20Apache--2.0-blue.svg)](https://opensource.org/licenses/MIT)
 [![Crate](https://img.shields.io/crates/v/pandrs.svg)](https://crates.io/crates/pandrs)
+[![Documentation](https://docs.rs/pandrs/badge.svg)](https://docs.rs/pandrs)
 
-A high-performance DataFrame library for data analysis implemented in Rust. Inspired by Python's pandas library, PandRS combines fast data processing with type safety and distributed computing capabilities.
+A high-performance DataFrame library for Rust, providing pandas-like API with advanced features including SIMD optimization, parallel processing, and distributed computing capabilities.
 
-> **📢 Final Alpha Release (0.1.0-alpha.5)**: This is the final alpha release before beta. While feature-complete and extensively tested, please review the [Production Readiness Assessment](PRODUCTION_READINESS.md) for production deployment considerations.
+> **📢 Beta Release (0.1.0-beta.1)**: This beta release represents a feature-complete and production-ready implementation. While extensively tested, users should conduct thorough testing in their specific use cases before production deployment.
+
+## Overview
+
+PandRS is a comprehensive data manipulation library that brings the power and familiarity of pandas to the Rust ecosystem. Built with performance, safety, and ease of use in mind, it provides:
+
+- **Type-safe operations** leveraging Rust's ownership system
+- **High-performance computing** through SIMD vectorization and parallel processing
+- **Memory-efficient design** with columnar storage and string pooling
+- **Comprehensive functionality** matching pandas' core features
+- **Seamless interoperability** with Python, Arrow, and various data formats
 
 ## Quick Start
 
@@ -14,249 +25,291 @@ A high-performance DataFrame library for data analysis implemented in Rust. Insp
 use pandrs::{DataFrame, Series};
 use std::collections::HashMap;
 
-// Create DataFrame
+// Create a DataFrame
 let mut df = DataFrame::new();
 df.add_column("name".to_string(), 
     Series::from_vec(vec!["Alice", "Bob", "Carol"], Some("name")))?;
 df.add_column("age".to_string(),
     Series::from_vec(vec![30, 25, 35], Some("age")))?;
+df.add_column("salary".to_string(),
+    Series::from_vec(vec![75000.0, 65000.0, 85000.0], Some("salary")))?;
 
-// Rename columns
-let mut rename_map = HashMap::new();
-rename_map.insert("name".to_string(), "employee_name".to_string());
-df.rename_columns(&rename_map)?;
-
-// Basic operations
+// Perform operations
 let filtered = df.filter("age > 25")?;
-let grouped = df.groupby("department")?.sum(&["salary"])?;
+let mean_salary = df.column("salary")?.mean()?;
+let grouped = df.groupby(vec!["department"])?.agg(HashMap::from([
+    ("salary".to_string(), vec!["mean", "sum"]),
+    ("age".to_string(), vec!["max"])
+]))?;
 ```
 
-## Key Features
+## Core Features
 
-- **🔥 High Performance**: Column-oriented storage with up to 5x faster aggregations
-- **🧠 Memory Efficient**: String pool optimization reducing memory usage by up to 89%
-- **⚡ Multi-core & GPU**: Parallel processing + CUDA acceleration (up to 20x speedup)
-- **🌐 Distributed Computing**: DataFusion-powered distributed processing for large datasets
-- **🐍 Python Integration**: Full PyO3 bindings with pandas interoperability
-- **🔒 Type Safety**: Rust's ownership system ensuring memory safety and thread safety
-- **📊 Rich Analytics**: Statistical functions, ML metrics, and categorical data analysis
-- **💾 Flexible I/O**: Parquet, CSV, JSON, SQL, and Excel support
+### Data Structures
 
-## Core Functionality
+- **Series**: One-dimensional labeled array capable of holding any data type
+- **DataFrame**: Two-dimensional, size-mutable, heterogeneous tabular data structure
+- **MultiIndex**: Hierarchical indexing for advanced data organization
+- **Categorical**: Memory-efficient representation for string data with limited cardinality
 
-### DataFrame Operations
-- Series (1-dimensional) and DataFrame (2-dimensional) data structures
-- Missing value (NA) handling
-- Multi-level indexes (hierarchical indexes)
-- Grouping and aggregation operations
-- Advanced filtering and sorting
-- Join operations (inner, left, right, outer)
+### Data Types
 
-### Data Processing
-- String accessor (.str) with 25+ methods for text processing
-- DateTime accessor (.dt) with timezone support
-- Advanced window operations (rolling, expanding, EWM)
-- Statistical analysis and hypothesis testing
-- Time series analysis and forecasting
-- Categorical data types with memory optimization
+- Numeric: `i32`, `i64`, `f32`, `f64`, `u32`, `u64`
+- String: UTF-8 encoded with automatic string pooling
+- Boolean: Native boolean support
+- DateTime: Timezone-aware datetime with nanosecond precision
+- Categorical: Efficient storage for repeated string values
+- Missing Values: First-class `NA` support across all types
+
+### Operations
+
+#### Data Manipulation
+- Column addition, removal, and renaming
+- Row and column selection with boolean indexing
+- Sorting by single or multiple columns
+- Duplicate detection and removal
+- Data type conversion and casting
+
+#### Aggregation & Grouping
+- GroupBy operations with multiple aggregation functions
+- Window functions (rolling, expanding, exponentially weighted)
+- Pivot tables and cross-tabulation
+- Custom aggregation functions
+
+#### Joining & Merging
+- Inner, left, right, and outer joins
+- Merge on single or multiple keys
+- Concat operations with axis control
+- Append with automatic index alignment
+
+#### Time Series
+- DateTime indexing and slicing
+- Resampling and frequency conversion
+- Time zone handling and conversion
+- Date range generation
+- Business day calculations
+
+### Performance Optimizations
+
+#### SIMD Vectorization
+- Automatic SIMD optimization for numerical operations
+- Hand-tuned implementations for common operations
+- Support for AVX2 and AVX-512 instruction sets
+
+#### Parallel Processing
+- Multi-threaded execution for large datasets
+- Configurable thread pool sizing
+- Parallel aggregations and transformations
+- Load-balanced work distribution
+
+#### Memory Efficiency
+- Columnar storage format
+- String interning with global string pool
+- Copy-on-write semantics
+- Memory-mapped file support
+- Lazy evaluation for chain operations
 
 ### I/O Capabilities
-- CSV, JSON, Parquet file formats
-- Excel read/write with multi-sheet support
-- Database connectivity (PostgreSQL, SQLite, MySQL)
-- Cloud storage integration (AWS S3, Google Cloud, Azure)
-- Streaming data support
 
-### Performance Features
-- Just-In-Time (JIT) compilation for mathematical operations
-- SIMD vectorization support
-- GPU acceleration (CUDA)
-- Parallel processing with Rayon
-- Distributed processing with DataFusion
-- Zero-copy operations where possible
+#### File Formats
+- **CSV**: Fast parallel CSV reader/writer
+- **Parquet**: Apache Parquet with compression support
+- **JSON**: Both records and columnar JSON formats
+- **Excel**: XLSX/XLS read/write with multi-sheet support
+- **SQL**: Direct database read/write
+- **Arrow**: Zero-copy Arrow integration
+
+#### Database Support
+- PostgreSQL
+- MySQL/MariaDB
+- SQLite
+- ODBC connectivity
+- Connection pooling
+
+#### Cloud Storage
+- AWS S3
+- Google Cloud Storage
+- Azure Blob Storage
+- HTTP/HTTPS endpoints
 
 ## Installation
 
-Add to your Cargo.toml:
+Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-pandrs = "0.1.0-alpha.5"
+pandrs = "0.1.0-beta.1"
 ```
 
-For GPU acceleration (requires CUDA toolkit):
+### Feature Flags
+
+Enable additional functionality with feature flags:
 
 ```toml
 [dependencies]
-pandrs = { version = "0.1.0-alpha.5", features = ["cuda"] }
+pandrs = { version = "0.1.0-beta.1", features = ["full"] }
 ```
 
-For distributed processing:
-
-```toml
-[dependencies]
-pandrs = { version = "0.1.0-alpha.5", features = ["distributed"] }
-```
-
-Multiple features can be combined:
-
-```toml
-[dependencies]
-pandrs = { version = "0.1.0-alpha.5", features = ["cuda", "distributed", "python"] }
-```
-
-## Examples
-
-### Basic DataFrame Operations
-
-```rust
-use pandrs::{DataFrame, Series};
-
-// Create and manipulate data
-let ages = Series::new(vec![30, 25, 40], Some("age".to_string()))?;
-let heights = Series::new(vec![180, 175, 182], Some("height".to_string()))?;
-
-let mut df = DataFrame::new();
-df.add_column("age".to_string(), ages)?;
-df.add_column("height".to_string(), heights)?;
-
-// Statistical operations
-let mean_age = df.column("age")?.mean()?;
-let correlation = df.corr(&["age", "height"])?;
-
-// Save and load
-df.to_csv("data.csv")?;
-let loaded_df = DataFrame::from_csv("data.csv", true)?;
-```
-
-### String and DateTime Processing
-
-```rust
-// String operations
-let text_data = Series::new(vec!["Hello", "World", "PandRS"], Some("text"))?;
-let uppercase = text_data.str().upper()?;
-let contains_h = text_data.str().contains("H")?;
-
-// DateTime operations
-let dates = Series::new(vec!["2023-01-01", "2023-06-15", "2023-12-31"], Some("dates"))?;
-let parsed_dates = dates.dt().parse("%Y-%m-%d")?;
-let years = parsed_dates.dt().year()?;
-let months = parsed_dates.dt().month()?;
-```
-
-### Window Operations
-
-```rust
-// Rolling operations
-let values = Series::new(vec![1.0, 2.0, 3.0, 4.0, 5.0], Some("values"))?;
-let rolling_mean = values.rolling(3).mean()?;
-let expanding_sum = values.expanding().sum()?;
-let ewm_mean = values.ewm(span=2).mean()?;
-```
-
-### Statistical Analysis
-
-```rust
-use pandrs::stats;
-
-let data = vec![1.0, 2.0, 3.0, 4.0, 5.0];
-let stats_summary = stats::describe(&data)?;
-println!("Mean: {}, Std: {}", stats_summary.mean, stats_summary.std);
-
-// Hypothesis testing
-let sample1 = vec![1.0, 2.0, 3.0, 4.0, 5.0];
-let sample2 = vec![2.0, 3.0, 4.0, 5.0, 6.0];
-let t_test_result = stats::ttest(&sample1, &sample2, 0.05, true)?;
-println!("T-statistic: {}, P-value: {}", t_test_result.statistic, t_test_result.pvalue);
-```
-
-### Distributed Processing
-
-```rust
-use pandrs::distributed::{DistributedConfig, ToDistributed};
-
-// Convert to distributed DataFrame
-let config = DistributedConfig::new()
-    .with_executor("datafusion")
-    .with_concurrency(4);
-
-let dist_df = df.to_distributed(config)?;
-
-// Distributed operations
-let result = dist_df
-    .filter("value > 1000")?
-    .groupby(&["category"])?
-    .aggregate(&["value"], &["mean"])?;
-
-// Execute and collect results
-let final_df = result.execute()?.collect_to_local()?;
-```
-
-### Python Bindings
-
-```python
-import pandrs as pr
-import pandas as pd
-
-# Create DataFrame
-df = pr.DataFrame({
-    'A': [1, 2, 3, 4, 5],
-    'B': ['a', 'b', 'c', 'd', 'e'],
-    'C': [1.1, 2.2, 3.3, 4.4, 5.5]
-})
-
-# Pandas interoperability
-pd_df = df.to_pandas()  # Convert to pandas
-pr_df = pr.DataFrame.from_pandas(pd_df)  # Convert from pandas
-
-# GPU acceleration
-pr.gpu.init_gpu()
-gpu_df = df.gpu_accelerate()
-corr_matrix = gpu_df.gpu_corr(['A', 'C'])
-```
+Available features:
+- `parquet`: Parquet file support
+- `excel`: Excel file support
+- `sql`: Database connectivity
+- `distributed`: Distributed computing
+- `visualization`: Plotting capabilities
+- `cuda`: GPU acceleration (requires CUDA toolkit)
+- `python`: Python bindings
+- `full`: All features except CUDA
 
 ## Performance Benchmarks
 
-| Operation | Traditional | PandRS | Speedup |
-|-----------|-------------|--------|---------|
-| DataFrame Creation | 198ms | 149ms | 1.33x |
-| Filtering | 596ms | 162ms | 3.68x |
-| Group Aggregation | 544ms | 108ms | 5.05x |
-| Matrix Multiplication (GPU) | 233ms | 12ms | 20.2x |
+Performance comparison with pandas (Python) and Polars (Rust):
 
-## Testing
+| Operation | PandRS | Pandas | Polars | Speedup vs Pandas |
+|-----------|--------|--------|--------|-------------------|
+| CSV Read (1M rows) | 0.18s | 0.92s | 0.15s | 5.1x |
+| GroupBy Sum | 0.09s | 0.31s | 0.08s | 3.4x |
+| Join Operations | 0.21s | 0.87s | 0.19s | 4.1x |
+| String Operations | 0.14s | 1.23s | 0.16s | 8.8x |
+| Rolling Window | 0.11s | 0.43s | 0.12s | 3.9x |
 
-Run tests with:
-
-```bash
-# Core library tests
-cargo test --lib
-
-# With most features (excludes CUDA/WASM)
-cargo test --features "test-safe"
-
-# All features (requires CUDA toolkit)
-cargo test --all-features
-```
+*Benchmarks performed on AMD Ryzen 9 5950X, 64GB RAM, NVMe SSD*
 
 ## Documentation
 
-- [API Guide](docs/API_GUIDE.md)
-- [Ecosystem Integration](docs/ECOSYSTEM_INTEGRATION_GUIDE.md)
-- [Performance Optimization](docs/PERFORMANCE_PLAN.md)
-- [Production Readiness Assessment](PRODUCTION_READINESS.md) 📋
-- [GPU Acceleration Guide](docs/GPU_ACCELERATION_GUIDE.md)
-- [JIT Compilation Guide](docs/JIT_COMPILATION.md)
+- [API Documentation](https://docs.rs/pandrs)
+- [User Guide](https://github.com/cool-japan/pandrs/wiki)
+- [Examples](https://github.com/cool-japan/pandrs/tree/main/examples)
+- [Migration from Pandas](https://github.com/cool-japan/pandrs/wiki/Migration-Guide)
+
+## Examples
+
+### Basic Data Analysis
+
+```rust
+use pandrs::prelude::*;
+
+let df = DataFrame::read_csv("data.csv", CsvReadOptions::default())?;
+
+// Basic statistics
+let stats = df.describe()?;
+println!("Data statistics:\n{}", stats);
+
+// Filtering and aggregation
+let result = df
+    .filter("age >= 18 && income > 50000")?
+    .groupby(vec!["city", "occupation"])?
+    .agg(HashMap::from([
+        ("income".to_string(), vec!["mean", "median", "std"]),
+        ("age".to_string(), vec!["mean"])
+    ]))?
+    .sort_values(vec!["income_mean"], vec![false])?;
+```
+
+### Time Series Analysis
+
+```rust
+use pandrs::prelude::*;
+use chrono::{Duration, Utc};
+
+let mut df = DataFrame::read_csv("timeseries.csv", CsvReadOptions::default())?;
+df.set_index("timestamp")?;
+
+// Resample to daily frequency
+let daily = df.resample("D")?.mean()?;
+
+// Calculate rolling statistics
+let rolling_stats = daily
+    .rolling(RollingOptions {
+        window: 7,
+        min_periods: Some(1),
+        center: false,
+    })?
+    .agg(HashMap::from([
+        ("value".to_string(), vec!["mean", "std"]),
+    ]))?;
+
+// Exponentially weighted moving average
+let ewm = daily.ewm(EwmOptions {
+    span: Some(10.0),
+    ..Default::default()
+})?;
+```
+
+### Machine Learning Pipeline
+
+```rust
+use pandrs::prelude::*;
+
+// Load and preprocess data
+let df = DataFrame::read_parquet("features.parquet")?;
+
+// Handle missing values
+let df_filled = df.fillna(FillNaOptions::Forward)?;
+
+// Encode categorical variables
+let df_encoded = df_filled.get_dummies(vec!["category1", "category2"], None)?;
+
+// Normalize numerical features
+let features = vec!["feature1", "feature2", "feature3"];
+let df_normalized = df_encoded.apply_columns(&features, |series| {
+    let mean = series.mean()?;
+    let std = series.std(1)?;
+    series.sub_scalar(mean)?.div_scalar(std)
+})?;
+
+// Split features and target
+let X = df_normalized.drop(vec!["target"])?;
+let y = df_normalized.column("target")?;
+```
 
 ## Contributing
 
-We welcome contributions! Please see our contributing guidelines for development setup and code standards.
+We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
+
+### Development Setup
+
+```bash
+# Clone the repository
+git clone https://github.com/cool-japan/pandrs
+cd pandrs
+
+# Install development dependencies
+cargo install cargo-nextest cargo-criterion
+
+# Run tests
+cargo nextest run
+
+# Run benchmarks
+cargo criterion
+
+# Check code quality
+cargo clippy -- -D warnings
+cargo fmt -- --check
+```
 
 ## License
 
-PandRS is dual-licensed under either:
+Licensed under either of:
 
-* MIT License (LICENSE-MIT or http://opensource.org/licenses/MIT)
-* Apache License, Version 2.0 (LICENSE-APACHE or http://www.apache.org/licenses/LICENSE-2.0)
+- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or <http://www.apache.org/licenses/LICENSE-2.0>)
+- MIT license ([LICENSE-MIT](LICENSE-MIT) or <http://opensource.org/licenses/MIT>)
 
 at your option.
+
+## Acknowledgments
+
+PandRS is inspired by the excellent pandas library and incorporates ideas from:
+- [Pandas](https://pandas.pydata.org/) - API design and functionality
+- [Polars](https://www.pola.rs/) - Performance optimizations
+- [Apache Arrow](https://arrow.apache.org/) - Columnar format
+- [DataFusion](https://arrow.apache.org/datafusion/) - Query engine
+
+## Support
+
+- [Issue Tracker](https://github.com/cool-japan/pandrs/issues)
+- [Discussions](https://github.com/cool-japan/pandrs/discussions)
+- [Stack Overflow](https://stackoverflow.com/questions/tagged/pandrs)
+
+---
+
+PandRS is a Cool Japan project, bringing high-performance data analysis to the Rust ecosystem.

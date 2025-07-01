@@ -12,37 +12,37 @@ fn main() -> Result<()> {
 
     // Display the contents of the DataFrame
     println!("Original DataFrame:");
-    println!("{:?}\n", df);
+    println!("{df:?}\n");
 
     // 1. Example of rolling mean
     println!("1. Example of rolling mean");
     let df_rolling = df.rolling(3, "Price", "mean", None)?;
-    println!("{:?}\n", df_rolling);
+    println!("{df_rolling:?}\n");
 
     // 2. Example of rolling sum
     println!("2. Example of rolling sum");
     let df_sum = df.rolling(3, "Quantity", "sum", Some("Quantity_RollingSum_3"))?;
-    println!("{:?}\n", df_sum);
+    println!("{df_sum:?}\n");
 
     // 3. Example of rolling standard deviation
     println!("3. Example of rolling standard deviation");
     let df_std = df.rolling(3, "Price", "std", None)?;
-    println!("{:?}\n", df_std);
+    println!("{df_std:?}\n");
 
     // 4. Example of rolling minimum
     println!("4. Example of rolling minimum");
     let df_min = df.rolling(3, "Price", "min", None)?;
-    println!("{:?}\n", df_min);
+    println!("{df_min:?}\n");
 
     // 5. Example of rolling maximum
     println!("5. Example of rolling maximum");
     let df_max = df.rolling(3, "Price", "max", None)?;
-    println!("{:?}\n", df_max);
+    println!("{df_max:?}\n");
 
     // 6. Example of expanding mean
     println!("6. Example of expanding mean");
     let df_expanding = df.expanding(2, "Price", "mean", None)?;
-    println!("{:?}\n", df_expanding);
+    println!("{df_expanding:?}\n");
 
     // 7. Example of Exponential Weighted Moving Average (EWM)
     println!("7. Example of Exponential Weighted Moving Average (EWM)");
@@ -50,12 +50,12 @@ fn main() -> Result<()> {
     // When span is specified (span = 3)
     let df_ewm_span = df.ewm("Price", "mean", Some(3), None, Some("Price_ewm_span3"))?;
     println!("7.1 When span=3 is specified:");
-    println!("{:?}\n", df_ewm_span);
+    println!("{df_ewm_span:?}\n");
 
     // When alpha is specified (alpha = 0.5)
     let df_ewm_alpha = df.ewm("Price", "mean", None, Some(0.5), Some("Price_ewm_alpha0.5"))?;
     println!("7.2 When alpha=0.5 is specified:");
-    println!("{:?}\n", df_ewm_alpha);
+    println!("{df_ewm_alpha:?}\n");
 
     // 8. Example of applying multiple operations at once
     println!("8. Example of combining multiple operations:");
@@ -72,7 +72,7 @@ fn main() -> Result<()> {
     // Add Exponential Weighted Moving Average
     result_df = result_df.ewm("Price", "mean", Some(3), None, None)?;
 
-    println!("{:?}\n", result_df);
+    println!("{result_df:?}\n");
 
     println!("=== DataFrame Window Operations Example Complete ===");
     Ok(())

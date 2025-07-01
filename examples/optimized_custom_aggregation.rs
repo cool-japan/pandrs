@@ -22,7 +22,7 @@ fn main() -> Result<()> {
 
     // Display the DataFrame
     println!("Original DataFrame:");
-    println!("{:?}", df);
+    println!("{df:?}");
 
     // For now, just demonstrate basic DataFrame operations
     // Note: Custom aggregation and group_by functionality would need to be implemented
@@ -39,9 +39,9 @@ fn main() -> Result<()> {
         let mean = sum as f64 / count as f64;
 
         println!("Basic statistics for 'value' column:");
-        println!("  Sum: {}", sum);
-        println!("  Count: {}", count);
-        println!("  Mean: {:.2}", mean);
+        println!("  Sum: {sum}");
+        println!("  Count: {count}");
+        println!("  Mean: {mean:.2}");
     }
 
     Ok(())

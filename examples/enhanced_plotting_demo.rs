@@ -84,7 +84,7 @@ fn main() -> Result<()> {
     let dist_files = df.plot_distributions("plots/dist")?;
     println!("✅ Created {} distribution plots:", dist_files.len());
     for file in &dist_files {
-        println!("   📈 {}", file);
+        println!("   📈 {file}");
     }
 
     // 5. Pair Plot (Scatter Matrix)
@@ -159,7 +159,7 @@ fn main() -> Result<()> {
         report_files.len()
     );
     for file in &report_files {
-        println!("   📄 {}", file);
+        println!("   📄 {file}");
     }
 
     // 11. Utility Functions Demo
@@ -168,7 +168,7 @@ fn main() -> Result<()> {
 
     let sample_data = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0];
     let optimal_bins = utils::optimal_bins(&sample_data);
-    println!("✅ Optimal bins for sample data: {}", optimal_bins);
+    println!("✅ Optimal bins for sample data: {optimal_bins}");
 
     let quantiles = utils::quantiles(&sample_data, &[0.25, 0.5, 0.75]);
     println!(

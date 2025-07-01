@@ -43,7 +43,7 @@ fn run_benchmark_suite() {
     let sizes = [1000, 10_000, 100_000, 1_000_000];
 
     for &size in &sizes {
-        println!("\n## Data Size: {} rows ##", size);
+        println!("\n## Data Size: {size} rows ##");
 
         // Data preparation
         let int_data: Vec<i32> = (0..size).collect();
@@ -144,7 +144,7 @@ fn run_benchmark_suite() {
             });
 
         // Result summary
-        println!("\nResult Summary ({} rows):", size);
+        println!("\nResult Summary ({size} rows):");
         println!(
             "  Series Creation: {:.2}x speedup ({} → {})",
             legacy_series_time.as_secs_f64() / optimized_series_time.as_secs_f64(),
@@ -221,7 +221,7 @@ fn benchmark_string_operations() {
         });
 
     // Result summary
-    println!("\nString Operations Result Summary ({} rows):", size);
+    println!("\nString Operations Result Summary ({size} rows):");
     println!(
         "  String Series Creation: {:.2}x speedup ({} → {})",
         legacy_series_time.as_secs_f64() / optimized_series_time.as_secs_f64(),

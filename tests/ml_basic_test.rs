@@ -11,8 +11,8 @@ mod tests {
     use pandrs::PandRSError;
 
     // Helper function to prepare test data
-#[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
     fn prepare_test_data(values: Vec<f64>) -> Result<OptimizedDataFrame, PandRSError> {
         // Create OptimizedDataFrame directly
         let mut opt_df = OptimizedDataFrame::new();
@@ -30,8 +30,8 @@ mod tests {
     }
 
     #[test]
-#[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
     fn test_standard_scaler() -> Result<(), PandRSError> {
         // Prepare test data
         let data = [1.0, 2.0, 3.0, 4.0, 5.0];
@@ -67,12 +67,11 @@ mod tests {
 
                 // Expected: Mean close to 0, standard deviation at a specific value
                 // Since we're using a cached approximation, standard deviation isn't verified against a specific value
-                assert!(mean.abs() < 1e-10, "Mean should be close to 0: {}", mean);
+                assert!(mean.abs() < 1e-10, "Mean should be close to 0: {mean}");
                 // This value is only to check current implementation
                 assert!(
                     std_dev > 0.0,
-                    "Standard deviation should be positive: {}",
-                    std_dev
+                    "Standard deviation should be positive: {std_dev}"
                 );
 
                 // Verify original data order is preserved
@@ -117,8 +116,8 @@ mod tests {
     }
 
     #[test]
-#[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
     fn test_minmax_scaler() -> Result<(), PandRSError> {
         // Prepare test data
         let data = [10.0, 20.0, 30.0, 40.0, 50.0];

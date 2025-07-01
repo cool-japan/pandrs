@@ -87,8 +87,7 @@ impl<T: Debug + Clone> DataFrame<T> {
             for column_name in &self.columns {
                 let value = row.remove(column_name).ok_or_else(|| {
                     format!(
-                        "Internal error: value for column '{}' disappeared",
-                        column_name
+                        "Internal error: value for column '{column_name}' disappeared"
                     )
                 })?;
                 self.data.insert(column_name.clone(), vec![value]);
@@ -118,8 +117,7 @@ impl<T: Debug + Clone> DataFrame<T> {
                 None => {
                     // If the row does not contain a column of the DataFrame
                     return Err(format!(
-                        "Missing value for column '{}' in the provided row",
-                        column_name
+                        "Missing value for column '{column_name}' in the provided row"
                     )
                     .into());
                 }
@@ -251,12 +249,12 @@ impl<T: Debug + Clone> DataFrame<T> {
         // Check if the join column exists
         if !self.contains_column(join_column) {
             return Err(
-                format!("Join column '{}' not found in left DataFrame", join_column).into(),
+                format!("Join column '{join_column}' not found in left DataFrame").into(),
             );
         }
         if !other.contains_column(join_column) {
             return Err(
-                format!("Join column '{}' not found in right DataFrame", join_column).into(),
+                format!("Join column '{join_column}' not found in right DataFrame").into(),
             );
         }
 
@@ -270,13 +268,13 @@ impl<T: Debug + Clone> DataFrame<T> {
             if column_name != join_column {
                 let new_col_name = if self.contains_column(column_name) {
                     // Rename if duplicate (e.g., "col" -> "col_right")
-                    let mut rename = format!("{}_right", column_name);
+                    let mut rename = format!("{column_name}_right");
                     let mut count = 1;
                     // Add a serial number if the renamed name is still a duplicate (rare case)
                     while self.contains_column(&rename)
                         || right_col_rename_map.contains_key(&rename)
                     {
-                        rename = format!("{}_right{}", column_name, count);
+                        rename = format!("{column_name}_right{count}");
                         count += 1;
                     }
                     rename
@@ -361,7 +359,7 @@ where
     pub fn sum(&self, column_name: &str) -> Result<T, Box<dyn Error>> {
         let column = self
             .get_column(column_name)
-            .ok_or_else(|| format!("Column '{}' not found for sum()", column_name))?;
+            .ok_or_else(|| format!("Column '{column_name}' not found for sum()"))?;
         if column.is_empty() {
             Ok(T::default()) // Return default value (usually 0) if empty
         } else {
@@ -373,11 +371,11 @@ where
     pub fn mean(&self, column_name: &str) -> Result<T, Box<dyn Error>> {
         let column = self
             .get_column(column_name)
-            .ok_or_else(|| format!("Column '{}' not found for mean()", column_name))?;
+            .ok_or_else(|| format!("Column '{column_name}' not found for mean()"))?;
         let n = column.len(); // Number of rows (usize)
         if n == 0 {
             return Err(
-                format!("Cannot calculate mean of an empty column '{}'", column_name).into(),
+                format!("Cannot calculate mean of an empty column '{column_name}'").into(),
             );
         }
         // Calculate the sum
@@ -410,7 +408,7 @@ impl DataFrame<String> {
     pub fn concat(&self, column_name: &str, separator: &str) -> Result<String, Box<dyn Error>> {
         let column = self
             .get_column(column_name)
-            .ok_or_else(|| format!("Column '{}' not found for concat()", column_name))?;
+            .ok_or_else(|| format!("Column '{column_name}' not found for concat()"))?;
         Ok(column.join(separator)) // Use the join method of Vec<String>
     }
 }
@@ -495,14 +493,13 @@ pub fn read_csv<T: Debug + Clone + FromStr + 'static>(
             expected_columns = values.len();
             if expected_columns == 0 {
                 return Err(format!(
-                    "First data line (line {}) is empty, cannot determine columns",
-                    line_number
+                    "First data line (line {line_number}) is empty, cannot determine columns"
                 )
                 .into());
             }
             // Generate column names as "column_0", "column_1", ...
             columns = (0..expected_columns)
-                .map(|i| format!("column_{}", i))
+                .map(|i| format!("column_{i}"))
                 .collect();
             // Initialize Vec for storing data
             for column_name in &columns {
@@ -577,12 +574,12 @@ fn main() -> Result<(), Box<dyn Error>> {
         ("age".to_string(), 30),
         ("height".to_string(), 185),
     ]))?;
-    println!("DataFrame (i32):\n{:?}", df_i32);
+    println!("DataFrame (i32):\n{df_i32:?}");
     println!("Sum of age: {:?}", df_i32.sum("age")?);
     println!("Mean of age (using num_cast): {:?}", df_i32.mean("age")?); // Uses safe cast
     let filtered_df_i32 =
         df_i32.filter(|row| **row.get(&"age".to_string()).expect("Age missing") > 25)?;
-    println!("Filtered DataFrame (age > 25):\n{:?}", filtered_df_i32);
+    println!("Filtered DataFrame (age > 25):\n{filtered_df_i32:?}");
     let sorted_df_i32 = df_i32.sort_by(|a, b| {
         let age_a = **a.get(&"age".to_string()).expect("Age missing");
         let age_b = **b.get(&"age".to_string()).expect("Age missing");
@@ -596,8 +593,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     });
     println!(
-        "Sorted DataFrame (by age asc, height desc):\n{:?}",
-        sorted_df_i32
+        "Sorted DataFrame (by age asc, height desc):\n{sorted_df_i32:?}"
     );
     println!("-----------------------------");
     println!();
@@ -633,12 +629,11 @@ fn main() -> Result<(), Box<dyn Error>> {
         ("state".to_string(), "TX".to_string()),
         ("zip".to_string(), "75001".to_string()),
     ]))?;
-    println!("DataFrame 1 (String):\n{:?}", df_string);
-    println!("DataFrame 2 (String):\n{:?}", df_string2);
+    println!("DataFrame 1 (String):\n{df_string:?}");
+    println!("DataFrame 2 (String):\n{df_string2:?}");
     let joined_df_string = df_string.join(&df_string2, "name")?;
     println!(
-        "Joined DataFrame (inner join on name):\n{:?}",
-        joined_df_string
+        "Joined DataFrame (inner join on name):\n{joined_df_string:?}"
     );
     println!("Concatenated names: {:?}", df_string.concat("name", ", ")?);
     println!("-----------------------------");
@@ -657,19 +652,18 @@ fn main() -> Result<(), Box<dyn Error>> {
         writeln!(file, " 5.5 ,6.6, apple")?;
         writeln!(file)?; // empty line test
     }
-    println!("Attempting to read: {}", file_path_str);
+    println!("Attempting to read: {file_path_str}");
     // Try reading as f64 (should fail on 'label' column)
     let df_from_csv_f64_result: Result<DataFrame<f64>, Box<dyn Error>> = read_csv(file_path, true);
     match df_from_csv_f64_result {
         Ok(df) => {
             println!(
-                "Successfully read CSV as f64 (This shouldn't happen):\n{:?}",
-                df
+                "Successfully read CSV as f64 (This shouldn't happen):\n{df:?}"
             );
         }
         Err(e) => {
             println!("Correctly failed to read CSV as f64:");
-            eprintln!("Error: {}", e);
+            eprintln!("Error: {e}");
         } // Expected
     }
     println!();
@@ -678,23 +672,21 @@ fn main() -> Result<(), Box<dyn Error>> {
         read_csv(file_path, true);
     match df_from_csv_string_result {
         Ok(df) => {
-            println!("Successfully read CSV as String:\n{:?}", df);
+            println!("Successfully read CSV as String:\n{df:?}");
             if df.contains_column("label") {
                 println!("Concatenated labels: {:?}", df.concat("label", " | ")?);
             }
         }
         Err(e) => {
             eprintln!(
-                "Failed to read CSV as String (This shouldn't happen): {}",
-                e
+                "Failed to read CSV as String (This shouldn't happen): {e}"
             );
         }
     }
     // Clean up dummy file
     if let Err(e) = std::fs::remove_file(file_path) {
         eprintln!(
-            "Warning: Failed to remove temporary file '{}': {}",
-            file_path_str, e
+            "Warning: Failed to remove temporary file '{file_path_str}': {e}"
         );
     }
     println!("-----------------------------");

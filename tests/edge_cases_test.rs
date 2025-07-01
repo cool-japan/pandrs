@@ -169,7 +169,7 @@ mod boundary_condition_tests {
 
         let num_columns = 1000;
         for i in 0..num_columns {
-            let col_name = format!("col_{}", i);
+            let col_name = format!("col_{i}");
             df.add_int_column(&col_name, [i as i64].to_vec()).unwrap();
         }
 
@@ -178,7 +178,7 @@ mod boundary_condition_tests {
 
         // Test accessing all columns
         for i in 0..num_columns {
-            let col_name = format!("col_{}", i);
+            let col_name = format!("col_{i}");
             let col_view = df.column(&col_name).unwrap();
             let col = col_view.as_int64().unwrap();
             assert_eq!(col.get(0).unwrap().unwrap(), i as i64);
@@ -353,7 +353,7 @@ mod resource_management_tests {
 
         let int_data: Vec<i64> = (0..size).collect();
         let float_data: Vec<f64> = (0..size).map(|i| i as f64 * 0.1).collect();
-        let string_data: Vec<String> = (0..size).map(|i| format!("item_{}", i)).collect();
+        let string_data: Vec<String> = (0..size).map(|i| format!("item_{i}")).collect();
 
         df.add_int_column("integers", int_data).unwrap();
         df.add_float_column("floats", float_data).unwrap();
@@ -375,7 +375,7 @@ mod resource_management_tests {
 
         let num_strings = 10_000;
         let string_data: Vec<String> = (0..num_strings)
-            .map(|i| format!("unique_string_{}", i))
+            .map(|i| format!("unique_string_{i}"))
             .collect();
 
         df.add_string_column("stress_test", string_data.clone())
@@ -517,7 +517,10 @@ mod dataframe_creation_tests {
     #[test]
     fn test_from_map_mismatched_lengths() {
         let mut data = HashMap::new();
-        data.insert("col1".to_string(), ["a".to_string(), "b".to_string()].to_vec());
+        data.insert(
+            "col1".to_string(),
+            ["a".to_string(), "b".to_string()].to_vec(),
+        );
         data.insert(
             "col2".to_string(),
             ["x".to_string(), "y".to_string(), "z".to_string()].to_vec(),
@@ -536,7 +539,7 @@ mod dataframe_creation_tests {
             }
             Err(e) => {
                 // If error, document what type of error
-                println!("Expected error for mismatched lengths: {}", e);
+                println!("Expected error for mismatched lengths: {e}");
             }
         }
     }
@@ -577,7 +580,7 @@ mod dataframe_creation_tests {
                 );
             }
             Err(e) => {
-                println!("Error with invalid column names: {}", e);
+                println!("Error with invalid column names: {e}");
             }
         }
     }

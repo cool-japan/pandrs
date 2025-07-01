@@ -13,11 +13,11 @@ fn main() -> Result<()> {
     where
         F: FnOnce(),
     {
-        println!("Running: {}", name);
+        println!("Running: {name}");
         let start = Instant::now();
         f();
         let duration = start.elapsed();
-        println!("  Completed: {:?}\n", duration);
+        println!("  Completed: {duration:?}\n");
         duration
     }
 
@@ -33,7 +33,7 @@ fn main() -> Result<()> {
         .unwrap();
         let _ = Series::new(
             (0..1_000_000)
-                .map(|i| format!("val_{}", i))
+                .map(|i| format!("val_{i}"))
                 .collect::<Vec<_>>(),
             Some("C".to_string()),
         )
@@ -49,7 +49,7 @@ fn main() -> Result<()> {
         .unwrap();
         let col_c = Series::new(
             (0..1_000_000)
-                .map(|i| format!("val_{}", i))
+                .map(|i| format!("val_{i}"))
                 .collect::<Vec<_>>(),
             Some("C".to_string()),
         )
@@ -75,15 +75,14 @@ fn main() -> Result<()> {
         );
         data.insert(
             "C".to_string(),
-            (0..1_000_000).map(|i| format!("val_{}", i)).collect(),
+            (0..1_000_000).map(|i| format!("val_{i}")).collect(),
         );
 
         let _ = DataFrame::from_map(data, None).unwrap();
     });
 
     println!(
-        "Time to create DataFrame with one million rows in pure Rust: {:?}",
-        large_duration
+        "Time to create DataFrame with one million rows in pure Rust: {large_duration:?}"
     );
 
     Ok(())

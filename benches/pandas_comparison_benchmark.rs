@@ -29,14 +29,23 @@ fn create_pandas_equivalent_data(size: usize) -> Result<DataFrame> {
     let mut value_data = Vec::with_capacity(size);
 
     for i in 0..size {
-        id_data.push(format!("{}", i));
+        id_data.push(format!("{i}"));
         category_data.push(categories[i % categories.len()].to_string());
         value_data.push(100.0 + (i as f64 * 0.15) + ((i % 100) as f64 - 50.0) * 0.3);
     }
 
-    df.add_column("id".to_string(), Series::new(id_data, Some("id".to_string()))?)?;
-    df.add_column("category".to_string(), Series::new(category_data, Some("category".to_string()))?)?;
-    df.add_column("value".to_string(), Series::new(value_data, Some("value".to_string()))?)?;
+    df.add_column(
+        "id".to_string(),
+        Series::new(id_data, Some("id".to_string()))?,
+    )?;
+    df.add_column(
+        "category".to_string(),
+        Series::new(category_data, Some("category".to_string()))?,
+    )?;
+    df.add_column(
+        "value".to_string(),
+        Series::new(value_data, Some("value".to_string()))?,
+    )?;
 
     Ok(df)
 }
@@ -322,7 +331,7 @@ fn benchmark_io_vs_pandas(c: &mut Criterion) {
                         if let (Some(id), Some(cat), Some(val)) =
                             (id_col.get(i), cat_col.get(i), val_col.get(i))
                         {
-                            csv_data.push(format!("{},{},{}", id, cat, val));
+                            csv_data.push(format!("{id},{cat},{val}"));
                         }
                     }
                     black_box(csv_data);

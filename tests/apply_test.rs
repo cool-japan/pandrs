@@ -158,14 +158,8 @@ fn test_dataframe_duplicated() {
     let mut df = DataFrame::new();
 
     // Add columns
-    let col1 = ["a", "b", "a", "c"]
-        .iter()
-        .map(|s| s.to_string())
-        .collect();
-    let col2 = ["1", "2", "1", "3"]
-        .iter()
-        .map(|s| s.to_string())
-        .collect();
+    let col1 = ["a", "b", "a", "c"].iter().map(|s| s.to_string()).collect();
+    let col2 = ["1", "2", "1", "3"].iter().map(|s| s.to_string()).collect();
 
     let series1 = pandrs::Series::new(col1, Some("col1".to_string())).unwrap();
     let series2 = pandrs::Series::new(col2, Some("col2".to_string())).unwrap();
@@ -200,14 +194,8 @@ fn test_dataframe_drop_duplicates() {
     let mut df = DataFrame::new();
 
     // Add columns
-    let col1 = ["a", "b", "a", "c"]
-        .iter()
-        .map(|s| s.to_string())
-        .collect();
-    let col2 = ["1", "2", "1", "3"]
-        .iter()
-        .map(|s| s.to_string())
-        .collect();
+    let col1 = ["a", "b", "a", "c"].iter().map(|s| s.to_string()).collect();
+    let col2 = ["1", "2", "1", "3"].iter().map(|s| s.to_string()).collect();
 
     let series1 = pandrs::Series::new(col1, Some("col1".to_string())).unwrap();
     let series2 = pandrs::Series::new(col2, Some("col2".to_string())).unwrap();
@@ -240,14 +228,8 @@ fn test_duplicated_with_subset() {
     let mut df = DataFrame::new();
 
     // Add columns
-    let col1 = ["a", "b", "a", "c"]
-        .iter()
-        .map(|s| s.to_string())
-        .collect();
-    let col2 = ["1", "2", "3", "4"]
-        .iter()
-        .map(|s| s.to_string())
-        .collect();
+    let col1 = ["a", "b", "a", "c"].iter().map(|s| s.to_string()).collect();
+    let col2 = ["1", "2", "3", "4"].iter().map(|s| s.to_string()).collect();
 
     let series1 = pandrs::Series::new(col1, Some("col1".to_string())).unwrap();
     let series2 = pandrs::Series::new(col2, Some("col2".to_string())).unwrap();

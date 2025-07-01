@@ -34,7 +34,7 @@ fn main() -> Result<()> {
     // Display sample data
     let sample_df = create_sample_dataset()?;
     println!("Sample data (first 5 rows):");
-    println!("{:?}\n", sample_df);
+    println!("{sample_df:?}\n");
 
     println!("=== JIT Window Operations Performance Comparison ===\n");
 
@@ -190,7 +190,7 @@ fn test_rolling_mean_performance(df: &DataFrame, jit_context: &JitWindowContext)
         let _result = df.apply_rolling(&rolling_config).mean()?;
         let duration = start.elapsed();
         standard_times.push(duration);
-        println!("     Execution {}: {:?}", i, duration);
+        println!("     Execution {i}: {duration:?}");
     }
 
     // JIT implementation
@@ -206,7 +206,7 @@ fn test_rolling_mean_performance(df: &DataFrame, jit_context: &JitWindowContext)
         } else {
             "JIT Compiled"
         };
-        println!("     Execution {}: {:?} ({})", i, duration, status);
+        println!("     Execution {i}: {duration:?} ({status})");
     }
 
     // Calculate performance improvement
@@ -228,7 +228,7 @@ fn test_rolling_mean_performance(df: &DataFrame, jit_context: &JitWindowContext)
         avg_standard / 1000.0
     );
     println!("     Average JIT time: {:.2} μs", avg_jit / 1000.0);
-    println!("     Speedup: {:.2}x", speedup);
+    println!("     Speedup: {speedup:.2}x");
 
     Ok(())
 }
@@ -247,7 +247,7 @@ fn test_rolling_std_performance(df: &DataFrame, jit_context: &JitWindowContext) 
         let _result = df.apply_rolling(&rolling_config).std(1)?;
         let duration = start.elapsed();
         standard_times.push(duration);
-        println!("     Execution {}: {:?}", i, duration);
+        println!("     Execution {i}: {duration:?}");
     }
 
     // JIT implementation
@@ -263,7 +263,7 @@ fn test_rolling_std_performance(df: &DataFrame, jit_context: &JitWindowContext) 
         } else {
             "JIT Compiled"
         };
-        println!("     Execution {}: {:?} ({})", i, duration, status);
+        println!("     Execution {i}: {duration:?} ({status})");
     }
 
     // Calculate performance improvement for JIT executions
@@ -282,7 +282,7 @@ fn test_rolling_std_performance(df: &DataFrame, jit_context: &JitWindowContext) 
 
         println!("   Performance Summary:");
         println!("     JIT compilation triggered after 2 executions");
-        println!("     Speedup: {:.2}x", speedup);
+        println!("     Speedup: {speedup:.2}x");
     }
 
     Ok(())
@@ -314,7 +314,7 @@ fn test_multiple_operations_jit(df: &DataFrame, jit_context: &JitWindowContext) 
     ];
 
     for (name, operation) in operations {
-        println!("   {}:", name);
+        println!("   {name}:");
 
         // Execute multiple times to trigger JIT compilation
         for i in 1..=4 {
@@ -327,7 +327,7 @@ fn test_multiple_operations_jit(df: &DataFrame, jit_context: &JitWindowContext) 
             } else {
                 "JIT Compiled"
             };
-            println!("     Execution {}: {:?} ({})", i, duration, status);
+            println!("     Execution {i}: {duration:?} ({status})");
         }
         println!();
     }
@@ -390,7 +390,7 @@ fn complex_financial_analysis(df: &DataFrame, jit_context: &JitWindowContext) ->
     let _sma_5 = df.jit_rolling(5, jit_context).mean()?;
     let _sma_20 = df.jit_rolling(20, jit_context).mean()?;
     let sma_duration = start.elapsed();
-    println!("     5-day and 20-day SMAs computed in {:?}", sma_duration);
+    println!("     5-day and 20-day SMAs computed in {sma_duration:?}");
 
     // Step 2: Volatility calculations
     println!("   Step 2: Computing Rolling Volatility");
@@ -399,8 +399,7 @@ fn complex_financial_analysis(df: &DataFrame, jit_context: &JitWindowContext) ->
     let _vol_30 = df.jit_rolling(30, jit_context).std(1)?;
     let vol_duration = start.elapsed();
     println!(
-        "     10-day and 30-day volatility computed in {:?}",
-        vol_duration
+        "     10-day and 30-day volatility computed in {vol_duration:?}"
     );
 
     // Step 3: Risk metrics
@@ -409,7 +408,7 @@ fn complex_financial_analysis(df: &DataFrame, jit_context: &JitWindowContext) ->
     let _max_drawdown = df.jit_rolling(252, jit_context).min()?; // 1-year rolling minimum
     let _rolling_max = df.jit_rolling(252, jit_context).max()?; // 1-year rolling maximum
     let risk_duration = start.elapsed();
-    println!("     Annual risk metrics computed in {:?}", risk_duration);
+    println!("     Annual risk metrics computed in {risk_duration:?}");
 
     // Step 4: Volume analysis
     println!("   Step 4: Volume Analysis");
@@ -417,10 +416,10 @@ fn complex_financial_analysis(df: &DataFrame, jit_context: &JitWindowContext) ->
     let _volume_sma = df.jit_rolling(20, jit_context).mean()?;
     let _volume_std = df.jit_rolling(20, jit_context).std(1)?;
     let volume_duration = start.elapsed();
-    println!("     Volume analysis completed in {:?}", volume_duration);
+    println!("     Volume analysis completed in {volume_duration:?}");
 
     let total_duration = sma_duration + vol_duration + risk_duration + volume_duration;
-    println!("   Total Analysis Time: {:?}", total_duration);
+    println!("   Total Analysis Time: {total_duration:?}");
     println!("   JIT optimization provided significant speedup for repeated operations");
 
     Ok(())

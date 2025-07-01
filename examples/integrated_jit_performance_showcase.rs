@@ -213,8 +213,7 @@ fn benchmark_query_window_integration(
             "JIT Compiled"
         };
         println!(
-            "     Execution {}: SMA calculated in {:?} ({})",
-            i, window_time, status
+            "     Execution {i}: SMA calculated in {window_time:?} ({status})"
         );
     }
 
@@ -232,9 +231,9 @@ fn benchmark_query_window_integration(
         / 2;
     let speedup = std_time.as_nanos() as f64 / jit_time as f64;
 
-    println!("     Standard approach: {:?}", std_time);
+    println!("     Standard approach: {std_time:?}");
     println!("     JIT approach: {:.2} μs", jit_time as f64 / 1000.0);
-    println!("     Integration speedup: {:.2}x", speedup);
+    println!("     Integration speedup: {speedup:.2}x");
 
     Ok(())
 }
@@ -321,11 +320,11 @@ fn benchmark_technical_analysis_pipeline(
 
     let total_std_time = pipeline_start.elapsed();
 
-    println!("     5-day SMA: {:?}", sma5_time);
-    println!("     20-day SMA: {:?}", sma20_time);
-    println!("     10-day Volatility: {:?}", vol_time);
-    println!("     252-day Annual Vol: {:?}", annual_vol_time);
-    println!("     Total Standard Time: {:?}", total_std_time);
+    println!("     5-day SMA: {sma5_time:?}");
+    println!("     20-day SMA: {sma20_time:?}");
+    println!("     10-day Volatility: {vol_time:?}");
+    println!("     252-day Annual Vol: {annual_vol_time:?}");
+    println!("     Total Standard Time: {total_std_time:?}");
 
     // JIT pipeline - execute twice to trigger compilation
     println!("   JIT-Optimized Technical Analysis Pipeline:");
@@ -347,16 +346,16 @@ fn benchmark_technical_analysis_pipeline(
         } else {
             "JIT Optimized"
         };
-        println!("     Run {}: {:?} ({})", i, total_jit_time, status);
+        println!("     Run {i}: {total_jit_time:?} ({status})");
     }
 
     let best_jit_time = jit_times[2]; // After compilation
     let pipeline_speedup = total_std_time.as_nanos() as f64 / best_jit_time.as_nanos() as f64;
 
     println!("   Pipeline Performance Summary:");
-    println!("     Standard Pipeline: {:?}", total_std_time);
-    println!("     JIT Pipeline: {:?}", best_jit_time);
-    println!("     Pipeline Speedup: {:.2}x", pipeline_speedup);
+    println!("     Standard Pipeline: {total_std_time:?}");
+    println!("     JIT Pipeline: {best_jit_time:?}");
+    println!("     Pipeline Speedup: {pipeline_speedup:.2}x");
 
     Ok(())
 }
@@ -370,7 +369,7 @@ fn benchmark_large_scale_processing(df: &DataFrame, jit_context: &JitWindowConte
     let window_sizes = vec![10, 50, 100, 250];
 
     for &window_size in &window_sizes {
-        println!("   Window Size {}: ", window_size);
+        println!("   Window Size {window_size}: ");
 
         // Standard implementation
         let start = Instant::now();
@@ -390,8 +389,7 @@ fn benchmark_large_scale_processing(df: &DataFrame, jit_context: &JitWindowConte
         let data_throughput = df.row_count() as f64 / jit_time.as_secs_f64() / 1_000_000.0; // Million rows per second
 
         println!(
-            "     Standard: {:?} | JIT: {:?} | Speedup: {:.2}x | Throughput: {:.2}M rows/sec",
-            std_time, jit_time, speedup, data_throughput
+            "     Standard: {std_time:?} | JIT: {jit_time:?} | Speedup: {speedup:.2}x | Throughput: {data_throughput:.2}M rows/sec"
         );
     }
 

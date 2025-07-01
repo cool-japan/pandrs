@@ -215,7 +215,9 @@ fn test_modify_categorical() {
     });
 
     // Attempt to change order if category counts match
-    if reordered.len() == current_categories.len() && df.reorder_categories("color", reordered).is_err() {
+    if reordered.len() == current_categories.len()
+        && df.reorder_categories("color", reordered).is_err()
+    {
         // Ignore failures in test environment
     }
 

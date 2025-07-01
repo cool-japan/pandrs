@@ -294,7 +294,7 @@ fn create_large_sample_data() -> Result<DataFrame> {
     // Generate larger dataset for truncation demonstration
     let size = 100;
 
-    let ids: Vec<String> = (1..=size).map(|i| format!("ID{:03}", i)).collect();
+    let ids: Vec<String> = (1..=size).map(|i| format!("ID{i:03}")).collect();
     let values: Vec<String> = (1..=size).map(|i| (i as f64 * 1.5).to_string()).collect();
     let categories: Vec<String> = (1..=size).map(|i| format!("Cat{}", i % 5 + 1)).collect();
     let flags: Vec<String> = (1..=size).map(|i| (i % 2 == 0).to_string()).collect();
@@ -322,11 +322,11 @@ fn create_large_sample_data() -> Result<DataFrame> {
     data.insert("status".to_string(), status);
     data.insert(
         "extra_col1".to_string(),
-        (1..=size).map(|i| format!("Extra{}", i)).collect(),
+        (1..=size).map(|i| format!("Extra{i}")).collect(),
     );
     data.insert(
         "extra_col2".to_string(),
-        (1..=size).map(|i| format!("Data{}", i)).collect(),
+        (1..=size).map(|i| format!("Data{i}")).collect(),
     );
     data.insert(
         "extra_col3".to_string(),
@@ -334,11 +334,11 @@ fn create_large_sample_data() -> Result<DataFrame> {
     );
     data.insert(
         "extra_col4".to_string(),
-        (1..=size).map(|i| format!("Info{}", i)).collect(),
+        (1..=size).map(|i| format!("Info{i}")).collect(),
     );
     data.insert(
         "extra_col5".to_string(),
-        (1..=size).map(|i| format!("Field{}", i)).collect(),
+        (1..=size).map(|i| format!("Field{i}")).collect(),
     );
 
     DataFrame::from_map(data, None)

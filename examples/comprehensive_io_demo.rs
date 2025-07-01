@@ -532,7 +532,7 @@ fn predicate_pushdown_example(large_df: &DataFrame) -> Result<()> {
 
     println!("  Applied filters:");
     for filter in &filters {
-        println!("    • {}", filter);
+        println!("    • {filter}");
     }
 
     // Performance improvement simulation
@@ -540,8 +540,8 @@ fn predicate_pushdown_example(large_df: &DataFrame) -> Result<()> {
     let filtered_rows = original_rows / 4; // Simulated filter result
 
     println!("  Performance improvement:");
-    println!("    • Original rows: {}", original_rows);
-    println!("    • Filtered rows: {}", filtered_rows);
+    println!("    • Original rows: {original_rows}");
+    println!("    • Filtered rows: {filtered_rows}");
     println!(
         "    • Data reduction: {:.1}%",
         (1.0 - filtered_rows as f64 / original_rows as f64) * 100.0
@@ -601,14 +601,13 @@ fn schema_analysis_example() -> Result<()> {
 
     println!("  Schema complexity metrics:");
     for (metric, value) in schema_metrics {
-        println!("    • {}: {}", metric, value);
+        println!("    • {metric}: {value}");
     }
 
     // Complexity assessment
     let complexity_score = 7.5;
     println!(
-        "  Overall complexity score: {}/10 (moderate)",
-        complexity_score
+        "  Overall complexity score: {complexity_score}/10 (moderate)"
     );
 
     if complexity_score > 8.0 {
@@ -629,19 +628,17 @@ fn chunked_parquet_processing_example(large_df: &DataFrame) -> Result<()> {
     let rows_per_chunk = (memory_limit_mb * 1024 * 1024) / estimated_row_size_bytes;
 
     println!("  Chunking configuration:");
-    println!("    • Memory limit: {} MB", memory_limit_mb);
+    println!("    • Memory limit: {memory_limit_mb} MB");
     println!(
-        "    • Estimated row size: {} bytes",
-        estimated_row_size_bytes
+        "    • Estimated row size: {estimated_row_size_bytes} bytes"
     );
-    println!("    • Rows per chunk: {}", rows_per_chunk);
+    println!("    • Rows per chunk: {rows_per_chunk}");
 
     let total_rows = large_df.row_count();
     let num_chunks = total_rows.div_ceil(rows_per_chunk);
 
     println!(
-        "  Processing {} chunks for {} total rows",
-        num_chunks, total_rows
+        "  Processing {num_chunks} chunks for {total_rows} total rows"
     );
 
     // Simulate processing each chunk
@@ -781,7 +778,7 @@ fn query_builder_example(_df: &DataFrame) -> Result<()> {
 
     println!("  Generated queries:");
     for (description, query) in queries {
-        println!("    • {}: {}", description, query);
+        println!("    • {description}: {query}");
     }
 
     // Parameter binding
@@ -1001,7 +998,7 @@ fn excel_to_parquet_migration(_df: &DataFrame) -> Result<()> {
     ];
 
     for (metric, improvement) in conversion_stats {
-        println!("    • {}: {}", metric, improvement);
+        println!("    • {metric}: {improvement}");
     }
 
     println!("  Excel to Parquet migration completed successfully");
@@ -1029,7 +1026,7 @@ fn database_to_excel_reporting(_df: &DataFrame) -> Result<()> {
 
     println!("  Generated reports:");
     for (report_name, query_description) in reports {
-        println!("    • {}: {}", report_name, query_description);
+        println!("    • {report_name}: {query_description}");
     }
 
     #[cfg(feature = "excel")]
@@ -1091,8 +1088,7 @@ fn format_performance_comparison(_df: &DataFrame) -> Result<()> {
     for (format, read_ms, write_ms, size_mb) in formats {
         if size_mb > 0 {
             println!(
-                "    {:20} | {:9} | {:10} | {:8}",
-                format, read_ms, write_ms, size_mb
+                "    {format:20} | {read_ms:9} | {write_ms:10} | {size_mb:8}"
             );
         } else {
             println!(
@@ -1135,7 +1131,7 @@ fn memory_optimization_example(_large_df: &DataFrame) -> Result<()> {
 
     println!("  Memory optimization strategies:");
     for (strategy, benefit) in memory_strategies {
-        println!("    • {}: {}", strategy, benefit);
+        println!("    • {strategy}: {benefit}");
     }
 
     let original_memory = 500; // MB
@@ -1143,9 +1139,9 @@ fn memory_optimization_example(_large_df: &DataFrame) -> Result<()> {
     let memory_reduction = (1.0 - optimized_memory as f64 / original_memory as f64) * 100.0;
 
     println!("  Memory usage comparison:");
-    println!("    • Original approach: {} MB", original_memory);
-    println!("    • Optimized approach: {} MB", optimized_memory);
-    println!("    • Memory reduction: {:.1}%", memory_reduction);
+    println!("    • Original approach: {original_memory} MB");
+    println!("    • Optimized approach: {optimized_memory} MB");
+    println!("    • Memory reduction: {memory_reduction:.1}%");
 
     Ok(())
 }
@@ -1158,8 +1154,8 @@ fn parallel_io_example(large_df: &DataFrame) -> Result<()> {
     let chunk_size = large_df.row_count() / num_threads;
 
     println!("  Parallel processing configuration:");
-    println!("    • Number of threads: {}", num_threads);
-    println!("    • Chunk size: {} rows per thread", chunk_size);
+    println!("    • Number of threads: {num_threads}");
+    println!("    • Chunk size: {chunk_size} rows per thread");
     println!("    • Total rows: {}", large_df.row_count());
 
     // Simulate parallel processing
@@ -1169,11 +1165,10 @@ fn parallel_io_example(large_df: &DataFrame) -> Result<()> {
 
     println!("  Performance improvement:");
     println!(
-        "    • Single-threaded time: {} seconds",
-        single_threaded_time
+        "    • Single-threaded time: {single_threaded_time} seconds"
     );
-    println!("    • Parallel time: {} seconds", parallel_time);
-    println!("    • Speedup: {:.1}x", speedup);
+    println!("    • Parallel time: {parallel_time} seconds");
+    println!("    • Speedup: {speedup:.1}x");
     println!(
         "    • Efficiency: {:.1}%",
         (speedup / num_threads as f64) * 100.0
@@ -1248,9 +1243,9 @@ fn io_performance_benchmarks(_large_df: &DataFrame) -> Result<()> {
     ];
 
     for (operation, results) in benchmarks {
-        println!("  {} performance (ms):", operation);
+        println!("  {operation} performance (ms):");
         for (format, time_ms) in results {
-            println!("    • {}: {} ms", format, time_ms);
+            println!("    • {format}: {time_ms} ms");
         }
     }
 

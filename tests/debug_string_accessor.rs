@@ -31,8 +31,7 @@ fn debug_isalnum() {
             let chars: Vec<char> = input.chars().collect();
             let all_alnum = chars.iter().all(|c| c.is_alphanumeric());
             println!(
-                "  Characters: {:?} | All alphanumeric: {}",
-                chars, all_alnum
+                "  Characters: {chars:?} | All alphanumeric: {all_alnum}"
             );
         }
     }

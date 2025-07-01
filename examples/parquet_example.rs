@@ -28,7 +28,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     df.add_column("category".to_string(), string_data)?;
 
     println!("Original DataFrame:");
-    println!("{:?}", df);
+    println!("{df:?}");
 
     // Parquet support is still under development
     println!("\nNote: Parquet support is currently under development.");

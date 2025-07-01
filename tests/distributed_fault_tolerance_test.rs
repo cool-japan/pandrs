@@ -12,8 +12,8 @@ mod tests {
     use pandrs::error::{Error, Result};
 
     // Create a test context with sample data
-#[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
     fn create_test_context() -> Result<DataFusionContext> {
         let config = DistributedConfig::new().with_concurrency(2);
         let mut context = DataFusionContext::new(config);
@@ -123,8 +123,8 @@ mod tests {
 
     // Test basic execution with fault tolerance
     #[test]
-#[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
     fn test_basic_fault_tolerance() -> Result<()> {
         let context = create_test_context()?;
 
@@ -165,8 +165,8 @@ mod tests {
 
     // Test the recovery from failures
     #[test]
-#[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
     fn test_recovery_from_failure() -> Result<()> {
         let context = create_test_context()?;
 
@@ -189,8 +189,8 @@ mod tests {
                 Self { attempts: 0 }
             }
 
-#[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
+            #[allow(clippy::result_large_err)]
+            #[allow(clippy::result_large_err)]
             fn execute(&mut self) -> Result<()> {
                 self.attempts += 1;
 
@@ -231,8 +231,8 @@ mod tests {
 
     // Test node health tracking
     #[test]
-#[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
     fn test_node_health_tracking() -> Result<()> {
         let handler = FaultToleranceHandler::default();
 

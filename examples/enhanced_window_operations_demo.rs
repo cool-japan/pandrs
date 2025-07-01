@@ -41,7 +41,7 @@ fn main() -> Result<()> {
         .iter()
         .map(|date_str| NaiveDateTime::parse_from_str(date_str, "%Y-%m-%d %H:%M:%S"))
         .collect::<std::result::Result<Vec<_>, _>>()
-        .map_err(|e| pandrs::error::Error::InvalidValue(format!("Date parsing error: {}", e)))?;
+        .map_err(|e| pandrs::error::Error::InvalidValue(format!("Date parsing error: {e}")))?;
 
     // Create DataFrame
     let mut df = DataFrame::new();
@@ -72,7 +72,7 @@ fn main() -> Result<()> {
     )?;
 
     println!("Original Financial Data:");
-    println!("{:?}", df);
+    println!("{df:?}");
     println!();
 
     // Example 1: Enhanced Rolling Window Operations
@@ -92,19 +92,19 @@ fn main() -> Result<()> {
     let rolling_mean = rolling_ops.mean()?;
 
     println!("Rolling Mean (window=3, min_periods=2):");
-    println!("{:?}", rolling_mean);
+    println!("{rolling_mean:?}");
     println!();
 
     // Rolling standard deviation with custom ddof
     let rolling_std = rolling_ops.std(1)?;
     println!("Rolling Standard Deviation (ddof=1):");
-    println!("{:?}", rolling_std);
+    println!("{rolling_std:?}");
     println!();
 
     // Rolling quantiles
     let rolling_quantile = rolling_ops.quantile(0.75)?;
     println!("Rolling 75th Percentile:");
-    println!("{:?}", rolling_quantile);
+    println!("{rolling_quantile:?}");
     println!();
 
     // Example 2: Enhanced Expanding Window Operations
@@ -120,11 +120,11 @@ fn main() -> Result<()> {
     let expanding_std = expanding_ops.std(1)?;
 
     println!("Expanding Mean (min_periods=2):");
-    println!("{:?}", expanding_mean);
+    println!("{expanding_mean:?}");
     println!();
 
     println!("Expanding Standard Deviation:");
-    println!("{:?}", expanding_std);
+    println!("{expanding_std:?}");
     println!();
 
     // Example 3: Enhanced EWM Operations
@@ -142,7 +142,7 @@ fn main() -> Result<()> {
     let ewm_mean = ewm_ops.mean()?;
 
     println!("EWM Mean (span=4, adjust=true):");
-    println!("{:?}", ewm_mean);
+    println!("{ewm_mean:?}");
     println!();
 
     // EWM with alpha
@@ -157,7 +157,7 @@ fn main() -> Result<()> {
     let ewm_var = ewm_ops_alpha.var(1)?;
 
     println!("EWM Variance (alpha=0.3, adjust=false):");
-    println!("{:?}", ewm_var);
+    println!("{ewm_var:?}");
     println!();
 
     // Example 4: Time-based Rolling Windows
@@ -170,11 +170,11 @@ fn main() -> Result<()> {
     let time_count = time_rolling.count()?;
 
     println!("Time-based Rolling Mean (30-minute window):");
-    println!("{:?}", time_mean);
+    println!("{time_mean:?}");
     println!();
 
     println!("Time-based Rolling Count (30-minute window):");
-    println!("{:?}", time_count);
+    println!("{time_count:?}");
     println!();
 
     // Example 5: Multi-column Operations
@@ -190,15 +190,15 @@ fn main() -> Result<()> {
     let multi_min = multi_ops.min()?;
 
     println!("Multi-column Rolling Mean (all numeric columns):");
-    println!("{:?}", multi_mean);
+    println!("{multi_mean:?}");
     println!();
 
     println!("Multi-column Rolling Max:");
-    println!("{:?}", multi_max);
+    println!("{multi_max:?}");
     println!();
 
     println!("Multi-column Rolling Min:");
-    println!("{:?}", multi_min);
+    println!("{multi_min:?}");
     println!();
 
     // Example 6: Custom Aggregation Functions
@@ -220,7 +220,7 @@ fn main() -> Result<()> {
     })?;
 
     println!("Price Momentum (max-min in 3-period window):");
-    println!("{:?}", price_momentum);
+    println!("{price_momentum:?}");
     println!();
 
     // Example 7: Advanced Window Parameters
@@ -239,7 +239,7 @@ fn main() -> Result<()> {
     let centered_mean = centered_ops.mean()?;
 
     println!("Centered Rolling Mean (window=5, center=true):");
-    println!("{:?}", centered_mean);
+    println!("{centered_mean:?}");
     println!();
 
     println!("Enhanced Window Operations Example Completed Successfully!");

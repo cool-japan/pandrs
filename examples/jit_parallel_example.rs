@@ -19,7 +19,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     // Test with large array size
     let size = 20_000_000;
 
-    println!("\nBenchmarking with array size: {}", size);
+    println!("\nBenchmarking with array size: {size}");
 
     // Generate random data
     let data = generate_random_data(size);
@@ -29,13 +29,13 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // Standard JIT (single-threaded)
     let (std_result, std_time) = benchmark_standard_jit(&data);
-    println!("  Standard JIT sum:     {:.6}", std_result);
-    println!("  Standard time:        {:?}", std_time);
+    println!("  Standard JIT sum:     {std_result:.6}");
+    println!("  Standard time:        {std_time:?}");
 
     // SIMD JIT (single-threaded with vector instructions)
     let (simd_result, simd_time) = benchmark_simd_jit(&data);
-    println!("  SIMD JIT sum:         {:.6}", simd_result);
-    println!("  SIMD time:            {:?}", simd_time);
+    println!("  SIMD JIT sum:         {simd_result:.6}");
+    println!("  SIMD time:            {simd_time:?}");
     println!(
         "  SIMD speedup:         {:.2}x",
         std_time.as_nanos() as f64 / simd_time.as_nanos() as f64
@@ -43,8 +43,8 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // Parallel JIT (multi-threaded)
     let (par_result, par_time) = benchmark_parallel_jit(&data);
-    println!("  Parallel JIT sum:     {:.6}", par_result);
-    println!("  Parallel time:        {:?}", par_time);
+    println!("  Parallel JIT sum:     {par_result:.6}");
+    println!("  Parallel time:        {par_time:?}");
     println!(
         "  Parallel speedup:     {:.2}x",
         std_time.as_nanos() as f64 / par_time.as_nanos() as f64
@@ -64,7 +64,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
 // Generate random floating-point data
 fn generate_random_data(size: usize) -> Vec<f64> {
-    println!("Generating {} random values...", size);
+    println!("Generating {size} random values...");
     let mut rng = rand::rng();
     let result = (0..size).map(|_| rng.random_range(0.0..100.0)).collect();
     println!("Data generation complete.");
@@ -144,8 +144,8 @@ fn benchmark_other_operations(data: &[f64]) {
     let result = mean_fn.execute(data);
     let std_time = start.elapsed();
 
-    println!("  Standard mean: {:.6}", result);
-    println!("  Standard time: {:?}", std_time);
+    println!("  Standard mean: {result:.6}");
+    println!("  Standard time: {std_time:?}");
 
     // Parallel mean
     let parallel_mean = parallel_mean_f64(None);
@@ -155,7 +155,7 @@ fn benchmark_other_operations(data: &[f64]) {
     let par_time = start.elapsed();
 
     println!("  Parallel mean: {:.6}", result.0);
-    println!("  Parallel time: {:?}", par_time);
+    println!("  Parallel time: {par_time:?}");
     println!(
         "  Speedup:       {:.2}x",
         std_time.as_nanos() as f64 / par_time.as_nanos() as f64
@@ -181,8 +181,8 @@ fn benchmark_other_operations(data: &[f64]) {
     let result = std_fn.execute(data);
     let std_time = start.elapsed();
 
-    println!("  Standard std: {:.6}", result);
-    println!("  Standard time: {:?}", std_time);
+    println!("  Standard std: {result:.6}");
+    println!("  Standard time: {std_time:?}");
 
     // Parallel std
     let parallel_std = parallel_std_f64(None);
@@ -192,7 +192,7 @@ fn benchmark_other_operations(data: &[f64]) {
     let par_time = start.elapsed();
 
     println!("  Parallel std: {:.6}", result.0);
-    println!("  Parallel time: {:?}", par_time);
+    println!("  Parallel time: {par_time:?}");
     println!(
         "  Speedup:       {:.2}x",
         std_time.as_nanos() as f64 / par_time.as_nanos() as f64
@@ -216,12 +216,10 @@ fn benchmark_other_operations(data: &[f64]) {
     let max_time = start.elapsed();
 
     println!(
-        "  Min value: {:.6} (computed in {:?})",
-        min_result, min_time
+        "  Min value: {min_result:.6} (computed in {min_time:?})"
     );
     println!(
-        "  Max value: {:.6} (computed in {:?})",
-        max_result, max_time
+        "  Max value: {max_result:.6} (computed in {max_time:?})"
     );
 }
 
@@ -250,8 +248,8 @@ fn benchmark_custom_parallel(data: &[f64]) {
     let result = parallel_squared_sum.execute(data);
     let duration = start.elapsed();
 
-    println!("  Result: {:.6}", result);
-    println!("  Time:   {:?}", duration);
+    println!("  Result: {result:.6}");
+    println!("  Time:   {duration:?}");
 }
 
 // Benchmark parallel configuration tuning
@@ -271,12 +269,12 @@ fn benchmark_parallel_config_tuning(data: &[f64]) {
         let _result = parallel_sum.execute(data);
         let duration = start.elapsed();
 
-        println!("  Chunk size {:8}: {:?}", chunk_size, duration);
+        println!("  Chunk size {chunk_size:8}: {duration:?}");
     }
 
     // Different thread counts
     let available_threads = num_cpus::get();
-    println!("\nAvailable CPU cores: {}", available_threads);
+    println!("\nAvailable CPU cores: {available_threads}");
 
     let thread_counts = [1, 2, 4, available_threads];
 
@@ -295,6 +293,6 @@ fn benchmark_parallel_config_tuning(data: &[f64]) {
         let _result = parallel_sum.execute(data);
         let duration = start.elapsed();
 
-        println!("  Threads {:8}: {:?}", threads, duration);
+        println!("  Threads {threads:8}: {duration:?}");
     }
 }

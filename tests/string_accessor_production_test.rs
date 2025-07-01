@@ -144,7 +144,7 @@ fn test_input_validation() -> Result<()> {
     assert!(result.is_err());
 
     if let Err(err) = result {
-        let error_msg = format!("{:?}", err);
+        let error_msg = format!("{err:?}");
         assert!(error_msg.contains("Invalid side parameter"));
         assert!(error_msg.contains("Must be 'left', 'right', or 'both'"));
     }
@@ -158,7 +158,7 @@ fn test_input_validation() -> Result<()> {
 #[allow(clippy::result_large_err)]
 fn test_regex_caching_performance() -> Result<()> {
     let large_data: Vec<String> = (0..1000)
-        .map(|i| format!("test_string_{}_data", i))
+        .map(|i| format!("test_string_{i}_data"))
         .collect();
     let series = Series::new(large_data, Some("perf_test".to_string()))?;
     let str_accessor = series.str()?;
@@ -174,7 +174,7 @@ fn test_regex_caching_performance() -> Result<()> {
     let duration2 = start2.elapsed();
 
     // Cache should make second call faster (though this might not always be true due to CPU caching)
-    println!("First call: {:?}, Second call: {:?}", duration1, duration2);
+    println!("First call: {duration1:?}, Second call: {duration2:?}");
 
     // Both should complete quickly
     assert!(duration1 < std::time::Duration::from_millis(100));
@@ -197,7 +197,7 @@ fn test_contextual_error_handling() -> Result<()> {
     assert!(result.is_err());
 
     if let Err(err) = result {
-        let error_msg = format!("{:?}", err);
+        let error_msg = format!("{err:?}");
         assert!(error_msg.contains("Invalid regex pattern"));
         assert!(error_msg.contains("[invalid"));
     }
@@ -211,7 +211,7 @@ fn test_contextual_error_handling() -> Result<()> {
 #[allow(clippy::result_large_err)]
 fn test_large_dataset_performance() -> Result<()> {
     let large_data: Vec<String> = (0..10_000)
-        .map(|i| format!("Performance test string number {}", i))
+        .map(|i| format!("Performance test string number {i}"))
         .collect();
     let series = Series::new(large_data, Some("large_perf_test".to_string()))?;
     let str_accessor = series.str()?;
@@ -228,7 +228,7 @@ fn test_large_dataset_performance() -> Result<()> {
 
     // Should complete within reasonable time
     assert!(total_duration < std::time::Duration::from_millis(1000));
-    println!("Large dataset operations took: {:?}", total_duration);
+    println!("Large dataset operations took: {total_duration:?}");
 
     Ok(())
 }

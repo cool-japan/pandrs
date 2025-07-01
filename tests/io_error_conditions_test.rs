@@ -24,8 +24,7 @@ mod csv_error_tests {
             Err(pandrs::PandRSError::Io(_)) => {}
             Err(pandrs::PandRSError::Csv(_)) => {}
             _ => panic!(
-                "Expected IoError or CsvError for nonexistent file, got: {:?}",
-                result
+                "Expected IoError or CsvError for nonexistent file, got: {result:?}"
             ),
         }
     }
@@ -157,7 +156,7 @@ mod csv_error_tests {
             }
             Err(e) => {
                 // If encoding is not supported, should fail gracefully
-                println!("UTF-8 encoding test failed: {}", e);
+                println!("UTF-8 encoding test failed: {e}");
             }
         }
 
@@ -528,8 +527,7 @@ mod general_io_tests {
             Err(e) => {
                 // If it fails, should be a disk space or I/O error
                 println!(
-                    "Large file write failed (possibly due to disk space): {}",
-                    e
+                    "Large file write failed (possibly due to disk space): {e}"
                 );
             }
         }
@@ -562,10 +560,10 @@ mod general_io_tests {
                     match result {
                         Ok(df) => {
                             assert_eq!(df.row_count(), 3);
-                            println!("Thread {} successfully read file", i);
+                            println!("Thread {i} successfully read file");
                         }
                         Err(e) => {
-                            println!("Thread {} failed to read file: {}", i, e);
+                            println!("Thread {i} failed to read file: {e}");
                         }
                     }
                 })

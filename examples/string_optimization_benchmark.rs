@@ -30,7 +30,7 @@ fn main() {
     }
 
     let data_gen_time = data_gen_start.elapsed();
-    println!("Data generation time: {:?}", data_gen_time);
+    println!("Data generation time: {data_gen_time:?}");
 
     // Benchmark string column creation for each optimization mode
     println!("\n[2] String Column Creation Benchmark");
@@ -40,7 +40,7 @@ fn main() {
         let start = Instant::now();
         let _column = StringColumn::new_legacy(str_data.clone());
         let time = start.elapsed();
-        println!("Legacy Mode Creation Time: {:?}", time);
+        println!("Legacy Mode Creation Time: {time:?}");
     }
 
     // Global Pool Mode
@@ -48,7 +48,7 @@ fn main() {
         let start = Instant::now();
         let _column = StringColumn::new_with_global_pool(str_data.clone());
         let time = start.elapsed();
-        println!("Global Pool Mode Creation Time: {:?}", time);
+        println!("Global Pool Mode Creation Time: {time:?}");
     }
 
     // Categorical Mode
@@ -56,7 +56,7 @@ fn main() {
         let start = Instant::now();
         let _column = StringColumn::new_categorical(str_data.clone());
         let time = start.elapsed();
-        println!("Categorical Mode Creation Time: {:?}", time);
+        println!("Categorical Mode Creation Time: {time:?}");
     }
 
     // Optimized Implementation
@@ -64,7 +64,7 @@ fn main() {
         let start = Instant::now();
         let _column = StringColumn::new_categorical(str_data.clone());
         let time = start.elapsed();
-        println!("Optimized Implementation Creation Time: {:?}", time);
+        println!("Optimized Implementation Creation Time: {time:?}");
     }
 
     // Benchmark DataFrame creation for each mode
@@ -101,7 +101,7 @@ fn main() {
         .unwrap();
 
         let time = start.elapsed();
-        println!("Legacy Mode DataFrame Creation Time: {:?}", time);
+        println!("Legacy Mode DataFrame Creation Time: {time:?}");
     }
 
     // Global Pool Mode
@@ -135,7 +135,7 @@ fn main() {
         .unwrap();
 
         let time = start.elapsed();
-        println!("Global Pool Mode DataFrame Creation Time: {:?}", time);
+        println!("Global Pool Mode DataFrame Creation Time: {time:?}");
     }
 
     // Categorical Mode
@@ -169,7 +169,7 @@ fn main() {
         .unwrap();
 
         let time = start.elapsed();
-        println!("Categorical Mode DataFrame Creation Time: {:?}", time);
+        println!("Categorical Mode DataFrame Creation Time: {time:?}");
     }
 
     // Optimized Implementation
@@ -199,8 +199,7 @@ fn main() {
 
         let time = start.elapsed();
         println!(
-            "Optimized Implementation DataFrame Creation Time: {:?}",
-            time
+            "Optimized Implementation DataFrame Creation Time: {time:?}"
         );
     }
 

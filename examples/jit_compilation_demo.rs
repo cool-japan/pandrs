@@ -22,7 +22,7 @@ fn main() -> Result<()> {
     // Display sample of the data
     println!("\nSample data (first 5 rows):");
     let sample_df = create_small_sample_dataset()?;
-    println!("{:?}", sample_df);
+    println!("{sample_df:?}");
 
     println!("\n=== JIT Compilation Basics ===\n");
 
@@ -165,7 +165,7 @@ fn test_basic_jit_compilation(df: &DataFrame) -> Result<()> {
     // Test simple arithmetic expression
     println!("\n  Test 1: Simple Arithmetic Expression");
     let query1 = "Value + Factor";
-    println!("    Expression: {}", query1);
+    println!("    Expression: {query1}");
 
     // Parse the expression (simplified for this example)
     println!("    JIT compilation: Expression would be compiled to optimized machine code");
@@ -174,14 +174,14 @@ fn test_basic_jit_compilation(df: &DataFrame) -> Result<()> {
     // Test comparison expression
     println!("\n  Test 2: Comparison Expression");
     let query2 = "Score > 85";
-    println!("    Expression: {}", query2);
+    println!("    Expression: {query2}");
     println!("    JIT compilation: Vectorized comparison operation");
     println!("    Result: Boolean mask generated efficiently");
 
     // Test mathematical function
     println!("\n  Test 3: Mathematical Function");
     let query3 = "sqrt(Value * Factor)";
-    println!("    Expression: {}", query3);
+    println!("    Expression: {query3}");
     println!("    JIT compilation: sqrt() function compiled to native code");
     println!("    Performance: Direct CPU instruction usage");
 
@@ -197,7 +197,7 @@ fn test_automatic_jit_compilation(df: &DataFrame) -> Result<()> {
     let context = QueryContext::with_jit_settings(true, 3);
 
     let test_query = "Score > 75";
-    println!("\n  Expression: {}", test_query);
+    println!("\n  Expression: {test_query}");
     println!("  JIT Threshold: 3 executions");
 
     // Execute the same query multiple times
@@ -213,8 +213,7 @@ fn test_automatic_jit_compilation(df: &DataFrame) -> Result<()> {
         };
 
         println!(
-            "    Execution {}: {:?} ({})",
-            i, duration, compilation_status
+            "    Execution {i}: {duration:?} ({compilation_status})"
         );
 
         // Simulate some delay to make timing differences more visible
@@ -271,9 +270,9 @@ fn compare_jit_performance(df: &DataFrame) -> Result<()> {
             1.0
         };
 
-        println!("    Non-JIT: {:?}", duration_no_jit);
-        println!("    JIT: {:?}", duration_jit);
-        println!("    Speedup: {:.2}x", speedup);
+        println!("    Non-JIT: {duration_no_jit:?}");
+        println!("    JIT: {duration_jit:?}");
+        println!("    Speedup: {speedup:.2}x");
 
         if speedup > 1.1 {
             println!("    Result: JIT provides significant speedup");
@@ -360,7 +359,7 @@ fn test_expression_types_jit(_df: &DataFrame) -> Result<()> {
     ];
 
     for (name, expr) in arithmetic_tests {
-        println!("    {}: {} -> JIT Compilable", name, expr);
+        println!("    {name}: {expr} -> JIT Compilable");
     }
 
     // Comparison operations
@@ -375,7 +374,7 @@ fn test_expression_types_jit(_df: &DataFrame) -> Result<()> {
     ];
 
     for (name, expr) in comparison_tests {
-        println!("    {}: {} -> JIT Compilable", name, expr);
+        println!("    {name}: {expr} -> JIT Compilable");
     }
 
     // Mathematical functions
@@ -390,7 +389,7 @@ fn test_expression_types_jit(_df: &DataFrame) -> Result<()> {
     ];
 
     for (name, expr) in function_tests {
-        println!("    {}: {} -> JIT Compilable", name, expr);
+        println!("    {name}: {expr} -> JIT Compilable");
     }
 
     // Complex expressions
@@ -403,8 +402,7 @@ fn test_expression_types_jit(_df: &DataFrame) -> Result<()> {
 
     for (name, expr) in complex_tests {
         println!(
-            "    {}: {} -> JIT Compilable with optimizations",
-            name, expr
+            "    {name}: {expr} -> JIT Compilable with optimizations"
         );
     }
 
@@ -423,8 +421,7 @@ fn test_jit_configuration(df: &DataFrame) -> Result<()> {
     for threshold in thresholds {
         let context = QueryContext::with_jit_settings(true, threshold);
         println!(
-            "    Threshold {}: Compile after {} executions",
-            threshold, threshold
+            "    Threshold {threshold}: Compile after {threshold} executions"
         );
 
         // Execute same expression multiple times
@@ -447,13 +444,13 @@ fn test_jit_configuration(df: &DataFrame) -> Result<()> {
 
     for jit_enabled in [false, true] {
         let _context = QueryContext::with_jit_settings(jit_enabled, 2);
-        println!("    JIT Enabled: {}", jit_enabled);
+        println!("    JIT Enabled: {jit_enabled}");
 
         for expr in &expressions {
             let start = Instant::now();
             let _result = df.query(expr)?;
             let duration = start.elapsed();
-            println!("      {}: {:?}", expr, duration);
+            println!("      {expr}: {duration:?}");
         }
     }
 
@@ -477,8 +474,7 @@ fn demonstrate_real_world_jit(df: &DataFrame) -> Result<()> {
 
     for query in financial_queries {
         println!(
-            "    Query: {} -> Optimized for repeated financial analysis",
-            query
+            "    Query: {query} -> Optimized for repeated financial analysis"
         );
 
         // Simulate repeated execution (common in financial systems)
@@ -504,8 +500,7 @@ fn demonstrate_real_world_jit(df: &DataFrame) -> Result<()> {
 
     for query in scientific_queries {
         println!(
-            "    Query: {} -> Optimized for scientific computations",
-            query
+            "    Query: {query} -> Optimized for scientific computations"
         );
     }
 
@@ -519,8 +514,7 @@ fn demonstrate_real_world_jit(df: &DataFrame) -> Result<()> {
 
     for query in analysis_queries {
         println!(
-            "    Query: {} -> Optimized for repeated data transformations",
-            query
+            "    Query: {query} -> Optimized for repeated data transformations"
         );
     }
 

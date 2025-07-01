@@ -25,21 +25,21 @@ fn main() -> Result<()> {
     let sizes = group_by.size();
     println!("\n--- Group Sizes ---");
     for (key, size) in &sizes {
-        println!("Group '{}': {} elements", key, size);
+        println!("Group '{key}': {size} elements");
     }
 
     // Calculate sum for each group
     let sums = group_by.sum()?;
     println!("\n--- Sum by Group ---");
     for (key, sum) in &sums {
-        println!("Sum of group '{}': {}", key, sum);
+        println!("Sum of group '{key}': {sum}");
     }
 
     // Calculate mean for each group
     let means = group_by.mean()?;
     println!("\n--- Mean by Group ---");
     for (key, mean) in &means {
-        println!("Mean of group '{}': {:.2}", key, mean);
+        println!("Mean of group '{key}': {mean:.2}");
     }
 
     // Grouping with different data types
@@ -50,7 +50,7 @@ fn main() -> Result<()> {
 
     let age_means = age_group_by.mean()?;
     for (key, mean) in &age_means {
-        println!("Mean of age group {}: {:.2}", key, mean);
+        println!("Mean of age group {key}: {mean:.2}");
     }
 
     println!("=== GroupBy Operations Example Complete ===");

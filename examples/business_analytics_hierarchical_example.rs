@@ -677,7 +677,7 @@ fn display_sample_data(df: &DataFrame, rows: usize) -> Result<()> {
 /// Display a sample of DataFrame with title
 #[allow(clippy::result_large_err)]
 fn display_results(df: &DataFrame, title: &str, max_rows: usize) -> Result<()> {
-    println!("   {}:", title);
+    println!("   {title}:");
     if df.row_count() == 0 {
         println!("     (No data)");
         return Ok(());

@@ -53,7 +53,7 @@ fn create_sample_dataset() -> Result<DataFrame> {
 
     // Create diverse data types
     let ids = (1..=1000).map(|i| i.to_string()).collect();
-    let names = (1..=1000).map(|i| format!("Customer_{}", i)).collect();
+    let names = (1..=1000).map(|i| format!("Customer_{i}")).collect();
     let scores = (1..=1000)
         .map(|i| (i as f64 * 0.85 + 10.0).to_string())
         .collect();
@@ -297,7 +297,7 @@ fn unified_data_access_demo() -> Result<()> {
     ];
 
     for (source, path) in sources {
-        println!("      📊 Source: {} | Path: {}", source, path);
+        println!("      📊 Source: {source} | Path: {path}");
         // let df = DataFrame::read_from(source, path).await?;
         // println!("        ✓ Loaded {} rows", df.row_count());
     }
@@ -358,8 +358,8 @@ fn demonstrate_format_detection() {
     println!("  🔍 Automatic File Format Detection:");
     for file in files {
         match FileFormat::from_extension(file) {
-            Some(format) => println!("    {} → {:?}", file, format),
-            None => println!("    {} → Unknown format", file),
+            Some(format) => println!("    {file} → {format:?}"),
+            None => println!("    {file} → Unknown format"),
         }
     }
 }

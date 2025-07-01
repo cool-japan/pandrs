@@ -13,11 +13,11 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!("Generating a large dataset...");
     let rows = 100_000;
     let df = generate_large_dataframe(rows)?;
-    println!("Generated {} rows of data", rows);
+    println!("Generated {rows} rows of data");
 
     // Display a portion of the DataFrame
     println!("\nFirst row of data:");
-    println!("{:?}\n", df);
+    println!("{df:?}\n");
 
     // Filtering and aggregation with the standard approach
     println!("Executing data processing with the standard approach...");
@@ -91,11 +91,10 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let standard_duration = start.elapsed();
     println!(
-        "Processing time with the standard approach: {:?}",
-        standard_duration
+        "Processing time with the standard approach: {standard_duration:?}"
     );
     println!("\nResults of the standard approach:");
-    println!("{:?}\n", result_df);
+    println!("{result_df:?}\n");
 
     // Approach using LazyFrame and parallel processing
     println!("Approach using LazyFrame and parallel processing...");
@@ -139,17 +138,15 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let lazy_duration = start.elapsed();
     println!(
-        "Processing time with the LazyFrame approach: {:?}",
-        lazy_duration
+        "Processing time with the LazyFrame approach: {lazy_duration:?}"
     );
     println!("\nResults of the LazyFrame approach:");
-    println!("{:?}\n", lazy_result);
+    println!("{lazy_result:?}\n");
 
     // Performance comparison
     let speedup = standard_duration.as_secs_f64() / lazy_duration.as_secs_f64();
     println!(
-        "The LazyFrame approach is {:.2} times faster than the standard approach",
-        speedup
+        "The LazyFrame approach is {speedup:.2} times faster than the standard approach"
     );
 
     Ok(())

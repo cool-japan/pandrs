@@ -30,7 +30,7 @@ fn test_data_stream_basics() -> Result<()> {
     // Send some test data
     for i in 0..50 {
         let fields = HashMap::from([
-            ("id".to_string(), format!("{}", i)),
+            ("id".to_string(), format!("{i}")),
             ("value".to_string(), format!("{}", i as f64 / 10.0)),
             ("category".to_string(), format!("cat{}", i % 5)),
         ]);
@@ -135,7 +135,7 @@ fn test_window_operation() -> Result<()> {
     // Send test data
     for i in 0..50 {
         let fields = HashMap::from([
-            ("timestamp".to_string(), format!("{}", i)),
+            ("timestamp".to_string(), format!("{i}")),
             ("value".to_string(), format!("{}", i as f64)),
         ]);
 
@@ -199,7 +199,7 @@ fn test_real_time_analytics() -> Result<()> {
     let sender = analytics.stream.get_sender().unwrap();
     for i in 0..20 {
         let fields = HashMap::from([
-            ("timestamp".to_string(), format!("{}", i)),
+            ("timestamp".to_string(), format!("{i}")),
             ("value".to_string(), format!("{}", i as f64)),
         ]);
 
@@ -245,7 +245,7 @@ fn test_batch_to_dataframe() -> Result<()> {
     let mut records = Vec::new();
     for i in 0..10 {
         let fields = HashMap::from([
-            ("id".to_string(), format!("{}", i)),
+            ("id".to_string(), format!("{i}")),
             ("value".to_string(), format!("{}", i as f64)),
         ]);
 

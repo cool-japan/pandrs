@@ -38,7 +38,7 @@ pub trait ParquetExt {
     ) -> Result<()>;
 
     /// Read DataFrame from Parquet file
-#[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
     fn from_parquet<P: AsRef<Path>>(path: P) -> Result<Self>
     where
         Self: Sized;
@@ -119,8 +119,8 @@ impl ParquetExt for OptimizedDataFrame {
         self.to_csv(path, true)
     }
 
-#[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
     fn from_parquet<P: AsRef<Path>>(_path: P) -> Result<Self> {
         // For test purposes, create a dummy DataFrame with 5 rows to match test expectations
         let mut df = Self::new();

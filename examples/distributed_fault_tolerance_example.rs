@@ -144,7 +144,7 @@ impl FailureSimulation {
     }
 
     /// Run an example with simulated failures
-#[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
     fn run_with_simulated_failures(&mut self) -> Result<()> {
         // Set up handler with visible reporting
         let new_handler = FaultToleranceHandler::new(

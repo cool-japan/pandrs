@@ -27,7 +27,7 @@ fn main() -> Result<()> {
 
     // Display original DataFrame
     println!("\nOriginal DataFrame:");
-    println!("{:?}", df);
+    println!("{df:?}");
 
     // Group by single column
     println!("\n=== Group by 'category' ===");
@@ -35,7 +35,7 @@ fn main() -> Result<()> {
 
     println!("\nResult of groupby with single column:");
     for (key, group_df) in &grouped_by_category {
-        println!("Group: {}", key);
+        println!("Group: {key}");
         println!("  Rows: {}", group_df.row_count());
 
         // Calculate some simple statistics for each group
@@ -45,7 +45,7 @@ fn main() -> Result<()> {
         ) {
             let value_sum: i64 = value_col.iter().filter_map(|v| *v).sum();
             let score_avg: f64 = score_col.iter().sum::<f64>() / score_col.len() as f64;
-            println!("  Value sum: {}, Score avg: {:.2}", value_sum, score_avg);
+            println!("  Value sum: {value_sum}, Score avg: {score_avg:.2}");
         }
     }
 
@@ -55,7 +55,7 @@ fn main() -> Result<()> {
 
     println!("\nResult of multi-column groupby:");
     for (key, group_df) in &grouped_with_multi {
-        println!("Group: {}", key);
+        println!("Group: {key}");
         println!("  Rows: {}", group_df.row_count());
     }
 

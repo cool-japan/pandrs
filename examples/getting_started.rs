@@ -73,7 +73,7 @@ fn data_manipulation() -> Result<()> {
 
     // Simulate the operations
     let filtered_count = 2; // Alice and Charlie
-    println!("  ✅ Filtered DataFrame: {} rows", filtered_count);
+    println!("  ✅ Filtered DataFrame: {filtered_count} rows");
 
     Ok(())
 }

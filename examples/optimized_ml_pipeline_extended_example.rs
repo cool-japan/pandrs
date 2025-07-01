@@ -36,7 +36,7 @@ fn main() -> Result<()> {
     )?;
 
     println!("Original Dataset:");
-    println!("{:?}", df);
+    println!("{df:?}");
     println!();
 
     // Example 1: Basic Feature Engineering Pipeline
@@ -74,7 +74,7 @@ fn basic_feature_engineering_example(df: &OptimizedDataFrame) -> Result<()> {
     let result = pipeline.execute(df.clone())?;
 
     println!("Result with polynomial and interaction features:");
-    println!("{:?}", result);
+    println!("{result:?}");
 
     // Show execution summary
     let summary = pipeline.execution_summary();
@@ -165,7 +165,7 @@ fn custom_transformation_example(df: &OptimizedDataFrame) -> Result<()> {
     let result = pipeline.execute(df.clone())?;
 
     println!("Result with custom volatility transformation:");
-    println!("{:?}", result);
+    println!("{result:?}");
 
     Ok(())
 }
@@ -268,9 +268,9 @@ fn financial_analysis_pipeline(df: &OptimizedDataFrame) -> Result<()> {
         let min_risk = risk_scores.iter().fold(f64::INFINITY, |a, &b| a.min(b));
 
         println!("\nRisk Analysis:");
-        println!("- Average risk score: {:.3}", avg_risk);
-        println!("- Maximum risk score: {:.3}", max_risk);
-        println!("- Minimum risk score: {:.3}", min_risk);
+        println!("- Average risk score: {avg_risk:.3}");
+        println!("- Maximum risk score: {max_risk:.3}");
+        println!("- Minimum risk score: {min_risk:.3}");
     }
 
     // Pipeline execution summary

@@ -241,7 +241,7 @@ pub(crate) fn select_rows_by_indices_impl(
                         }
                     })
                     .collect();
-                
+
                 // Create new simple index from selected values
                 let new_index = crate::index::Index::new(selected_index_values)?;
                 result.set_index(crate::index::DataFrameIndex::Simple(new_index))?;
@@ -258,13 +258,14 @@ pub(crate) fn select_rows_by_indices_impl(
                         }
                     })
                     .collect();
-                
+
                 // Create new multi-index from selected rows
                 if !selected_multi_values.is_empty() {
-                    let level_names: Vec<Option<String>> = multi_idx.names().iter().cloned().collect();
+                    let level_names: Vec<Option<String>> =
+                        multi_idx.names().iter().cloned().collect();
                     let new_multi_index = crate::index::MultiIndex::from_tuples(
-                        selected_multi_values, 
-                        Some(level_names)
+                        selected_multi_values,
+                        Some(level_names),
                     )?;
                     result.set_index(crate::index::DataFrameIndex::Multi(new_multi_index))?;
                 } else {

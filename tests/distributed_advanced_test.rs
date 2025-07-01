@@ -16,8 +16,8 @@ mod tests {
 
     /// Test schema validation for distributed operations
     #[test]
-#[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
     fn test_alpha4_schema_validation() -> Result<()> {
         // Create test schema
         let mut schema = ExprSchema::new();
@@ -78,8 +78,8 @@ mod tests {
 
     /// Test fault tolerance mechanisms
     #[test]
-#[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
     fn test_alpha4_fault_tolerance() -> Result<()> {
         // Create test data
         let mut df = DataFrame::new();
@@ -131,8 +131,8 @@ mod tests {
 
     /// Test complex distributed query execution with error handling
     #[test]
-#[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
     fn test_alpha4_complex_distributed_queries() -> Result<()> {
         // Create larger test dataset
         let mut df = DataFrame::new();
@@ -228,8 +228,8 @@ mod tests {
 
     /// Test distributed processing with window operations
     #[test]
-#[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
     fn test_alpha4_distributed_window_operations() -> Result<()> {
         // Create time series test data
         let mut df = DataFrame::new();
@@ -294,8 +294,8 @@ mod tests {
 
     /// Test distributed processing performance and scalability
     #[test]
-#[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
     fn test_alpha4_distributed_performance() -> Result<()> {
         // Create a larger dataset to test performance
         let size = 10000;
@@ -362,8 +362,8 @@ mod tests {
 
     /// Test distributed processing error handling and recovery
     #[test]
-#[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
     fn test_alpha4_distributed_error_handling() -> Result<()> {
         // Create test data
         let mut df = DataFrame::new();
@@ -404,8 +404,8 @@ mod tests {
 
     /// Test integration with external data sources
     #[test]
-#[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
     fn test_alpha4_external_data_integration() -> Result<()> {
         let mut context = DistributedContext::new_local(2)?;
 
@@ -442,8 +442,8 @@ mod tests {
 
     #[test]
     #[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
     fn test_distributed_feature_disabled() -> Result<()> {
         // When distributed feature is disabled, these tests should be skipped
         // This test just ensures the module compiles

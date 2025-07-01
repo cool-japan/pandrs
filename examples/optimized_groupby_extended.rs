@@ -27,7 +27,7 @@ fn main() -> Result<()> {
 
     // Display the DataFrame
     println!("Original DataFrame:");
-    println!("{:?}", df);
+    println!("{df:?}");
 
     // Use the existing par_groupby method which returns a HashMap
     println!("\n1. Group by category using par_groupby");
@@ -37,8 +37,8 @@ fn main() -> Result<()> {
 
     // Display each group
     for (key, group_df) in &grouped_dfs {
-        println!("\nGroup: {}", key);
-        println!("{:?}", group_df);
+        println!("\nGroup: {key}");
+        println!("{group_df:?}");
 
         // Calculate some statistics for each group
         let value_col = group_df.get_int_column("value")?;
@@ -50,7 +50,7 @@ fn main() -> Result<()> {
             0.0
         };
 
-        println!("  Sum: {}, Count: {}, Mean: {:.2}", sum, count, mean);
+        println!("  Sum: {sum}, Count: {count}, Mean: {mean:.2}");
     }
 
     // Demonstrate manual aggregation
@@ -82,8 +82,7 @@ fn main() -> Result<()> {
     println!("Category statistics:");
     for (category, (value_mean, price_sum, price_max)) in &category_stats {
         println!(
-            "  {}: value_mean={:.2}, price_sum={:.2}, price_max={:.2}",
-            category, value_mean, price_sum, price_max
+            "  {category}: value_mean={value_mean:.2}, price_sum={price_sum:.2}, price_max={price_max:.2}"
         );
     }
 
@@ -111,7 +110,7 @@ fn main() -> Result<()> {
     summary_df.add_float_column("price_max", price_maxes)?;
 
     println!("Summary DataFrame:");
-    println!("{:?}", summary_df);
+    println!("{summary_df:?}");
 
     println!("\nExample completed successfully!");
 

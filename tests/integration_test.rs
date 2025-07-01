@@ -173,7 +173,7 @@ fn test_alpha4_optimized_dataframe_operations() -> Result<()> {
 fn test_alpha4_enhanced_parquet_io() -> Result<()> {
     use std::fs::remove_file;
     use std::path::Path;
-    
+
     let test_file = "test_alpha4_parquet.parquet";
 
     // Clean up any existing test file
@@ -247,7 +247,7 @@ fn test_alpha4_enhanced_parquet_io() -> Result<()> {
 fn test_alpha4_enhanced_sql_io() -> Result<()> {
     use std::fs::remove_file;
     use std::path::Path;
-    
+
     let db_file = "test_alpha4.db";
 
     // Clean up any existing test file
@@ -385,7 +385,7 @@ fn test_alpha4_distributed_processing_integration() -> Result<()> {
 fn test_alpha4_cross_feature_integration() -> Result<()> {
     use std::fs::remove_file;
     use std::path::Path;
-    
+
     let test_file = "test_cross_feature.parquet";
 
     // Clean up any existing test file

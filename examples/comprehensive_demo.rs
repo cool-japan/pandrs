@@ -31,7 +31,7 @@ fn main() -> Result<()> {
     // Display sample data
     println!("\nSample Financial Data (first 5 rows):");
     let sample_df = create_sample_financial_data()?;
-    println!("{:?}", sample_df);
+    println!("{sample_df:?}");
 
     println!("\n=== 1. Basic Query Engine Features ===\n");
 
@@ -499,9 +499,9 @@ fn test_performance_features(df: &DataFrame) -> Result<()> {
 
     for (name, expr) in eval_expressions {
         let start = Instant::now();
-        let _result = df.eval(expr, &format!("{}Result", name))?;
+        let _result = df.eval(expr, &format!("{name}Result"))?;
         let duration = start.elapsed();
-        println!("     {}: {:?}", name, duration);
+        println!("     {name}: {duration:?}");
     }
 
     // Memory efficiency

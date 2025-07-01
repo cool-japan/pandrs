@@ -87,15 +87,15 @@ pub trait StringCategoricalExt {
     fn to_na_vec(&self) -> Vec<NA<String>>;
 
     // Convert to NA series
-#[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
     fn to_na_series(&self, name: Option<String>) -> Result<NASeries<String>>;
 
     // Set operations
-#[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
     fn union(&self, other: &StringCategorical) -> Result<StringCategorical>;
-#[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
     fn intersection(&self, other: &StringCategorical) -> Result<StringCategorical>;
-#[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
     fn difference(&self, other: &StringCategorical) -> Result<StringCategorical>;
 }
 
@@ -109,8 +109,8 @@ impl StringCategoricalExt for StringCategorical {
         ]
     }
 
-#[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
     fn to_na_series(&self, name: Option<String>) -> Result<NASeries<String>> {
         // For testing purposes, create a fixed NASeries
         let values = [NA::Value("a".to_string()), NA::Value("b".to_string())];
@@ -118,24 +118,24 @@ impl StringCategoricalExt for StringCategorical {
         NASeries::new(values.to_vec(), name)
     }
 
-#[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
     fn union(&self, _other: &StringCategorical) -> Result<StringCategorical> {
         // For testing, return a categorical with a, b, c
         let values = ["a".to_string(), "b".to_string(), "c".to_string()];
         StringCategorical::new(values.to_vec(), None, false)
     }
 
-#[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
     fn intersection(&self, _other: &StringCategorical) -> Result<StringCategorical> {
         // For testing, return a categorical with just b
         let values = ["b".to_string()];
         StringCategorical::new(values.to_vec(), None, false)
     }
 
-#[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
     fn difference(&self, _other: &StringCategorical) -> Result<StringCategorical> {
         // For testing, return a categorical with just a
         let values = ["a".to_string()];

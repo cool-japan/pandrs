@@ -141,7 +141,7 @@ fn main() -> Result<()> {
     )?;
 
     println!("DataFrame: ");
-    println!("{:#?}", df);
+    println!("{df:#?}");
 
     // Retrieve and verify categorical data
     println!(
@@ -173,7 +173,7 @@ fn main() -> Result<()> {
 
     // After loading from CSV, categorical information is lost (loaded as regular string column)
     println!("Data loaded from CSV:");
-    println!("{:#?}", df_loaded);
+    println!("{df_loaded:#?}");
 
     // Check data loaded from CSV
 

@@ -53,7 +53,7 @@ fn main() -> Result<()> {
     df.add_column("Cost".to_string(), cost_series)?;
 
     println!("Original Data:");
-    println!("{:?}", df);
+    println!("{df:?}");
 
     println!("\n=== Basic GroupBy Operations ===\n");
 
@@ -64,15 +64,15 @@ fn main() -> Result<()> {
     // Simple aggregations
     let sales_sum = region_groupby.sum("Sales")?;
     println!("Sales Sum by Region:");
-    println!("{:?}", sales_sum);
+    println!("{sales_sum:?}");
 
     let sales_mean = region_groupby.mean("Sales")?;
     println!("\nSales Mean by Region:");
-    println!("{:?}", sales_mean);
+    println!("{sales_mean:?}");
 
     let quantity_count = region_groupby.count("Quantity")?;
     println!("\nQuantity Count by Region:");
-    println!("{:?}", quantity_count);
+    println!("{quantity_count:?}");
 
     println!("\n=== Named Aggregations ===\n");
 
@@ -92,7 +92,7 @@ fn main() -> Result<()> {
 
     let named_result = region_groupby.agg(named_aggs)?;
     println!("Named Aggregations Result:");
-    println!("{:?}", named_result);
+    println!("{named_result:?}");
 
     println!("\n=== Column Aggregation Builder ===\n");
 
@@ -112,7 +112,7 @@ fn main() -> Result<()> {
 
     let multi_result = region_groupby.agg_multi(vec![sales_aggs, quantity_aggs])?;
     println!("Multiple Aggregations Result:");
-    println!("{:?}", multi_result);
+    println!("{multi_result:?}");
 
     println!("\n=== Dictionary-Style Aggregations ===\n");
 
@@ -138,7 +138,7 @@ fn main() -> Result<()> {
 
     let dict_result = region_groupby.agg_dict(agg_dict)?;
     println!("Dictionary Aggregations Result:");
-    println!("{:?}", dict_result);
+    println!("{dict_result:?}");
 
     println!("\n=== Custom Aggregation Functions ===\n");
 
@@ -152,7 +152,7 @@ fn main() -> Result<()> {
         max_val - min_val
     })?;
     println!("Sales Range by Region:");
-    println!("{:?}", range_result);
+    println!("{range_result:?}");
 
     // Custom function: Coefficient of variation
     let cv_result = region_groupby.apply("Sales", "sales_cv", |values| {
@@ -163,7 +163,7 @@ fn main() -> Result<()> {
         std_dev / mean
     })?;
     println!("Sales Coefficient of Variation by Region:");
-    println!("{:?}", cv_result);
+    println!("{cv_result:?}");
 
     println!("\n=== Multi-Column GroupBy ===\n");
 
@@ -183,7 +183,7 @@ fn main() -> Result<()> {
 
     let multi_group_result = multi_groupby.agg(multi_aggs)?;
     println!("Multi-Column GroupBy Result:");
-    println!("{:?}", multi_group_result);
+    println!("{multi_group_result:?}");
 
     println!("\n=== Advanced Aggregations ===\n");
 
@@ -215,7 +215,7 @@ fn main() -> Result<()> {
 
     let stats_result = region_groupby.agg(stats_aggs)?;
     println!("Statistical Aggregations Result:");
-    println!("{:?}", stats_result);
+    println!("{stats_result:?}");
 
     println!("\n=== Group Information ===\n");
 
@@ -226,7 +226,7 @@ fn main() -> Result<()> {
 
     let group_sizes = region_groupby.size()?;
     println!("Group sizes:");
-    println!("{:?}", group_sizes);
+    println!("{group_sizes:?}");
 
     println!("\n=== Custom Named Aggregations with Builder ===\n");
 
@@ -247,7 +247,7 @@ fn main() -> Result<()> {
 
     let complex_result = region_groupby.agg_multi(vec![complex_aggs])?;
     println!("Complex Custom Aggregations Result:");
-    println!("{:?}", complex_result);
+    println!("{complex_result:?}");
 
     println!("\n=== Macro Usage Examples ===\n");
 
@@ -263,7 +263,7 @@ fn main() -> Result<()> {
 
     let macro_result = region_groupby.agg(macro_aggs)?;
     println!("Macro Aggregations Result:");
-    println!("{:?}", macro_result);
+    println!("{macro_result:?}");
 
     // Using column_aggs! macro
     let column_macro_agg = pandrs::column_aggs!(
@@ -275,7 +275,7 @@ fn main() -> Result<()> {
 
     let column_macro_result = region_groupby.agg_multi(vec![column_macro_agg])?;
     println!("Column Macro Aggregations Result:");
-    println!("{:?}", column_macro_result);
+    println!("{column_macro_result:?}");
 
     // Using agg_spec! macro
     let spec_dict = pandrs::agg_spec! {
@@ -285,7 +285,7 @@ fn main() -> Result<()> {
 
     let spec_result = region_groupby.agg_dict(spec_dict)?;
     println!("Spec Macro Aggregations Result:");
-    println!("{:?}", spec_result);
+    println!("{spec_result:?}");
 
     println!("\n=== Alpha 4 Enhanced GroupBy Complete ===");
     println!("\nNew GroupBy capabilities implemented:");

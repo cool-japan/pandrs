@@ -629,10 +629,10 @@ impl FreeSpaceTracker {
                 current = next;
             }
         }
-        
+
         // Don't forget the last block
         merged.push(current);
-        
+
         self.free_blocks = merged;
     }
 
@@ -868,40 +868,43 @@ impl UnifiedColumnStoreStrategy {
                 .or_insert_with(ColumnStatistics::new);
 
             stats.total_size += chunk.len() as u64;
-            
+
             // Update compression ratio based on actual compression
             let original_size = chunk.len() as u64;
-            
+
             // Estimate compressed size based on compression type
             let estimated_compressed_size = match handle.compression_type {
                 CompressionType::None => original_size,
                 CompressionType::Auto => (original_size as f64 * 0.5) as u64, // ~50% compression (auto-selected)
-                CompressionType::Lz4 => (original_size as f64 * 0.6) as u64, // ~40% compression
+                CompressionType::Lz4 => (original_size as f64 * 0.6) as u64,  // ~40% compression
                 CompressionType::Snappy => (original_size as f64 * 0.7) as u64, // ~30% compression (fast)
-                CompressionType::Gzip => (original_size as f64 * 0.5) as u64, // ~50% compression
-                CompressionType::Zstd => (original_size as f64 * 0.4) as u64, // ~60% compression
+                CompressionType::Gzip => (original_size as f64 * 0.5) as u64,   // ~50% compression
+                CompressionType::Zstd => (original_size as f64 * 0.4) as u64,   // ~60% compression
             };
-            
+
             stats.compressed_size += estimated_compressed_size;
-            
+
             // Update compression ratio
             if stats.compressed_size > 0 {
                 stats.compression_ratio = stats.total_size as f64 / stats.compressed_size as f64;
             }
-            
+
             // Update encoding ratio based on encoding type
             stats.encoding_ratio = match handle.encoding_type {
                 EncodingType::None => 1.0,
                 EncodingType::RunLength => 1.5, // Estimate 50% size reduction for repetitive data
                 EncodingType::Dictionary => 2.0, // Estimate 50% size reduction for categorical data
-                EncodingType::Delta => 1.3, // Estimate 30% size reduction for numeric sequences
+                EncodingType::Delta => 1.3,     // Estimate 30% size reduction for numeric sequences
                 EncodingType::BitPacked => 2.0, // Estimate 50% size reduction for small integers
-                EncodingType::Auto => 1.2, // Conservative estimate
+                EncodingType::Auto => 1.2,      // Conservative estimate
             };
-            
+
             // For numeric data, try to calculate min/max values if possible
-            if let ColumnDataType::Float64 | ColumnDataType::Int64 | 
-               ColumnDataType::Float32 | ColumnDataType::Int32 = handle.layout.data_type {
+            if let ColumnDataType::Float64
+            | ColumnDataType::Int64
+            | ColumnDataType::Float32
+            | ColumnDataType::Int32 = handle.layout.data_type
+            {
                 // Parse chunk data to find min/max (simplified implementation)
                 // In a real implementation, this would parse the actual chunk data
                 if chunk.len() >= 8 {
@@ -1045,10 +1048,9 @@ impl StorageStrategy for UnifiedColumnStoreStrategy {
             }
 
             // Add freed space to free space tracker
-            block_manager.free_space_tracker.add_free_space(
-                metadata.location.offset,
-                metadata.location.size
-            );
+            block_manager
+                .free_space_tracker
+                .add_free_space(metadata.location.offset, metadata.location.size);
 
             // Remove from block cache
             if let Ok(mut cache) = block_manager.block_cache.lock() {
@@ -1114,7 +1116,7 @@ impl StorageStrategy for UnifiedColumnStoreStrategy {
         let mut compressed_size = 0u64;
         let mut column_count = 0usize;
         let total_rows = 0u64;
-        
+
         // Read statistics from metadata cache
         if let Ok(cache) = self.metadata_cache.read() {
             for stats in cache.values() {
@@ -1123,7 +1125,7 @@ impl StorageStrategy for UnifiedColumnStoreStrategy {
                 column_count += 1;
             }
         }
-        
+
         // Get block manager statistics
         let (total_blocks, total_memory) = if let Ok(block_manager) = self.block_manager.lock() {
             let block_count = block_manager.metadata_index.len();
@@ -1132,23 +1134,23 @@ impl StorageStrategy for UnifiedColumnStoreStrategy {
         } else {
             (0, 0)
         };
-        
+
         // Calculate compression ratio
         let compression_ratio = if compressed_size > 0 {
             total_size as f64 / compressed_size as f64
         } else {
             1.0
         };
-        
+
         // Create storage statistics
         StorageStats {
             total_size: total_size.try_into().unwrap_or(usize::MAX),
             used_size: compressed_size.try_into().unwrap_or(usize::MAX),
             read_operations: total_blocks as u64,
             write_operations: total_blocks as u64,
-            avg_read_latency_ns: 1000, // Estimated 1 microsecond
-            avg_write_latency_ns: 2000, // Estimated 2 microseconds  
-            cache_hit_rate: 0.85, // Estimated cache hit rate
+            avg_read_latency_ns: 1000,  // Estimated 1 microsecond
+            avg_write_latency_ns: 2000, // Estimated 2 microseconds
+            cache_hit_rate: 0.85,       // Estimated cache hit rate
         }
     }
 
@@ -1182,41 +1184,42 @@ impl StorageStrategy for UnifiedColumnStoreStrategy {
 
         // Real compaction implementation
         let mut size_before = 0u64;
-        
+
         // Get initial size
         if let Ok(cache) = self.metadata_cache.read() {
             if let Some(stats) = cache.get(&handle.layout.name) {
                 size_before = stats.total_size;
             }
         }
-        
+
         // Perform block compaction
         let mut block_manager = self.block_manager.lock().map_err(|_| {
             Error::InvalidOperation("Failed to acquire block manager lock".to_string())
         })?;
-        
+
         let mut compacted_blocks = Vec::new();
         let mut total_freed_space = 0usize;
-        
+
         // Read all blocks for this handle
         for &block_id in &handle.blocks {
             if let Ok(block) = block_manager.read_block(block_id) {
                 // Try to recompress with better compression
-                let compression_engine = self.compression_engines
+                let compression_engine = self
+                    .compression_engines
                     .get(&CompressionType::Zstd)
                     .unwrap();
-                
+
                 // Decompress first
                 let decompressed = compression_engine.decompress(&block.data)?;
-                
+
                 // Recompress with higher compression level
                 let recompressed = compression_engine.compress(&decompressed)?;
-                
+
                 // Check if we achieved better compression
                 if recompressed.len() < block.data.len() {
                     let space_saved = block.data.len() - recompressed.len();
                     total_freed_space += space_saved;
-                    
+
                     // Create new compressed block
                     let mut new_block = CompressedBlock::new(
                         recompressed,
@@ -1231,7 +1234,7 @@ impl StorageStrategy for UnifiedColumnStoreStrategy {
                 }
             }
         }
-        
+
         // Write compacted blocks back
         for (block_id, new_block) in compacted_blocks {
             // Update the block in storage
@@ -1240,40 +1243,43 @@ impl StorageStrategy for UnifiedColumnStoreStrategy {
             } else {
                 None
             };
-            
+
             if let Some(location) = location {
                 // Write new data
-                block_manager.storage.write_at_location(&location, &new_block.data)?;
-                
+                block_manager
+                    .storage
+                    .write_at_location(&location, &new_block.data)?;
+
                 // Update metadata
                 if let Some(metadata) = block_manager.metadata_index.get_mut(&block_id) {
                     metadata.compressed_size = new_block.data.len();
                     metadata.checksum = new_block.checksum();
                 }
-                
+
                 // Update cache
                 if let Ok(mut cache) = block_manager.block_cache.lock() {
                     cache.insert(block_id, new_block);
                 }
             }
         }
-        
+
         // Merge free space to reduce fragmentation
         block_manager.free_space_tracker.merge_adjacent_blocks();
-        
+
         // Calculate final size
         let size_after = if size_before > total_freed_space as u64 {
             size_before - total_freed_space as u64
         } else {
             size_before
         };
-        
+
         // Update column statistics
         if let Ok(mut cache) = self.metadata_cache.write() {
             if let Some(stats) = cache.get_mut(&handle.layout.name) {
                 stats.compressed_size = size_after;
                 if stats.compressed_size > 0 {
-                    stats.compression_ratio = stats.total_size as f64 / stats.compressed_size as f64;
+                    stats.compression_ratio =
+                        stats.total_size as f64 / stats.compressed_size as f64;
                 }
             }
         }

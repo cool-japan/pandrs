@@ -26,10 +26,10 @@ fn create_test_csv() -> Result<NamedTempFile> {
             _ => "E",
         };
 
-        let name = format!("Item{}", i);
+        let name = format!("Item{i}");
         let value = i as f64 / 10.0;
 
-        writeln!(temp_file, "{},{},{:.1},{}", i, name, value, category)?;
+        writeln!(temp_file, "{i},{name},{value:.1},{category}")?;
     }
 
     Ok(temp_file)
@@ -81,7 +81,7 @@ fn test_chunked_dataframe() -> Result<()> {
     }
 
     // We'll accept whatever result we get for now
-    println!("Processed {} rows in {} chunks", total_rows, chunk_count);
+    println!("Processed {total_rows} rows in {chunk_count} chunks");
 
     Ok(())
 }

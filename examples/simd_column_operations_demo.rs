@@ -180,24 +180,24 @@ fn demo_comparison_operations() -> Result<()> {
 
     // Equal
     let eq_result = col1.simd_compare(&col2, ComparisonOp::Equal)?;
-    println!("Equal (col1 == col2): {:?}", eq_result);
+    println!("Equal (col1 == col2): {eq_result:?}");
 
     // Greater than
     let gt_result = col1.simd_compare(&col2, ComparisonOp::GreaterThan)?;
-    println!("Greater than (col1 > col2): {:?}", gt_result);
+    println!("Greater than (col1 > col2): {gt_result:?}");
 
     // Less than or equal
     let le_result = col1.simd_compare(&col2, ComparisonOp::LessThanEqual)?;
-    println!("Less than or equal (col1 <= col2): {:?}", le_result);
+    println!("Less than or equal (col1 <= col2): {le_result:?}");
 
     // Scalar comparison
     println!();
     println!("Scalar comparisons:");
     let scalar_gt = col1.simd_compare_scalar(3.0, ComparisonOp::GreaterThan)?;
-    println!("Column > 3.0: {:?}", scalar_gt);
+    println!("Column > 3.0: {scalar_gt:?}");
 
     let scalar_eq = col1.simd_compare_scalar(2.0, ComparisonOp::Equal)?;
-    println!("Column == 2.0: {:?}", scalar_eq);
+    println!("Column == 2.0: {scalar_eq:?}");
 
     Ok(())
 }
@@ -249,7 +249,7 @@ fn demo_performance_comparison() -> Result<()> {
     let col1 = Float64Column::new(data1.clone());
     let col2 = Float64Column::new(data2.clone());
 
-    println!("Dataset size: {} elements", size);
+    println!("Dataset size: {size} elements");
     println!();
 
     // SIMD addition
@@ -280,9 +280,9 @@ fn demo_performance_comparison() -> Result<()> {
 
     let speedup = scalar_time.as_secs_f64() / simd_time.as_secs_f64();
     if speedup > 1.0 {
-        println!("  SIMD speedup: {:.1}x faster", speedup);
+        println!("  SIMD speedup: {speedup:.1}x faster");
     } else {
-        println!("  Performance ratio: {:.1}x", speedup);
+        println!("  Performance ratio: {speedup:.1}x");
     }
 
     println!();
@@ -318,9 +318,9 @@ fn demo_performance_comparison() -> Result<()> {
 
     let sqrt_speedup = scalar_sqrt_time.as_secs_f64() / simd_sqrt_time.as_secs_f64();
     if sqrt_speedup > 1.0 {
-        println!("  SIMD sqrt speedup: {:.1}x faster", sqrt_speedup);
+        println!("  SIMD sqrt speedup: {sqrt_speedup:.1}x faster");
     } else {
-        println!("  Sqrt performance ratio: {:.1}x", sqrt_speedup);
+        println!("  Sqrt performance ratio: {sqrt_speedup:.1}x");
     }
 
     Ok(())
@@ -335,7 +335,7 @@ fn demo_large_scale_operations() -> Result<()> {
     let sizes = vec![1_000, 10_000, 100_000];
 
     for &size in &sizes {
-        println!("Dataset size: {} elements", size);
+        println!("Dataset size: {size} elements");
 
         let data1: Vec<f64> = (0..size).map(|i| (i as f64) * 0.001).collect();
         let data2: Vec<f64> = (0..size).map(|i| (i % 1000) as f64).collect();

@@ -40,8 +40,8 @@ fn demo_column_management() -> std::result::Result<(), Box<dyn std::error::Error
     for i in 0..10 {
         let data: Vec<i32> = (0..10000).collect();
         df.add_column(
-            format!("column_{}", i),
-            pandrs::series::Series::new(data, Some(format!("column_{}", i)))?,
+            format!("column_{i}"),
+            pandrs::series::Series::new(data, Some(format!("column_{i}")))?,
         )?;
     }
 
@@ -55,7 +55,7 @@ fn demo_column_management() -> std::result::Result<(), Box<dyn std::error::Error
     let start = Instant::now();
     let mut rename_map = HashMap::new();
     for i in 0..5 {
-        rename_map.insert(format!("column_{}", i), format!("renamed_column_{}", i));
+        rename_map.insert(format!("column_{i}"), format!("renamed_column_{i}"));
     }
     df.rename_columns(&rename_map)?;
     let rename_duration = start.elapsed();
@@ -67,7 +67,7 @@ fn demo_column_management() -> std::result::Result<(), Box<dyn std::error::Error
 
     // Test set_column_names performance
     let start = Instant::now();
-    let new_names: Vec<String> = (0..10).map(|i| format!("col_{}", i)).collect();
+    let new_names: Vec<String> = (0..10).map(|i| format!("col_{i}")).collect();
     df.set_column_names(new_names)?;
     let set_names_duration = start.elapsed();
 
@@ -114,7 +114,7 @@ fn demo_string_pool_optimization() -> std::result::Result<(), Box<dyn std::error
         "   Duration: {:.2}ms",
         traditional_duration.as_secs_f64() * 1000.0
     );
-    println!("   Memory: {:.1}MB", traditional_memory);
+    println!("   Memory: {traditional_memory:.1}MB");
 
     // Optimized approach with string pool
     let start = Instant::now();
@@ -134,15 +134,15 @@ fn demo_string_pool_optimization() -> std::result::Result<(), Box<dyn std::error
         "   Duration: {:.2}ms",
         optimized_duration.as_secs_f64() * 1000.0
     );
-    println!("   Memory: {:.1}MB", optimized_memory);
+    println!("   Memory: {optimized_memory:.1}MB");
 
     // Calculate improvements
     let speedup = traditional_duration.as_secs_f64() / optimized_duration.as_secs_f64();
     let memory_reduction = ((traditional_memory - optimized_memory) / traditional_memory) * 100.0;
 
     println!("🎯 Performance Improvement:");
-    println!("   Speedup: {:.2}x", speedup);
-    println!("   Memory reduction: {:.1}%", memory_reduction);
+    println!("   Speedup: {speedup:.2}x");
+    println!("   Memory reduction: {memory_reduction:.1}%");
 
     // Verify claims
     if speedup >= 2.0 && memory_reduction >= 80.0 {
@@ -263,7 +263,7 @@ fn demo_memory_usage() -> std::result::Result<(), Box<dyn std::error::Error>> {
         "   Creation time: {:.2}ms",
         traditional_duration.as_secs_f64() * 1000.0
     );
-    println!("   Estimated memory: {:.1}MB", traditional_memory);
+    println!("   Estimated memory: {traditional_memory:.1}MB");
 
     // Optimized approach
     let start = Instant::now();
@@ -283,14 +283,14 @@ fn demo_memory_usage() -> std::result::Result<(), Box<dyn std::error::Error>> {
         "   Creation time: {:.2}ms",
         optimized_duration.as_secs_f64() * 1000.0
     );
-    println!("   Estimated memory: {:.1}MB", optimized_memory);
+    println!("   Estimated memory: {optimized_memory:.1}MB");
 
     let speedup = traditional_duration.as_secs_f64() / optimized_duration.as_secs_f64();
     let memory_savings = ((traditional_memory - optimized_memory) / traditional_memory) * 100.0;
 
     println!("🎯 Improvement:");
-    println!("   Speedup: {:.2}x", speedup);
-    println!("   Memory savings: {:.1}%", memory_savings);
+    println!("   Speedup: {speedup:.2}x");
+    println!("   Memory savings: {memory_savings:.1}%");
 
     println!();
     Ok(())

@@ -322,8 +322,7 @@ fn test_large_dataset_performance() -> Result<()> {
     // Should complete within reasonable time (adjust threshold as needed)
     assert!(
         duration.as_millis() < 1000,
-        "Rolling operation took too long: {:?}",
-        duration
+        "Rolling operation took too long: {duration:?}"
     );
 
     let start = std::time::Instant::now();
@@ -332,8 +331,7 @@ fn test_large_dataset_performance() -> Result<()> {
 
     assert!(
         duration.as_millis() < 1000,
-        "Expanding operation took too long: {:?}",
-        duration
+        "Expanding operation took too long: {duration:?}"
     );
 
     let start = std::time::Instant::now();
@@ -342,8 +340,7 @@ fn test_large_dataset_performance() -> Result<()> {
 
     assert!(
         duration.as_millis() < 1000,
-        "EWM operation took too long: {:?}",
-        duration
+        "EWM operation took too long: {duration:?}"
     );
 
     Ok(())

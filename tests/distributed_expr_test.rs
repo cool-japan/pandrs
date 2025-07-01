@@ -8,8 +8,8 @@ mod tests {
     use std::sync::Arc;
 
     #[test]
-#[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
     fn test_select_expr() -> Result<()> {
         // Create test data
         let mut df = pandrs::dataframe::DataFrame::new();
@@ -46,8 +46,8 @@ mod tests {
     }
 
     #[test]
-#[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
     fn test_with_column() -> Result<()> {
         // Create test data
         let mut df = pandrs::dataframe::DataFrame::new();
@@ -81,8 +81,8 @@ mod tests {
     }
 
     #[test]
-#[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
     fn test_filter_expr() -> Result<()> {
         // Create test data
         let mut df = pandrs::dataframe::DataFrame::new();
@@ -117,8 +117,8 @@ mod tests {
     }
 
     #[test]
-#[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
     fn test_udf_creation() -> Result<()> {
         // Skip if not using local engine for tests
         if !cfg!(feature = "test_with_datafusion") {

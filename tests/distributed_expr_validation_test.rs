@@ -45,8 +45,8 @@ mod tests {
     }
 
     #[test]
-#[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
     fn test_column_reference_validation() -> Result<()> {
         let schema = create_test_schema();
         let validator = ExprValidator::new(&schema);
@@ -65,8 +65,8 @@ mod tests {
     }
 
     #[test]
-#[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
     fn test_literal_validation() -> Result<()> {
         let schema = create_test_schema();
         let validator = ExprValidator::new(&schema);
@@ -99,8 +99,8 @@ mod tests {
     }
 
     #[test]
-#[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
     fn test_arithmetic_validation() -> Result<()> {
         let schema = create_test_schema();
         let validator = ExprValidator::new(&schema);
@@ -137,8 +137,8 @@ mod tests {
     }
 
     #[test]
-#[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
     fn test_comparison_validation() -> Result<()> {
         let schema = create_test_schema();
         let validator = ExprValidator::new(&schema);
@@ -166,8 +166,8 @@ mod tests {
     }
 
     #[test]
-#[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
     fn test_logical_validation() -> Result<()> {
         let schema = create_test_schema();
         let validator = ExprValidator::new(&schema);
@@ -190,8 +190,8 @@ mod tests {
     }
 
     #[test]
-#[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
     fn test_function_validation() -> Result<()> {
         let schema = create_test_schema();
         let mut validator = ExprValidator::new(&schema);
@@ -230,8 +230,8 @@ mod tests {
     }
 
     #[test]
-#[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
     fn test_case_validation() -> Result<()> {
         let schema = create_test_schema();
         let validator = ExprValidator::new(&schema);
@@ -271,8 +271,8 @@ mod tests {
     }
 
     #[test]
-#[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
     fn test_cast_validation() -> Result<()> {
         let schema = create_test_schema();
         let validator = ExprValidator::new(&schema);
@@ -309,8 +309,8 @@ mod tests {
     }
 
     #[test]
-#[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
     fn test_coalesce_validation() -> Result<()> {
         let schema = create_test_schema();
         let validator = ExprValidator::new(&schema);
@@ -329,8 +329,8 @@ mod tests {
     }
 
     #[test]
-#[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
     fn test_projection_validation() -> Result<()> {
         let schema = create_test_schema();
         let validator = ExprValidator::new(&schema);
@@ -366,8 +366,8 @@ mod tests {
     }
 
     #[test]
-#[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
     fn test_arrow_schema_conversion() -> Result<()> {
         let schema = create_test_schema();
 

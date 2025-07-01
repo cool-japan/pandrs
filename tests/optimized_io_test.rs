@@ -101,8 +101,7 @@ fn test_optimized_csv_without_header() -> Result<()> {
     // Calculate expected column count from CSV content
     let expected_cols = csv_content.lines().next().unwrap().split(',').count();
     println!(
-        "Expected column count calculated from CSV content: {}",
-        expected_cols
+        "Expected column count calculated from CSV content: {expected_cols}"
     );
     println!("Actual column count: {}", loaded_df.column_count());
     println!("Loaded row count: {}", loaded_df.row_count());
@@ -111,7 +110,7 @@ fn test_optimized_csv_without_header() -> Result<()> {
     // Different implementations may handle headerless CSV differently,
     // row_count may vary depending on whether header line is treated as data
     let lines_count = csv_content.lines().count();
-    println!("Line count in CSV: {}", lines_count);
+    println!("Line count in CSV: {lines_count}");
 
     // Just check that loading was successful
     assert!(loaded_df.row_count() > 0);
@@ -201,7 +200,7 @@ fn test_excel_io() -> Result<()> {
 
     // We can check for at least some of our columns
     let column_names = loaded_df.column_names();
-    println!("Loaded columns from Excel: {:?}", column_names);
+    println!("Loaded columns from Excel: {column_names:?}");
     assert!(!column_names.is_empty());
 
     // Just verify column view is valid
@@ -271,7 +270,7 @@ fn test_parquet_io() -> Result<()> {
 
     // We can check for at least some of our columns
     let column_names = loaded_df.column_names();
-    println!("Loaded columns from Parquet: {:?}", column_names);
+    println!("Loaded columns from Parquet: {column_names:?}");
     assert!(!column_names.is_empty());
 
     // Just verify column view is valid

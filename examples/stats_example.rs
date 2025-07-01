@@ -64,8 +64,8 @@ fn descriptive_stats_example() -> Result<()> {
     let corr = pandrs::stats::correlation(&data1, &data2)?;
 
     println!("\nCovariance and Correlation Coefficient:");
-    println!("Covariance: {:.4}", cov);
-    println!("Correlation Coefficient: {:.4}", corr);
+    println!("Covariance: {cov:.4}");
+    println!("Correlation Coefficient: {corr:.4}");
 
     println!();
     Ok(())

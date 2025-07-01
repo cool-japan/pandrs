@@ -18,7 +18,7 @@ fn main() -> Result<()> {
     // Create NASeries
     let series = NASeries::new(data, Some("numbers".to_string()))?;
 
-    println!("Series with NA: {:?}", series);
+    println!("Series with NA: {series:?}");
     println!("Number of NAs: {}", series.na_count());
     println!("Number of values: {}", series.value_count());
     println!("Contains NA: {}", series.has_na());
@@ -33,17 +33,17 @@ fn main() -> Result<()> {
     // Handling NAs
     println!("\n--- Handling of NA Values ---");
     let dropped = series.dropna()?;
-    println!("Series after dropping NAs: {:?}", dropped);
+    println!("Series after dropping NAs: {dropped:?}");
     println!("Length after dropping NAs: {}", dropped.len());
 
     let filled = series.fillna(0)?;
-    println!("Series after filling NAs with 0: {:?}", filled);
+    println!("Series after filling NAs with 0: {filled:?}");
 
     // Conversion from Option
     println!("\n--- Conversion from Option ---");
     let option_data = vec![Some(100), Some(200), None, Some(400), None];
     let option_series = NASeries::from_options(option_data, Some("from_options".to_string()))?;
-    println!("Series from Option: {:?}", option_series);
+    println!("Series from Option: {option_series:?}");
 
     // Numerical operations
     println!("\n--- Numerical Operations with NA Values ---");

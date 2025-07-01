@@ -60,7 +60,7 @@ fn main() -> Result<()> {
     df.add_column("Experience".to_string(), exp_series)?;
 
     println!("Original Employee Data:");
-    println!("{:?}", df);
+    println!("{df:?}");
 
     println!("\n=== Basic Query Operations ===\n");
 
@@ -70,17 +70,17 @@ fn main() -> Result<()> {
     // Age greater than 30
     let age_filter = df.query("Age > 30")?;
     println!("Employees older than 30:");
-    println!("{:?}", age_filter);
+    println!("{age_filter:?}");
 
     // High salary filter
     let salary_filter = df.query("Salary >= 65000")?;
     println!("\nEmployees with salary >= 65000:");
-    println!("{:?}", salary_filter);
+    println!("{salary_filter:?}");
 
     // Department filter
     let it_filter = df.query("Department == 'IT'")?;
     println!("\nIT Department employees:");
-    println!("{:?}", it_filter);
+    println!("{it_filter:?}");
 
     println!("\n=== Logical Operations ===\n");
 
@@ -90,17 +90,17 @@ fn main() -> Result<()> {
     // Multiple conditions with AND
     let senior_it = df.query("Department == 'IT' && Age > 30")?;
     println!("Senior IT employees (Age > 30):");
-    println!("{:?}", senior_it);
+    println!("{senior_it:?}");
 
     // Multiple conditions with OR
     let hr_or_finance = df.query("Department == 'HR' || Department == 'Finance'")?;
     println!("\nHR or Finance employees:");
-    println!("{:?}", hr_or_finance);
+    println!("{hr_or_finance:?}");
 
     // NOT operation
     let not_it = df.query("!(Department == 'IT')")?;
     println!("\nNon-IT employees:");
-    println!("{:?}", not_it);
+    println!("{not_it:?}");
 
     println!("\n=== Arithmetic Operations in Queries ===\n");
 
@@ -110,12 +110,12 @@ fn main() -> Result<()> {
     // Salary per year of experience
     let efficient_employees = df.query("Salary / Experience > 8000")?;
     println!("Employees with salary/experience ratio > 8000:");
-    println!("{:?}", efficient_employees);
+    println!("{efficient_employees:?}");
 
     // Age and experience combination
     let young_experienced = df.query("Age - Experience < 25")?;
     println!("\nEmployees who started young (Age - Experience < 25):");
-    println!("{:?}", young_experienced);
+    println!("{young_experienced:?}");
 
     println!("\n=== Complex Query Expressions ===\n");
 
@@ -126,12 +126,12 @@ fn main() -> Result<()> {
     let complex_query =
         df.query("(Age > 30 && Salary > 60000) || (Experience > 10 && Department != 'HR')")?;
     println!("Complex filter - Senior high earners OR experienced non-HR:");
-    println!("{:?}", complex_query);
+    println!("{complex_query:?}");
 
     // Mathematical expression with parentheses
     let bonus_eligible = df.query("(Age + Experience) * 1000 > Salary / 10")?;
     println!("\nBonus eligible employees (complex formula):");
-    println!("{:?}", bonus_eligible);
+    println!("{bonus_eligible:?}");
 
     println!("\n=== Expression Evaluation with .eval() ===\n");
 
@@ -141,12 +141,12 @@ fn main() -> Result<()> {
     // Calculate age when started working
     let with_start_age = df.eval("Age - Experience", "StartAge")?;
     println!("DataFrame with calculated start age:");
-    println!("{:?}", with_start_age);
+    println!("{with_start_age:?}");
 
     // Calculate salary per year of experience
     let with_efficiency = df.eval("Salary / Experience", "SalaryPerExp")?;
     println!("\nDataFrame with salary efficiency ratio:");
-    println!("{:?}", with_efficiency);
+    println!("{with_efficiency:?}");
 
     // Complex calculation
     let with_score = df.eval(
@@ -154,7 +154,7 @@ fn main() -> Result<()> {
         "EmployeeScore",
     )?;
     println!("\nDataFrame with employee score:");
-    println!("{:?}", with_score);
+    println!("{with_score:?}");
 
     println!("\n=== Custom Context and Functions ===\n");
 
@@ -190,7 +190,7 @@ fn main() -> Result<()> {
     let engine = QueryEngine::with_context(context);
     let custom_query = engine.query(&df, "Salary > min_salary && Age < target_age")?;
     println!("Query with custom variables:");
-    println!("{:?}", custom_query);
+    println!("{custom_query:?}");
 
     println!("\n=== Mathematical Functions ===\n");
 
@@ -200,17 +200,17 @@ fn main() -> Result<()> {
     // Using built-in functions in queries
     let sqrt_age = df.eval("sqrt(Age)", "SqrtAge")?;
     println!("DataFrame with square root of age:");
-    println!("{:?}", sqrt_age);
+    println!("{sqrt_age:?}");
 
     // Logarithmic salary analysis
     let log_salary = df.eval("log(Salary)", "LogSalary")?;
     println!("\nDataFrame with logarithmic salary:");
-    println!("{:?}", log_salary);
+    println!("{log_salary:?}");
 
     // Power calculations
     let power_calc = df.eval("Experience ** 2", "ExpSquared")?;
     println!("\nDataFrame with experience squared:");
-    println!("{:?}", power_calc);
+    println!("{power_calc:?}");
 
     println!("\n=== String Operations ===\n");
 
@@ -220,12 +220,12 @@ fn main() -> Result<()> {
     // String equality
     let marketing_employees = df.query("Department == 'Marketing'")?;
     println!("Marketing department employees:");
-    println!("{:?}", marketing_employees);
+    println!("{marketing_employees:?}");
 
     // String concatenation in eval
     let name_dept = df.eval("Name + '_' + Department", "NameDept")?;
     println!("\nDataFrame with name and department combined:");
-    println!("{:?}", name_dept);
+    println!("{name_dept:?}");
 
     println!("\n=== Performance Demonstration ===\n");
 
@@ -284,7 +284,7 @@ fn demonstrate_performance() -> Result<()> {
     large_df.add_column("Value".to_string(), value_series)?;
     large_df.add_column("Category".to_string(), cat_series)?;
 
-    println!("Created dataset with {} rows", size);
+    println!("Created dataset with {size} rows");
 
     // Test query performance
     let start = std::time::Instant::now();
@@ -292,8 +292,7 @@ fn demonstrate_performance() -> Result<()> {
     let duration = start.elapsed();
 
     println!(
-        "Query 'Value > 500 && Category == \"A\"' took: {:?}",
-        duration
+        "Query 'Value > 500 && Category == \"A\"' took: {duration:?}"
     );
     println!("Filtered {} rows to {} rows", size, filtered.row_count());
 
@@ -302,7 +301,7 @@ fn demonstrate_performance() -> Result<()> {
     let _with_calc = large_df.eval("Value * 2 + sqrt(Value)", "Calculated")?;
     let duration = start.elapsed();
 
-    println!("Eval 'Value * 2 + sqrt(Value)' took: {:?}", duration);
+    println!("Eval 'Value * 2 + sqrt(Value)' took: {duration:?}");
 
     Ok(())
 }
@@ -315,31 +314,31 @@ fn demonstrate_error_handling(df: &DataFrame) -> Result<()> {
     // Invalid column name
     match df.query("NonExistentColumn > 10") {
         Ok(_) => println!("Unexpected success with invalid column"),
-        Err(e) => println!("Expected error for invalid column: {:?}", e),
+        Err(e) => println!("Expected error for invalid column: {e:?}"),
     }
 
     // Invalid syntax
     match df.query("Age >") {
         Ok(_) => println!("Unexpected success with invalid syntax"),
-        Err(e) => println!("Expected error for invalid syntax: {:?}", e),
+        Err(e) => println!("Expected error for invalid syntax: {e:?}"),
     }
 
     // Division by zero
     match df.eval("Salary / 0", "Invalid") {
         Ok(_) => println!("Unexpected success with division by zero"),
-        Err(e) => println!("Expected error for division by zero: {:?}", e),
+        Err(e) => println!("Expected error for division by zero: {e:?}"),
     }
 
     // Invalid function
     match df.eval("unknown_function(Age)", "Invalid") {
         Ok(_) => println!("Unexpected success with unknown function"),
-        Err(e) => println!("Expected error for unknown function: {:?}", e),
+        Err(e) => println!("Expected error for unknown function: {e:?}"),
     }
 
     // Type mismatch
     match df.query("Age && Salary") {
         Ok(_) => println!("Unexpected success with type mismatch"),
-        Err(e) => println!("Expected error for type mismatch: {:?}", e),
+        Err(e) => println!("Expected error for type mismatch: {e:?}"),
     }
 
     Ok(())

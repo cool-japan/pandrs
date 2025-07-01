@@ -24,7 +24,7 @@ mod string_pool_concurrency_tests {
 
                     let mut df = OptimizedDataFrame::new();
                     let string_data: Vec<String> = (0..strings_per_thread)
-                        .map(|i| format!("thread_{}_string_{}", thread_id, i))
+                        .map(|i| format!("thread_{thread_id}_string_{i}"))
                         .collect();
 
                     // This tests concurrent string pool access
@@ -40,14 +40,14 @@ mod string_pool_concurrency_tests {
                                         assert_eq!(actual, expected);
                                     }
                                     None => {
-                                        panic!("Failed to retrieve string at index {}", i);
+                                        panic!("Failed to retrieve string at index {i}");
                                     }
                                 }
                             }
-                            println!("Thread {} completed successfully", thread_id);
+                            println!("Thread {thread_id} completed successfully");
                         }
                         Err(e) => {
-                            panic!("Thread {} failed: {}", thread_id, e);
+                            panic!("Thread {thread_id} failed: {e}");
                         }
                     }
                 })
@@ -91,10 +91,10 @@ mod string_pool_concurrency_tests {
                     match result {
                         Ok(_) => {
                             assert_eq!(df.row_count(), 1000);
-                            println!("Thread {} completed string deduplication test", thread_id);
+                            println!("Thread {thread_id} completed string deduplication test");
                         }
                         Err(e) => {
-                            panic!("Thread {} failed string deduplication: {}", thread_id, e);
+                            panic!("Thread {thread_id} failed string deduplication: {e}");
                         }
                     }
                 })
@@ -123,7 +123,7 @@ mod string_pool_concurrency_tests {
                         let mut df = OptimizedDataFrame::new();
 
                         let unique_strings: Vec<String> = (0..50)
-                            .map(|i| format!("thread_{}_iter_{}_str_{}", thread_id, iteration, i))
+                            .map(|i| format!("thread_{thread_id}_iter_{iteration}_str_{i}"))
                             .collect();
 
                         df.add_string_column("stress_test", unique_strings).unwrap();
@@ -131,7 +131,7 @@ mod string_pool_concurrency_tests {
                         // Let the DataFrame drop to test cleanup
                     }
 
-                    println!("Thread {} completed stress test", thread_id);
+                    println!("Thread {thread_id} completed stress test");
                 })
             })
             .collect();
@@ -174,7 +174,7 @@ mod string_pool_concurrency_tests {
                         thread::sleep(Duration::from_nanos(1));
                     }
 
-                    println!("Thread {} completed lock contention test", thread_id);
+                    println!("Thread {thread_id} completed lock contention test");
                 })
             })
             .collect();
@@ -211,7 +211,7 @@ mod dataframe_concurrency_tests {
                         .map(|i| (i + thread_id * 1000) as f64 * 0.1)
                         .collect();
                     let string_data: Vec<String> = (0..1000)
-                        .map(|i| format!("thread_{}_item_{}", thread_id, i))
+                        .map(|i| format!("thread_{thread_id}_item_{i}"))
                         .collect();
 
                     df.add_int_column("integers", int_data).unwrap();
@@ -228,7 +228,7 @@ mod dataframe_concurrency_tests {
                     assert!(sum > 0.0);
                     assert!(mean > 0.0);
 
-                    println!("Thread {} created DataFrame successfully", thread_id);
+                    println!("Thread {thread_id} created DataFrame successfully");
                 })
             })
             .collect();
@@ -274,7 +274,7 @@ mod dataframe_concurrency_tests {
                         assert_eq!(max_val, 9999.0);
 
                         if i % 5 == 0 {
-                            println!("Thread {} completed iteration {}", thread_id, i);
+                            println!("Thread {thread_id} completed iteration {i}");
                         }
                     }
                 })
@@ -298,7 +298,7 @@ mod dataframe_concurrency_tests {
             .unwrap();
         df.add_string_column(
             "strings",
-            (0..data_size).map(|i| format!("item_{}", i)).collect(),
+            (0..data_size).map(|i| format!("item_{i}")).collect(),
         )
         .unwrap();
 
@@ -342,7 +342,7 @@ mod dataframe_concurrency_tests {
                         }
                     }
 
-                    println!("Thread {} completed column access test", thread_id);
+                    println!("Thread {thread_id} completed column access test");
                 })
             })
             .collect();
@@ -387,12 +387,11 @@ mod dataframe_concurrency_tests {
                             Ok(grouped) => {
                                 // Should have 4 groups (A, B, C, D)
                                 assert_eq!(grouped.len(), 4);
-                                println!("Thread {} completed groupby iteration {}", thread_id, i);
+                                println!("Thread {thread_id} completed groupby iteration {i}");
                             }
                             Err(e) => {
                                 println!(
-                                    "Thread {} groupby failed at iteration {}: {}",
-                                    thread_id, i, e
+                                    "Thread {thread_id} groupby failed at iteration {i}: {e}"
                                 );
                             }
                         }
@@ -430,7 +429,7 @@ mod concurrent_io_tests {
                     df.add_int_column("values", data).unwrap();
 
                     let file_path =
-                        std::env::temp_dir().join(format!("concurrent_test_{}.csv", thread_id));
+                        std::env::temp_dir().join(format!("concurrent_test_{thread_id}.csv"));
 
                     let result = df.to_csv(&file_path, true);
                     match result {
@@ -440,10 +439,10 @@ mod concurrent_io_tests {
                             let metadata = fs::metadata(&file_path).unwrap();
                             assert!(metadata.len() > 0);
 
-                            println!("Thread {} wrote CSV successfully", thread_id);
+                            println!("Thread {thread_id} wrote CSV successfully");
                         }
                         Err(e) => {
-                            panic!("Thread {} CSV write failed: {}", thread_id, e);
+                            panic!("Thread {thread_id} CSV write failed: {e}");
                         }
                     }
 
@@ -465,7 +464,7 @@ mod concurrent_io_tests {
         {
             let mut df = OptimizedDataFrame::new();
             df.add_int_column("id", (1..=100).collect()).unwrap();
-            df.add_string_column("name", (1..=100).map(|i| format!("item_{}", i)).collect())
+            df.add_string_column("name", (1..=100).map(|i| format!("item_{i}")).collect())
                 .unwrap();
             df.to_csv(&test_file, true).unwrap();
         }
@@ -490,13 +489,12 @@ mod concurrent_io_tests {
                             Ok(df) => {
                                 assert_eq!(df.row_count(), 100);
                                 if i == 0 {
-                                    println!("Thread {} read CSV successfully", thread_id);
+                                    println!("Thread {thread_id} read CSV successfully");
                                 }
                             }
                             Err(e) => {
                                 panic!(
-                                    "Thread {} CSV read failed at iteration {}: {}",
-                                    thread_id, i, e
+                                    "Thread {thread_id} CSV read failed at iteration {i}: {e}"
                                 );
                             }
                         }
@@ -614,7 +612,7 @@ mod race_condition_tests {
                         }
                     }
 
-                    println!("Thread {} completed race condition test", thread_id);
+                    println!("Thread {thread_id} completed race condition test");
                 })
             })
             .collect();
@@ -642,7 +640,7 @@ mod race_condition_tests {
 
                         // Create nested string operations
                         let outer_strings: Vec<String> = (0..50)
-                            .map(|j| format!("outer_{}_{}", thread_id, j))
+                            .map(|j| format!("outer_{thread_id}_{j}"))
                             .collect();
 
                         df.add_string_column("outer", outer_strings).unwrap();
@@ -660,7 +658,7 @@ mod race_condition_tests {
                         assert_eq!(df2.row_count(), 50);
 
                         if i % 10 == 0 {
-                            println!("Thread {} completed nested operation {}", thread_id, i);
+                            println!("Thread {thread_id} completed nested operation {i}");
                         }
                     }
                 })
@@ -712,7 +710,7 @@ mod race_condition_tests {
                         thread::yield_now();
                     }
 
-                    println!("Thread {} survived high contention test", thread_id);
+                    println!("Thread {thread_id} survived high contention test");
                 })
             })
             .collect();

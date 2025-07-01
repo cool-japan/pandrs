@@ -180,7 +180,7 @@ fn transaction_management_example(_df: &DataFrame) -> Result<()> {
 
     println!("  Transaction isolation levels:");
     for (level, description) in isolation_levels {
-        println!("    • {}: {}", level, description);
+        println!("    • {level}: {description}");
     }
 
     // Complex transaction scenario
@@ -199,7 +199,7 @@ fn transaction_management_example(_df: &DataFrame) -> Result<()> {
 
     for (i, step) in transaction_steps.iter().enumerate() {
         if step.starts_with("--") {
-            println!("    {}", step);
+            println!("    {step}");
         } else {
             println!("    {}. {}", i + 1, step);
         }
@@ -228,7 +228,7 @@ fn transaction_management_example(_df: &DataFrame) -> Result<()> {
     ];
 
     for (scenario, cause, handling) in rollback_scenarios {
-        println!("    • {}: {} → {}", scenario, cause, handling);
+        println!("    • {scenario}: {cause} → {handling}");
     }
 
     // Transaction performance metrics
@@ -243,7 +243,7 @@ fn transaction_management_example(_df: &DataFrame) -> Result<()> {
     ];
 
     for (metric, value) in perf_metrics {
-        println!("    • {}: {}", metric, value);
+        println!("    • {metric}: {value}");
     }
 
     Ok(())
@@ -264,7 +264,7 @@ fn query_builder_example(_df: &DataFrame) -> Result<()> {
     ];
 
     for (query_type, sql) in basic_queries {
-        println!("    • {}: {}", query_type, sql);
+        println!("    • {query_type}: {sql}");
     }
 
     // Parameterized queries with type safety
@@ -293,8 +293,8 @@ fn query_builder_example(_df: &DataFrame) -> Result<()> {
     ];
 
     for (description, where_clause, params) in parameterized_queries {
-        println!("    • {}: {}", description, where_clause);
-        println!("      Parameters: {:?}", params);
+        println!("    • {description}: {where_clause}");
+        println!("      Parameters: {params:?}");
     }
 
     // Advanced query building features
@@ -311,7 +311,7 @@ fn query_builder_example(_df: &DataFrame) -> Result<()> {
     ];
 
     for feature in advanced_features {
-        println!("    • {}", feature);
+        println!("    • {feature}");
     }
 
     // Query builder fluent API example
@@ -338,7 +338,7 @@ fn query_builder_example(_df: &DataFrame) -> Result<()> {
     ];
 
     for (optimization, description) in optimizations {
-        println!("    • {}: {}", optimization, description);
+        println!("    • {optimization}: {description}");
     }
 
     Ok(())
@@ -841,7 +841,7 @@ fn advanced_query_example(_df: &DataFrame) -> Result<()> {
     ];
 
     for (query_type, sql) in analytical_queries {
-        println!("    • {}: {}", query_type, sql);
+        println!("    • {query_type}: {sql}");
     }
 
     // Recursive queries
@@ -873,7 +873,7 @@ fn advanced_query_example(_df: &DataFrame) -> Result<()> {
     ];
 
     for (technique, description) in optimizations {
-        println!("    • {}: {}", technique, description);
+        println!("    • {technique}: {description}");
     }
 
     // Query monitoring and analysis
@@ -888,7 +888,7 @@ fn advanced_query_example(_df: &DataFrame) -> Result<()> {
     ];
 
     for (metric, purpose) in monitoring_metrics {
-        println!("    • {}: {}", metric, purpose);
+        println!("    • {metric}: {purpose}");
     }
 
     Ok(())
