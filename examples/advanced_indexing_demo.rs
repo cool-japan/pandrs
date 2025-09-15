@@ -6,6 +6,7 @@ use pandrs::error::Result;
 use pandrs::series::base::Series;
 
 #[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     println!("=== Alpha 4 Advanced Indexing System Example ===\n");
 
@@ -68,7 +69,7 @@ fn main() -> Result<()> {
     df.add_column("Experience".to_string(), exp_series)?;
 
     println!("Original Employee Data:");
-    println!("{:?}", df);
+    println!("{df:?}");
 
     println!("\n=== Position-Based Indexing (.iloc) ===\n");
 
@@ -78,33 +79,33 @@ fn main() -> Result<()> {
     // Single row by position
     println!("Single row (position 2):");
     let row_2 = df.iloc().get(2)?;
-    println!("{:?}", row_2);
+    println!("{row_2:?}");
 
     // Single value by row and column position
     println!("\nSingle value at (row=1, col=2):");
     let value = df.iloc().get_at(1, 2)?;
-    println!("Value: {}", value);
+    println!("Value: {value}");
 
     // Range of rows
     println!("\nRows 1-3 (using iloc.get_range):");
     let rows_range = df.iloc().get_range(1..4)?;
-    println!("{:?}", rows_range);
+    println!("{rows_range:?}");
 
     // Slice with row and column ranges
     println!("\nSlice (rows 0-2, cols 1-3):");
     let slice = df.iloc().get_slice(0..3, 1..4)?;
-    println!("{:?}", slice);
+    println!("{slice:?}");
 
     // Multiple specific positions
     println!("\nSpecific positions [0, 2, 4]:");
     let specific_rows = df.iloc().get_positions(&[0, 2, 4])?;
-    println!("{:?}", specific_rows);
+    println!("{specific_rows:?}");
 
     // Boolean indexing
     println!("\nBoolean mask (every other row):");
     let mask = vec![true, false, true, false, true, false, true, false];
     let boolean_result = df.iloc().get_boolean(&mask)?;
-    println!("{:?}", boolean_result);
+    println!("{boolean_result:?}");
 
     println!("\n=== Label-Based Indexing (.loc) ===\n");
 
@@ -114,18 +115,18 @@ fn main() -> Result<()> {
     // Single row by label (using row index as string)
     println!("Single row by label '0':");
     let label_row = df.loc().get("0")?;
-    println!("{:?}", label_row);
+    println!("{label_row:?}");
 
     // Single value by label and column
     println!("\nSingle value at (label='1', column='Name'):");
     let label_value = df.loc().get_at("1", "Name")?;
-    println!("Value: {}", label_value);
+    println!("Value: {label_value}");
 
     // Multiple labels
     println!("\nMultiple labels ['0', '2', '4']:");
     let labels = vec!["0".to_string(), "2".to_string(), "4".to_string()];
     let label_rows = df.loc().get_labels(&labels)?;
-    println!("{:?}", label_rows);
+    println!("{label_rows:?}");
 
     println!("\n=== Scalar Indexing (.at and .iat) ===\n");
 
@@ -135,12 +136,12 @@ fn main() -> Result<()> {
     // .at for label-based scalar access
     println!("Using .at to get value at (label='3', column='Salary'):");
     let at_value = df.at().get("3", "Salary")?;
-    println!("Value: {}", at_value);
+    println!("Value: {at_value}");
 
     // .iat for position-based scalar access
     println!("\nUsing .iat to get value at (row=2, col=1):");
     let iat_value = df.iat().get(2, 1)?;
-    println!("Value: {}", iat_value);
+    println!("Value: {iat_value}");
 
     println!("\n=== Advanced Selection Builder ===\n");
 
@@ -158,7 +159,7 @@ fn main() -> Result<()> {
             "Salary".to_string(),
         ]))
         .select()?;
-    println!("{:?}", selection);
+    println!("{selection:?}");
 
     // Select with range and specific columns
     println!("\nSelect rows 2-5 and specific columns:");
@@ -171,7 +172,7 @@ fn main() -> Result<()> {
             "Experience".to_string(),
         ]))
         .select()?;
-    println!("{:?}", range_selection);
+    println!("{range_selection:?}");
 
     println!("\n=== Column Operations ===\n");
 
@@ -181,12 +182,12 @@ fn main() -> Result<()> {
     // Select specific columns
     println!("Select columns ['Name', 'Department', 'Salary']:");
     let selected_cols = df.select_columns(&["Name", "Department", "Salary"])?;
-    println!("{:?}", selected_cols);
+    println!("{selected_cols:?}");
 
     // Drop columns
     println!("\nDrop columns ['ID', 'Experience']:");
     let dropped_cols = df.drop_columns(&["ID".to_string(), "Experience".to_string()])?;
-    println!("{:?}", dropped_cols);
+    println!("{dropped_cols:?}");
 
     println!("\n=== Multi-Level Index ===\n");
 
@@ -201,18 +202,18 @@ fn main() -> Result<()> {
     println!("Names: {:?}", multi_index.names);
     println!("Tuples: {:?}", multi_index.tuples);
     println!("DataFrame after indexing:");
-    println!("{:?}", indexed_df);
+    println!("{indexed_df:?}");
 
     // Query multi-index
     println!("\nQuerying multi-index for tuple ['IT', '28']:");
     let multi_loc = pandrs::dataframe::indexing::LocIndexer::with_index(&indexed_df, &multi_index);
     let tuple_result = multi_loc.get_tuple(&["IT".to_string(), "28".to_string()])?;
-    println!("{:?}", tuple_result);
+    println!("{tuple_result:?}");
 
     // Get unique values for a level
     println!("\nUnique values for level 0 (Department):");
     let level_values = multi_index.level_values(0)?;
-    println!("{:?}", level_values);
+    println!("{level_values:?}");
 
     println!("\n=== DataFrame Utilities ===\n");
 
@@ -222,11 +223,11 @@ fn main() -> Result<()> {
     // Head and tail
     println!("Head (first 3 rows):");
     let head = df.head(3)?;
-    println!("{:?}", head);
+    println!("{head:?}");
 
     println!("\nTail (last 3 rows):");
     let tail = df.tail(3)?;
-    println!("{:?}", tail);
+    println!("{tail:?}");
 
     // Sampling (note: this might not work without proper rand setup)
     // println!("\nRandom sample (3 rows):");
@@ -261,22 +262,22 @@ fn main() -> Result<()> {
     df2.add_column("Col2".to_string(), series2)?;
 
     println!("DataFrame 1:");
-    println!("{:?}", df1);
+    println!("{df1:?}");
     println!("DataFrame 2:");
-    println!("{:?}", df2);
+    println!("{df2:?}");
 
     // Align with different strategies
     println!("\nOuter alignment (extend to max length):");
     let (aligned1_outer, aligned2_outer) =
         IndexAligner::align(&df1, &df2, AlignmentStrategy::Outer)?;
-    println!("Aligned DataFrame 1: {:?}", aligned1_outer);
-    println!("Aligned DataFrame 2: {:?}", aligned2_outer);
+    println!("Aligned DataFrame 1: {aligned1_outer:?}");
+    println!("Aligned DataFrame 2: {aligned2_outer:?}");
 
     println!("\nInner alignment (truncate to min length):");
     let (aligned1_inner, aligned2_inner) =
         IndexAligner::align(&df1, &df2, AlignmentStrategy::Inner)?;
-    println!("Aligned DataFrame 1: {:?}", aligned1_inner);
-    println!("Aligned DataFrame 2: {:?}", aligned2_inner);
+    println!("Aligned DataFrame 1: {aligned1_inner:?}");
+    println!("Aligned DataFrame 2: {aligned2_inner:?}");
 
     println!("\n=== Macro Usage Examples ===\n");
 
@@ -324,6 +325,7 @@ fn main() -> Result<()> {
 
 /// Demonstrate performance with larger dataset
 #[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn demonstrate_performance() -> Result<()> {
     println!("--- Performance with Large Dataset ---");
 
@@ -331,7 +333,7 @@ fn demonstrate_performance() -> Result<()> {
     let mut large_df = DataFrame::new();
     let size = 1000;
 
-    let ids: Vec<String> = (1..=size).map(|i| format!("ID{:04}", i)).collect();
+    let ids: Vec<String> = (1..=size).map(|i| format!("ID{i:04}")).collect();
     let values: Vec<String> = (1..=size).map(|i| (i as f64 * 1.5).to_string()).collect();
     let categories: Vec<String> = (1..=size)
         .map(|i| match i % 4 {
@@ -350,37 +352,38 @@ fn demonstrate_performance() -> Result<()> {
     large_df.add_column("Value".to_string(), value_series)?;
     large_df.add_column("Category".to_string(), cat_series)?;
 
-    println!("Created dataset with {} rows", size);
+    println!("Created dataset with {size} rows");
 
     // Test iloc performance
     let start = std::time::Instant::now();
     let _slice = large_df.iloc().get_range(100..200)?;
     let duration = start.elapsed();
-    println!("iloc range selection (100 rows) took: {:?}", duration);
+    println!("iloc range selection (100 rows) took: {duration:?}");
 
     // Test column selection performance
     let start = std::time::Instant::now();
     let _cols = large_df.select_columns(&["ID", "Value"])?;
     let duration = start.elapsed();
-    println!("Column selection took: {:?}", duration);
+    println!("Column selection took: {duration:?}");
 
     // Test head/tail performance
     let start = std::time::Instant::now();
     let _head = large_df.head(50)?;
     let duration = start.elapsed();
-    println!("Head operation took: {:?}", duration);
+    println!("Head operation took: {duration:?}");
 
     // Test boolean indexing performance
     let start = std::time::Instant::now();
     let mask: Vec<bool> = (0..size).map(|i| i % 5 == 0).collect();
     let _filtered = large_df.iloc().get_boolean(&mask)?;
     let duration = start.elapsed();
-    println!("Boolean indexing (every 5th row) took: {:?}", duration);
+    println!("Boolean indexing (every 5th row) took: {duration:?}");
 
     Ok(())
 }
 
 /// Demonstrate error handling
+#[allow(clippy::result_large_err)]
 #[allow(clippy::result_large_err)]
 fn demonstrate_error_handling(df: &DataFrame) -> Result<()> {
     println!("--- Error Handling Examples ---");
@@ -388,31 +391,31 @@ fn demonstrate_error_handling(df: &DataFrame) -> Result<()> {
     // Out of bounds row access
     match df.iloc().get(100) {
         Ok(_) => println!("Unexpected success with out-of-bounds row"),
-        Err(e) => println!("Expected error for out-of-bounds row: {:?}", e),
+        Err(e) => println!("Expected error for out-of-bounds row: {e:?}"),
     }
 
     // Out of bounds column access
     match df.iloc().get_at(0, 100) {
         Ok(_) => println!("Unexpected success with out-of-bounds column"),
-        Err(e) => println!("Expected error for out-of-bounds column: {:?}", e),
+        Err(e) => println!("Expected error for out-of-bounds column: {e:?}"),
     }
 
     // Invalid column selection
     match df.select_columns(&["NonExistent"]) {
         Ok(_) => println!("Unexpected success with non-existent column"),
-        Err(e) => println!("Expected error for non-existent column: {:?}", e),
+        Err(e) => println!("Expected error for non-existent column: {e:?}"),
     }
 
     // Invalid label access
     match df.loc().get("invalid_label") {
         Ok(_) => println!("Unexpected success with invalid label"),
-        Err(e) => println!("Expected error for invalid label: {:?}", e),
+        Err(e) => println!("Expected error for invalid label: {e:?}"),
     }
 
     // Empty multi-index creation
     match MultiLevelIndex::new(vec![], vec![]) {
         Ok(_) => println!("Unexpected success with empty multi-index"),
-        Err(e) => println!("Expected error for empty multi-index: {:?}", e),
+        Err(e) => println!("Expected error for empty multi-index: {e:?}"),
     }
 
     Ok(())

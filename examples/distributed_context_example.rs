@@ -19,6 +19,7 @@ fn main() {
 }
 
 #[cfg(feature = "distributed")]
+#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     println!("PandRS Distributed Context Example");
     // Create configuration

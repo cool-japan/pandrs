@@ -11,6 +11,7 @@ fn main() {
 }
 
 #[cfg(feature = "optimized")]
+#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     println!("=== Optimized Version: Support for Missing Values ===\n");
 

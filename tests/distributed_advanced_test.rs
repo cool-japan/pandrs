@@ -16,6 +16,8 @@ mod tests {
 
     /// Test schema validation for distributed operations
     #[test]
+    #[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
     fn test_alpha4_schema_validation() -> Result<()> {
         // Create test schema
         let mut schema = ExprSchema::new();
@@ -56,7 +58,7 @@ mod tests {
         assert!(result.is_ok());
 
         // Test invalid projection (non-existent column)
-        let invalid_projections = vec![ColumnProjection::column("nonexistent_column")];
+        let invalid_projections = [ColumnProjection::column("nonexistent_column")];
 
         let result = validator.validate_projections("employees", &invalid_projections);
         assert!(result.is_err());
@@ -76,13 +78,15 @@ mod tests {
 
     /// Test fault tolerance mechanisms
     #[test]
+    #[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
     fn test_alpha4_fault_tolerance() -> Result<()> {
         // Create test data
         let mut df = DataFrame::new();
 
         df.add_column(
             "partition_id".to_string(),
-            pandrs::series::Series::from_vec(vec![1, 2, 3, 4, 5], Some("partition_id".to_string())),
+            pandrs::series::Series::from_vec([1, 2, 3, 4, 5], Some("partition_id".to_string())),
         )?;
 
         df.add_column(
@@ -127,6 +131,8 @@ mod tests {
 
     /// Test complex distributed query execution with error handling
     #[test]
+    #[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
     fn test_alpha4_complex_distributed_queries() -> Result<()> {
         // Create larger test dataset
         let mut df = DataFrame::new();
@@ -137,7 +143,7 @@ mod tests {
         let mut salaries = Vec::new();
         let mut years = Vec::new();
 
-        let dept_names = vec!["Engineering", "Sales", "Marketing", "HR"];
+        let dept_names = ["Engineering", "Sales", "Marketing", "HR"];
         let emp_names = vec![
             "Alice", "Bob", "Carol", "David", "Eve", "Frank", "Grace", "Henry",
         ];
@@ -222,6 +228,8 @@ mod tests {
 
     /// Test distributed processing with window operations
     #[test]
+    #[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
     fn test_alpha4_distributed_window_operations() -> Result<()> {
         // Create time series test data
         let mut df = DataFrame::new();
@@ -286,6 +294,8 @@ mod tests {
 
     /// Test distributed processing performance and scalability
     #[test]
+    #[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
     fn test_alpha4_distributed_performance() -> Result<()> {
         // Create a larger dataset to test performance
         let size = 10000;
@@ -352,18 +362,20 @@ mod tests {
 
     /// Test distributed processing error handling and recovery
     #[test]
+    #[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
     fn test_alpha4_distributed_error_handling() -> Result<()> {
         // Create test data
         let mut df = DataFrame::new();
 
         df.add_column(
             "id".to_string(),
-            pandrs::series::Series::from_vec(vec![1, 2, 3], Some("id".to_string())),
+            pandrs::series::Series::from_vec([1, 2, 3], Some("id".to_string())),
         )?;
 
         df.add_column(
             "value".to_string(),
-            pandrs::series::Series::from_vec(vec![10, 20, 30], Some("value".to_string())),
+            pandrs::series::Series::from_vec([10, 20, 30], Some("value".to_string())),
         )?;
 
         let mut context = DistributedContext::new_local(2)?;
@@ -392,6 +404,8 @@ mod tests {
 
     /// Test integration with external data sources
     #[test]
+    #[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
     fn test_alpha4_external_data_integration() -> Result<()> {
         let mut context = DistributedContext::new_local(2)?;
 
@@ -427,6 +441,9 @@ mod tests {
     use pandrs::error::Result;
 
     #[test]
+    #[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
     fn test_distributed_feature_disabled() -> Result<()> {
         // When distributed feature is disabled, these tests should be skipped
         // This test just ensures the module compiles

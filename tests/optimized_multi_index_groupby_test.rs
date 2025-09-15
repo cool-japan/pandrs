@@ -2,13 +2,15 @@ use pandrs::error::Result;
 use pandrs::optimized::OptimizedDataFrame;
 
 #[test]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn test_multi_column_dataframe_creation() -> Result<()> {
     // Create a sample DataFrame with multiple columns
     let mut df = OptimizedDataFrame::new();
 
     // Add columns
-    let categories = vec!["A", "A", "B", "B", "A"];
-    let regions = vec!["East", "West", "East", "West", "East"];
+    let categories = ["A", "A", "B", "B", "A"];
+    let regions = ["East", "West", "East", "West", "East"];
     let values = vec![10, 15, 20, 25, 12];
 
     df.add_string_column(
@@ -34,6 +36,8 @@ fn test_multi_column_dataframe_creation() -> Result<()> {
 }
 
 #[test]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn test_multi_index_simulation() -> Result<()> {
     // Test simulating multi-index behavior through manual grouping
     // Note: This test is designed to work with reliable string column access
@@ -84,13 +88,15 @@ fn test_multi_index_simulation() -> Result<()> {
 }
 
 #[test]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn test_hierarchical_data_structure() -> Result<()> {
     // Test DataFrame with hierarchical naming convention
     let mut df = OptimizedDataFrame::new();
 
     // Add columns with hierarchical names
-    let primary_keys = vec!["A", "A", "B", "B", "C"];
-    let secondary_keys = vec!["X", "Y", "X", "Y", "Z"];
+    let primary_keys = ["A", "A", "B", "B", "C"];
+    let secondary_keys = ["X", "Y", "X", "Y", "Z"];
     let data = vec![1.0, 2.0, 3.0, 4.0, 5.0];
 
     df.add_string_column(
@@ -116,8 +122,8 @@ fn test_hierarchical_data_structure() -> Result<()> {
     let mut ax_value = None;
     for i in 0..df.row_count() {
         if let (Some(p), Some(s), Some(d)) = (
-            primary_col.get(i).as_deref(),
-            secondary_col.get(i).as_deref(),
+            primary_col.get(i),
+            secondary_col.get(i),
             data_col.get(i).copied(),
         ) {
             if p == "A" && s == "X" {

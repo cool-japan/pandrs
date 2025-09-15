@@ -4,6 +4,7 @@ use pandrs::{DiskBasedDataFrame, DiskConfig};
 use std::collections::HashMap;
 
 #[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     // Path to a large CSV file (replace with actual path)
     let file_path = "examples/data/large_dataset.csv";
@@ -24,7 +25,7 @@ fn main() -> Result<()> {
     // Get schema information
     println!("DataFrame Schema:");
     for column in disk_df.schema().column_names() {
-        println!("  - {}", column);
+        println!("  - {column}");
     }
 
     // Process in chunks for counting rows
@@ -35,10 +36,10 @@ fn main() -> Result<()> {
     while let Some(chunk) = chunked_df.next_chunk()? {
         let chunk_rows = chunk.row_count();
         total_rows += chunk_rows;
-        println!("  - Processed chunk with {} rows", chunk_rows);
+        println!("  - Processed chunk with {chunk_rows} rows");
     }
 
-    println!("\nTotal rows in dataset: {}", total_rows);
+    println!("\nTotal rows in dataset: {total_rows}");
 
     // Example of filtering data
     println!("\nFiltering data:");
@@ -58,7 +59,7 @@ fn main() -> Result<()> {
     // Since the result is a Vec<HashMap<String, String>>, we need to check the keys of the first element
     if !selected.is_empty() {
         for column in selected[0].keys() {
-            println!("  - {}", column);
+            println!("  - {column}");
         }
     }
 
@@ -111,7 +112,7 @@ fn main() -> Result<()> {
 
     println!("Category counts from parallel processing:");
     for (category, count) in chunk_results.iter().take(5) {
-        println!("  - {}: {}", category, count);
+        println!("  - {category}: {count}");
     }
 
     Ok(())

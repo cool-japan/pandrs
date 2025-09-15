@@ -123,13 +123,12 @@ fn create_profiling_dataframe(size: usize, pattern: &str) -> Result<OptimizedDat
             df.add_float_column("sparse_float", float_data)?;
         }
         "strings" => {
-            let string_data: Vec<String> = (0..size).map(|i| format!("String_{:08}", i)).collect();
+            let string_data: Vec<String> = (0..size).map(|i| format!("String_{i:08}")).collect();
             df.add_string_column("string_data", string_data)?;
         }
         _ => {
             return Err(pandrs::error::Error::InvalidValue(format!(
-                "Unknown pattern: {}",
-                pattern
+                "Unknown pattern: {pattern}"
             )));
         }
     }
@@ -150,7 +149,7 @@ fn profile_dataframe_creation(c: &mut Criterion) {
             group.throughput(Throughput::Elements(size as u64));
 
             group.bench_with_input(
-                BenchmarkId::new(format!("pattern_{}", pattern), size),
+                BenchmarkId::new(format!("pattern_{pattern}"), size),
                 &(size, *pattern),
                 |b, &(size, pattern)| {
                     b.iter_custom(|iters| {
@@ -284,7 +283,7 @@ fn profile_simd_operations(c: &mut Criterion) {
 
             for (op_name, operation) in simd_ops {
                 group.bench_with_input(
-                    BenchmarkId::new(format!("{}_{}_size_{}", op_name, pattern_name, size), size),
+                    BenchmarkId::new(format!("{op_name}_{pattern_name}_size_{size}"), size),
                     &data,
                     |b, data| {
                         b.iter_custom(|iters| {
@@ -340,7 +339,7 @@ fn profile_io_operations(c: &mut Criterion) {
                 let start = Instant::now();
 
                 for i in 0..iters {
-                    let temp_path = format!("/tmp/profile_test_{}_{}.csv", size, i);
+                    let temp_path = format!("/tmp/profile_test_{size}_{i}.csv");
                     df.to_csv(&temp_path, true).unwrap();
                     std::fs::remove_file(&temp_path).ok();
                 }
@@ -351,10 +350,7 @@ fn profile_io_operations(c: &mut Criterion) {
                 let mb_per_sec = (file_size_estimate as f64 * iters as f64)
                     / (1024.0 * 1024.0 * elapsed.as_secs_f64());
 
-                println!(
-                    "💾 CSV Write, Size: {}, Throughput: {:.2} MB/sec",
-                    size, mb_per_sec
-                );
+                println!("💾 CSV Write, Size: {size}, Throughput: {mb_per_sec:.2} MB/sec");
 
                 elapsed
             });
@@ -369,7 +365,7 @@ fn profile_io_operations(c: &mut Criterion) {
                     #[cfg(feature = "parquet")]
                     {
                         use pandrs::io::{write_parquet, ParquetCompression};
-                        let temp_path = format!("/tmp/profile_test_{}_{}.parquet", size, i);
+                        let temp_path = format!("/tmp/profile_test_{}_{}.parquet", size, _i);
                         write_parquet(df, &temp_path, Some(ParquetCompression::Snappy)).unwrap();
                         std::fs::remove_file(&temp_path).ok();
                     }
@@ -385,10 +381,7 @@ fn profile_io_operations(c: &mut Criterion) {
                 let mb_per_sec = (file_size_estimate as f64 * iters as f64)
                     / (1024.0 * 1024.0 * elapsed.as_secs_f64());
 
-                println!(
-                    "📦 Parquet Write, Size: {}, Throughput: {:.2} MB/sec",
-                    size, mb_per_sec
-                );
+                println!("📦 Parquet Write, Size: {size}, Throughput: {mb_per_sec:.2} MB/sec");
 
                 elapsed
             });

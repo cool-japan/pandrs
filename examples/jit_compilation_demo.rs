@@ -6,6 +6,7 @@ use pandrs::error::Result;
 use pandrs::series::base::Series;
 use std::time::Instant;
 
+#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     println!("=== Alpha 8: JIT Compilation for Repeated Expressions ===\n");
 
@@ -21,7 +22,7 @@ fn main() -> Result<()> {
     // Display sample of the data
     println!("\nSample data (first 5 rows):");
     let sample_df = create_small_sample_dataset()?;
-    println!("{:?}", sample_df);
+    println!("{sample_df:?}");
 
     println!("\n=== JIT Compilation Basics ===\n");
 
@@ -79,6 +80,7 @@ fn main() -> Result<()> {
 }
 
 /// Create a dataset for JIT testing
+#[allow(clippy::result_large_err)]
 fn create_jit_test_dataset(size: usize) -> Result<DataFrame> {
     let mut df = DataFrame::new();
 
@@ -111,6 +113,7 @@ fn create_jit_test_dataset(size: usize) -> Result<DataFrame> {
 }
 
 /// Create a small sample dataset for demonstration
+#[allow(clippy::result_large_err)]
 fn create_small_sample_dataset() -> Result<DataFrame> {
     let mut df = DataFrame::new();
 
@@ -151,6 +154,7 @@ fn create_small_sample_dataset() -> Result<DataFrame> {
 }
 
 /// Test basic JIT compilation functionality
+#[allow(clippy::result_large_err)]
 fn test_basic_jit_compilation(df: &DataFrame) -> Result<()> {
     println!("Testing basic JIT compilation:");
 
@@ -161,7 +165,7 @@ fn test_basic_jit_compilation(df: &DataFrame) -> Result<()> {
     // Test simple arithmetic expression
     println!("\n  Test 1: Simple Arithmetic Expression");
     let query1 = "Value + Factor";
-    println!("    Expression: {}", query1);
+    println!("    Expression: {query1}");
 
     // Parse the expression (simplified for this example)
     println!("    JIT compilation: Expression would be compiled to optimized machine code");
@@ -170,14 +174,14 @@ fn test_basic_jit_compilation(df: &DataFrame) -> Result<()> {
     // Test comparison expression
     println!("\n  Test 2: Comparison Expression");
     let query2 = "Score > 85";
-    println!("    Expression: {}", query2);
+    println!("    Expression: {query2}");
     println!("    JIT compilation: Vectorized comparison operation");
     println!("    Result: Boolean mask generated efficiently");
 
     // Test mathematical function
     println!("\n  Test 3: Mathematical Function");
     let query3 = "sqrt(Value * Factor)";
-    println!("    Expression: {}", query3);
+    println!("    Expression: {query3}");
     println!("    JIT compilation: sqrt() function compiled to native code");
     println!("    Performance: Direct CPU instruction usage");
 
@@ -185,6 +189,7 @@ fn test_basic_jit_compilation(df: &DataFrame) -> Result<()> {
 }
 
 /// Test automatic JIT compilation for repeated expressions
+#[allow(clippy::result_large_err)]
 fn test_automatic_jit_compilation(df: &DataFrame) -> Result<()> {
     println!("Testing automatic JIT compilation:");
 
@@ -192,7 +197,7 @@ fn test_automatic_jit_compilation(df: &DataFrame) -> Result<()> {
     let context = QueryContext::with_jit_settings(true, 3);
 
     let test_query = "Score > 75";
-    println!("\n  Expression: {}", test_query);
+    println!("\n  Expression: {test_query}");
     println!("  JIT Threshold: 3 executions");
 
     // Execute the same query multiple times
@@ -207,10 +212,7 @@ fn test_automatic_jit_compilation(df: &DataFrame) -> Result<()> {
             std::cmp::Ordering::Greater => "JIT Executed",
         };
 
-        println!(
-            "    Execution {}: {:?} ({})",
-            i, duration, compilation_status
-        );
+        println!("    Execution {i}: {duration:?} ({compilation_status})");
 
         // Simulate some delay to make timing differences more visible
         std::thread::sleep(std::time::Duration::from_millis(1));
@@ -231,6 +233,7 @@ fn test_automatic_jit_compilation(df: &DataFrame) -> Result<()> {
 }
 
 /// Compare JIT vs non-JIT performance
+#[allow(clippy::result_large_err)]
 fn compare_jit_performance(df: &DataFrame) -> Result<()> {
     println!("Comparing JIT vs Non-JIT performance:");
 
@@ -265,9 +268,9 @@ fn compare_jit_performance(df: &DataFrame) -> Result<()> {
             1.0
         };
 
-        println!("    Non-JIT: {:?}", duration_no_jit);
-        println!("    JIT: {:?}", duration_jit);
-        println!("    Speedup: {:.2}x", speedup);
+        println!("    Non-JIT: {duration_no_jit:?}");
+        println!("    JIT: {duration_jit:?}");
+        println!("    Speedup: {speedup:.2}x");
 
         if speedup > 1.1 {
             println!("    Result: JIT provides significant speedup");
@@ -282,6 +285,7 @@ fn compare_jit_performance(df: &DataFrame) -> Result<()> {
 }
 
 /// Demonstrate JIT compilation statistics
+#[allow(clippy::result_large_err)]
 fn demonstrate_jit_statistics(df: &DataFrame) -> Result<()> {
     println!("JIT compilation statistics and cache management:");
 
@@ -336,6 +340,7 @@ fn demonstrate_jit_statistics(df: &DataFrame) -> Result<()> {
 }
 
 /// Test different expression types for JIT compilation
+#[allow(clippy::result_large_err)]
 fn test_expression_types_jit(_df: &DataFrame) -> Result<()> {
     println!("Testing different expression types for JIT compilation:");
 
@@ -352,7 +357,7 @@ fn test_expression_types_jit(_df: &DataFrame) -> Result<()> {
     ];
 
     for (name, expr) in arithmetic_tests {
-        println!("    {}: {} -> JIT Compilable", name, expr);
+        println!("    {name}: {expr} -> JIT Compilable");
     }
 
     // Comparison operations
@@ -367,7 +372,7 @@ fn test_expression_types_jit(_df: &DataFrame) -> Result<()> {
     ];
 
     for (name, expr) in comparison_tests {
-        println!("    {}: {} -> JIT Compilable", name, expr);
+        println!("    {name}: {expr} -> JIT Compilable");
     }
 
     // Mathematical functions
@@ -382,7 +387,7 @@ fn test_expression_types_jit(_df: &DataFrame) -> Result<()> {
     ];
 
     for (name, expr) in function_tests {
-        println!("    {}: {} -> JIT Compilable", name, expr);
+        println!("    {name}: {expr} -> JIT Compilable");
     }
 
     // Complex expressions
@@ -394,16 +399,14 @@ fn test_expression_types_jit(_df: &DataFrame) -> Result<()> {
     ];
 
     for (name, expr) in complex_tests {
-        println!(
-            "    {}: {} -> JIT Compilable with optimizations",
-            name, expr
-        );
+        println!("    {name}: {expr} -> JIT Compilable with optimizations");
     }
 
     Ok(())
 }
 
 /// Test JIT configuration options
+#[allow(clippy::result_large_err)]
 fn test_jit_configuration(df: &DataFrame) -> Result<()> {
     println!("Testing JIT configuration and performance tuning:");
 
@@ -413,10 +416,7 @@ fn test_jit_configuration(df: &DataFrame) -> Result<()> {
 
     for threshold in thresholds {
         let context = QueryContext::with_jit_settings(true, threshold);
-        println!(
-            "    Threshold {}: Compile after {} executions",
-            threshold, threshold
-        );
+        println!("    Threshold {threshold}: Compile after {threshold} executions");
 
         // Execute same expression multiple times
         let expr = "Value * Factor > 25";
@@ -438,13 +438,13 @@ fn test_jit_configuration(df: &DataFrame) -> Result<()> {
 
     for jit_enabled in [false, true] {
         let _context = QueryContext::with_jit_settings(jit_enabled, 2);
-        println!("    JIT Enabled: {}", jit_enabled);
+        println!("    JIT Enabled: {jit_enabled}");
 
         for expr in &expressions {
             let start = Instant::now();
             let _result = df.query(expr)?;
             let duration = start.elapsed();
-            println!("      {}: {:?}", expr, duration);
+            println!("      {expr}: {duration:?}");
         }
     }
 
@@ -452,6 +452,7 @@ fn test_jit_configuration(df: &DataFrame) -> Result<()> {
 }
 
 /// Demonstrate real-world JIT compilation scenarios
+#[allow(clippy::result_large_err)]
 fn demonstrate_real_world_jit(df: &DataFrame) -> Result<()> {
     println!("Real-world JIT compilation scenarios:");
 
@@ -466,10 +467,7 @@ fn demonstrate_real_world_jit(df: &DataFrame) -> Result<()> {
     let context = QueryContext::with_jit_settings(true, 2);
 
     for query in financial_queries {
-        println!(
-            "    Query: {} -> Optimized for repeated financial analysis",
-            query
-        );
+        println!("    Query: {query} -> Optimized for repeated financial analysis");
 
         // Simulate repeated execution (common in financial systems)
         for _i in 0..3 {
@@ -493,10 +491,7 @@ fn demonstrate_real_world_jit(df: &DataFrame) -> Result<()> {
     ];
 
     for query in scientific_queries {
-        println!(
-            "    Query: {} -> Optimized for scientific computations",
-            query
-        );
+        println!("    Query: {query} -> Optimized for scientific computations");
     }
 
     // Scenario 3: Data analysis pipeline
@@ -508,10 +503,7 @@ fn demonstrate_real_world_jit(df: &DataFrame) -> Result<()> {
     ];
 
     for query in analysis_queries {
-        println!(
-            "    Query: {} -> Optimized for repeated data transformations",
-            query
-        );
+        println!("    Query: {query} -> Optimized for repeated data transformations");
     }
 
     println!("\n    Real-world benefits:");

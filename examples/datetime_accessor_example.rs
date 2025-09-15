@@ -4,6 +4,7 @@ use pandrs::series::datetime_accessor::datetime_constructors;
 use pandrs::{DataFrame, Series};
 
 #[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     println!("=== DateTime Accessor Example ===");
 
@@ -30,7 +31,7 @@ fn main() -> Result<()> {
 
     println!("Original DateTime Series:");
     for (i, dt) in datetime_series.values().iter().enumerate() {
-        println!("  [{}]: {}", i, dt);
+        println!("  [{i}]: {dt}");
     }
 
     // Test datetime accessor
@@ -88,27 +89,27 @@ fn main() -> Result<()> {
     let plus_days = dt_accessor.add_days(7)?;
     println!("\nAfter adding 7 days:");
     for (i, dt) in plus_days.values().iter().enumerate() {
-        println!("  [{}]: {}", i, dt);
+        println!("  [{i}]: {dt}");
     }
 
     let plus_hours = dt_accessor.add_hours(5)?;
     println!("\nAfter adding 5 hours:");
     for (i, dt) in plus_hours.values().iter().enumerate() {
-        println!("  [{}]: {}", i, dt);
+        println!("  [{i}]: {dt}");
     }
 
     // Normalize to start of day
     let normalized = dt_accessor.normalize()?;
     println!("\nNormalized to start of day:");
     for (i, dt) in normalized.values().iter().enumerate() {
-        println!("  [{}]: {}", i, dt);
+        println!("  [{i}]: {dt}");
     }
 
     // Round to hour
     let rounded = dt_accessor.round("H")?;
     println!("\nRounded to hour:");
     for (i, dt) in rounded.values().iter().enumerate() {
-        println!("  [{}]: {}", i, dt);
+        println!("  [{i}]: {dt}");
     }
 
     println!("\n=== Parse DateTime from Strings ===");
@@ -128,7 +129,7 @@ fn main() -> Result<()> {
 
     println!("Parsed from strings:");
     for (i, dt) in parsed_series.values().iter().enumerate() {
-        println!("  [{}]: {}", i, dt);
+        println!("  [{i}]: {dt}");
     }
 
     println!("\n=== Date Range ===");
@@ -140,7 +141,7 @@ fn main() -> Result<()> {
 
     println!("Daily date range:");
     for (i, dt) in date_range.values().iter().enumerate() {
-        println!("  [{}]: {}", i, dt);
+        println!("  [{i}]: {dt}");
     }
 
     println!("\n=== DataFrame with DateTime Column ===");

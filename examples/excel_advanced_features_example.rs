@@ -13,6 +13,8 @@
 use pandrs::dataframe::base::DataFrame;
 use pandrs::error::Result;
 use pandrs::series::Series;
+
+#[cfg(feature = "excel")]
 use std::collections::HashMap;
 
 #[cfg(feature = "excel")]
@@ -21,6 +23,7 @@ use pandrs::io::{
     ExcelWriteOptions, NamedRange,
 };
 
+#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     println!("PandRS Advanced Excel Features - Phase 2 Alpha.6");
     println!("===============================================");
@@ -67,6 +70,7 @@ fn main() -> Result<()> {
 }
 
 #[cfg(feature = "excel")]
+#[allow(clippy::result_large_err)]
 fn formula_preservation_example(_df: &DataFrame) -> Result<()> {
     println!("Demonstrating formula preservation in Excel files...");
 
@@ -148,6 +152,7 @@ fn formula_preservation_example(_df: &DataFrame) -> Result<()> {
 }
 
 #[cfg(feature = "excel")]
+#[allow(clippy::result_large_err)]
 fn named_ranges_example(_df: &DataFrame) -> Result<()> {
     println!("Demonstrating named ranges functionality...");
 
@@ -210,6 +215,7 @@ fn named_ranges_example(_df: &DataFrame) -> Result<()> {
 }
 
 #[cfg(feature = "excel")]
+#[allow(clippy::result_large_err)]
 fn multi_sheet_example(financial_data: &DataFrame, summary_data: &DataFrame) -> Result<()> {
     println!("Creating multi-sheet Excel workbook...");
 
@@ -310,6 +316,7 @@ fn multi_sheet_example(financial_data: &DataFrame, summary_data: &DataFrame) -> 
 }
 
 #[cfg(feature = "excel")]
+#[allow(clippy::result_large_err)]
 fn large_file_optimization_example(large_df: &DataFrame) -> Result<()> {
     println!("Demonstrating large Excel file optimization...");
 
@@ -355,7 +362,7 @@ fn large_file_optimization_example(large_df: &DataFrame) -> Result<()> {
 
     // Memory-efficient processing simulation
     let chunk_size = 5000;
-    let num_chunks = (large_df.row_count() + chunk_size - 1) / chunk_size;
+    let num_chunks = large_df.row_count().div_ceil(chunk_size);
 
     println!("  Processing in chunks:");
     println!("    • Chunk size: {} rows", chunk_size);
@@ -378,6 +385,7 @@ fn large_file_optimization_example(large_df: &DataFrame) -> Result<()> {
 }
 
 #[cfg(feature = "excel")]
+#[allow(clippy::result_large_err)]
 fn workbook_analysis_example() -> Result<()> {
     println!("Performing comprehensive workbook analysis...");
 
@@ -479,6 +487,7 @@ fn workbook_analysis_example() -> Result<()> {
 }
 
 #[cfg(feature = "excel")]
+#[allow(clippy::result_large_err)]
 fn advanced_reading_example() -> Result<()> {
     println!("Demonstrating advanced Excel reading capabilities...");
 
@@ -568,6 +577,7 @@ fn advanced_reading_example() -> Result<()> {
 }
 
 #[cfg(feature = "excel")]
+#[allow(clippy::result_large_err)]
 fn cell_formatting_example(df: &DataFrame) -> Result<()> {
     println!("Demonstrating advanced cell formatting...");
 
@@ -672,6 +682,7 @@ fn cell_formatting_example(df: &DataFrame) -> Result<()> {
 // ============================================================================
 
 #[cfg(feature = "excel")]
+#[allow(clippy::result_large_err)]
 fn create_financial_data() -> Result<DataFrame> {
     let mut df = DataFrame::new();
 
@@ -724,6 +735,7 @@ fn create_financial_data() -> Result<DataFrame> {
 }
 
 #[cfg(feature = "excel")]
+#[allow(clippy::result_large_err)]
 fn create_summary_data() -> Result<DataFrame> {
     let mut df = DataFrame::new();
 
@@ -756,6 +768,7 @@ fn create_summary_data() -> Result<DataFrame> {
 }
 
 #[allow(dead_code)]
+#[allow(clippy::result_large_err)]
 fn create_large_dataset(size: usize) -> Result<DataFrame> {
     let mut df = DataFrame::new();
 

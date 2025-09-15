@@ -37,6 +37,7 @@ use pandrs::Series;
 use std::time::Instant;
 
 #[cfg(all(feature = "cuda", feature = "optimized"))]
+#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     println!("PandRS GPU-accelerated Machine Learning Example");
     println!("----------------------------------------------");
@@ -262,6 +263,7 @@ fn benchmark_linear_regression(
 }
 
 #[cfg(all(feature = "cuda", feature = "optimized"))]
+#[allow(clippy::result_large_err)]
 fn benchmark_pca(data: &Array2<f64>) -> Result<()> {
     println!("\nPrincipal Component Analysis (PCA) Benchmark");
     println!("--------------------------------------------");
@@ -351,6 +353,7 @@ fn benchmark_pca(data: &Array2<f64>) -> Result<()> {
 }
 
 #[cfg(all(feature = "cuda", feature = "optimized"))]
+#[allow(clippy::result_large_err)]
 fn benchmark_kmeans(data: &Array2<f64>) -> Result<()> {
     println!("\nK-means Clustering Benchmark");
     println!("----------------------------");

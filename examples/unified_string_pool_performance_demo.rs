@@ -19,6 +19,7 @@ use pandrs::storage::SimpleUnifiedStringPool;
 use std::sync::Arc;
 use std::time::Instant;
 
+#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     println!("PandRS Unified Zero-Copy String Pool Performance Demo");
     println!("===================================================");
@@ -46,12 +47,13 @@ fn main() -> Result<()> {
 }
 
 /// Demonstrate string deduplication capabilities
+#[allow(clippy::result_large_err)]
 fn demo_string_deduplication() -> Result<()> {
     println!("🔗 String Deduplication Demonstration");
     println!("=====================================");
 
     // Create a dataset with many duplicate strings (simulating real-world data)
-    let cities = vec![
+    let cities = [
         "New York",
         "Los Angeles",
         "Chicago",
@@ -69,7 +71,7 @@ fn demo_string_deduplication() -> Result<()> {
     // Create 1000 entries with realistic duplication patterns
     for i in 0..1000 {
         let city = cities[i % cities.len()];
-        test_data.push(format!("Record from {}", city));
+        test_data.push(format!("Record from {city}"));
     }
 
     let column = SimpleZeroCopyStringColumn::new(test_data.clone())?;
@@ -99,8 +101,8 @@ fn demo_string_deduplication() -> Result<()> {
     let total_chars: usize = test_data.iter().map(|s| s.len()).sum();
     let actual_bytes = stats.total_bytes;
 
-    println!("  • Theoretical storage (no dedup): {} bytes", total_chars);
-    println!("  • Actual storage (with dedup): {} bytes", actual_bytes);
+    println!("  • Theoretical storage (no dedup): {total_chars} bytes");
+    println!("  • Actual storage (with dedup): {actual_bytes} bytes");
     println!(
         "  • Space reduction: {:.1}x",
         total_chars as f64 / actual_bytes as f64
@@ -110,6 +112,7 @@ fn demo_string_deduplication() -> Result<()> {
 }
 
 /// Demonstrate memory efficiency improvements
+#[allow(clippy::result_large_err)]
 fn demo_memory_efficiency() -> Result<()> {
     println!("💾 Memory Efficiency Demonstration");
     println!("==================================");
@@ -125,7 +128,7 @@ fn demo_memory_efficiency() -> Result<()> {
     ];
 
     for (name, data) in test_cases {
-        println!("\n{} Dataset:", name);
+        println!("\n{name} Dataset:");
 
         let column = SimpleZeroCopyStringColumn::new(data.clone())?;
         let stats = column.pool_stats()?;
@@ -133,7 +136,7 @@ fn demo_memory_efficiency() -> Result<()> {
         let total_chars: usize = data.iter().map(|s| s.len()).sum();
         let compression_ratio = total_chars as f64 / stats.total_bytes as f64;
 
-        println!("  • Compression ratio: {:.2}x", compression_ratio);
+        println!("  • Compression ratio: {compression_ratio:.2}x");
         println!(
             "  • Deduplication savings: {:.1}%",
             stats.deduplication_ratio * 100.0
@@ -148,6 +151,7 @@ fn demo_memory_efficiency() -> Result<()> {
 }
 
 /// Demonstrate zero-copy operations
+#[allow(clippy::result_large_err)]
 fn demo_zero_copy_operations() -> Result<()> {
     println!("⚡ Zero-Copy Operations Demonstration");
     println!("====================================");
@@ -178,7 +182,7 @@ fn demo_zero_copy_operations() -> Result<()> {
     let lengths = column.string_lengths()?;
     for (i, &len_opt) in lengths.iter().enumerate() {
         if let Some(len) = len_opt {
-            println!("  [{}] {} characters", i, len);
+            println!("  [{i}] {len} characters");
         }
     }
 
@@ -198,6 +202,7 @@ fn demo_zero_copy_operations() -> Result<()> {
 }
 
 /// Compare performance with traditional string column
+#[allow(clippy::result_large_err)]
 fn demo_performance_comparison() -> Result<()> {
     println!("📊 Performance Comparison");
     println!("========================");
@@ -255,9 +260,9 @@ fn demo_performance_comparison() -> Result<()> {
 
     let speedup = traditional_ops_time.as_secs_f64() / zero_copy_ops_time.as_secs_f64();
     if speedup > 1.0 {
-        println!("  • Zero-copy speedup: {:.1}x faster", speedup);
+        println!("  • Zero-copy speedup: {speedup:.1}x faster");
     } else {
-        println!("  • Performance ratio: {:.1}x", speedup);
+        println!("  • Performance ratio: {speedup:.1}x");
     }
 
     println!("\nMemory Efficiency:");
@@ -278,6 +283,7 @@ fn demo_performance_comparison() -> Result<()> {
 }
 
 /// Demonstrate shared pool benefits
+#[allow(clippy::result_large_err)]
 fn demo_shared_pool_benefits() -> Result<()> {
     println!("🤝 Shared Pool Benefits");
     println!("======================");
@@ -340,33 +346,33 @@ fn demo_shared_pool_benefits() -> Result<()> {
 
 /// Create test datasets with different duplication patterns
 fn create_low_duplication_dataset(size: usize) -> Vec<String> {
-    (0..size).map(|i| format!("unique_string_{}", i)).collect()
+    (0..size).map(|i| format!("unique_string_{i}")).collect()
 }
 
 fn create_medium_duplication_dataset(size: usize) -> Vec<String> {
-    let patterns = vec!["alpha", "beta", "gamma", "delta", "epsilon"];
+    let patterns = ["alpha", "beta", "gamma", "delta", "epsilon"];
     (0..size)
         .map(|i| format!("{}_{}", patterns[i % patterns.len()], i / patterns.len()))
         .collect()
 }
 
 fn create_high_duplication_dataset(size: usize) -> Vec<String> {
-    let base_strings = vec!["common", "frequent", "repeated"];
+    let base_strings = ["common", "frequent", "repeated"];
     (0..size)
         .map(|i| base_strings[i % base_strings.len()].to_string())
         .collect()
 }
 
 fn create_realistic_dataset(size: usize) -> Vec<String> {
-    let prefixes = vec!["user", "data", "config", "temp", "cache"];
-    let suffixes = vec!["primary", "secondary", "backup", "test", "prod"];
+    let prefixes = ["user", "data", "config", "temp", "cache"];
+    let suffixes = ["primary", "secondary", "backup", "test", "prod"];
     let mut data = Vec::with_capacity(size);
 
     for i in 0..size {
         let prefix = prefixes[i % prefixes.len()];
         let suffix = suffixes[(i / prefixes.len()) % suffixes.len()];
         let id = i / (prefixes.len() * suffixes.len());
-        data.push(format!("{}_{}_{}", prefix, suffix, id));
+        data.push(format!("{prefix}_{suffix}_{id}"));
     }
 
     data

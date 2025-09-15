@@ -8,16 +8,18 @@ mod tests {
     use std::sync::Arc;
 
     #[test]
+    #[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
     fn test_select_expr() -> Result<()> {
         // Create test data
         let mut df = pandrs::dataframe::DataFrame::new();
         df.add_column(
             "a".to_string(),
-            pandrs::series::Series::from_vec(vec![1, 2, 3], Some("a")),
+            pandrs::series::Series::from_vec([1, 2, 3], Some("a")),
         )?;
         df.add_column(
             "b".to_string(),
-            pandrs::series::Series::from_vec(vec![4, 5, 6], Some("b")),
+            pandrs::series::Series::from_vec([4, 5, 6], Some("b")),
         )?;
 
         // Create context and register data
@@ -38,22 +40,24 @@ mod tests {
 
         // Verify column values
         let b_doubled = result.column("b_doubled")?.to_vec::<f64>()?;
-        assert_eq!(b_doubled, vec![8.0, 10.0, 12.0]);
+        assert_eq!(b_doubled, [8.0, 10.0, 12.0]);
 
         Ok(())
     }
 
     #[test]
+    #[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
     fn test_with_column() -> Result<()> {
         // Create test data
         let mut df = pandrs::dataframe::DataFrame::new();
         df.add_column(
             "a".to_string(),
-            pandrs::series::Series::from_vec(vec![1, 2, 3], Some("a")),
+            pandrs::series::Series::from_vec([1, 2, 3], Some("a")),
         )?;
         df.add_column(
             "b".to_string(),
-            pandrs::series::Series::from_vec(vec![4, 5, 6], Some("b")),
+            pandrs::series::Series::from_vec([4, 5, 6], Some("b")),
         )?;
 
         // Create context and register data
@@ -71,22 +75,24 @@ mod tests {
 
         // Verify column values
         let sum_ab = result.column("sum_ab")?.to_vec::<f64>()?;
-        assert_eq!(sum_ab, vec![5.0, 7.0, 9.0]);
+        assert_eq!(sum_ab, [5.0, 7.0, 9.0]);
 
         Ok(())
     }
 
     #[test]
+    #[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
     fn test_filter_expr() -> Result<()> {
         // Create test data
         let mut df = pandrs::dataframe::DataFrame::new();
         df.add_column(
             "a".to_string(),
-            pandrs::series::Series::from_vec(vec![1, 2, 3, 4, 5], Some("a")),
+            pandrs::series::Series::from_vec([1, 2, 3, 4, 5], Some("a")),
         )?;
         df.add_column(
             "b".to_string(),
-            pandrs::series::Series::from_vec(vec![5, 4, 3, 2, 1], Some("b")),
+            pandrs::series::Series::from_vec([5, 4, 3, 2, 1], Some("b")),
         )?;
 
         // Create context and register data
@@ -111,6 +117,8 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
     fn test_udf_creation() -> Result<()> {
         // Skip if not using local engine for tests
         if !cfg!(feature = "test_with_datafusion") {
@@ -121,11 +129,11 @@ mod tests {
         let mut df = pandrs::dataframe::DataFrame::new();
         df.add_column(
             "a".to_string(),
-            pandrs::series::Series::from_vec(vec![10, 20, 30], Some("a")),
+            pandrs::series::Series::from_vec([10, 20, 30], Some("a")),
         )?;
         df.add_column(
             "b".to_string(),
-            pandrs::series::Series::from_vec(vec![2, 4, 5], Some("b")),
+            pandrs::series::Series::from_vec([2, 4, 5], Some("b")),
         )?;
 
         // Create context and register data
@@ -137,7 +145,7 @@ mod tests {
         let multiply_udf = UdfDefinition::new(
             "multiply_with_factor",
             ExprDataType::Float,
-            vec![ExprDataType::Float, ExprDataType::Float],
+            [ExprDataType::Float, ExprDataType::Float],
             "param0 * param1 * 1.5", // multiply a and b, then multiply by 1.5
         );
 
@@ -148,7 +156,7 @@ mod tests {
                 ColumnProjection::column("a"),
                 ColumnProjection::column("b"),
                 ColumnProjection::with_alias(
-                    Expr::call("multiply_with_factor", vec![Expr::col("a"), Expr::col("b")]),
+                    Expr::call("multiply_with_factor", [Expr::col("a"), Expr::col("b")]),
                     "result",
                 ),
             ])?
@@ -158,7 +166,7 @@ mod tests {
         assert_eq!(result.shape()?.1, 3); // 3 columns
 
         let result_col = result.column("result")?.to_vec::<f64>()?;
-        assert_eq!(result_col, vec![30.0, 120.0, 225.0]); // a * b * 1.5
+        assert_eq!(result_col, [30.0, 120.0, 225.0]); // a * b * 1.5
 
         Ok(())
     }

@@ -11,6 +11,8 @@ fn main() {
 }
 
 #[cfg(feature = "optimized")]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn main() -> Result<(), Error> {
     println!("=== Sample of Optimized Group Operations ===");
 

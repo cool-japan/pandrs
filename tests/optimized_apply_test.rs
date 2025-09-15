@@ -4,6 +4,8 @@ use pandrs::{Column, Float64Column, Int64Column, OptimizedDataFrame, StringColum
 
 #[test]
 #[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn test_optimized_dataframe_apply() -> Result<()> {
     // Create a DataFrame for testing
     let mut df = OptimizedDataFrame::new();
@@ -78,6 +80,8 @@ fn test_optimized_dataframe_apply() -> Result<()> {
 
 #[test]
 #[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn test_optimized_dataframe_apply_with_column_subset() -> Result<()> {
     // Create a DataFrame for testing
     let mut df = OptimizedDataFrame::new();
@@ -139,6 +143,8 @@ fn test_optimized_dataframe_apply_with_column_subset() -> Result<()> {
 }
 
 #[test]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 #[allow(clippy::result_large_err)]
 fn test_optimized_dataframe_applymap() -> Result<()> {
     // Create a DataFrame for testing

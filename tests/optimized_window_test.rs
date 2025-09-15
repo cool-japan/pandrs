@@ -7,6 +7,8 @@ use pandrs::{Column, Float64Column, OptimizedDataFrame, StringColumn};
 
 #[test]
 #[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn test_optimized_window_operations() -> Result<()> {
     // Create time series data for testing
     let mut df = OptimizedDataFrame::new();
@@ -60,6 +62,8 @@ fn test_optimized_window_operations() -> Result<()> {
 
 #[test]
 #[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn test_optimized_cumulative_operations() -> Result<()> {
     // Test to simulate cumulative operations
     let mut df = OptimizedDataFrame::new();
@@ -85,7 +89,7 @@ fn test_optimized_cumulative_operations() -> Result<()> {
     }
 
     // Check expected values
-    assert_eq!(cumsum, vec![10.0, 30.0, 45.0, 75.0, 100.0]);
+    assert_eq!(cumsum, [10.0, 30.0, 45.0, 75.0, 100.0]);
 
     Ok(())
 }

@@ -80,7 +80,7 @@ mod tests {
             } else if category == "Clothing" {
                 assert_eq!(agg_value, "1200");
             } else {
-                panic!("Unexpected category: {}", category);
+                panic!("Unexpected category: {category}");
             }
         }
     }

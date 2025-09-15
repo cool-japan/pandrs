@@ -4,11 +4,11 @@ use pandrs::error::Result;
 use pandrs::{DataFrame, Series};
 
 #[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     #[cfg(not(feature = "excel"))]
     {
         println!("Excel feature is not enabled. Enable it with --features excel");
-        return Ok(());
     }
 
     #[cfg(feature = "excel")]
@@ -110,6 +110,7 @@ fn main() -> Result<()> {
 
 /// Create sample sales DataFrame
 #[cfg(feature = "excel")]
+#[allow(clippy::result_large_err)]
 fn create_sample_sales_dataframe() -> Result<DataFrame> {
     let mut df = DataFrame::new();
 
@@ -148,6 +149,7 @@ fn create_sample_sales_dataframe() -> Result<DataFrame> {
 
 /// Create sample inventory DataFrame
 #[cfg(feature = "excel")]
+#[allow(clippy::result_large_err)]
 fn create_sample_inventory_dataframe() -> Result<DataFrame> {
     let mut df = DataFrame::new();
 
@@ -180,6 +182,7 @@ fn create_sample_inventory_dataframe() -> Result<DataFrame> {
 
 /// Create sample summary DataFrame
 #[cfg(feature = "excel")]
+#[allow(clippy::result_large_err)]
 fn create_sample_summary_dataframe() -> Result<DataFrame> {
     let mut df = DataFrame::new();
 

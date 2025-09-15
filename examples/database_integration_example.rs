@@ -25,6 +25,7 @@ use pandrs::io::sql::{
 use std::time::Duration;
 
 #[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     println!("PandRS Database Integration - Phase 2 Alpha.6");
     println!("============================================");
@@ -32,7 +33,6 @@ fn main() -> Result<()> {
     // Create sample datasets
     let financial_data = create_financial_dataset()?;
     let user_data = create_user_dataset()?;
-    let large_dataset = create_large_transaction_dataset(10000)?;
 
     println!("\n=== 1. Connection Pool Management ===");
     #[cfg(feature = "sql")]
@@ -49,7 +49,10 @@ fn main() -> Result<()> {
 
     println!("\n=== 5. Bulk Insert Operations ===");
     #[cfg(feature = "sql")]
-    bulk_insert_example(&large_dataset)?;
+    {
+        let large_dataset = create_large_transaction_dataset(10000)?;
+        bulk_insert_example(&large_dataset)?;
+    }
 
     println!("\n=== 6. Multi-Database Integration ===");
     multi_database_example(&financial_data, &user_data)?;
@@ -66,6 +69,7 @@ fn main() -> Result<()> {
 }
 
 #[cfg(feature = "sql")]
+#[allow(clippy::result_large_err)]
 #[allow(clippy::result_large_err)]
 fn connection_pool_example(_df: &DataFrame) -> Result<()> {
     println!("Demonstrating async connection pool management...");
@@ -162,6 +166,7 @@ fn connection_pool_example(_df: &DataFrame) -> Result<()> {
 }
 
 #[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn transaction_management_example(_df: &DataFrame) -> Result<()> {
     println!("Demonstrating advanced transaction management...");
 
@@ -175,7 +180,7 @@ fn transaction_management_example(_df: &DataFrame) -> Result<()> {
 
     println!("  Transaction isolation levels:");
     for (level, description) in isolation_levels {
-        println!("    • {}: {}", level, description);
+        println!("    • {level}: {description}");
     }
 
     // Complex transaction scenario
@@ -194,7 +199,7 @@ fn transaction_management_example(_df: &DataFrame) -> Result<()> {
 
     for (i, step) in transaction_steps.iter().enumerate() {
         if step.starts_with("--") {
-            println!("    {}", step);
+            println!("    {step}");
         } else {
             println!("    {}. {}", i + 1, step);
         }
@@ -223,7 +228,7 @@ fn transaction_management_example(_df: &DataFrame) -> Result<()> {
     ];
 
     for (scenario, cause, handling) in rollback_scenarios {
-        println!("    • {}: {} → {}", scenario, cause, handling);
+        println!("    • {scenario}: {cause} → {handling}");
     }
 
     // Transaction performance metrics
@@ -238,12 +243,13 @@ fn transaction_management_example(_df: &DataFrame) -> Result<()> {
     ];
 
     for (metric, value) in perf_metrics {
-        println!("    • {}: {}", metric, value);
+        println!("    • {metric}: {value}");
     }
 
     Ok(())
 }
 
+#[allow(clippy::result_large_err)]
 #[allow(clippy::result_large_err)]
 fn query_builder_example(_df: &DataFrame) -> Result<()> {
     println!("Demonstrating type-safe SQL query builder...");
@@ -258,7 +264,7 @@ fn query_builder_example(_df: &DataFrame) -> Result<()> {
     ];
 
     for (query_type, sql) in basic_queries {
-        println!("    • {}: {}", query_type, sql);
+        println!("    • {query_type}: {sql}");
     }
 
     // Parameterized queries with type safety
@@ -287,8 +293,8 @@ fn query_builder_example(_df: &DataFrame) -> Result<()> {
     ];
 
     for (description, where_clause, params) in parameterized_queries {
-        println!("    • {}: {}", description, where_clause);
-        println!("      Parameters: {:?}", params);
+        println!("    • {description}: {where_clause}");
+        println!("      Parameters: {params:?}");
     }
 
     // Advanced query building features
@@ -305,7 +311,7 @@ fn query_builder_example(_df: &DataFrame) -> Result<()> {
     ];
 
     for feature in advanced_features {
-        println!("    • {}", feature);
+        println!("    • {feature}");
     }
 
     // Query builder fluent API example
@@ -332,12 +338,13 @@ fn query_builder_example(_df: &DataFrame) -> Result<()> {
     ];
 
     for (optimization, description) in optimizations {
-        println!("    • {}: {}", optimization, description);
+        println!("    • {optimization}: {description}");
     }
 
     Ok(())
 }
 
+#[allow(clippy::result_large_err)]
 #[allow(clippy::result_large_err)]
 fn schema_introspection_example() -> Result<()> {
     println!("Demonstrating database schema introspection...");
@@ -560,6 +567,7 @@ fn schema_introspection_example() -> Result<()> {
 
 #[cfg(feature = "sql")]
 #[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn bulk_insert_example(df: &DataFrame) -> Result<()> {
     println!("Demonstrating bulk insert operations...");
 
@@ -576,7 +584,7 @@ fn bulk_insert_example(df: &DataFrame) -> Result<()> {
 
     println!("  Insert strategies comparison:");
     for (strategy, batch_size, description) in &insert_strategies {
-        let num_batches = (total_rows + batch_size - 1) / batch_size;
+        let num_batches = total_rows.div_ceil(*batch_size);
         let estimated_time = match *strategy {
             "Single INSERT" => total_rows * 2,   // 2ms per row
             "Batch INSERT" => num_batches * 50,  // 50ms per batch
@@ -612,7 +620,7 @@ fn bulk_insert_example(df: &DataFrame) -> Result<()> {
 
     // Bulk insert process simulation
     let chunk_size = write_options.chunksize.unwrap();
-    let num_chunks = (total_rows + chunk_size - 1) / chunk_size;
+    let num_chunks = total_rows.div_ceil(chunk_size);
 
     println!("  Bulk insert process:");
     println!("    1. Preparing data for bulk insert...");
@@ -669,13 +677,14 @@ fn bulk_insert_example(df: &DataFrame) -> Result<()> {
 }
 
 #[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn multi_database_example(_financial_data: &DataFrame, _user_data: &DataFrame) -> Result<()> {
     println!("Demonstrating multi-database integration...");
 
     #[cfg(feature = "sql")]
     {
         // Database configurations
-        let databases = vec![
+        let databases = [
             (
                 "PostgreSQL Production",
                 DatabaseConnection::PostgreSQL(
@@ -818,6 +827,7 @@ fn multi_database_example(_financial_data: &DataFrame, _user_data: &DataFrame) -
 }
 
 #[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn advanced_query_example(_df: &DataFrame) -> Result<()> {
     println!("Demonstrating advanced query operations...");
 
@@ -831,7 +841,7 @@ fn advanced_query_example(_df: &DataFrame) -> Result<()> {
     ];
 
     for (query_type, sql) in analytical_queries {
-        println!("    • {}: {}", query_type, sql);
+        println!("    • {query_type}: {sql}");
     }
 
     // Recursive queries
@@ -863,7 +873,7 @@ fn advanced_query_example(_df: &DataFrame) -> Result<()> {
     ];
 
     for (technique, description) in optimizations {
-        println!("    • {}: {}", technique, description);
+        println!("    • {technique}: {description}");
     }
 
     // Query monitoring and analysis
@@ -878,13 +888,14 @@ fn advanced_query_example(_df: &DataFrame) -> Result<()> {
     ];
 
     for (metric, purpose) in monitoring_metrics {
-        println!("    • {}: {}", metric, purpose);
+        println!("    • {metric}: {purpose}");
     }
 
     Ok(())
 }
 
 #[cfg(feature = "sql")]
+#[allow(clippy::result_large_err)]
 #[allow(clippy::result_large_err)]
 fn performance_monitoring_example() -> Result<()> {
     println!("Demonstrating database performance monitoring...");
@@ -1044,6 +1055,7 @@ fn performance_monitoring_example() -> Result<()> {
 // ============================================================================
 
 #[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn create_financial_dataset() -> Result<DataFrame> {
     let mut df = DataFrame::new();
 
@@ -1103,6 +1115,7 @@ fn create_financial_dataset() -> Result<DataFrame> {
 }
 
 #[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn create_user_dataset() -> Result<DataFrame> {
     let mut df = DataFrame::new();
 
@@ -1152,6 +1165,8 @@ fn create_user_dataset() -> Result<DataFrame> {
     Ok(df)
 }
 
+#[cfg(feature = "sql")]
+#[allow(clippy::result_large_err)]
 #[allow(clippy::result_large_err)]
 fn create_large_transaction_dataset(size: usize) -> Result<DataFrame> {
     let mut df = DataFrame::new();

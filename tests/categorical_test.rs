@@ -3,7 +3,7 @@ use pandrs::series::{CategoricalOrder, StringCategorical};
 #[test]
 fn test_categorical_creation() {
     // Create basic categorical
-    let values = vec!["a", "b", "a", "c", "b", "a"];
+    let values = ["a", "b", "a", "c", "b", "a"];
     let values_str = values.iter().map(|s| s.to_string()).collect();
 
     let cat = StringCategorical::new(
@@ -21,10 +21,10 @@ fn test_categorical_creation() {
 #[test]
 fn test_categorical_with_explicit_categories() {
     // Use explicit list of categories
-    let values = vec!["a", "b", "a"];
+    let values = ["a", "b", "a"];
     let values_str = values.iter().map(|s| s.to_string()).collect();
 
-    let categories = vec!["a", "b", "c", "d"];
+    let categories = ["a", "b", "c", "d"];
     let categories_str = categories.iter().map(|s| s.to_string()).collect();
 
     let cat = StringCategorical::new(
@@ -41,7 +41,7 @@ fn test_categorical_with_explicit_categories() {
 
 #[test]
 fn test_categorical_get_value() {
-    let values = vec!["a", "b", "c"];
+    let values = ["a", "b", "c"];
     let values_str = values.iter().map(|s| s.to_string()).collect();
 
     let cat = StringCategorical::new(values_str, None, false).unwrap();
@@ -54,13 +54,13 @@ fn test_categorical_get_value() {
 
 #[test]
 fn test_categorical_reorder() {
-    let values = vec!["a", "b", "a", "c"];
+    let values = ["a", "b", "a", "c"];
     let values_str = values.iter().map(|s| s.to_string()).collect();
 
     let mut cat = StringCategorical::new(values_str, None, false).unwrap();
 
     // Change the order of categories
-    let new_order = vec!["c", "b", "a"];
+    let new_order = ["c", "b", "a"];
     let new_order_str = new_order.iter().map(|s| s.to_string()).collect();
 
     cat.reorder_categories(new_order_str).unwrap();
@@ -79,13 +79,13 @@ fn test_categorical_reorder() {
 
 #[test]
 fn test_categorical_add_categories() {
-    let values = vec!["a", "b"];
+    let values = ["a", "b"];
     let values_str = values.iter().map(|s| s.to_string()).collect();
 
     let mut cat = StringCategorical::new(values_str, None, false).unwrap();
 
     // Add categories
-    let new_cats = vec!["c", "d"];
+    let new_cats = ["c", "d"];
     let new_cats_str = new_cats.iter().map(|s| s.to_string()).collect();
 
     cat.add_categories(new_cats_str).unwrap();
@@ -100,13 +100,13 @@ fn test_categorical_add_categories() {
 
 #[test]
 fn test_categorical_remove_categories() {
-    let values = vec!["a", "b", "a", "c"];
+    let values = ["a", "b", "a", "c"];
     let values_str = values.iter().map(|s| s.to_string()).collect();
 
     let mut cat = StringCategorical::new(values_str, None, false).unwrap();
 
     // Remove categories (values are also removed)
-    let cats_to_remove = vec!["b".to_string()];
+    let cats_to_remove = ["b".to_string()];
 
     cat.remove_categories(&cats_to_remove).unwrap();
 
@@ -132,7 +132,7 @@ fn test_categorical_remove_categories() {
 
 #[test]
 fn test_categorical_value_counts() {
-    let values = vec!["a", "b", "a", "c", "a", "b"];
+    let values = ["a", "b", "a", "c", "a", "b"];
     let values_str = values.iter().map(|s| s.to_string()).collect();
 
     let cat = StringCategorical::new(values_str, None, false).unwrap();
@@ -149,7 +149,7 @@ fn test_categorical_value_counts() {
 
 #[test]
 fn test_categorical_to_series() {
-    let values = vec!["a", "b", "a"];
+    let values = ["a", "b", "a"];
     let values_str = values.iter().map(|s| s.to_string()).collect();
 
     let cat = StringCategorical::new(values_str, None, false).unwrap();
@@ -166,10 +166,10 @@ fn test_categorical_to_series() {
 
 #[test]
 fn test_categorical_equality() {
-    let values1 = vec!["a", "b", "a"];
+    let values1 = ["a", "b", "a"];
     let values1_str = values1.iter().map(|s| s.to_string()).collect();
 
-    let values2 = vec!["a", "b", "a"];
+    let values2 = ["a", "b", "a"];
     let values2_str = values2.iter().map(|s| s.to_string()).collect();
 
     let cat1 = StringCategorical::new(values1_str, None, false).unwrap();
@@ -179,9 +179,9 @@ fn test_categorical_equality() {
     assert!(cat1.codes() == cat2.codes() && cat1.categories() == cat2.categories());
 
     // When the category order is different
-    let values3 = vec!["a", "b", "a"];
+    let values3 = ["a", "b", "a"];
     let values3_str = values3.iter().map(|s| s.to_string()).collect();
-    let categories = vec!["b", "a"]; // Different order
+    let categories = ["b", "a"]; // Different order
     let categories_str = categories.iter().map(|s| s.to_string()).collect();
 
     let cat3 = StringCategorical::new(values3_str, Some(categories_str), false).unwrap();
@@ -193,10 +193,10 @@ fn test_categorical_equality() {
 #[test]
 fn test_invalid_categorical_creation() {
     // Values not in categories
-    let values = vec!["a", "b", "d"];
+    let values = ["a", "b", "d"];
     let values_str = values.iter().map(|s| s.to_string()).collect();
 
-    let categories = vec!["a", "b", "c"];
+    let categories = ["a", "b", "c"];
     let categories_str = categories.iter().map(|s| s.to_string()).collect();
 
     let result = StringCategorical::new(values_str, Some(categories_str), false);
@@ -204,10 +204,10 @@ fn test_invalid_categorical_creation() {
     assert!(result.is_ok());
 
     // Duplicate categories
-    let values2 = vec!["a", "b"];
+    let values2 = ["a", "b"];
     let values2_str = values2.iter().map(|s| s.to_string()).collect();
 
-    let categories2 = vec!["a", "b", "b"]; // duplicate
+    let categories2 = ["a", "b", "b"]; // duplicate
     let categories2_str = categories2.iter().map(|s| s.to_string()).collect();
 
     let result2 = StringCategorical::new(values2_str, Some(categories2_str), false);

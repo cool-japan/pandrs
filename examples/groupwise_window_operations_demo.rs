@@ -5,6 +5,7 @@ use pandrs::series::window::WindowClosed;
 use pandrs::series::Series;
 
 #[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     println!("PandRS Alpha.7: Group-wise Window Operations Example");
     println!("===================================================");
@@ -53,7 +54,7 @@ fn main() -> Result<()> {
         .iter()
         .map(|date_str| NaiveDateTime::parse_from_str(date_str, "%Y-%m-%d %H:%M:%S"))
         .collect::<std::result::Result<Vec<_>, _>>()
-        .map_err(|e| pandrs::error::Error::InvalidValue(format!("Date parsing error: {}", e)))?;
+        .map_err(|e| pandrs::error::Error::InvalidValue(format!("Date parsing error: {e}")))?;
 
     // Create DataFrame
     let mut df = DataFrame::new();
@@ -84,7 +85,7 @@ fn main() -> Result<()> {
     )?;
 
     println!("Original Multi-Asset Data:");
-    println!("{:?}", df);
+    println!("{df:?}");
     println!();
 
     // Example 1: Group-wise Rolling Operations
@@ -103,13 +104,13 @@ fn main() -> Result<()> {
     let rolling_mean = rolling_ops.mean()?;
 
     println!("Group-wise Rolling Mean (window=3, by symbol):");
-    println!("{:?}", rolling_mean);
+    println!("{rolling_mean:?}");
     println!();
 
     // Group-wise rolling standard deviation
     let rolling_std = rolling_ops.std(1)?;
     println!("Group-wise Rolling Standard Deviation:");
-    println!("{:?}", rolling_std);
+    println!("{rolling_std:?}");
     println!();
 
     // Example 2: Group-wise Expanding Operations
@@ -125,11 +126,11 @@ fn main() -> Result<()> {
     let expanding_max = expanding_ops.max()?;
 
     println!("Group-wise Expanding Mean (min_periods=2, by symbol):");
-    println!("{:?}", expanding_mean);
+    println!("{expanding_mean:?}");
     println!();
 
     println!("Group-wise Expanding Maximum:");
-    println!("{:?}", expanding_max);
+    println!("{expanding_max:?}");
     println!();
 
     // Example 3: Group-wise EWM Operations
@@ -146,7 +147,7 @@ fn main() -> Result<()> {
     let ewm_mean = ewm_ops.mean()?;
 
     println!("Group-wise EWM Mean (span=4, by symbol):");
-    println!("{:?}", ewm_mean);
+    println!("{ewm_mean:?}");
     println!();
 
     // Example 4: Group-wise Time-based Rolling
@@ -166,11 +167,11 @@ fn main() -> Result<()> {
     let time_count = time_rolling_ops.count()?;
 
     println!("Group-wise Time-based Rolling Mean (30-min window, by symbol):");
-    println!("{:?}", time_mean);
+    println!("{time_mean:?}");
     println!();
 
     println!("Group-wise Time-based Rolling Count:");
-    println!("{:?}", time_count);
+    println!("{time_count:?}");
     println!();
 
     // Example 5: Advanced Multi-column Operations
@@ -187,11 +188,11 @@ fn main() -> Result<()> {
     let multi_quantile = multi_ops.quantile(0.75)?;
 
     println!("Multi-column Group-wise Rolling Mean (all numeric columns):");
-    println!("{:?}", multi_mean);
+    println!("{multi_mean:?}");
     println!();
 
     println!("Multi-column Group-wise Rolling 75th Percentile:");
-    println!("{:?}", multi_quantile);
+    println!("{multi_quantile:?}");
     println!();
 
     // Example 6: Custom Aggregation Functions within Groups
@@ -216,7 +217,7 @@ fn main() -> Result<()> {
     })?;
 
     println!("Group-wise Price Range (max-min in 3-period window):");
-    println!("{:?}", price_range);
+    println!("{price_range:?}");
     println!();
 
     // Example 7: Regular Window Operations (non-grouped) for comparison
@@ -229,7 +230,7 @@ fn main() -> Result<()> {
     let regular_mean = regular_ops.mean()?;
 
     println!("Regular Rolling Mean (no grouping - across all symbols):");
-    println!("{:?}", regular_mean);
+    println!("{regular_mean:?}");
     println!();
 
     // Example 8: Combined Window and Time-based Operations
@@ -246,11 +247,11 @@ fn main() -> Result<()> {
     let rolling_max = combined_ops.max()?;
 
     println!("Combined Analysis - Rolling Min per Symbol:");
-    println!("{:?}", rolling_min);
+    println!("{rolling_min:?}");
     println!();
 
     println!("Combined Analysis - Rolling Max per Symbol:");
-    println!("{:?}", rolling_max);
+    println!("{rolling_max:?}");
     println!();
 
     println!("Group-wise Window Operations Example Completed Successfully!");

@@ -19,6 +19,8 @@ use pandrs::core::advanced_multi_index::{AdvancedMultiIndex, IndexValue, Selecti
 use pandrs::core::error::Result;
 use std::time::Instant;
 
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     println!("PandRS Advanced MultiIndex with Cross-Section Selection Demo");
     println!("==========================================================");
@@ -52,6 +54,8 @@ fn main() -> Result<()> {
 }
 
 /// Demonstrate comprehensive MultiIndex creation
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn demo_index_creation() -> Result<()> {
     println!("🏗️ Advanced MultiIndex Creation");
     println!("==============================");
@@ -146,13 +150,13 @@ fn demo_index_creation() -> Result<()> {
                 .unwrap_or(&"unnamed".to_string()),
             values.len()
         );
-        println!("  Values: {:?}", values);
+        println!("  Values: {values:?}");
     }
 
     println!("\nSample tuples:");
     for i in 0..5.min(index.len()) {
         let tuple = index.get_tuple(i)?;
-        println!("  [{}] {:?}", i, tuple);
+        println!("  [{i}] {tuple:?}");
     }
 
     // Test creation from arrays
@@ -195,6 +199,8 @@ fn demo_index_creation() -> Result<()> {
 }
 
 /// Demonstrate cross-section selection capabilities
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn demo_cross_section_selection() -> Result<()> {
     println!("🎯 Cross-Section Selection");
     println!("==========================");
@@ -245,7 +251,7 @@ fn demo_cross_section_selection() -> Result<()> {
     let mut index = AdvancedMultiIndex::new(tuples, None)?;
 
     println!("Original index:");
-    println!("{}", index);
+    println!("{index}");
     println!();
 
     // Cross-section at level 0 (select all 'A' entries)
@@ -261,7 +267,7 @@ fn demo_cross_section_selection() -> Result<()> {
     println!("Selected indices: {:?}", xs_result_drop.indices);
     if let Some(ref result_index) = xs_result_drop.index {
         println!("Resulting index after dropping level:");
-        println!("{}", result_index);
+        println!("{result_index}");
     }
     println!();
 
@@ -280,6 +286,8 @@ fn demo_cross_section_selection() -> Result<()> {
 }
 
 /// Demonstrate advanced selection criteria
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn demo_advanced_selection_criteria() -> Result<()> {
     println!("🔍 Advanced Selection Criteria");
     println!("==============================");
@@ -337,7 +345,7 @@ fn demo_advanced_selection_criteria() -> Result<()> {
     let exact_criteria =
         SelectionCriteria::Exact(vec![(0, IndexValue::from("A")), (1, IndexValue::from(1))]);
     let exact_result = index.select(exact_criteria)?;
-    println!("   Selected indices: {:?}", exact_result);
+    println!("   Selected indices: {exact_result:?}");
     println!();
 
     // Partial selection: any matching constraint
@@ -345,7 +353,7 @@ fn demo_advanced_selection_criteria() -> Result<()> {
     let partial_criteria =
         SelectionCriteria::Partial(vec![(0, IndexValue::from("A")), (1, IndexValue::from(1))]);
     let partial_result = index.select(partial_criteria)?;
-    println!("   Selected indices: {:?}", partial_result);
+    println!("   Selected indices: {partial_result:?}");
     println!();
 
     // Range selection: values between bounds
@@ -353,7 +361,7 @@ fn demo_advanced_selection_criteria() -> Result<()> {
     let range_criteria =
         SelectionCriteria::Range(2, IndexValue::from(15.0), IndexValue::from(25.0));
     let range_result = index.select(range_criteria)?;
-    println!("   Selected indices: {:?}", range_result);
+    println!("   Selected indices: {range_result:?}");
     println!();
 
     // Boolean selection: custom mask
@@ -361,14 +369,14 @@ fn demo_advanced_selection_criteria() -> Result<()> {
     let boolean_mask = (0..index.len()).map(|i| i % 2 == 0).collect();
     let boolean_criteria = SelectionCriteria::Boolean(boolean_mask);
     let boolean_result = index.select(boolean_criteria)?;
-    println!("   Selected indices: {:?}", boolean_result);
+    println!("   Selected indices: {boolean_result:?}");
     println!();
 
     // Position selection: specific indices
     println!("5. Position Selection (indices 1, 3, 5):");
     let position_criteria = SelectionCriteria::Positions(vec![1, 3, 5]);
     let position_result = index.select(position_criteria)?;
-    println!("   Selected indices: {:?}", position_result);
+    println!("   Selected indices: {position_result:?}");
     println!();
 
     // Level selection: multiple values at a level
@@ -376,12 +384,14 @@ fn demo_advanced_selection_criteria() -> Result<()> {
     let level_criteria =
         SelectionCriteria::Level(0, vec![IndexValue::from("A"), IndexValue::from("C")]);
     let level_result = index.select(level_criteria)?;
-    println!("   Selected indices: {:?}", level_result);
+    println!("   Selected indices: {level_result:?}");
 
     Ok(())
 }
 
 /// Demonstrate hierarchical operations
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn demo_hierarchical_operations() -> Result<()> {
     println!("🌳 Hierarchical Operations");
     println!("===========================");
@@ -438,7 +448,7 @@ fn demo_hierarchical_operations() -> Result<()> {
     let index = AdvancedMultiIndex::new(tuples, level_names)?;
 
     println!("Hierarchical time series index:");
-    println!("{}", index);
+    println!("{index}");
     println!();
 
     // Get unique keys for different level combinations
@@ -467,7 +477,7 @@ fn demo_hierarchical_operations() -> Result<()> {
     println!("3. Slice operation (rows 2-5):");
     let sliced = index.slice(2, 6)?;
     println!("   Sliced index:");
-    println!("{}", sliced);
+    println!("{sliced}");
     println!();
 
     // Select specific levels
@@ -479,6 +489,8 @@ fn demo_hierarchical_operations() -> Result<()> {
 }
 
 /// Demonstrate level management operations
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn demo_level_management() -> Result<()> {
     println!("⚙️  Level Management Operations");
     println!("==============================");
@@ -520,14 +532,14 @@ fn demo_level_management() -> Result<()> {
     let index = AdvancedMultiIndex::new(tuples, level_names)?;
 
     println!("Original index with 4 levels:");
-    println!("{}", index);
+    println!("{index}");
     println!();
 
     // Reorder levels
     println!("1. Reorder levels: [2, 0, 1, 3] (Letter, Category, Number, Flag):");
     let reordered = index.reorder_levels(&[2, 0, 1, 3])?;
     println!("   Reordered index:");
-    println!("{}", reordered);
+    println!("{reordered}");
     println!();
 
     // Test different level orderings
@@ -560,6 +572,8 @@ fn demo_level_management() -> Result<()> {
 }
 
 /// Demonstrate GroupBy operations
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn demo_groupby_operations() -> Result<()> {
     println!("📊 GroupBy Operations");
     println!("====================");
@@ -616,7 +630,7 @@ fn demo_groupby_operations() -> Result<()> {
     let index = AdvancedMultiIndex::new(tuples, level_names)?;
 
     println!("Dataset for GroupBy operations:");
-    println!("{}", index);
+    println!("{index}");
     println!();
 
     // Group by single level
@@ -649,6 +663,8 @@ fn demo_groupby_operations() -> Result<()> {
 }
 
 /// Demonstrate performance features and benchmarks
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn demo_performance_features() -> Result<()> {
     println!("🚀 Performance Features");
     println!("=======================");
@@ -747,9 +763,9 @@ fn demo_performance_features() -> Result<()> {
     let total_memory = tuple_memory + level_memory + cache_memory;
 
     println!("   Estimated memory usage:");
-    println!("     Tuples: ~{} bytes", tuple_memory);
-    println!("     Level maps: ~{} bytes", level_memory);
-    println!("     Cache: ~{} bytes", cache_memory);
+    println!("     Tuples: ~{tuple_memory} bytes");
+    println!("     Level maps: ~{level_memory} bytes");
+    println!("     Cache: ~{cache_memory} bytes");
     println!("     Total: ~{:.1} KB", total_memory as f64 / 1024.0);
 
     Ok(())

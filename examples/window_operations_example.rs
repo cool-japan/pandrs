@@ -6,6 +6,7 @@ use std::str::FromStr;
 
 // Translated Japanese comments and strings into English
 #[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     println!("=== Example of Window Operations ===\n");
 
@@ -38,10 +39,10 @@ fn main() -> Result<()> {
     for i in 0..time_series.len() {
         let date = time_series.timestamps()[i];
         let value = match time_series.values()[i] {
-            NA::Value(v) => format!("{:.2}", v),
+            NA::Value(v) => format!("{v:.2}"),
             NA::NA => "NA".to_string(),
         };
-        println!("{}\t{}", date, value);
+        println!("{date}\t{value}");
     }
 
     // 1. Fixed-length window operations (Rolling)
@@ -71,39 +72,36 @@ fn main() -> Result<()> {
         let date = time_series.timestamps()[i];
 
         let original = match time_series.values()[i] {
-            NA::Value(v) => format!("{:.2}", v),
+            NA::Value(v) => format!("{v:.2}"),
             NA::NA => "NA".to_string(),
         };
 
         let mean = match rolling_mean.values()[i] {
-            NA::Value(v) => format!("{:.2}", v),
+            NA::Value(v) => format!("{v:.2}"),
             NA::NA => "NA".to_string(),
         };
 
         let sum = match rolling_sum.values()[i] {
-            NA::Value(v) => format!("{:.2}", v),
+            NA::Value(v) => format!("{v:.2}"),
             NA::NA => "NA".to_string(),
         };
 
         let std = match rolling_std.values()[i] {
-            NA::Value(v) => format!("{:.2}", v),
+            NA::Value(v) => format!("{v:.2}"),
             NA::NA => "NA".to_string(),
         };
 
         let min = match rolling_min.values()[i] {
-            NA::Value(v) => format!("{:.2}", v),
+            NA::Value(v) => format!("{v:.2}"),
             NA::NA => "NA".to_string(),
         };
 
         let max = match rolling_max.values()[i] {
-            NA::Value(v) => format!("{:.2}", v),
+            NA::Value(v) => format!("{v:.2}"),
             NA::NA => "NA".to_string(),
         };
 
-        println!(
-            "{}\t{}\t{}\t{}\t{}\\t{}\t{}",
-            date, original, mean, sum, std, min, max
-        );
+        println!("{date}\t{original}\t{mean}\t{sum}\t{std}\\t{min}\t{max}");
     }
 
     // 2. Expanding window operations
@@ -122,21 +120,21 @@ fn main() -> Result<()> {
         let date = time_series.timestamps()[i];
 
         let original = match time_series.values()[i] {
-            NA::Value(v) => format!("{:.2}", v),
+            NA::Value(v) => format!("{v:.2}"),
             NA::NA => "NA".to_string(),
         };
 
         let exp_mean = match expanding_mean.values()[i] {
-            NA::Value(v) => format!("{:.2}", v),
+            NA::Value(v) => format!("{v:.2}"),
             NA::NA => "NA".to_string(),
         };
 
         let exp_sum = match expanding_sum.values()[i] {
-            NA::Value(v) => format!("{:.2}", v),
+            NA::Value(v) => format!("{v:.2}"),
             NA::NA => "NA".to_string(),
         };
 
-        println!("{}\t{}\t{}\t{}", date, original, exp_mean, exp_sum);
+        println!("{date}\t{original}\t{exp_mean}\t{exp_sum}");
     }
 
     // 3. Exponentially weighted moving operations (EWM)
@@ -159,26 +157,26 @@ fn main() -> Result<()> {
         let date = time_series.timestamps()[i];
 
         let original = match time_series.values()[i] {
-            NA::Value(v) => format!("{:.2}", v),
+            NA::Value(v) => format!("{v:.2}"),
             NA::NA => "NA".to_string(),
         };
 
         let ewm = match ewm_mean.values()[i] {
-            NA::Value(v) => format!("{:.2}", v),
+            NA::Value(v) => format!("{v:.2}"),
             NA::NA => "NA".to_string(),
         };
 
         let ewm_s = match ewm_std.values()[i] {
-            NA::Value(v) => format!("{:.2}", v),
+            NA::Value(v) => format!("{v:.2}"),
             NA::NA => "NA".to_string(),
         };
 
         let ewm_a = match ewm_mean_alpha.values()[i] {
-            NA::Value(v) => format!("{:.2}", v),
+            NA::Value(v) => format!("{v:.2}"),
             NA::NA => "NA".to_string(),
         };
 
-        println!("{}\t{}\\t{}\\t{}\\t{}", date, original, ewm, ewm_s, ewm_a);
+        println!("{date}\t{original}\\t{ewm}\\t{ewm_s}\\t{ewm_a}");
     }
 
     // 4. Example of using custom aggregation functions
@@ -208,16 +206,16 @@ fn main() -> Result<()> {
         let date = time_series.timestamps()[i];
 
         let original = match time_series.values()[i] {
-            NA::Value(v) => format!("{:.2}", v),
+            NA::Value(v) => format!("{v:.2}"),
             NA::NA => "NA".to_string(),
         };
 
         let med = match rolling_median.values()[i] {
-            NA::Value(v) => format!("{:.2}", v),
+            NA::Value(v) => format!("{v:.2}"),
             NA::NA => "NA".to_string(),
         };
 
-        println!("{}\t{}\t{}", date, original, med);
+        println!("{date}\t{original}\t{med}");
     }
 
     println!("\n=== Example of Window Operations Complete ===");

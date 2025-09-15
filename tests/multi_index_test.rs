@@ -4,8 +4,8 @@ use pandrs::index::{MultiIndex, StringMultiIndex};
 fn test_multi_index_creation() {
     // Create by specifying levels, codes, and names
     let levels = vec![
-        vec!["A".to_string(), "B".to_string()],
-        vec!["1".to_string(), "2".to_string(), "3".to_string()],
+        ["A".to_string(), "B".to_string()].to_vec(),
+        ["1".to_string(), "2".to_string(), "3".to_string()].to_vec(),
     ];
 
     let codes = vec![vec![0, 0, 1, 1], vec![0, 1, 1, 2]];
@@ -100,8 +100,8 @@ fn test_get_level_values() {
     let level0 = multi_idx.get_level_values(0).unwrap();
     let level1 = multi_idx.get_level_values(1).unwrap();
 
-    assert_eq!(level0, vec!["A", "A", "B", "B"]);
-    assert_eq!(level1, vec!["1", "2", "1", "2"]);
+    assert_eq!(level0, ["A", "A", "B", "B"]);
+    assert_eq!(level1, ["1", "2", "1", "2"]);
 }
 
 #[test]

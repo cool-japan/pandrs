@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 #[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn main() -> Result<(), PandRSError> {
     println!("=== PandRS Performance Benchmark ===\n");
 
@@ -11,11 +12,11 @@ fn main() -> Result<(), PandRSError> {
     where
         F: FnOnce(),
     {
-        println!("Running: {}", name);
+        println!("Running: {name}");
         let start = Instant::now();
         f();
         let duration = start.elapsed();
-        println!("  Completed: {:?}\n", duration);
+        println!("  Completed: {duration:?}\n");
         duration
     }
 
@@ -91,7 +92,7 @@ fn main() -> Result<(), PandRSError> {
         )
         .unwrap();
         let _ = Series::new(
-            (0..1000).map(|i| format!("val_{}", i)).collect::<Vec<_>>(),
+            (0..1000).map(|i| format!("val_{i}")).collect::<Vec<_>>(),
             Some("C".to_string()),
         )
         .unwrap();
@@ -105,7 +106,7 @@ fn main() -> Result<(), PandRSError> {
         )
         .unwrap();
         let col_c = Series::new(
-            (0..1000).map(|i| format!("val_{}", i)).collect::<Vec<_>>(),
+            (0..1000).map(|i| format!("val_{i}")).collect::<Vec<_>>(),
             Some("C".to_string()),
         )
         .unwrap();
@@ -127,7 +128,7 @@ fn main() -> Result<(), PandRSError> {
         );
         data.insert(
             "C".to_string(),
-            (0..1000).map(|i| format!("val_{}", i)).collect(),
+            (0..1000).map(|i| format!("val_{i}")).collect(),
         );
 
         let _ = DataFrame::from_map(data, None).unwrap();
@@ -144,9 +145,7 @@ fn main() -> Result<(), PandRSError> {
         )
         .unwrap();
         let _ = Series::new(
-            (0..100_000)
-                .map(|i| format!("val_{}", i))
-                .collect::<Vec<_>>(),
+            (0..100_000).map(|i| format!("val_{i}")).collect::<Vec<_>>(),
             Some("C".to_string()),
         )
         .unwrap();
@@ -160,9 +159,7 @@ fn main() -> Result<(), PandRSError> {
         )
         .unwrap();
         let col_c = Series::new(
-            (0..100_000)
-                .map(|i| format!("val_{}", i))
-                .collect::<Vec<_>>(),
+            (0..100_000).map(|i| format!("val_{i}")).collect::<Vec<_>>(),
             Some("C".to_string()),
         )
         .unwrap();
@@ -187,16 +184,13 @@ fn main() -> Result<(), PandRSError> {
         );
         data.insert(
             "C".to_string(),
-            (0..100_000).map(|i| format!("val_{}", i)).collect(),
+            (0..100_000).map(|i| format!("val_{i}")).collect(),
         );
 
         let _ = DataFrame::from_map(data, None).unwrap();
     });
 
-    println!(
-        "Pure Rust code DataFrame creation time for 100,000 rows: {:?}",
-        large_duration
-    );
+    println!("Pure Rust code DataFrame creation time for 100,000 rows: {large_duration:?}");
     println!("(Equivalent operation in Python: approximately 0.35 seconds)");
 
     Ok(())

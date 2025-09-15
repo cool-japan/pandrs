@@ -44,7 +44,7 @@ fn bench_create_medium_dataframe(c: &mut Criterion) {
             )
             .unwrap();
             let col_c = Series::new(
-                (0..1000).map(|i| format!("val_{}", i)).collect::<Vec<_>>(),
+                (0..1000).map(|i| format!("val_{i}")).collect::<Vec<_>>(),
                 Some("C".to_string()),
             )
             .unwrap();
@@ -72,7 +72,7 @@ fn bench_create_dataframe_from_map(c: &mut Criterion) {
             );
             data.insert(
                 "C".to_string(),
-                (0..1000).map(|i| format!("val_{}", i)).collect(),
+                (0..1000).map(|i| format!("val_{i}")).collect(),
             );
 
             let df = DataFrame::from_map(data, None).unwrap();
@@ -91,9 +91,7 @@ fn bench_column_access(c: &mut Criterion) {
     )
     .unwrap();
     let col_c = Series::new(
-        (0..10_000)
-            .map(|i| format!("val_{}", i))
-            .collect::<Vec<_>>(),
+        (0..10_000).map(|i| format!("val_{i}")).collect::<Vec<_>>(),
         Some("C".to_string()),
     )
     .unwrap();
@@ -122,7 +120,7 @@ fn bench_to_csv_small(c: &mut Criterion) {
     )
     .unwrap();
     let col_c = Series::new(
-        (0..100).map(|i| format!("val_{}", i)).collect::<Vec<_>>(),
+        (0..100).map(|i| format!("val_{i}")).collect::<Vec<_>>(),
         Some("C".to_string()),
     )
     .unwrap();
@@ -154,7 +152,7 @@ fn bench_to_json_small(c: &mut Criterion) {
     )
     .unwrap();
     let col_c = Series::new(
-        (0..100).map(|i| format!("val_{}", i)).collect::<Vec<_>>(),
+        (0..100).map(|i| format!("val_{i}")).collect::<Vec<_>>(),
         Some("C".to_string()),
     )
     .unwrap();

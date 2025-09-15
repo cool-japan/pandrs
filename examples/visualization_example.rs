@@ -15,6 +15,7 @@ fn main() {
 }
 
 #[cfg(feature = "visualization")]
+#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     println!("=== Visualization Example ===\n");
 

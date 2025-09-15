@@ -3,6 +3,7 @@ use pandrs::optimized::OptimizedDataFrame;
 use std::time::Instant;
 
 #[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     println!("PandRS Parallel GroupBy Operations Example");
     println!("=========================================");
@@ -17,7 +18,7 @@ fn main() -> Result<()> {
     let grouped = df.par_groupby(&["category"])?;
     let duration = start.elapsed();
 
-    println!("Group by category took: {:?}", duration);
+    println!("Group by category took: {duration:?}");
     println!("Number of groups: {}", grouped.len());
 
     // Display information about each group
@@ -29,16 +30,16 @@ fn main() -> Result<()> {
 
         // Calculate some statistics using the new aggregate methods
         if let Ok(sum) = group_df.sum("value") {
-            println!("  Sum of values: {:.2}", sum);
+            println!("  Sum of values: {sum:.2}");
         }
         if let Ok(mean) = group_df.mean("value") {
-            println!("  Mean of values: {:.2}", mean);
+            println!("  Mean of values: {mean:.2}");
         }
         if let Ok(max) = group_df.max("value") {
-            println!("  Max value: {:.2}", max);
+            println!("  Max value: {max:.2}");
         }
         if let Ok(min) = group_df.min("value") {
-            println!("  Min value: {:.2}", min);
+            println!("  Min value: {min:.2}");
         }
     }
 
@@ -74,6 +75,7 @@ fn main() -> Result<()> {
 }
 
 #[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn create_dataset(size: usize) -> Result<OptimizedDataFrame> {
     let mut df = OptimizedDataFrame::new();
 
@@ -99,7 +101,7 @@ fn benchmark_operation<F>(name: &str, mut op: F) -> Result<()>
 where
     F: FnMut() -> Result<()>,
 {
-    println!("\nBenchmarking: {}", name);
+    println!("\nBenchmarking: {name}");
 
     // Warm up
     op()?;
@@ -108,7 +110,7 @@ where
     op()?;
     let duration = start.elapsed();
 
-    println!("  Time: {:?}", duration);
+    println!("  Time: {duration:?}");
 
     Ok(())
 }

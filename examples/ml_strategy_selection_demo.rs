@@ -13,6 +13,7 @@ use pandrs::storage::{
 };
 use std::sync::{Arc, Mutex};
 
+#[allow(clippy::result_large_err)]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("🧠 PandRS ML-Based Storage Strategy Selection Example");
     println!("=====================================================\n");
@@ -44,6 +45,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+#[allow(clippy::result_large_err)]
 fn demonstrate_workload_features() -> Result<(), Box<dyn std::error::Error>> {
     println!("📊 Workload Feature Extraction");
     println!("------------------------------");
@@ -90,7 +92,7 @@ fn demonstrate_workload_features() -> Result<(), Box<dyn std::error::Error>> {
 
     for (name, requirements) in scenarios {
         let features = WorkloadFeatures::from_requirements(&requirements);
-        println!("🔍 Scenario: {}", name);
+        println!("🔍 Scenario: {name}");
         println!(
             "   Data size: {:.1} MB",
             features.data_size / (1024.0 * 1024.0)
@@ -114,6 +116,7 @@ fn demonstrate_workload_features() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+#[allow(clippy::result_large_err)]
 fn demonstrate_ml_strategy_selection() -> Result<(), Box<dyn std::error::Error>> {
     println!("🤖 ML Strategy Selection");
     println!("------------------------");
@@ -156,7 +159,7 @@ fn demonstrate_ml_strategy_selection() -> Result<(), Box<dyn std::error::Error>>
     ];
 
     for (name, requirements) in workloads {
-        println!("📋 Workload: {}", name);
+        println!("📋 Workload: {name}");
         let selection = selector.select_best_strategy(&requirements);
 
         println!("   🎯 Primary strategy: {:?}", selection.primary);
@@ -234,7 +237,7 @@ fn demonstrate_adaptive_learning(
     ];
 
     for (name, config) in test_configs {
-        println!("🧪 Testing configuration: {}", name);
+        println!("🧪 Testing configuration: {name}");
 
         // Create storage using ML-optimized selection
         match adaptive_manager.create_storage_ml(&config) {
@@ -243,7 +246,7 @@ fn demonstrate_adaptive_learning(
                 println!("   📊 Strategy type: {:?}", handle.strategy_type);
             }
             Err(e) => {
-                println!("   ❌ Storage creation failed: {}", e);
+                println!("   ❌ Storage creation failed: {e}");
             }
         }
     }
@@ -266,6 +269,7 @@ fn demonstrate_adaptive_learning(
     Ok(())
 }
 
+#[allow(clippy::result_large_err)]
 fn demonstrate_performance_prediction() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n🎯 Performance Prediction");
     println!("-------------------------");
@@ -317,7 +321,7 @@ fn demonstrate_performance_prediction() -> Result<(), Box<dyn std::error::Error>
 
     for strategy in strategies {
         let prediction = selector.predict_performance(strategy, &workload);
-        println!("   {:?}:", strategy);
+        println!("   {strategy:?}:");
         println!(
             "     📈 Throughput: {:.1} MB/s",
             prediction.throughput / (1024.0 * 1024.0)

@@ -9,6 +9,7 @@ use pandrs::dataframe::hierarchical_groupby::{
 use pandrs::error::Result;
 use pandrs::series::base::Series;
 
+#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     println!("=== Hierarchical GroupBy Example for PandRS ===\n");
     println!("This example demonstrates advanced hierarchical grouping capabilities");
@@ -225,7 +226,7 @@ fn main() -> Result<()> {
     let hierarchy_build_time = start.elapsed();
 
     let large_stats = large_hierarchical.hierarchy_stats();
-    println!("   • Hierarchy build time: {:?}", hierarchy_build_time);
+    println!("   • Hierarchy build time: {hierarchy_build_time:?}");
     println!(
         "   • Large dataset stats: {} total groups, {} leaf groups",
         large_stats.total_groups, large_stats.leaf_groups
@@ -237,7 +238,7 @@ fn main() -> Result<()> {
         .build();
     let _large_result = large_hierarchical.agg_hierarchical(vec![large_agg])?;
     let aggregation_time = start.elapsed();
-    println!("   • Aggregation time: {:?}", aggregation_time);
+    println!("   • Aggregation time: {aggregation_time:?}");
 
     println!("\n=== Advanced Features Demonstration ===");
 
@@ -273,6 +274,7 @@ fn main() -> Result<()> {
 }
 
 /// Create a sales dataset with natural hierarchy (Region → Department → Product)
+#[allow(clippy::result_large_err)]
 fn create_sales_dataset() -> Result<DataFrame> {
     let mut df = DataFrame::new();
 
@@ -372,6 +374,7 @@ fn create_sales_dataset() -> Result<DataFrame> {
 }
 
 /// Create a larger sales dataset for performance testing
+#[allow(clippy::result_large_err)]
 fn create_large_sales_dataset(multiplier: usize) -> Result<DataFrame> {
     let base_df = create_sales_dataset()?;
     let mut large_df = DataFrame::new();
@@ -431,6 +434,7 @@ fn create_large_sales_dataset(multiplier: usize) -> Result<DataFrame> {
 }
 
 /// Display sample data from DataFrame
+#[allow(clippy::result_large_err)]
 fn display_sample_data(df: &DataFrame, rows: usize) -> Result<()> {
     let display_rows = rows.min(df.row_count());
 
@@ -452,8 +456,9 @@ fn display_sample_data(df: &DataFrame, rows: usize) -> Result<()> {
 }
 
 /// Display a sample of DataFrame with title
+#[allow(clippy::result_large_err)]
 fn display_dataframe_sample(df: &DataFrame, title: &str, max_rows: usize) -> Result<()> {
-    println!("   {}:", title);
+    println!("   {title}:");
     if df.row_count() == 0 {
         println!("     (No data)");
         return Ok(());

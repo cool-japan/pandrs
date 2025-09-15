@@ -2,6 +2,7 @@ use pandrs::error::Result;
 use pandrs::{DataFrame, Index, MultiIndex};
 
 #[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     println!("=== Example of Using MultiIndex ===\n");
 
@@ -22,7 +23,7 @@ fn main() -> Result<()> {
     let names = Some(vec![Some("first".to_string()), Some("second".to_string())]);
     let multi_idx = MultiIndex::from_tuples(tuples, names)?;
 
-    println!("MultiIndex: {:?}\n", multi_idx);
+    println!("MultiIndex: {multi_idx:?}\n");
     println!("Number of Levels: {}", multi_idx.n_levels());
     println!("Number of Rows: {}\n", multi_idx.len());
 
@@ -32,14 +33,14 @@ fn main() -> Result<()> {
 
     println!("--- Retrieving Level Values ---");
     let level0_values = multi_idx.get_level_values(0)?;
-    println!("Values in Level 0: {:?}", level0_values);
+    println!("Values in Level 0: {level0_values:?}");
 
     let level1_values = multi_idx.get_level_values(1)?;
-    println!("Values in Level 1: {:?}", level1_values);
+    println!("Values in Level 1: {level1_values:?}");
 
     println!("--- Swapping Levels ---");
     let swapped = multi_idx.swaplevel(0, 1)?;
-    println!("After Swapping Levels: {:?}\n", swapped);
+    println!("After Swapping Levels: {swapped:?}\n");
 
     // =========================================
     // DataFrame with MultiIndex
@@ -62,7 +63,7 @@ fn main() -> Result<()> {
         pandrs::Series::new(data, Some("data".to_string()))?,
     )?;
 
-    println!("DataFrame: {:?}\n", df);
+    println!("DataFrame: {df:?}\n");
     println!("Number of Rows: {}", df.row_count());
     println!("Number of Columns: {}", df.column_count());
 
@@ -84,7 +85,7 @@ fn main() -> Result<()> {
         pandrs::Series::new(str_values, Some("values".to_string()))?,
     )?;
 
-    println!("Simple Index DataFrame: {:?}", simple_df);
+    println!("Simple Index DataFrame: {simple_df:?}");
 
     // Prepare for conversion to MultiIndex
     let tuples = vec![
@@ -97,7 +98,7 @@ fn main() -> Result<()> {
     let new_multi_idx = MultiIndex::from_tuples(tuples, None)?;
     simple_df.set_multi_index(new_multi_idx)?;
 
-    println!("After Conversion to MultiIndex: {:?}", simple_df);
+    println!("After Conversion to MultiIndex: {simple_df:?}");
 
     println!("\n=== Sample Complete ===");
     Ok(())

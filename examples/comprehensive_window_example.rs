@@ -4,6 +4,7 @@ use pandrs::series::{WindowExt, WindowOps};
 use pandrs::{DataFrame, Series};
 
 #[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     println!("=== Comprehensive Window Operations Example ===\n");
 
@@ -38,7 +39,7 @@ fn main() -> Result<()> {
     df.add_column("Price".to_string(), price_series)?;
 
     println!("Original Data:");
-    println!("{:?}", df);
+    println!("{df:?}");
 
     println!("\n=== Series-Level Window Operations ===\n");
 
@@ -127,26 +128,26 @@ fn main() -> Result<()> {
     // DataFrame rolling mean
     let df_rolling_mean = df.rolling(3, "Price", "mean", Some("Price_Rolling_Mean"))?;
     println!("DataFrame with Rolling Mean:");
-    println!("{:?}", df_rolling_mean);
+    println!("{df_rolling_mean:?}");
 
     // DataFrame rolling std
     let df_rolling_std = df.rolling(3, "Price", "std", Some("Price_Rolling_Std"))?;
     println!("\nDataFrame with Rolling Std:");
-    println!("{:?}", df_rolling_std);
+    println!("{df_rolling_std:?}");
 
     // 7. DataFrame Expanding Operations
     println!("\n7. DataFrame Expanding Operations:");
 
     let df_expanding = df.expanding(2, "Price", "mean", Some("Price_Expanding_Mean"))?;
     println!("DataFrame with Expanding Mean:");
-    println!("{:?}", df_expanding);
+    println!("{df_expanding:?}");
 
     // 8. DataFrame EWM Operations
     println!("\n8. DataFrame EWM Operations:");
 
     let df_ewm = df.ewm("Price", "mean", Some(3), None, Some("Price_EWM_Mean"))?;
     println!("DataFrame with EWM Mean:");
-    println!("{:?}", df_ewm);
+    println!("{df_ewm:?}");
 
     // 9. Advanced Window Configurations
     println!("\n=== Advanced Window Configurations ===\n");
@@ -192,6 +193,7 @@ fn main() -> Result<()> {
 
 /// Demonstrate performance scenarios
 #[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn demonstrate_performance_scenarios() -> Result<()> {
     println!("--- Performance Scenarios ---");
 
@@ -222,6 +224,7 @@ fn demonstrate_performance_scenarios() -> Result<()> {
 
 /// Demonstrate edge cases and error handling
 #[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn demonstrate_edge_cases() -> Result<()> {
     println!("--- Edge Cases ---");
 
@@ -230,9 +233,9 @@ fn demonstrate_edge_cases() -> Result<()> {
     match empty_series.rolling(3) {
         Ok(rolling) => match rolling.mean() {
             Ok(result) => println!("Empty series rolling mean: {} values", result.len()),
-            Err(e) => println!("Empty series rolling mean error: {:?}", e),
+            Err(e) => println!("Empty series rolling mean error: {e:?}"),
         },
-        Err(e) => println!("Empty series rolling error: {:?}", e),
+        Err(e) => println!("Empty series rolling error: {e:?}"),
     }
 
     // Single value
@@ -242,7 +245,7 @@ fn demonstrate_edge_cases() -> Result<()> {
             let result = rolling.mean()?;
             println!("Single value rolling mean: {:?}", result.values());
         }
-        Err(e) => println!("Single value rolling error: {:?}", e),
+        Err(e) => println!("Single value rolling error: {e:?}"),
     }
 
     // Invalid parameters
@@ -251,22 +254,22 @@ fn demonstrate_edge_cases() -> Result<()> {
     // Zero window size
     match test_series.rolling(0) {
         Ok(_) => println!("Zero window size: Unexpectedly succeeded"),
-        Err(e) => println!("Zero window size error (expected): {:?}", e),
+        Err(e) => println!("Zero window size error (expected): {e:?}"),
     }
 
     // Invalid quantile
     match test_series.rolling(2) {
         Ok(rolling) => match rolling.quantile(1.5) {
             Ok(_) => println!("Invalid quantile: Unexpectedly succeeded"),
-            Err(e) => println!("Invalid quantile error (expected): {:?}", e),
+            Err(e) => println!("Invalid quantile error (expected): {e:?}"),
         },
-        Err(e) => println!("Rolling creation error: {:?}", e),
+        Err(e) => println!("Rolling creation error: {e:?}"),
     }
 
     // Invalid EWM alpha
     match test_series.ewm().alpha(1.5) {
         Ok(_) => println!("Invalid alpha: Unexpectedly succeeded"),
-        Err(e) => println!("Invalid alpha error (expected): {:?}", e),
+        Err(e) => println!("Invalid alpha error (expected): {e:?}"),
     }
 
     Ok(())

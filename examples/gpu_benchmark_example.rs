@@ -15,6 +15,7 @@ use pandrs::error::Result;
 use pandrs::GpuBenchmark;
 
 #[cfg(feature = "cuda")]
+#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     // Create a GPU benchmark utility
     let mut benchmark = GpuBenchmark::new()?;

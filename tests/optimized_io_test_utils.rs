@@ -4,6 +4,7 @@ use std::path::Path;
 
 /// Trait for Excel IO operations
 #[allow(clippy::result_large_err)]
+#[allow(dead_code)]
 pub trait ExcelExt {
     /// Write DataFrame to Excel file
     fn to_excel<P: AsRef<Path>>(
@@ -27,6 +28,7 @@ pub trait ExcelExt {
 
 /// Trait for Parquet IO operations
 #[allow(clippy::result_large_err)]
+#[allow(dead_code)]
 pub trait ParquetExt {
     /// Write DataFrame to Parquet file
     fn to_parquet<P: AsRef<Path>>(
@@ -36,6 +38,7 @@ pub trait ParquetExt {
     ) -> Result<()>;
 
     /// Read DataFrame from Parquet file
+    #[allow(clippy::result_large_err)]
     fn from_parquet<P: AsRef<Path>>(path: P) -> Result<Self>
     where
         Self: Sized;
@@ -46,7 +49,9 @@ pub trait ParquetExt {
 pub enum ParquetCompression {
     #[allow(dead_code)]
     None,
+    #[allow(dead_code)]
     Snappy,
+    #[allow(dead_code)]
     Gzip,
     #[allow(dead_code)]
     Lzo,
@@ -114,6 +119,8 @@ impl ParquetExt for OptimizedDataFrame {
         self.to_csv(path, true)
     }
 
+    #[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
     fn from_parquet<P: AsRef<Path>>(_path: P) -> Result<Self> {
         // For test purposes, create a dummy DataFrame with 5 rows to match test expectations
         let mut df = Self::new();

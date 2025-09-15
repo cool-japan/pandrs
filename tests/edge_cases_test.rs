@@ -48,8 +48,8 @@ mod empty_data_tests {
         let mut empty2 = OptimizedDataFrame::new();
 
         // Add empty columns to make join possible
-        empty1.add_int_column("id", vec![]).unwrap();
-        empty2.add_int_column("id", vec![]).unwrap();
+        empty1.add_int_column("id", [].to_vec()).unwrap();
+        empty2.add_int_column("id", [].to_vec()).unwrap();
 
         // Note: Join might not be implemented yet for OptimizedDataFrame
         // This test documents the expected behavior
@@ -63,7 +63,7 @@ mod empty_data_tests {
     fn test_groupby_empty_dataframe() {
         let mut df = OptimizedDataFrame::new();
         df.add_string_column("category", vec![]).unwrap();
-        df.add_int_column("value", vec![]).unwrap();
+        df.add_int_column("value", [].to_vec()).unwrap();
 
         // Test groupby on empty DataFrame
         let result = df.par_groupby(&["category"]);
@@ -81,7 +81,7 @@ mod empty_data_tests {
 
     #[test]
     fn test_window_operations_empty() {
-        let empty_data: Vec<f64> = vec![];
+        let empty_data: Vec<_> = [].to_vec();
         let mut df = OptimizedDataFrame::new();
         df.add_float_column("values", empty_data).unwrap();
 
@@ -99,7 +99,7 @@ mod boundary_condition_tests {
     #[test]
     fn test_single_element_dataframe() {
         let mut df = OptimizedDataFrame::new();
-        df.add_int_column("single", vec![42]).unwrap();
+        df.add_int_column("single", [42].to_vec()).unwrap();
         df.add_float_column("single_float", vec![std::f64::consts::PI])
             .unwrap();
 
@@ -169,8 +169,8 @@ mod boundary_condition_tests {
 
         let num_columns = 1000;
         for i in 0..num_columns {
-            let col_name = format!("col_{}", i);
-            df.add_int_column(&col_name, vec![i as i64]).unwrap();
+            let col_name = format!("col_{i}");
+            df.add_int_column(&col_name, [i as i64].to_vec()).unwrap();
         }
 
         assert_eq!(df.column_count(), num_columns);
@@ -178,7 +178,7 @@ mod boundary_condition_tests {
 
         // Test accessing all columns
         for i in 0..num_columns {
-            let col_name = format!("col_{}", i);
+            let col_name = format!("col_{i}");
             let col_view = df.column(&col_name).unwrap();
             let col = col_view.as_int64().unwrap();
             assert_eq!(col.get(0).unwrap().unwrap(), i as i64);
@@ -217,17 +217,17 @@ mod invalid_input_tests {
         let mut df = OptimizedDataFrame::new();
 
         // Test empty string column name - current implementation allows this
-        let _result = df.add_int_column("", vec![1, 2, 3]);
+        let _result = df.add_int_column("", [1, 2, 3].to_vec());
         // Note: Current OptimizedDataFrame allows empty column names
         // This might be changed in the future for stricter validation
 
         // Test whitespace-only column name - current implementation allows this
-        let _result = df.add_int_column("   ", vec![1, 2, 3]);
+        let _result = df.add_int_column("   ", [1, 2, 3].to_vec());
         // Note: Current OptimizedDataFrame allows whitespace-only names
 
         // Test very long column name
         let long_name = "x".repeat(10_000);
-        let _result = df.add_int_column(&long_name, vec![1, 2, 3]);
+        let _result = df.add_int_column(&long_name, [1, 2, 3].to_vec());
         // This might succeed or fail depending on implementation limits
         // Just ensure it doesn't panic
     }
@@ -237,10 +237,10 @@ mod invalid_input_tests {
         let mut df = OptimizedDataFrame::new();
 
         // Add first column
-        df.add_int_column("duplicate", vec![1, 2, 3]).unwrap();
+        df.add_int_column("duplicate", [1, 2, 3].to_vec()).unwrap();
 
         // Try to add second column with same name - should fail
-        let result = df.add_int_column("duplicate", vec![4, 5, 6]);
+        let result = df.add_int_column("duplicate", [4, 5, 6].to_vec());
         assert!(result.is_err());
     }
 
@@ -249,20 +249,20 @@ mod invalid_input_tests {
         let mut df = OptimizedDataFrame::new();
 
         // Add first column with 3 elements
-        df.add_int_column("first", vec![1, 2, 3]).unwrap();
+        df.add_int_column("first", [1, 2, 3].to_vec()).unwrap();
 
         // Try to add second column with different length - should fail
-        let result = df.add_int_column("second", vec![4, 5]);
+        let result = df.add_int_column("second", [4, 5].to_vec());
         assert!(result.is_err());
 
-        let result = df.add_int_column("third", vec![6, 7, 8, 9]);
+        let result = df.add_int_column("third", [6, 7, 8, 9].to_vec());
         assert!(result.is_err());
     }
 
     #[test]
     fn test_invalid_column_access() {
         let mut df = OptimizedDataFrame::new();
-        df.add_int_column("valid", vec![1, 2, 3]).unwrap();
+        df.add_int_column("valid", [1, 2, 3].to_vec()).unwrap();
 
         // Test accessing non-existent column
         let result = df.get_int_column("nonexistent");
@@ -276,7 +276,7 @@ mod invalid_input_tests {
     #[test]
     fn test_out_of_bounds_access() {
         let mut df = OptimizedDataFrame::new();
-        df.add_int_column("test", vec![1, 2, 3]).unwrap();
+        df.add_int_column("test", [1, 2, 3].to_vec()).unwrap();
 
         let col_view = df.column("test").unwrap();
         let col = col_view.as_int64().unwrap();
@@ -305,7 +305,7 @@ mod invalid_input_tests {
         ];
 
         for (i, name) in unicode_names.iter().enumerate() {
-            let result = df.add_int_column(*name, vec![i as i64]);
+            let result = df.add_int_column(*name, [i as i64].to_vec());
             // Should handle Unicode gracefully (either accept or reject consistently)
             match result {
                 Ok(_) => {
@@ -334,7 +334,7 @@ mod invalid_input_tests {
         ];
 
         for (i, name) in special_names.iter().enumerate() {
-            let _result = df.add_int_column(*name, vec![i as i64]);
+            let _result = df.add_int_column(*name, [i as i64].to_vec());
             // Document behavior - either handle gracefully or reject with clear error
         }
     }
@@ -353,7 +353,7 @@ mod resource_management_tests {
 
         let int_data: Vec<i64> = (0..size).collect();
         let float_data: Vec<f64> = (0..size).map(|i| i as f64 * 0.1).collect();
-        let string_data: Vec<String> = (0..size).map(|i| format!("item_{}", i)).collect();
+        let string_data: Vec<String> = (0..size).map(|i| format!("item_{i}")).collect();
 
         df.add_int_column("integers", int_data).unwrap();
         df.add_float_column("floats", float_data).unwrap();
@@ -375,7 +375,7 @@ mod resource_management_tests {
 
         let num_strings = 10_000;
         let string_data: Vec<String> = (0..num_strings)
-            .map(|i| format!("unique_string_{}", i))
+            .map(|i| format!("unique_string_{i}"))
             .collect();
 
         df.add_string_column("stress_test", string_data.clone())
@@ -400,10 +400,9 @@ mod resource_management_tests {
         let mut df = OptimizedDataFrame::new();
 
         // Use repeated strings to test string pool deduplication
-        let repeated_strings = vec!["A".to_string(); 1000]
-            .into_iter()
-            .chain(vec!["B".to_string(); 1000])
-            .chain(vec!["C".to_string(); 1000])
+        let repeated_strings = std::iter::repeat_n("A".to_string(), 1000)
+            .chain(std::iter::repeat_n("B".to_string(), 1000))
+            .chain(std::iter::repeat_n("C".to_string(), 1000))
             .collect();
 
         df.add_string_column("repeated", repeated_strings).unwrap();
@@ -487,7 +486,7 @@ mod type_system_tests {
     #[test]
     fn test_column_rename_edge_cases() {
         let mut df = OptimizedDataFrame::new();
-        df.add_int_column("original", vec![1, 2, 3]).unwrap();
+        df.add_int_column("original", [1, 2, 3].to_vec()).unwrap();
 
         // Test renaming to empty string (current implementation might allow this)
         let mut rename_map = HashMap::new();
@@ -502,7 +501,7 @@ mod type_system_tests {
         assert!(result.is_err());
 
         // Test renaming to existing column name (should fail)
-        df.add_int_column("other", vec![4, 5, 6]).unwrap();
+        df.add_int_column("other", [4, 5, 6].to_vec()).unwrap();
         let mut rename_map = HashMap::new();
         rename_map.insert("original".to_string(), "other".to_string());
         let result = df.rename_columns(&rename_map);
@@ -518,10 +517,13 @@ mod dataframe_creation_tests {
     #[test]
     fn test_from_map_mismatched_lengths() {
         let mut data = HashMap::new();
-        data.insert("col1".to_string(), vec!["a".to_string(), "b".to_string()]);
+        data.insert(
+            "col1".to_string(),
+            ["a".to_string(), "b".to_string()].to_vec(),
+        );
         data.insert(
             "col2".to_string(),
-            vec!["x".to_string(), "y".to_string(), "z".to_string()],
+            ["x".to_string(), "y".to_string(), "z".to_string()].to_vec(),
         );
 
         // Current implementation may handle mismatched lengths gracefully
@@ -537,7 +539,7 @@ mod dataframe_creation_tests {
             }
             Err(e) => {
                 // If error, document what type of error
-                println!("Expected error for mismatched lengths: {}", e);
+                println!("Expected error for mismatched lengths: {e}");
             }
         }
     }
@@ -545,7 +547,7 @@ mod dataframe_creation_tests {
     #[test]
     fn test_from_map_empty_columns() {
         let mut data = HashMap::new();
-        data.insert("empty_col".to_string(), vec![]);
+        data.insert("empty_col".to_string(), [].to_vec());
 
         // Should handle empty columns gracefully
         let result = DataFrame::from_map(data, None);
@@ -578,7 +580,7 @@ mod dataframe_creation_tests {
                 );
             }
             Err(e) => {
-                println!("Error with invalid column names: {}", e);
+                println!("Error with invalid column names: {e}");
             }
         }
     }

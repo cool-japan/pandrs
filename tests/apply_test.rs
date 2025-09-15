@@ -9,8 +9,8 @@ fn test_dataframe_apply() {
     let mut df = DataFrame::new();
 
     // Add columns
-    let col1 = vec!["1", "2", "3"].iter().map(|s| s.to_string()).collect();
-    let col2 = vec!["4", "5", "6"].iter().map(|s| s.to_string()).collect();
+    let col1 = ["1", "2", "3"].iter().map(|s| s.to_string()).collect();
+    let col2 = ["4", "5", "6"].iter().map(|s| s.to_string()).collect();
 
     let series1 = pandrs::Series::new(col1, Some("col1".to_string())).unwrap();
     let series2 = pandrs::Series::new(col2, Some("col2".to_string())).unwrap();
@@ -40,8 +40,8 @@ fn test_dataframe_applymap() {
     let mut df = DataFrame::new();
 
     // Add columns
-    let col1 = vec!["1", "2", "3"].iter().map(|s| s.to_string()).collect();
-    let col2 = vec!["4", "5", "6"].iter().map(|s| s.to_string()).collect();
+    let col1 = ["1", "2", "3"].iter().map(|s| s.to_string()).collect();
+    let col2 = ["4", "5", "6"].iter().map(|s| s.to_string()).collect();
 
     let series1 = pandrs::Series::new(col1, Some("col1".to_string())).unwrap();
     let series2 = pandrs::Series::new(col2, Some("col2".to_string())).unwrap();
@@ -74,8 +74,8 @@ fn test_dataframe_mask() {
     let mut df = DataFrame::new();
 
     // Add columns
-    let col1 = vec!["1", "2", "3"].iter().map(|s| s.to_string()).collect();
-    let col2 = vec!["4", "5", "6"].iter().map(|s| s.to_string()).collect();
+    let col1 = ["1", "2", "3"].iter().map(|s| s.to_string()).collect();
+    let col2 = ["4", "5", "6"].iter().map(|s| s.to_string()).collect();
 
     let series1 = pandrs::Series::new(col1, Some("col1".to_string())).unwrap();
     let series2 = pandrs::Series::new(col2, Some("col2".to_string())).unwrap();
@@ -101,8 +101,8 @@ fn test_dataframe_where_func() {
     let mut df = DataFrame::new();
 
     // Add columns
-    let col1 = vec!["1", "2", "3"].iter().map(|s| s.to_string()).collect();
-    let col2 = vec!["4", "5", "6"].iter().map(|s| s.to_string()).collect();
+    let col1 = ["1", "2", "3"].iter().map(|s| s.to_string()).collect();
+    let col2 = ["4", "5", "6"].iter().map(|s| s.to_string()).collect();
 
     let series1 = pandrs::Series::new(col1, Some("col1".to_string())).unwrap();
     let series2 = pandrs::Series::new(col2, Some("col2".to_string())).unwrap();
@@ -128,8 +128,8 @@ fn test_dataframe_replace() {
     let mut df = DataFrame::new();
 
     // Add columns
-    let col1 = vec!["a", "b", "c"].iter().map(|s| s.to_string()).collect();
-    let col2 = vec!["b", "c", "d"].iter().map(|s| s.to_string()).collect();
+    let col1 = ["a", "b", "c"].iter().map(|s| s.to_string()).collect();
+    let col2 = ["b", "c", "d"].iter().map(|s| s.to_string()).collect();
 
     let series1 = pandrs::Series::new(col1, Some("col1".to_string())).unwrap();
     let series2 = pandrs::Series::new(col2, Some("col2".to_string())).unwrap();
@@ -158,14 +158,8 @@ fn test_dataframe_duplicated() {
     let mut df = DataFrame::new();
 
     // Add columns
-    let col1 = vec!["a", "b", "a", "c"]
-        .iter()
-        .map(|s| s.to_string())
-        .collect();
-    let col2 = vec!["1", "2", "1", "3"]
-        .iter()
-        .map(|s| s.to_string())
-        .collect();
+    let col1 = ["a", "b", "a", "c"].iter().map(|s| s.to_string()).collect();
+    let col2 = ["1", "2", "1", "3"].iter().map(|s| s.to_string()).collect();
 
     let series1 = pandrs::Series::new(col1, Some("col1".to_string())).unwrap();
     let series2 = pandrs::Series::new(col2, Some("col2".to_string())).unwrap();
@@ -178,20 +172,20 @@ fn test_dataframe_duplicated() {
 
     // Verify results
     assert_eq!(duplicated_first.len(), 4);
-    assert_eq!(*duplicated_first.get(0).unwrap(), false); // First a,1 is not a duplicate
-    assert_eq!(*duplicated_first.get(1).unwrap(), false); // b,2 is not a duplicate
-    assert_eq!(*duplicated_first.get(2).unwrap(), true); // Second a,1 is a duplicate
-    assert_eq!(*duplicated_first.get(3).unwrap(), false); // c,3 is not a duplicate
+    assert!(!(*duplicated_first.get(0).unwrap())); // First a,1 is not a duplicate
+    assert!(!(*duplicated_first.get(1).unwrap())); // b,2 is not a duplicate
+    assert!(*duplicated_first.get(2).unwrap()); // Second a,1 is a duplicate
+    assert!(!(*duplicated_first.get(3).unwrap())); // c,3 is not a duplicate
 
     // Detect duplicate rows (keep last occurrence)
     let duplicated_last = df.duplicated(None, Some("last")).unwrap();
 
     // Verify results
     assert_eq!(duplicated_last.len(), 4);
-    assert_eq!(*duplicated_last.get(0).unwrap(), true); // First a,1 is a duplicate (keep last)
-    assert_eq!(*duplicated_last.get(1).unwrap(), false); // b,2 is not a duplicate
-    assert_eq!(*duplicated_last.get(2).unwrap(), false); // Second a,1 is the last one so not a duplicate
-    assert_eq!(*duplicated_last.get(3).unwrap(), false); // c,3 is not a duplicate
+    assert!(*duplicated_last.get(0).unwrap()); // First a,1 is a duplicate (keep last)
+    assert!(!(*duplicated_last.get(1).unwrap())); // b,2 is not a duplicate
+    assert!(!(*duplicated_last.get(2).unwrap())); // Second a,1 is the last one so not a duplicate
+    assert!(!(*duplicated_last.get(3).unwrap())); // c,3 is not a duplicate
 }
 
 #[test]
@@ -200,14 +194,8 @@ fn test_dataframe_drop_duplicates() {
     let mut df = DataFrame::new();
 
     // Add columns
-    let col1 = vec!["a", "b", "a", "c"]
-        .iter()
-        .map(|s| s.to_string())
-        .collect();
-    let col2 = vec!["1", "2", "1", "3"]
-        .iter()
-        .map(|s| s.to_string())
-        .collect();
+    let col1 = ["a", "b", "a", "c"].iter().map(|s| s.to_string()).collect();
+    let col2 = ["1", "2", "1", "3"].iter().map(|s| s.to_string()).collect();
 
     let series1 = pandrs::Series::new(col1, Some("col1".to_string())).unwrap();
     let series2 = pandrs::Series::new(col2, Some("col2".to_string())).unwrap();
@@ -240,14 +228,8 @@ fn test_duplicated_with_subset() {
     let mut df = DataFrame::new();
 
     // Add columns
-    let col1 = vec!["a", "b", "a", "c"]
-        .iter()
-        .map(|s| s.to_string())
-        .collect();
-    let col2 = vec!["1", "2", "3", "4"]
-        .iter()
-        .map(|s| s.to_string())
-        .collect();
+    let col1 = ["a", "b", "a", "c"].iter().map(|s| s.to_string()).collect();
+    let col2 = ["1", "2", "3", "4"].iter().map(|s| s.to_string()).collect();
 
     let series1 = pandrs::Series::new(col1, Some("col1".to_string())).unwrap();
     let series2 = pandrs::Series::new(col2, Some("col2".to_string())).unwrap();
@@ -256,13 +238,13 @@ fn test_duplicated_with_subset() {
     df.add_column("col2".to_string(), series2).unwrap();
 
     // Look for duplicates only in col1
-    let subset = vec!["col1".to_string()];
+    let subset = ["col1".to_string()];
     let duplicated = df.duplicated(Some(&subset), Some("first")).unwrap();
 
     // Verify results
     assert_eq!(duplicated.len(), 4);
-    assert_eq!(*duplicated.get(0).unwrap(), false); // First a is not a duplicate
-    assert_eq!(*duplicated.get(1).unwrap(), false); // b is not a duplicate
-    assert_eq!(*duplicated.get(2).unwrap(), true); // Second a is a duplicate
-    assert_eq!(*duplicated.get(3).unwrap(), false); // c is not a duplicate
+    assert!(!(*duplicated.get(0).unwrap())); // First a is not a duplicate
+    assert!(!(*duplicated.get(1).unwrap())); // b is not a duplicate
+    assert!(*duplicated.get(2).unwrap()); // Second a is a duplicate
+    assert!(!(*duplicated.get(3).unwrap())); // c is not a duplicate
 }

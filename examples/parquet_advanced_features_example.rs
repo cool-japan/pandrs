@@ -14,12 +14,10 @@
 use pandrs::dataframe::base::DataFrame;
 use pandrs::error::Result;
 #[cfg(feature = "parquet")]
-use pandrs::io::{
-    ColumnStats, ParquetCompression, ParquetMetadata, ParquetReadOptions, ParquetWriteOptions,
-    RowGroupInfo,
-};
+use pandrs::io::{ColumnStats, ParquetCompression, ParquetMetadata, ParquetWriteOptions};
 use pandrs::series::Series;
 
+#[allow(clippy::result_large_err)]
 #[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     println!("PandRS Advanced Parquet Features - Phase 2 Alpha.6");
@@ -67,6 +65,7 @@ fn main() -> Result<()> {
 }
 
 #[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn schema_evolution_example(original_data: &DataFrame, evolved_data: &DataFrame) -> Result<()> {
     println!("Demonstrating Parquet schema evolution capabilities...");
 
@@ -82,7 +81,7 @@ fn schema_evolution_example(original_data: &DataFrame, evolved_data: &DataFrame)
             "date" => "timestamp",
             _ => "string",
         };
-        println!("    • {}: {}", col_name, col_type);
+        println!("    • {col_name}: {col_type}");
     }
 
     // Evolved schema analysis
@@ -103,7 +102,7 @@ fn schema_evolution_example(original_data: &DataFrame, evolved_data: &DataFrame)
 
         let is_new = !original_data.column_names().contains(&col_name);
         let status = if is_new { " (NEW)" } else { "" };
-        println!("    • {}: {}{}", col_name, col_type, status);
+        println!("    • {col_name}: {col_type}{status}");
     }
 
     // Schema evolution strategies
@@ -126,7 +125,7 @@ fn schema_evolution_example(original_data: &DataFrame, evolved_data: &DataFrame)
 
     println!("  Compatibility matrix:");
     for (scenario, result) in compatibility_scenarios {
-        println!("    • {}: {}", scenario, result);
+        println!("    • {scenario}: {result}");
     }
 
     // Schema migration simulation
@@ -143,7 +142,8 @@ fn schema_evolution_example(original_data: &DataFrame, evolved_data: &DataFrame)
 
 #[cfg(feature = "parquet")]
 #[allow(clippy::result_large_err)]
-fn compression_algorithms_example(df: &DataFrame) -> Result<()> {
+#[allow(clippy::result_large_err)]
+fn compression_algorithms_example(_df: &DataFrame) -> Result<()> {
     println!("Testing advanced compression algorithms...");
 
     let compression_tests = vec![
@@ -159,7 +159,7 @@ fn compression_algorithms_example(df: &DataFrame) -> Result<()> {
     println!("    Algorithm     | Comp. Time | Decomp. Time | Size (KB) | Ratio");
     println!("    -------------|------------|--------------|-----------|------");
 
-    for (compression, description) in compression_tests {
+    for (compression, _description) in compression_tests {
         // Simulate compression metrics
         let (comp_time, decomp_time, size_kb, ratio) = match compression {
             ParquetCompression::None => (0, 0, 1000, 1.0),
@@ -226,11 +226,12 @@ fn compression_algorithms_example(df: &DataFrame) -> Result<()> {
 }
 
 #[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn predicate_pushdown_example(large_df: &DataFrame) -> Result<()> {
     println!("Demonstrating predicate pushdown optimization...");
 
     let total_rows = large_df.row_count();
-    println!("  Dataset: {} rows across multiple row groups", total_rows);
+    println!("  Dataset: {total_rows} rows across multiple row groups");
 
     // Various predicate pushdown scenarios
     let predicate_scenarios = vec![
@@ -247,14 +248,14 @@ fn predicate_pushdown_example(large_df: &DataFrame) -> Result<()> {
         let io_reduction = (1.0 - selectivity) * 100.0;
         let estimated_speedup = 1.0 / selectivity;
 
-        println!("    • Predicate: {}", predicate);
+        println!("    • Predicate: {predicate}");
         println!(
             "      - Filtered rows: {} ({:.1}% of total)",
             filtered_rows,
             selectivity * 100.0
         );
-        println!("      - I/O reduction: {:.1}%", io_reduction);
-        println!("      - Estimated speedup: {:.1}x", estimated_speedup);
+        println!("      - I/O reduction: {io_reduction:.1}%");
+        println!("      - Estimated speedup: {estimated_speedup:.1}x");
         println!();
     }
 
@@ -264,9 +265,9 @@ fn predicate_pushdown_example(large_df: &DataFrame) -> Result<()> {
     let eliminated_groups = 14;
     let elimination_rate = (eliminated_groups as f64 / total_row_groups as f64) * 100.0;
 
-    println!("    • Total row groups: {}", total_row_groups);
-    println!("    • Eliminated row groups: {}", eliminated_groups);
-    println!("    • Elimination rate: {:.1}%", elimination_rate);
+    println!("    • Total row groups: {total_row_groups}");
+    println!("    • Eliminated row groups: {eliminated_groups}");
+    println!("    • Elimination rate: {elimination_rate:.1}%");
     println!(
         "    • Row groups read: {}",
         total_row_groups - eliminated_groups
@@ -286,7 +287,7 @@ fn predicate_pushdown_example(large_df: &DataFrame) -> Result<()> {
     ];
 
     for predicate in complex_predicates {
-        println!("    • {}", predicate);
+        println!("    • {predicate}");
     }
     println!("    ✓ All predicates pushed down to storage layer");
 
@@ -294,6 +295,7 @@ fn predicate_pushdown_example(large_df: &DataFrame) -> Result<()> {
 }
 
 #[cfg(feature = "streaming")]
+#[allow(clippy::result_large_err)]
 #[allow(clippy::result_large_err)]
 fn streaming_operations_example(large_df: &DataFrame) -> Result<()> {
     println!("Demonstrating streaming Parquet operations...");
@@ -308,12 +310,12 @@ fn streaming_operations_example(large_df: &DataFrame) -> Result<()> {
     println!("    • Chunk size: {} rows", chunk_size);
     println!(
         "    • Estimated chunks: {}",
-        (large_df.row_count() + chunk_size - 1) / chunk_size
+        large_df.row_count().div_ceil(chunk_size)
     );
 
     // Streaming write simulation
     println!("  Streaming write process:");
-    let num_chunks = (large_df.row_count() + chunk_size - 1) / chunk_size;
+    let num_chunks = large_df.row_count().div_ceil(chunk_size);
 
     for i in 0..num_chunks.min(5) {
         let start_row = i * chunk_size;
@@ -372,6 +374,7 @@ fn streaming_operations_example(large_df: &DataFrame) -> Result<()> {
 }
 
 #[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn chunked_processing_example(large_df: &DataFrame) -> Result<()> {
     println!("Demonstrating memory-efficient chunked processing...");
 
@@ -392,10 +395,10 @@ fn chunked_processing_example(large_df: &DataFrame) -> Result<()> {
         let num_chunks = large_df.row_count().div_ceil(chunk_size);
         let memory_per_chunk = (chunk_size * 8) / 1024 / 1024; // MB estimate
 
-        println!("    • {}: {} rows/chunk", strategy, chunk_size);
-        println!("      - Number of chunks: {}", num_chunks);
-        println!("      - Memory per chunk: ~{} MB", memory_per_chunk);
-        println!("      - Description: {}", description);
+        println!("    • {strategy}: {chunk_size} rows/chunk");
+        println!("      - Number of chunks: {num_chunks}");
+        println!("      - Memory per chunk: ~{memory_per_chunk} MB");
+        println!("      - Description: {description}");
         println!();
     }
 
@@ -405,9 +408,9 @@ fn chunked_processing_example(large_df: &DataFrame) -> Result<()> {
     let optimal_chunk_size = (available_memory_mb * 1024 * 1024) / row_size_bytes;
 
     println!("  Optimal chunking calculation:");
-    println!("    • Available memory: {} MB", available_memory_mb);
-    println!("    • Estimated row size: {} bytes", row_size_bytes);
-    println!("    • Optimal chunk size: {} rows", optimal_chunk_size);
+    println!("    • Available memory: {available_memory_mb} MB");
+    println!("    • Estimated row size: {row_size_bytes} bytes");
+    println!("    • Optimal chunk size: {optimal_chunk_size} rows");
     println!("    • Safety factor: 0.8 (use 80% of available memory)");
     println!(
         "    • Recommended chunk size: {} rows",
@@ -454,6 +457,7 @@ fn chunked_processing_example(large_df: &DataFrame) -> Result<()> {
     Ok(())
 }
 
+#[allow(clippy::result_large_err)]
 #[allow(clippy::result_large_err)]
 fn metadata_analysis_example() -> Result<()> {
     println!("Performing comprehensive Parquet metadata analysis...");
@@ -599,6 +603,7 @@ fn metadata_analysis_example() -> Result<()> {
 }
 
 #[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn performance_optimization_example(_large_df: &DataFrame) -> Result<()> {
     println!("Demonstrating performance optimization strategies...");
 
@@ -629,8 +634,8 @@ fn performance_optimization_example(_large_df: &DataFrame) -> Result<()> {
 
     println!("  Read optimization strategies:");
     for (strategy, description, improvement) in read_optimizations {
-        println!("    • {}: {}", strategy, description);
-        println!("      Performance gain: {}", improvement);
+        println!("    • {strategy}: {description}");
+        println!("      Performance gain: {improvement}");
     }
 
     // Write optimization strategies
@@ -664,8 +669,8 @@ fn performance_optimization_example(_large_df: &DataFrame) -> Result<()> {
 
     println!("  Write optimization strategies:");
     for (strategy, description, benefit) in write_optimizations {
-        println!("    • {}: {}", strategy, description);
-        println!("      Benefit: {}", benefit);
+        println!("    • {strategy}: {description}");
+        println!("      Benefit: {benefit}");
     }
 
     #[cfg(feature = "parquet")]
@@ -729,6 +734,7 @@ fn performance_optimization_example(_large_df: &DataFrame) -> Result<()> {
 }
 
 #[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn schema_analysis_example(_df: &DataFrame) -> Result<()> {
     println!("Performing schema analysis and evolution planning...");
 
@@ -758,8 +764,7 @@ fn schema_analysis_example(_df: &DataFrame) -> Result<()> {
     for (name, data_type, nullable, cardinality, description) in &schema_info {
         let nullable_str = if *nullable { "Yes" } else { "No" };
         println!(
-            "    {:12} | {:9} | {:8} | {:11} | {}",
-            name, data_type, nullable_str, cardinality, description
+            "    {name:12} | {data_type:9} | {nullable_str:8} | {cardinality:11} | {description}"
         );
     }
 
@@ -775,7 +780,7 @@ fn schema_analysis_example(_df: &DataFrame) -> Result<()> {
 
     println!("  Schema complexity metrics:");
     for (metric, value) in complexity_metrics {
-        println!("    • {}: {}", metric, value);
+        println!("    • {metric}: {value}");
     }
 
     // Evolution recommendations
@@ -803,10 +808,7 @@ fn schema_analysis_example(_df: &DataFrame) -> Result<()> {
 
     // Compatibility assessment
     let compatibility_score = 8.5;
-    println!(
-        "  Schema evolution compatibility score: {}/10",
-        compatibility_score
-    );
+    println!("  Schema evolution compatibility score: {compatibility_score}/10");
 
     if compatibility_score >= 8.0 {
         println!("  Assessment: Schema evolution is low-risk");
@@ -823,6 +825,7 @@ fn schema_analysis_example(_df: &DataFrame) -> Result<()> {
 // Helper Functions
 // ============================================================================
 
+#[allow(clippy::result_large_err)]
 #[allow(clippy::result_large_err)]
 fn create_original_dataset() -> Result<DataFrame> {
     let mut df = DataFrame::new();
@@ -883,6 +886,7 @@ fn create_original_dataset() -> Result<DataFrame> {
 }
 
 #[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn create_evolved_dataset() -> Result<DataFrame> {
     let mut df = create_original_dataset()?;
 
@@ -940,6 +944,7 @@ fn create_evolved_dataset() -> Result<DataFrame> {
 }
 
 #[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn create_large_financial_dataset(size: usize) -> Result<DataFrame> {
     let mut df = DataFrame::new();
 
@@ -960,7 +965,7 @@ fn create_large_financial_dataset(size: usize) -> Result<DataFrame> {
 
     for i in 0..size {
         ids.push((i + 1).to_string());
-        names.push(format!("STOCK_{:06}", i));
+        names.push(format!("STOCK_{i:06}"));
         prices.push((50.0 + (i as f64 * 0.01) % 2000.0).to_string());
         volumes.push(((100000 + i * 1000) % 50000000).to_string());
         sectors.push(sector_list[i % sector_list.len()].to_string());

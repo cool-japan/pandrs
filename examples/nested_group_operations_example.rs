@@ -7,6 +7,7 @@ use pandrs::dataframe::hierarchical_groupby::HierarchicalGroupByExt;
 use pandrs::error::Result;
 use pandrs::series::base::Series;
 
+#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     println!("=== Nested Group Operations Example for PandRS ===\n");
     println!("This example demonstrates advanced nested group operations across hierarchy levels:");
@@ -200,9 +201,9 @@ fn main() -> Result<()> {
     let _large_rollup = large_hierarchical.nested_rollup("sales", AggFunc::Mean)?;
     let rollup_time = start.elapsed();
 
-    println!("   • Hierarchy build time: {:?}", hierarchy_build_time);
-    println!("   • Cross-level aggregation time: {:?}", cross_level_time);
-    println!("   • Nested rollup time: {:?}", rollup_time);
+    println!("   • Hierarchy build time: {hierarchy_build_time:?}");
+    println!("   • Cross-level aggregation time: {cross_level_time:?}");
+    println!("   • Nested rollup time: {rollup_time:?}");
 
     println!("\n=== Nested Group Operations Complete ===");
     println!("\nKey Features Demonstrated:");
@@ -221,6 +222,7 @@ fn main() -> Result<()> {
 }
 
 /// Create a business dataset with comprehensive hierarchy (Region → Department → Product → Quarter)
+#[allow(clippy::result_large_err)]
 fn create_business_dataset() -> Result<DataFrame> {
     let mut df = DataFrame::new();
 
@@ -345,6 +347,7 @@ fn create_business_dataset() -> Result<DataFrame> {
 }
 
 /// Create a larger business dataset for performance testing
+#[allow(clippy::result_large_err)]
 fn create_large_business_dataset(multiplier: usize) -> Result<DataFrame> {
     let base_df = create_business_dataset()?;
     let mut large_df = DataFrame::new();
@@ -411,6 +414,7 @@ fn create_large_business_dataset(multiplier: usize) -> Result<DataFrame> {
 }
 
 /// Display sample data from DataFrame
+#[allow(clippy::result_large_err)]
 fn display_sample_data(df: &DataFrame, rows: usize) -> Result<()> {
     let display_rows = rows.min(df.row_count());
 
@@ -432,8 +436,9 @@ fn display_sample_data(df: &DataFrame, rows: usize) -> Result<()> {
 }
 
 /// Display a sample of DataFrame with title
+#[allow(clippy::result_large_err)]
 fn display_dataframe_sample(df: &DataFrame, title: &str, max_rows: usize) -> Result<()> {
-    println!("   {}:", title);
+    println!("   {title}:");
     if df.row_count() == 0 {
         println!("     (No data)");
         return Ok(());

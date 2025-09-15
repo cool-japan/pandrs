@@ -11,6 +11,7 @@ use std::fs::File;
 use std::io::Write;
 use tempfile::tempdir;
 
+#[allow(clippy::result_large_err)]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("🚀 PandRS Zero-Copy Data Views and Cache-Aware Memory Management Example");
     println!("=========================================================================\n");
@@ -34,6 +35,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+#[allow(clippy::result_large_err)]
 fn demonstrate_cache_topology() -> Result<(), Box<dyn std::error::Error>> {
     println!("🏗️  Cache Topology Detection");
     println!("----------------------------");
@@ -56,7 +58,7 @@ fn demonstrate_cache_topology() -> Result<(), Box<dyn std::error::Error>> {
     println!("   Cache Line Size: {} bytes", topology.cache_line_size);
     println!("   CPU Cores: {}", topology.cpu_cores);
     if let Some(numa_node) = topology.numa_node {
-        println!("   NUMA Node: {}", numa_node);
+        println!("   NUMA Node: {numa_node}");
     }
 
     // Test optimal cache level selection
@@ -77,6 +79,7 @@ fn demonstrate_cache_topology() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+#[allow(clippy::result_large_err)]
 fn demonstrate_zero_copy_views() -> Result<(), Box<dyn std::error::Error>> {
     println!("📋 Zero-Copy Views");
     println!("------------------");
@@ -129,6 +132,7 @@ fn demonstrate_zero_copy_views() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+#[allow(clippy::result_large_err)]
 fn demonstrate_memory_mapped_views() -> Result<(), Box<dyn std::error::Error>> {
     println!("🗺️  Memory-Mapped Views");
     println!("------------------------");
@@ -192,6 +196,7 @@ fn demonstrate_memory_mapped_views() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+#[allow(clippy::result_large_err)]
 fn demonstrate_cache_aware_operations() -> Result<(), Box<dyn std::error::Error>> {
     println!("⚡ Cache-Aware Operations");
     println!("-------------------------");
@@ -261,6 +266,7 @@ fn demonstrate_cache_aware_operations() -> Result<(), Box<dyn std::error::Error>
     Ok(())
 }
 
+#[allow(clippy::result_large_err)]
 fn demonstrate_performance_optimizations() -> Result<(), Box<dyn std::error::Error>> {
     println!("🏎️  Performance Optimizations");
     println!("------------------------------");
@@ -288,7 +294,7 @@ fn demonstrate_performance_optimizations() -> Result<(), Box<dyn std::error::Err
         // Determine expected cache level
         let topology = CacheTopology::detect()?;
         let expected_level = topology.optimal_cache_level(size * std::mem::size_of::<f64>());
-        println!("   Expected cache level: {:?}", expected_level);
+        println!("   Expected cache level: {expected_level:?}");
 
         // Performance test: sum all elements
         let iterations = 100;
@@ -308,20 +314,20 @@ fn demonstrate_performance_optimizations() -> Result<(), Box<dyn std::error::Err
             "   Average time: {:.2} μs",
             avg_time.as_secs_f64() * 1_000_000.0
         );
-        println!("   Throughput: {:.1} MB/s", throughput);
+        println!("   Throughput: {throughput:.1} MB/s");
         println!("   Cache aligned: {}", view.is_cache_aligned());
     }
 
     // Memory alignment demonstration
     println!("\n🎯 Memory Alignment:");
-    println!("   Cache line size: {} bytes", CACHE_LINE_SIZE);
-    println!("   Page size: {} bytes", PAGE_SIZE);
+    println!("   Cache line size: {CACHE_LINE_SIZE} bytes");
+    println!("   Page size: {PAGE_SIZE} bytes");
 
     let data = vec![42i32; 1000];
     let view = manager.create_view(data)?;
     let address = view.memory_address();
 
-    println!("   View address: 0x{:x}", address);
+    println!("   View address: 0x{address:x}");
     println!("   Cache line aligned: {}", address % CACHE_LINE_SIZE == 0);
     println!("   Page aligned: {}", address % PAGE_SIZE == 0);
 

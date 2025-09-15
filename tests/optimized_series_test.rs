@@ -3,13 +3,15 @@ use pandrs::{Column, Float64Column, Int64Column, OptimizedDataFrame};
 
 #[test]
 #[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn test_optimized_series_representation() -> Result<()> {
     // OptimizedDataFrame is column-oriented, and Series are implemented as columns
     let mut df = OptimizedDataFrame::new();
 
     // Create integer column
-    let values = vec![1, 2, 3, 4, 5];
-    let int_col = Int64Column::new(values);
+    let values = [1, 2, 3, 4, 5];
+    let int_col = Int64Column::new(values.to_vec());
     df.add_column("test", Column::Int64(int_col))?;
 
     // Validation
@@ -31,18 +33,20 @@ fn test_optimized_series_representation() -> Result<()> {
 
 #[test]
 #[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn test_optimized_series_numeric_operations() -> Result<()> {
     // Check numeric operations in OptimizedDataFrame
     let mut df = OptimizedDataFrame::new();
 
     // Create integer column
-    let values = vec![1, 2, 3, 4, 5];
-    let int_col = Int64Column::new(values);
+    let values = [1, 2, 3, 4, 5];
+    let int_col = Int64Column::new(values.to_vec());
     df.add_column("int_values", Column::Int64(int_col))?;
 
     // Create floating point column
-    let float_values = vec![1.5, 2.5, 3.5, 4.5, 5.5];
-    let float_col = Float64Column::new(float_values);
+    let float_values = [1.5, 2.5, 3.5, 4.5, 5.5];
+    let float_col = Float64Column::new(float_values.to_vec());
     df.add_column("float_values", Column::Float64(float_col))?;
 
     // Check aggregation operations on integer column

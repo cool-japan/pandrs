@@ -289,3 +289,12 @@ pub mod operations;
 
 // Benchmarking module
 pub mod benchmark;
+
+// Advanced GPU operations (matrix decompositions, advanced stats)
+pub mod advanced_ops;
+
+// Multi-GPU support for distributed computation
+pub mod multi_gpu;
+
+// GPU memory pooling for efficient memory management
+pub mod memory_pool;

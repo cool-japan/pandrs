@@ -22,7 +22,7 @@ fn test_sklearn_compat_standard_scaler() {
     df.add_column(
         "feature2".to_string(),
         Series::new(
-            vec![10.0, 20.0, 30.0, 40.0, 50.0],
+            [10.0, 20.0, 30.0, 40.0, 50.0].to_vec(),
             Some("feature2".to_string()),
         )
         .unwrap(),
@@ -218,7 +218,7 @@ fn test_cross_validation_strategy() {
             random_state,
         } => {
             assert_eq!(n_splits, 5);
-            assert_eq!(shuffle, true);
+            assert!(shuffle);
             assert_eq!(random_state, Some(42));
         }
         _ => panic!("Wrong CV strategy type"),
@@ -237,7 +237,7 @@ fn test_cross_validation_strategy() {
             random_state,
         } => {
             assert_eq!(n_splits, 3);
-            assert_eq!(shuffle, false);
+            assert!(!shuffle);
             assert_eq!(random_state, None);
         }
         _ => panic!("Wrong CV strategy type"),
@@ -250,7 +250,7 @@ fn test_parameter_distributions() {
     let sample = uniform_int.sample();
     let value: i64 = sample.parse().unwrap();
     assert!(
-        value >= 1 && value <= 10,
+        (1..=10).contains(&value),
         "Uniform int sample should be in range"
     );
 
@@ -261,7 +261,7 @@ fn test_parameter_distributions() {
     let sample = uniform_float.sample();
     let value: f64 = sample.parse().unwrap();
     assert!(
-        value >= 0.0 && value <= 1.0,
+        (0.0..=1.0).contains(&value),
         "Uniform float sample should be in range"
     );
 
@@ -286,8 +286,8 @@ fn test_parameter_distributions() {
 
 #[test]
 fn test_scorer_functions() {
-    let y_true = vec![1.0, 2.0, 3.0, 4.0, 5.0];
-    let y_pred = vec![1.1, 1.9, 3.1, 3.9, 5.1];
+    let y_true = [1.0, 2.0, 3.0, 4.0, 5.0];
+    let y_pred = [1.1, 1.9, 3.1, 3.9, 5.1];
 
     // Test R² scorer
     let r2_scorer = Scorer::R2;
@@ -310,8 +310,8 @@ fn test_scorer_functions() {
     assert!(mae_score > -1.0, "MAE should be small for good predictions");
 
     // Test binary classification scorers
-    let y_true_binary = vec![0.0, 1.0, 1.0, 0.0, 1.0];
-    let y_pred_binary = vec![0.0, 1.0, 1.0, 0.0, 1.0]; // Perfect predictions
+    let y_true_binary = [0.0, 1.0, 1.0, 0.0, 1.0];
+    let y_pred_binary = [0.0, 1.0, 1.0, 0.0, 1.0]; // Perfect predictions
 
     let accuracy_scorer = Scorer::Accuracy;
     let accuracy = accuracy_scorer
@@ -410,7 +410,7 @@ fn test_automl_task_detection() {
         .add_column(
             "target".to_string(),
             Series::new(
-                vec![0.0, 1.0, 2.0, 1.0, 2.0, 0.0, 2.0],
+                [0.0, 1.0, 2.0, 1.0, 2.0, 0.0, 2.0].to_vec(),
                 Some("target".to_string()),
             )
             .unwrap(),
@@ -476,7 +476,7 @@ fn test_model_search_space() {
 #[test]
 fn test_aggregation_functions() {
     let engineer = AutoFeatureEngineer::new();
-    let values = vec![1.0, 2.0, 3.0, 4.0, 5.0];
+    let values = [1.0, 2.0, 3.0, 4.0, 5.0];
 
     // Test mean
     let mean = engineer
@@ -570,7 +570,7 @@ fn test_ml_pipeline_integration() {
     x.add_column(
         "feature1".to_string(),
         Series::new(
-            vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0],
+            [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0].to_vec(),
             Some("feature1".to_string()),
         )
         .unwrap(),
@@ -579,7 +579,7 @@ fn test_ml_pipeline_integration() {
     x.add_column(
         "feature2".to_string(),
         Series::new(
-            vec![2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0],
+            [2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0].to_vec(),
             Some("feature2".to_string()),
         )
         .unwrap(),
@@ -588,7 +588,7 @@ fn test_ml_pipeline_integration() {
     x.add_column(
         "feature3".to_string(),
         Series::new(
-            vec![0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8],
+            [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8].to_vec(),
             Some("feature3".to_string()),
         )
         .unwrap(),
@@ -599,7 +599,7 @@ fn test_ml_pipeline_integration() {
     y.add_column(
         "target".to_string(),
         Series::new(
-            vec![3.0, 6.0, 9.0, 12.0, 15.0, 18.0, 21.0, 24.0],
+            [3.0, 6.0, 9.0, 12.0, 15.0, 18.0, 21.0, 24.0].to_vec(),
             Some("target".to_string()),
         )
         .unwrap(),
@@ -652,7 +652,7 @@ fn test_ml_pipeline_integration() {
         let alpha_sample = param_space.get("alpha").unwrap().sample();
         let alpha_value: f64 = alpha_sample.parse().unwrap();
         assert!(
-            alpha_value >= 1e-3 && alpha_value <= 1e1,
+            (1e-3..=1e1).contains(&alpha_value),
             "Alpha parameter should be in expected range"
         );
 

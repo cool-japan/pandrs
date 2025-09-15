@@ -25,6 +25,7 @@ use std::time::Instant;
 use pandrs::DataFrameGpuExt;
 
 #[cfg(feature = "cuda")]
+#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     println!("PandRS GPU-accelerated DataFrame API Example");
     println!("-------------------------------------------");
@@ -94,6 +95,7 @@ fn main() -> Result<()> {
 /// Create a sample DataFrame for benchmarking
 #[allow(dead_code)]
 #[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn create_sample_dataframe(size: usize) -> Result<DataFrame> {
     // Create data for columns
     let mut x1 = Vec::with_capacity(size);
@@ -149,6 +151,7 @@ fn print_matrix_preview(matrix: &ndarray::Array2<f64>, max_rows: usize, max_cols
 }
 
 #[cfg(feature = "cuda")]
+#[allow(clippy::result_large_err)]
 fn benchmark_correlation(df: &DataFrame) -> Result<()> {
     println!("\nCorrelation Matrix Benchmark");
     println!("----------------------------");
@@ -182,6 +185,7 @@ fn benchmark_correlation(df: &DataFrame) -> Result<()> {
 }
 
 #[cfg(feature = "cuda")]
+#[allow(clippy::result_large_err)]
 fn benchmark_linear_regression(df: &DataFrame) -> Result<()> {
     println!("\nLinear Regression Benchmark");
     println!("--------------------------");
@@ -231,6 +235,7 @@ fn benchmark_linear_regression(df: &DataFrame) -> Result<()> {
 }
 
 #[cfg(feature = "cuda")]
+#[allow(clippy::result_large_err)]
 fn benchmark_pca(df: &DataFrame) -> Result<()> {
     println!("\nPrincipal Component Analysis (PCA) Benchmark");
     println!("-------------------------------------------");
@@ -280,6 +285,7 @@ fn benchmark_pca(df: &DataFrame) -> Result<()> {
 }
 
 #[cfg(feature = "cuda")]
+#[allow(clippy::result_large_err)]
 fn benchmark_kmeans(df: &DataFrame) -> Result<()> {
     println!("\nK-means Clustering Benchmark");
     println!("---------------------------");
@@ -338,6 +344,7 @@ fn benchmark_kmeans(df: &DataFrame) -> Result<()> {
 }
 
 #[cfg(feature = "cuda")]
+#[allow(clippy::result_large_err)]
 fn benchmark_describe(df: &DataFrame) -> Result<()> {
     println!("\nDescriptive Statistics Benchmark");
     println!("--------------------------------");

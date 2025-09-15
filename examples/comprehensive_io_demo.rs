@@ -14,6 +14,8 @@
 use pandrs::dataframe::base::DataFrame;
 use pandrs::error::Result;
 use pandrs::series::Series;
+
+#[cfg(feature = "excel")]
 use std::path::Path;
 
 #[cfg(feature = "parquet")]
@@ -23,7 +25,7 @@ use pandrs::io::{ParquetCompression, ParquetMetadata, ParquetWriteOptions};
 use pandrs::io::{ExcelReadOptions, ExcelWorkbookInfo, ExcelWriteOptions, NamedRange};
 
 #[cfg(feature = "sql")]
-use pandrs::io::sql::{
+use pandrs::io::{
     ColumnDefinition, DatabaseConnection, InsertMethod, PoolConfig, SqlWriteOptions, TableSchema,
     WriteMode,
 };
@@ -32,6 +34,7 @@ use pandrs::io::sql::{
 #[cfg(feature = "sql")]
 use std::time::Duration;
 
+#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     println!("PandRS Comprehensive I/O Capabilities - Phase 2 Alpha.6");
     println!("=======================================================");
@@ -60,8 +63,16 @@ fn main() -> Result<()> {
 }
 
 /// Comprehensive Excel Support Enhancement Examples
+#[allow(clippy::result_large_err)]
 fn excel_enhancement_examples(df: &DataFrame) -> Result<()> {
     println!("\n--- Excel Formula Preservation and Cell Formatting ---");
+
+    #[cfg(not(feature = "excel"))]
+    {
+        // Suppress unused parameter warning when excel feature is not enabled
+        let _ = df;
+        println!("Excel features not enabled. Enable with --features excel");
+    }
 
     #[cfg(feature = "excel")]
     {
@@ -115,6 +126,7 @@ fn excel_enhancement_examples(df: &DataFrame) -> Result<()> {
 }
 
 /// Advanced Parquet Features Examples
+#[allow(clippy::result_large_err)]
 fn parquet_advanced_examples(df: &DataFrame, large_df: &DataFrame) -> Result<()> {
     println!("\n--- Advanced Parquet Features ---");
 
@@ -159,6 +171,7 @@ fn parquet_advanced_examples(df: &DataFrame, large_df: &DataFrame) -> Result<()>
 }
 
 /// Database Integration Expansion Examples
+#[allow(clippy::result_large_err)]
 fn database_advanced_examples(df: &DataFrame) -> Result<()> {
     println!("\n--- Database Integration Expansion ---");
 
@@ -211,6 +224,7 @@ fn database_advanced_examples(df: &DataFrame) -> Result<()> {
 }
 
 /// Cross-Format Integration Examples
+#[allow(clippy::result_large_err)]
 fn cross_format_integration_examples(df: &DataFrame) -> Result<()> {
     println!("\n--- Cross-Format Integration ---");
 
@@ -234,6 +248,7 @@ fn cross_format_integration_examples(df: &DataFrame) -> Result<()> {
 }
 
 /// Performance and Scalability Examples
+#[allow(clippy::result_large_err)]
 fn performance_scalability_examples(large_df: &DataFrame) -> Result<()> {
     println!("\n--- Performance and Scalability ---");
 
@@ -264,8 +279,9 @@ fn performance_scalability_examples(large_df: &DataFrame) -> Result<()> {
 // ============================================================================
 
 #[cfg(feature = "excel")]
+#[allow(clippy::result_large_err)]
 fn write_excel_enhanced<P: AsRef<Path>>(
-    path: P,
+    _path: P,
     df: &DataFrame,
     sheet_name: Option<&str>,
     options: &ExcelWriteOptions,
@@ -292,6 +308,7 @@ fn write_excel_enhanced<P: AsRef<Path>>(
 }
 
 #[cfg(feature = "excel")]
+#[allow(clippy::result_large_err)]
 fn create_multi_sheet_workbook(df: &DataFrame) -> Result<()> {
     println!("  Creating workbook with multiple sheets...");
 
@@ -311,7 +328,8 @@ fn create_multi_sheet_workbook(df: &DataFrame) -> Result<()> {
 }
 
 #[cfg(feature = "excel")]
-fn named_ranges_example(df: &DataFrame) -> Result<()> {
+#[allow(clippy::result_large_err)]
+fn named_ranges_example(_df: &DataFrame) -> Result<()> {
     let named_ranges = vec![
         NamedRange {
             name: "SalesData".to_string(),
@@ -351,10 +369,11 @@ fn named_ranges_example(df: &DataFrame) -> Result<()> {
 }
 
 #[cfg(feature = "excel")]
-fn large_excel_file_example(df: &DataFrame) -> Result<()> {
+#[allow(clippy::result_large_err)]
+fn large_excel_file_example(_df: &DataFrame) -> Result<()> {
     println!("  Testing large file optimization...");
 
-    let large_file_options = ExcelWriteOptions {
+    let _large_file_options = ExcelWriteOptions {
         optimize_large_files: true,
         preserve_formulas: false, // Disable for performance
         apply_formatting: false,  // Disable for performance
@@ -370,7 +389,8 @@ fn large_excel_file_example(df: &DataFrame) -> Result<()> {
 }
 
 #[cfg(feature = "excel")]
-fn analyze_excel_file<P: AsRef<Path>>(path: P) -> Result<()> {
+#[allow(clippy::result_large_err)]
+fn analyze_excel_file<P: AsRef<Path>>(_path: P) -> Result<()> {
     println!("  Analyzing Excel file structure...");
 
     // Simulate workbook analysis
@@ -401,6 +421,7 @@ fn analyze_excel_file<P: AsRef<Path>>(path: P) -> Result<()> {
 }
 
 #[cfg(feature = "excel")]
+#[allow(clippy::result_large_err)]
 fn advanced_excel_reading_example() -> Result<()> {
     let read_options = ExcelReadOptions {
         preserve_formulas: true,
@@ -435,6 +456,7 @@ fn advanced_excel_reading_example() -> Result<()> {
 // Parquet Advanced Features Implementation Examples
 // ============================================================================
 
+#[allow(clippy::result_large_err)]
 fn schema_evolution_example(_df: &DataFrame) -> Result<()> {
     println!("  Testing schema evolution capabilities...");
 
@@ -458,7 +480,8 @@ fn schema_evolution_example(_df: &DataFrame) -> Result<()> {
 }
 
 #[cfg(feature = "parquet")]
-fn compression_comparison_example(df: &DataFrame) -> Result<()> {
+#[allow(clippy::result_large_err)]
+fn compression_comparison_example(_df: &DataFrame) -> Result<()> {
     let compression_types = vec![
         (ParquetCompression::None, "No compression"),
         (ParquetCompression::Snappy, "Snappy (fast)"),
@@ -470,7 +493,7 @@ fn compression_comparison_example(df: &DataFrame) -> Result<()> {
 
     println!("  Compression algorithm comparison:");
     for (compression, description) in compression_types {
-        let write_options = ParquetWriteOptions {
+        let _write_options = ParquetWriteOptions {
             compression,
             row_group_size: Some(10000),
             enable_dictionary: true,
@@ -495,6 +518,7 @@ fn compression_comparison_example(df: &DataFrame) -> Result<()> {
     Ok(())
 }
 
+#[allow(clippy::result_large_err)]
 fn predicate_pushdown_example(large_df: &DataFrame) -> Result<()> {
     println!("  Demonstrating predicate pushdown optimization...");
 
@@ -508,7 +532,7 @@ fn predicate_pushdown_example(large_df: &DataFrame) -> Result<()> {
 
     println!("  Applied filters:");
     for filter in &filters {
-        println!("    • {}", filter);
+        println!("    • {filter}");
     }
 
     // Performance improvement simulation
@@ -516,8 +540,8 @@ fn predicate_pushdown_example(large_df: &DataFrame) -> Result<()> {
     let filtered_rows = original_rows / 4; // Simulated filter result
 
     println!("  Performance improvement:");
-    println!("    • Original rows: {}", original_rows);
-    println!("    • Filtered rows: {}", filtered_rows);
+    println!("    • Original rows: {original_rows}");
+    println!("    • Filtered rows: {filtered_rows}");
     println!(
         "    • Data reduction: {:.1}%",
         (1.0 - filtered_rows as f64 / original_rows as f64) * 100.0
@@ -528,12 +552,13 @@ fn predicate_pushdown_example(large_df: &DataFrame) -> Result<()> {
 }
 
 #[cfg(feature = "streaming")]
+#[allow(clippy::result_large_err)]
 fn streaming_parquet_example(large_df: &DataFrame) -> Result<()> {
     println!("  Testing streaming Parquet operations...");
 
     let chunk_size = 10000;
     let total_rows = large_df.row_count();
-    let num_chunks = (total_rows + chunk_size - 1) / chunk_size;
+    let num_chunks = total_rows.div_ceil(chunk_size);
 
     println!("  Streaming configuration:");
     println!("    • Chunk size: {} rows", chunk_size);
@@ -561,6 +586,7 @@ fn streaming_parquet_example(large_df: &DataFrame) -> Result<()> {
     Ok(())
 }
 
+#[allow(clippy::result_large_err)]
 fn schema_analysis_example() -> Result<()> {
     println!("  Analyzing Parquet schema complexity...");
 
@@ -575,15 +601,12 @@ fn schema_analysis_example() -> Result<()> {
 
     println!("  Schema complexity metrics:");
     for (metric, value) in schema_metrics {
-        println!("    • {}: {}", metric, value);
+        println!("    • {metric}: {value}");
     }
 
     // Complexity assessment
     let complexity_score = 7.5;
-    println!(
-        "  Overall complexity score: {}/10 (moderate)",
-        complexity_score
-    );
+    println!("  Overall complexity score: {complexity_score}/10 (moderate)");
 
     if complexity_score > 8.0 {
         println!("  Recommendation: Consider schema normalization");
@@ -594,6 +617,7 @@ fn schema_analysis_example() -> Result<()> {
     Ok(())
 }
 
+#[allow(clippy::result_large_err)]
 fn chunked_parquet_processing_example(large_df: &DataFrame) -> Result<()> {
     println!("  Demonstrating memory-efficient chunked processing...");
 
@@ -602,20 +626,14 @@ fn chunked_parquet_processing_example(large_df: &DataFrame) -> Result<()> {
     let rows_per_chunk = (memory_limit_mb * 1024 * 1024) / estimated_row_size_bytes;
 
     println!("  Chunking configuration:");
-    println!("    • Memory limit: {} MB", memory_limit_mb);
-    println!(
-        "    • Estimated row size: {} bytes",
-        estimated_row_size_bytes
-    );
-    println!("    • Rows per chunk: {}", rows_per_chunk);
+    println!("    • Memory limit: {memory_limit_mb} MB");
+    println!("    • Estimated row size: {estimated_row_size_bytes} bytes");
+    println!("    • Rows per chunk: {rows_per_chunk}");
 
     let total_rows = large_df.row_count();
-    let num_chunks = (total_rows + rows_per_chunk - 1) / rows_per_chunk;
+    let num_chunks = total_rows.div_ceil(rows_per_chunk);
 
-    println!(
-        "  Processing {} chunks for {} total rows",
-        num_chunks, total_rows
-    );
+    println!("  Processing {num_chunks} chunks for {total_rows} total rows");
 
     // Simulate processing each chunk
     for i in 0..num_chunks.min(3) {
@@ -636,6 +654,7 @@ fn chunked_parquet_processing_example(large_df: &DataFrame) -> Result<()> {
 }
 
 #[cfg(feature = "parquet")]
+#[allow(clippy::result_large_err)]
 fn parquet_metadata_analysis_example() -> Result<()> {
     println!("  Extracting comprehensive Parquet metadata...");
 
@@ -682,7 +701,9 @@ fn parquet_metadata_analysis_example() -> Result<()> {
 // ============================================================================
 
 #[cfg(feature = "sql")]
-async fn async_connection_pool_example(df: &DataFrame) -> Result<()> {
+#[allow(dead_code)]
+#[allow(clippy::result_large_err)]
+async fn async_connection_pool_example(_df: &DataFrame) -> Result<()> {
     println!("  Setting up async database connection pool...");
 
     let pool_config = PoolConfig {
@@ -708,11 +729,12 @@ async fn async_connection_pool_example(df: &DataFrame) -> Result<()> {
     Ok(())
 }
 
+#[allow(clippy::result_large_err)]
 fn transaction_management_example(_df: &DataFrame) -> Result<()> {
     println!("  Demonstrating transaction management...");
 
     // Simulate transaction operations
-    let operations = vec![
+    let operations = [
         "BEGIN TRANSACTION",
         "INSERT INTO staging_table SELECT * FROM temp_data",
         "UPDATE main_table SET processed = true",
@@ -736,6 +758,7 @@ fn transaction_management_example(_df: &DataFrame) -> Result<()> {
     Ok(())
 }
 
+#[allow(clippy::result_large_err)]
 fn query_builder_example(_df: &DataFrame) -> Result<()> {
     println!("  Using type-safe SQL query builder...");
 
@@ -749,7 +772,7 @@ fn query_builder_example(_df: &DataFrame) -> Result<()> {
 
     println!("  Generated queries:");
     for (description, query) in queries {
-        println!("    • {}: {}", description, query);
+        println!("    • {description}: {query}");
     }
 
     // Parameter binding
@@ -762,6 +785,7 @@ fn query_builder_example(_df: &DataFrame) -> Result<()> {
 }
 
 #[cfg(feature = "sql")]
+#[allow(clippy::result_large_err)]
 fn schema_introspection_example() -> Result<()> {
     println!("  Analyzing database schema...");
 
@@ -828,6 +852,7 @@ fn schema_introspection_example() -> Result<()> {
 }
 
 #[cfg(feature = "sql")]
+#[allow(clippy::result_large_err)]
 fn bulk_insert_example(df: &DataFrame) -> Result<()> {
     println!("  Testing bulk insert operations...");
 
@@ -849,7 +874,7 @@ fn bulk_insert_example(df: &DataFrame) -> Result<()> {
     // Simulate bulk insert
     let total_rows = df.row_count();
     let chunk_size = write_options.chunksize.unwrap_or(1000);
-    let num_chunks = (total_rows + chunk_size - 1) / chunk_size;
+    let num_chunks = total_rows.div_ceil(chunk_size);
 
     println!("  Bulk insert progress:");
     for i in 0..num_chunks.min(3) {
@@ -874,6 +899,8 @@ fn bulk_insert_example(df: &DataFrame) -> Result<()> {
 }
 
 #[cfg(feature = "sql")]
+#[allow(dead_code)]
+#[allow(clippy::result_large_err)]
 async fn connection_monitoring_example() -> Result<()> {
     println!("  Monitoring connection pool statistics...");
 
@@ -903,10 +930,11 @@ async fn connection_monitoring_example() -> Result<()> {
 }
 
 #[cfg(feature = "sql")]
+#[allow(clippy::result_large_err)]
 fn multi_database_example(_df: &DataFrame) -> Result<()> {
     println!("  Demonstrating multi-database integration...");
 
-    let databases = vec![
+    let databases = [
         DatabaseConnection::Sqlite("data.db".to_string()),
         #[cfg(feature = "sql")]
         DatabaseConnection::PostgreSQL("postgresql://user:pass@localhost/db".to_string()),
@@ -947,6 +975,7 @@ fn multi_database_example(_df: &DataFrame) -> Result<()> {
 // Cross-Format Integration Examples
 // ============================================================================
 
+#[allow(clippy::result_large_err)]
 fn excel_to_parquet_migration(_df: &DataFrame) -> Result<()> {
     println!("  Converting Excel to optimized Parquet format...");
 
@@ -963,13 +992,14 @@ fn excel_to_parquet_migration(_df: &DataFrame) -> Result<()> {
     ];
 
     for (metric, improvement) in conversion_stats {
-        println!("    • {}: {}", metric, improvement);
+        println!("    • {metric}: {improvement}");
     }
 
     println!("  Excel to Parquet migration completed successfully");
     Ok(())
 }
 
+#[allow(clippy::result_large_err)]
 fn database_to_excel_reporting(_df: &DataFrame) -> Result<()> {
     println!("  Generating Excel reports from database queries...");
 
@@ -990,7 +1020,7 @@ fn database_to_excel_reporting(_df: &DataFrame) -> Result<()> {
 
     println!("  Generated reports:");
     for (report_name, query_description) in reports {
-        println!("    • {}: {}", report_name, query_description);
+        println!("    • {report_name}: {query_description}");
     }
 
     #[cfg(feature = "excel")]
@@ -1005,10 +1035,11 @@ fn database_to_excel_reporting(_df: &DataFrame) -> Result<()> {
     Ok(())
 }
 
+#[allow(clippy::result_large_err)]
 fn parquet_to_database_etl(_df: &DataFrame) -> Result<()> {
     println!("  ETL pipeline: Parquet → Database with transformations...");
 
-    let etl_steps = vec![
+    let etl_steps = [
         "Extract: Read Parquet files from data lake",
         "Transform: Clean and normalize data",
         "Transform: Calculate derived metrics",
@@ -1031,6 +1062,7 @@ fn parquet_to_database_etl(_df: &DataFrame) -> Result<()> {
     Ok(())
 }
 
+#[allow(clippy::result_large_err)]
 fn format_performance_comparison(_df: &DataFrame) -> Result<()> {
     println!("  Comparing I/O performance across formats...");
 
@@ -1049,10 +1081,7 @@ fn format_performance_comparison(_df: &DataFrame) -> Result<()> {
 
     for (format, read_ms, write_ms, size_mb) in formats {
         if size_mb > 0 {
-            println!(
-                "    {:20} | {:9} | {:10} | {:8}",
-                format, read_ms, write_ms, size_mb
-            );
+            println!("    {format:20} | {read_ms:9} | {write_ms:10} | {size_mb:8}");
         } else {
             println!(
                 "    {:20} | {:9} | {:10} | {:8}",
@@ -1074,6 +1103,7 @@ fn format_performance_comparison(_df: &DataFrame) -> Result<()> {
 // Performance and Scalability Examples
 // ============================================================================
 
+#[allow(clippy::result_large_err)]
 fn memory_optimization_example(_large_df: &DataFrame) -> Result<()> {
     println!("  Testing memory-efficient I/O operations...");
 
@@ -1093,7 +1123,7 @@ fn memory_optimization_example(_large_df: &DataFrame) -> Result<()> {
 
     println!("  Memory optimization strategies:");
     for (strategy, benefit) in memory_strategies {
-        println!("    • {}: {}", strategy, benefit);
+        println!("    • {strategy}: {benefit}");
     }
 
     let original_memory = 500; // MB
@@ -1101,13 +1131,14 @@ fn memory_optimization_example(_large_df: &DataFrame) -> Result<()> {
     let memory_reduction = (1.0 - optimized_memory as f64 / original_memory as f64) * 100.0;
 
     println!("  Memory usage comparison:");
-    println!("    • Original approach: {} MB", original_memory);
-    println!("    • Optimized approach: {} MB", optimized_memory);
-    println!("    • Memory reduction: {:.1}%", memory_reduction);
+    println!("    • Original approach: {original_memory} MB");
+    println!("    • Optimized approach: {optimized_memory} MB");
+    println!("    • Memory reduction: {memory_reduction:.1}%");
 
     Ok(())
 }
 
+#[allow(clippy::result_large_err)]
 fn parallel_io_example(large_df: &DataFrame) -> Result<()> {
     println!("  Demonstrating parallel I/O processing...");
 
@@ -1115,8 +1146,8 @@ fn parallel_io_example(large_df: &DataFrame) -> Result<()> {
     let chunk_size = large_df.row_count() / num_threads;
 
     println!("  Parallel processing configuration:");
-    println!("    • Number of threads: {}", num_threads);
-    println!("    • Chunk size: {} rows per thread", chunk_size);
+    println!("    • Number of threads: {num_threads}");
+    println!("    • Chunk size: {chunk_size} rows per thread");
     println!("    • Total rows: {}", large_df.row_count());
 
     // Simulate parallel processing
@@ -1125,12 +1156,9 @@ fn parallel_io_example(large_df: &DataFrame) -> Result<()> {
     let speedup = single_threaded_time as f64 / parallel_time as f64;
 
     println!("  Performance improvement:");
-    println!(
-        "    • Single-threaded time: {} seconds",
-        single_threaded_time
-    );
-    println!("    • Parallel time: {} seconds", parallel_time);
-    println!("    • Speedup: {:.1}x", speedup);
+    println!("    • Single-threaded time: {single_threaded_time} seconds");
+    println!("    • Parallel time: {parallel_time} seconds");
+    println!("    • Speedup: {speedup:.1}x");
     println!(
         "    • Efficiency: {:.1}%",
         (speedup / num_threads as f64) * 100.0
@@ -1140,6 +1168,7 @@ fn parallel_io_example(large_df: &DataFrame) -> Result<()> {
 }
 
 #[cfg(feature = "streaming")]
+#[allow(clippy::result_large_err)]
 fn large_dataset_streaming_example(_large_df: &DataFrame) -> Result<()> {
     println!("  Processing very large datasets with streaming...");
 
@@ -1180,6 +1209,7 @@ fn large_dataset_streaming_example(_large_df: &DataFrame) -> Result<()> {
     Ok(())
 }
 
+#[allow(clippy::result_large_err)]
 fn io_performance_benchmarks(_large_df: &DataFrame) -> Result<()> {
     println!("  Benchmarking I/O operations...");
 
@@ -1203,9 +1233,9 @@ fn io_performance_benchmarks(_large_df: &DataFrame) -> Result<()> {
     ];
 
     for (operation, results) in benchmarks {
-        println!("  {} performance (ms):", operation);
+        println!("  {operation} performance (ms):");
         for (format, time_ms) in results {
-            println!("    • {}: {} ms", format, time_ms);
+            println!("    • {format}: {time_ms} ms");
         }
     }
 
@@ -1222,6 +1252,7 @@ fn io_performance_benchmarks(_large_df: &DataFrame) -> Result<()> {
 // Helper Functions
 // ============================================================================
 
+#[allow(clippy::result_large_err)]
 fn create_sample_financial_dataframe() -> Result<DataFrame> {
     let mut df = DataFrame::new();
 
@@ -1271,6 +1302,7 @@ fn create_sample_financial_dataframe() -> Result<DataFrame> {
     Ok(df)
 }
 
+#[allow(clippy::result_large_err)]
 fn create_large_dataset(size: usize) -> Result<DataFrame> {
     let mut df = DataFrame::new();
 

@@ -2,6 +2,7 @@ use pandrs::optimized::OptimizedDataFrame;
 use pandrs::Series;
 use std::collections::HashMap;
 
+#[allow(clippy::result_large_err)]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("PandRS Alpha 4 New Features Demo");
     println!("=================================\n");
@@ -105,7 +106,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Demonstrate proper error handling for invalid operations
     match df.column("nonexistent_column") {
         Ok(_) => println!("Column found (unexpected)"),
-        Err(e) => println!("Expected error for nonexistent column: {}", e),
+        Err(e) => println!("Expected error for nonexistent column: {e}"),
     }
 
     // Type mismatch handling
@@ -141,7 +142,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Demonstrate aggregation on large dataset
     let sales_sum = large_df.sum("sales")?;
-    println!("Total sales: {}", sales_sum);
+    println!("Total sales: {sales_sum}");
 
     // ========================================
     // I/O Operations with Error Handling
@@ -164,10 +165,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         loaded_df.column_count()
                     );
                 }
-                Err(e) => println!("Error loading CSV: {}", e),
+                Err(e) => println!("Error loading CSV: {e}"),
             }
         }
-        Err(e) => println!("Error saving CSV: {}", e),
+        Err(e) => println!("Error saving CSV: {e}"),
     }
 
     // ========================================
@@ -182,7 +183,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("Successfully grouped by region");
             println!("Number of groups: {}", grouped.len());
         }
-        Err(e) => println!("Groupby error: {}", e),
+        Err(e) => println!("Groupby error: {e}"),
     }
 
     // Statistical operations

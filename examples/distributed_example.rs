@@ -14,6 +14,7 @@ use pandrs::error::Result;
 use pandrs::optimized::OptimizedDataFrame;
 
 #[cfg(feature = "distributed")]
+#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     println!("PandRS Distributed Processing Example");
 
@@ -69,6 +70,7 @@ fn main() -> Result<()> {
 
 #[cfg(feature = "distributed")]
 /// Create a test DataFrame for the example
+#[allow(clippy::result_large_err)]
 fn create_test_data() -> Result<OptimizedDataFrame> {
     use pandrs::column::{Column, Float64Column, Int64Column, StringColumn};
     use pandrs::optimized::OptimizedDataFrame;

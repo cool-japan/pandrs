@@ -52,12 +52,10 @@ impl RegressionDetector {
 
     #[allow(clippy::result_large_err)]
     pub fn save_baseline(&self, baseline: &PerformanceBaseline) -> Result<()> {
-        let json = serde_json::to_string_pretty(baseline).map_err(|e| {
-            pandrs::error::Error::IoError(format!("JSON serialization error: {}", e))
-        })?;
-        fs::write(&self.baseline_path, json).map_err(|e| {
-            pandrs::error::Error::IoError(format!("Failed to write baseline: {}", e))
-        })?;
+        let json = serde_json::to_string_pretty(baseline)
+            .map_err(|e| pandrs::error::Error::IoError(format!("JSON serialization error: {e}")))?;
+        fs::write(&self.baseline_path, json)
+            .map_err(|e| pandrs::error::Error::IoError(format!("Failed to write baseline: {e}")))?;
         Ok(())
     }
 
@@ -157,7 +155,7 @@ fn regression_aggregation_operations(c: &mut Criterion) {
             let elapsed_ns = start.elapsed().as_nanos() as f64;
 
             if let Some(regression) =
-                detector.check_regression(&format!("aggregation_{}", op_name), elapsed_ns)
+                detector.check_regression(&format!("aggregation_{op_name}"), elapsed_ns)
             {
                 eprintln!(
                     "⚠️  REGRESSION DETECTED in {}: {:.2}% slower",
@@ -219,7 +217,7 @@ fn regression_simd_operations(c: &mut Criterion) {
             let elapsed_ns = start.elapsed().as_nanos() as f64;
 
             if let Some(regression) =
-                detector.check_regression(&format!("simd_{}", op_name), elapsed_ns)
+                detector.check_regression(&format!("simd_{op_name}"), elapsed_ns)
             {
                 eprintln!(
                     "⚠️  REGRESSION DETECTED in {}: {:.2}% slower",

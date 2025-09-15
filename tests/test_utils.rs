@@ -8,6 +8,7 @@ use std::collections::HashMap;
 /// Categorical functionality for DataFrame tests
 pub trait CategoricalExt {
     /// Convert a column to a categorical data type
+    #[allow(clippy::result_large_err)]
     fn astype_categorical(
         &self,
         column_name: &str,
@@ -18,6 +19,7 @@ pub trait CategoricalExt {
         Self: Sized;
 
     /// Add a categorical column to the DataFrame
+    #[allow(clippy::result_large_err)]
     fn add_categorical_column(
         &mut self,
         column_name: String,
@@ -25,10 +27,12 @@ pub trait CategoricalExt {
     ) -> Result<()>;
 
     /// Set the order type of a categorical column
+    #[allow(clippy::result_large_err)]
     fn set_categorical_ordered(&mut self, column_name: &str, order: CategoricalOrder)
         -> Result<()>;
 
     /// Get aggregates for categorical columns
+    #[allow(clippy::result_large_err)]
     fn get_categorical_aggregates(
         &self,
         column_names: &[&str],
@@ -37,12 +41,15 @@ pub trait CategoricalExt {
     ) -> Result<HashMap<Vec<String>, usize>>;
 
     /// Reorder categories in a categorical column
+    #[allow(clippy::result_large_err)]
     fn reorder_categories(&mut self, column_name: &str, new_categories: Vec<String>) -> Result<()>;
 
     /// Add categories to a categorical column
+    #[allow(clippy::result_large_err)]
     fn add_categories(&mut self, column_name: &str, categories: Vec<String>) -> Result<()>;
 
     /// Remove categories from a categorical column
+    #[allow(clippy::result_large_err)]
     fn remove_categories(&mut self, column_name: &str, categories: &[String]) -> Result<()>;
 }
 
@@ -58,10 +65,7 @@ impl CategoricalExt for DataFrame {
         let mut result = self.clone();
 
         // Setting as categorical in the test context
-        let order_bool = match ordered {
-            Some(CategoricalOrder::Ordered) => true,
-            _ => false,
-        };
+        let order_bool = matches!(ordered, Some(CategoricalOrder::Ordered));
 
         // Get column data and convert
         let values = result.get_column_string_values(column_name)?;
@@ -189,7 +193,7 @@ impl CategoricalExt for DataFrame {
             if row_idx < values.len() {
                 grouped_data
                     .entry(key)
-                    .or_insert_with(Vec::new)
+                    .or_default()
                     .push(values[row_idx].clone());
             }
         }
@@ -204,6 +208,8 @@ impl CategoricalExt for DataFrame {
         Ok(result)
     }
 
+    #[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
     fn reorder_categories(&mut self, column_name: &str, new_categories: Vec<String>) -> Result<()> {
         // Check if the column exists
         if !self.contains_column(column_name) {
@@ -222,8 +228,7 @@ impl CategoricalExt for DataFrame {
         for value in &current_values {
             if !new_cats_set.contains(value) {
                 return Err(PandRSError::InvalidValue(format!(
-                    "Value '{}' exists in column but not in new categories",
-                    value
+                    "Value '{value}' exists in column but not in new categories"
                 )));
             }
         }
@@ -257,6 +262,8 @@ impl CategoricalExt for DataFrame {
         Ok(())
     }
 
+    #[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
     fn add_categories(&mut self, column_name: &str, categories: Vec<String>) -> Result<()> {
         // Check if the column exists
         if !self.contains_column(column_name) {
@@ -267,7 +274,7 @@ impl CategoricalExt for DataFrame {
         let values = self.get_column_string_values(column_name)?;
 
         // Get current categories (unique values)
-        let mut current_categories: Vec<String> = values.iter().cloned().collect();
+        let mut current_categories: Vec<String> = values.to_vec();
         current_categories.sort();
         current_categories.dedup();
 
@@ -308,6 +315,8 @@ impl CategoricalExt for DataFrame {
         Ok(())
     }
 
+    #[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
     fn remove_categories(&mut self, column_name: &str, categories: &[String]) -> Result<()> {
         // Check if the column exists
         if !self.contains_column(column_name) {
@@ -318,7 +327,7 @@ impl CategoricalExt for DataFrame {
         let values = self.get_column_string_values(column_name)?;
 
         // Get current categories (unique values)
-        let mut current_categories: Vec<String> = values.iter().cloned().collect();
+        let mut current_categories: Vec<String> = values.to_vec();
         current_categories.sort();
         current_categories.dedup();
 
@@ -333,8 +342,7 @@ impl CategoricalExt for DataFrame {
         for value in &values {
             if remove_set.contains(&value) {
                 return Err(PandRSError::InvalidValue(format!(
-                    "Cannot remove category '{}' as it has data",
-                    value
+                    "Cannot remove category '{value}' as it has data"
                 )));
             }
         }

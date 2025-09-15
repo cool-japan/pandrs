@@ -1,6 +1,7 @@
 use pandrs::{DataFrame, NASeries, ParallelUtils, Series, NA};
 use std::error::Error;
 
+#[allow(clippy::result_large_err)]
 fn main() -> Result<(), Box<dyn Error>> {
     println!("=== Example of Parallel Processing Features ===\n");
 
@@ -101,8 +102,8 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let unsorted = vec![5, 3, 8, 1, 9, 4, 7, 2, 6];
     let sorted = ParallelUtils::par_sort(unsorted.clone());
-    println!("Before sorting: {:?}", unsorted);
-    println!("After sorting: {:?}", sorted);
+    println!("Before sorting: {unsorted:?}");
+    println!("After sorting: {sorted:?}");
 
     let numbers_vec = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
     let sum = ParallelUtils::par_sum(&numbers_vec);
@@ -110,7 +111,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let min = ParallelUtils::par_min(&numbers_vec);
     let max = ParallelUtils::par_max(&numbers_vec);
 
-    println!("Sum: {}", sum);
+    println!("Sum: {sum}");
     println!("Mean: {}", mean.unwrap());
     println!("Min: {}", min.unwrap());
     println!("Max: {}", max.unwrap());

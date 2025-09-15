@@ -12,7 +12,7 @@ fn main() {
     let start = Instant::now();
     let df = OptimizedDataFrame::from_csv("test_data.csv", true).unwrap();
     let duration = start.elapsed();
-    println!("CSV Read Time: {:?}", duration);
+    println!("CSV Read Time: {duration:?}");
     println!(
         "Row Count: {}, Column Count: {}",
         df.row_count(),
@@ -30,7 +30,7 @@ fn main() {
         )
         .unwrap();
     let duration = start.elapsed();
-    println!("\nMelt Operation Time: {:?}", duration);
+    println!("\nMelt Operation Time: {duration:?}");
     println!(
         "Post-Transformation Row Count: {}, Column Count: {}",
         melted_df.row_count(),
@@ -67,7 +67,7 @@ fn main() {
         )
         .unwrap();
     let duration = start.elapsed();
-    println!("\nApply Operation Time: {:?}", duration);
+    println!("\nApply Operation Time: {duration:?}");
     println!(
         "Post-Processing Row Count: {}, Column Count: {}",
         applied_df.row_count(),
@@ -78,7 +78,7 @@ fn main() {
     let start = Instant::now();
     applied_df.to_csv("test_output.csv", true).unwrap();
     let duration = start.elapsed();
-    println!("\nCSV Write Time: {:?}", duration);
+    println!("\nCSV Write Time: {duration:?}");
 
     println!("\n=== Test of Optimized DataFrame Features Complete ===");
 }
@@ -88,7 +88,7 @@ fn create_test_csv(rows: usize) {
     use std::fs::File;
     use std::io::{BufWriter, Write};
 
-    println!("Creating Test CSV File ({} rows)...", rows);
+    println!("Creating Test CSV File ({rows} rows)...");
 
     let file = File::create("test_data.csv").unwrap();
     let mut writer = BufWriter::new(file);
@@ -108,7 +108,7 @@ fn create_test_csv(rows: usize) {
         let score = (i % 100) as f64 / 10.0;
         let category = categories[i % categories.len()];
 
-        writeln!(writer, "{},{},{},{},{}", i, name, age, score, category).unwrap();
+        writeln!(writer, "{i},{name},{age},{score},{category}").unwrap();
     }
 
     println!("Test CSV File Creation Complete");

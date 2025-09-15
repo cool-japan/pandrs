@@ -29,6 +29,7 @@ use std::time::Instant;
 use pandrs::stats::gpu;
 
 #[cfg(feature = "cuda")]
+#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     println!("PandRS GPU-accelerated Statistical Functions Example");
     println!("---------------------------------------------------");
@@ -103,6 +104,7 @@ fn generate_test_data(rows: usize, cols: usize) -> (Array2<f64>, Array1<f64>) {
 
 #[cfg(feature = "cuda")]
 /// Benchmark correlation matrix computation
+#[allow(clippy::result_large_err)]
 fn benchmark_correlation_matrix(data: &Array2<f64>) -> Result<()> {
     println!("\nCorrelation Matrix Benchmark");
     println!("----------------------------");
@@ -197,6 +199,7 @@ fn benchmark_correlation_matrix(data: &Array2<f64>) -> Result<()> {
 
 #[cfg(feature = "cuda")]
 /// Benchmark covariance matrix computation
+#[allow(clippy::result_large_err)]
 fn benchmark_covariance_matrix(data: &Array2<f64>) -> Result<()> {
     println!("\nCovariance Matrix Benchmark");
     println!("---------------------------");
@@ -284,6 +287,7 @@ fn benchmark_covariance_matrix(data: &Array2<f64>) -> Result<()> {
 
 #[cfg(feature = "cuda")]
 /// Benchmark descriptive statistics computation
+#[allow(clippy::result_large_err)]
 fn benchmark_descriptive_stats(data: &Array1<f64>) -> Result<()> {
     println!("\nDescriptive Statistics Benchmark");
     println!("--------------------------------");

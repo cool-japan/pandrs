@@ -7,6 +7,7 @@
 use pandrs::optimized::OptimizedDataFrame;
 use std::collections::HashMap;
 
+#[allow(clippy::result_large_err)]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("PandRS Comprehensive Tutorial");
     println!("============================\n");
@@ -34,6 +35,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 /// Step 1: Creating and populating DataFrames
+#[allow(clippy::result_large_err)]
 fn tutorial_step_1_data_creation() -> Result<(), Box<dyn std::error::Error>> {
     println!("Step 1: Data Creation and Basic Operations");
     println!("==========================================");
@@ -116,10 +118,7 @@ fn tutorial_step_1_data_creation() -> Result<(), Box<dyn std::error::Error>> {
         let price = price_binding.as_float64().unwrap().get(i)?.unwrap();
         let revenue_binding = sales_df.column("revenue")?;
         let revenue = revenue_binding.as_float64().unwrap().get(i)?.unwrap();
-        println!(
-            "  {} | Qty: {} | Price: ${:.2} | Revenue: ${:.2}",
-            product, quantity, price, revenue
-        );
+        println!("  {product} | Qty: {quantity} | Price: ${price:.2} | Revenue: ${revenue:.2}");
     }
     println!();
 
@@ -127,6 +126,7 @@ fn tutorial_step_1_data_creation() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 /// Step 2: Data cleaning and validation
+#[allow(clippy::result_large_err)]
 fn tutorial_step_2_data_cleaning() -> Result<(), Box<dyn std::error::Error>> {
     println!("Step 2: Data Cleaning and Validation");
     println!("====================================");
@@ -156,7 +156,7 @@ fn tutorial_step_2_data_cleaning() -> Result<(), Box<dyn std::error::Error>> {
         let score = score_binding.as_float64().unwrap().get(i)?.unwrap();
         let age_binding = df.column("age")?;
         let age = age_binding.as_int64().unwrap().get(i)?.unwrap();
-        println!("  '{}' | Score: {} | Age: {}", name, score, age);
+        println!("  '{name}' | Score: {score} | Age: {age}");
     }
 
     // Data cleaning steps:
@@ -194,13 +194,14 @@ fn tutorial_step_2_data_cleaning() -> Result<(), Box<dyn std::error::Error>> {
             empty_names += 1;
         }
     }
-    println!("Empty names found: {}", empty_names);
+    println!("Empty names found: {empty_names}");
     println!();
 
     Ok(())
 }
 
 /// Step 3: Data transformation and feature engineering
+#[allow(clippy::result_large_err)]
 fn tutorial_step_3_transformation() -> Result<(), Box<dyn std::error::Error>> {
     println!("Step 3: Data Transformation and Feature Engineering");
     println!("===================================================");
@@ -243,7 +244,7 @@ fn tutorial_step_3_transformation() -> Result<(), Box<dyn std::error::Error>> {
     let sales_col = sales_binding.as_float64().unwrap();
 
     for i in 0..df.row_count() {
-        let start = if i >= 2 { i - 2 } else { 0 };
+        let start = i.saturating_sub(2);
         let end = i + 1;
         let window_size = end - start;
 
@@ -292,8 +293,7 @@ fn tutorial_step_3_transformation() -> Result<(), Box<dyn std::error::Error>> {
         let season = season_binding.as_string().unwrap().get(i)?.unwrap();
 
         println!(
-            "  Month {}: Sales ${:.0} | Profit ${:.0} | Margin {:.1}% | 3MA ${:.0} | {}",
-            month, sales, profit, margin, ma, season
+            "  Month {month}: Sales ${sales:.0} | Profit ${profit:.0} | Margin {margin:.1}% | 3MA ${ma:.0} | {season}"
         );
     }
     println!();
@@ -302,6 +302,7 @@ fn tutorial_step_3_transformation() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 /// Step 4: Statistical analysis
+#[allow(clippy::result_large_err)]
 fn tutorial_step_4_analysis() -> Result<(), Box<dyn std::error::Error>> {
     println!("Step 4: Statistical Analysis");
     println!("============================");
@@ -351,17 +352,17 @@ fn tutorial_step_4_analysis() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("Statistical Analysis Results:");
     println!("Manual calculations:");
-    println!("  Sum: {:.2}", sum);
-    println!("  Mean: {:.2}", mean);
-    println!("  Min: {:.2}", min_val);
-    println!("  Max: {:.2}", max_val);
-    println!("  Std Dev: {:.2}", std_dev);
+    println!("  Sum: {sum:.2}");
+    println!("  Mean: {mean:.2}");
+    println!("  Min: {min_val:.2}");
+    println!("  Max: {max_val:.2}");
+    println!("  Std Dev: {std_dev:.2}");
 
     println!("Built-in functions:");
-    println!("  Sum: {:.2}", built_in_sum);
-    println!("  Mean: {:.2}", built_in_mean);
-    println!("  Min: {:.2}", built_in_min);
-    println!("  Max: {:.2}", built_in_max);
+    println!("  Sum: {built_in_sum:.2}");
+    println!("  Mean: {built_in_mean:.2}");
+    println!("  Min: {built_in_min:.2}");
+    println!("  Max: {built_in_max:.2}");
 
     // Percentile calculations (simplified)
     let mut sorted_values: Vec<f64> = Vec::new();
@@ -376,13 +377,14 @@ fn tutorial_step_4_analysis() -> Result<(), Box<dyn std::error::Error>> {
         sorted_values[sorted_values.len() / 2]
     };
 
-    println!("  Median: {:.2}", median);
+    println!("  Median: {median:.2}");
     println!();
 
     Ok(())
 }
 
 /// Step 5: Grouping and aggregation
+#[allow(clippy::result_large_err)]
 fn tutorial_step_5_grouping() -> Result<(), Box<dyn std::error::Error>> {
     println!("Step 5: Grouping and Aggregation");
     println!("=================================");
@@ -431,7 +433,7 @@ fn tutorial_step_5_grouping() -> Result<(), Box<dyn std::error::Error>> {
         let category = category_binding.as_string().unwrap().get(i)?.unwrap();
         let sales_binding = df.column("sales")?;
         let sales = sales_binding.as_float64().unwrap().get(i)?.unwrap();
-        println!("  {} | {} | ${:.0}", region, category, sales);
+        println!("  {region} | {category} | ${sales:.0}");
     }
 
     // Manual grouping by region to demonstrate the concept
@@ -449,7 +451,7 @@ fn tutorial_step_5_grouping() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("\nSales by region (manual calculation):");
     for (region, total) in &region_totals {
-        println!("  {}: ${:.0}", region, total);
+        println!("  {region}: ${total:.0}");
     }
 
     // Category totals
@@ -465,7 +467,7 @@ fn tutorial_step_5_grouping() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("\nSales by category:");
     for (category, total) in &category_totals {
-        println!("  {}: ${:.0}", category, total);
+        println!("  {category}: ${total:.0}");
     }
 
     // Cross-tabulation (region x category)
@@ -480,7 +482,7 @@ fn tutorial_step_5_grouping() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("\nCross-tabulation (Region x Category):");
     for ((region, category), total) in &cross_tab {
-        println!("  {} x {}: ${:.0}", region, category, total);
+        println!("  {region} x {category}: ${total:.0}");
     }
     println!();
 
@@ -488,6 +490,7 @@ fn tutorial_step_5_grouping() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 /// Step 6: Data persistence and export
+#[allow(clippy::result_large_err)]
 fn tutorial_step_6_persistence() -> Result<(), Box<dyn std::error::Error>> {
     println!("Step 6: Data Persistence and Export");
     println!("===================================");
@@ -525,7 +528,7 @@ fn tutorial_step_6_persistence() -> Result<(), Box<dyn std::error::Error>> {
         let value = value_binding.as_float64().unwrap().get(i)?.unwrap();
         let unit_binding = df.column("unit")?;
         let unit = unit_binding.as_string().unwrap().get(i)?.unwrap();
-        println!("  {}: {:.2} {}", metric, value, unit);
+        println!("  {metric}: {value:.2} {unit}");
     }
 
     // Export to CSV
@@ -543,10 +546,10 @@ fn tutorial_step_6_persistence() -> Result<(), Box<dyn std::error::Error>> {
                         loaded_df.column_count()
                     );
                 }
-                Err(e) => println!("❌ Error verifying CSV: {}", e),
+                Err(e) => println!("❌ Error verifying CSV: {e}"),
             }
         }
-        Err(e) => println!("❌ Error exporting to CSV: {}", e),
+        Err(e) => println!("❌ Error exporting to CSV: {e}"),
     }
 
     // Example of conditional exports based on data

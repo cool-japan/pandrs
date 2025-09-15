@@ -9,6 +9,7 @@ use pandrs::dataframe::DataFrame;
 use pandrs::series::base::Series;
 use std::collections::HashMap;
 
+#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     println!("🌐 PandRS Ecosystem Integration Demo");
     println!("====================================\n");
@@ -46,12 +47,13 @@ fn main() -> Result<()> {
 }
 
 /// Create a sample dataset for demonstration
+#[allow(clippy::result_large_err)]
 fn create_sample_dataset() -> Result<DataFrame> {
     let mut columns = HashMap::new();
 
     // Create diverse data types
     let ids = (1..=1000).map(|i| i.to_string()).collect();
-    let names = (1..=1000).map(|i| format!("Customer_{}", i)).collect();
+    let names = (1..=1000).map(|i| format!("Customer_{i}")).collect();
     let scores = (1..=1000)
         .map(|i| (i as f64 * 0.85 + 10.0).to_string())
         .collect();
@@ -89,7 +91,7 @@ fn create_sample_dataset() -> Result<DataFrame> {
         Series::new(categories, Some("category".to_string())),
     );
 
-    let _column_order = vec![
+    let _column_order = [
         "customer_id".to_string(),
         "name".to_string(),
         "score".to_string(),
@@ -105,6 +107,7 @@ fn create_sample_dataset() -> Result<DataFrame> {
 }
 
 /// Demonstrate Arrow integration capabilities
+#[allow(clippy::result_large_err)]
 fn arrow_integration_demo(_df: &DataFrame) -> Result<()> {
     #[cfg(feature = "distributed")]
     {
@@ -143,6 +146,7 @@ fn arrow_integration_demo(_df: &DataFrame) -> Result<()> {
 }
 
 /// Demonstrate database connectivity
+#[allow(clippy::result_large_err)]
 fn database_connectivity_demo(_df: &DataFrame) -> Result<()> {
     use pandrs::connectors::{DatabaseConfig, DatabaseConnectorFactory};
 
@@ -203,6 +207,7 @@ fn database_connectivity_demo(_df: &DataFrame) -> Result<()> {
 }
 
 /// Demonstrate cloud storage integration
+#[allow(clippy::result_large_err)]
 fn cloud_storage_demo(_df: &DataFrame) -> Result<()> {
     use pandrs::connectors::{CloudConfig, CloudConnectorFactory, CloudCredentials, CloudProvider};
 
@@ -261,6 +266,7 @@ fn cloud_storage_demo(_df: &DataFrame) -> Result<()> {
 }
 
 /// Demonstrate unified data access patterns
+#[allow(clippy::result_large_err)]
 fn unified_data_access_demo() -> Result<()> {
     println!("  🔗 Unified Data Access Patterns:");
 
@@ -291,7 +297,7 @@ fn unified_data_access_demo() -> Result<()> {
     ];
 
     for (source, path) in sources {
-        println!("      📊 Source: {} | Path: {}", source, path);
+        println!("      📊 Source: {source} | Path: {path}");
         // let df = DataFrame::read_from(source, path).await?;
         // println!("        ✓ Loaded {} rows", df.row_count());
     }
@@ -300,6 +306,7 @@ fn unified_data_access_demo() -> Result<()> {
 }
 
 /// Demonstrate performance and compatibility features
+#[allow(clippy::result_large_err)]
 fn performance_demo(_df: &DataFrame) -> Result<()> {
     println!("  ⚡ Performance & Compatibility Features:");
 
@@ -351,8 +358,8 @@ fn demonstrate_format_detection() {
     println!("  🔍 Automatic File Format Detection:");
     for file in files {
         match FileFormat::from_extension(file) {
-            Some(format) => println!("    {} → {:?}", file, format),
-            None => println!("    {} → Unknown format", file),
+            Some(format) => println!("    {file} → {format:?}"),
+            None => println!("    {file} → Unknown format"),
         }
     }
 }

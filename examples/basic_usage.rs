@@ -4,6 +4,7 @@ use pandrs::{DataFrame, Series};
 use std::collections::HashMap;
 
 #[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     println!("=== PandRS Basic Usage Example (Alpha 4) ===");
 
@@ -19,9 +20,9 @@ fn main() -> Result<()> {
         Some("name".to_string()),
     )?;
 
-    println!("Age Series: {:?}", ages);
-    println!("Height Series: {:?}", heights);
-    println!("Name Series: {:?}", names);
+    println!("Age Series: {ages:?}");
+    println!("Height Series: {heights:?}");
+    println!("Name Series: {names:?}");
 
     // Demonstrate new Series name management (alpha.4)
     println!("\n=== Series Name Management (New in Alpha 4) ===");
@@ -46,7 +47,7 @@ fn main() -> Result<()> {
     df.add_column("age".to_string(), ages)?;
     df.add_column("height".to_string(), heights)?;
 
-    println!("DataFrame: {:?}", df);
+    println!("DataFrame: {df:?}");
     println!("Number of Columns: {}", df.column_count());
     println!("Number of Rows: {}", df.row_count());
     println!("Column Names: {:?}", df.column_names());
@@ -101,15 +102,15 @@ fn main() -> Result<()> {
     // Save traditional DataFrame to CSV
     let traditional_file = "traditional_data.csv";
     match df.to_csv(traditional_file) {
-        Ok(_) => println!("✅ Saved traditional DataFrame to {}", traditional_file),
-        Err(e) => println!("❌ Failed to save traditional DataFrame: {}", e),
+        Ok(_) => println!("✅ Saved traditional DataFrame to {traditional_file}"),
+        Err(e) => println!("❌ Failed to save traditional DataFrame: {e}"),
     }
 
     // Save OptimizedDataFrame to CSV
     let optimized_file = "optimized_data.csv";
     match opt_df.to_csv(optimized_file, true) {
         Ok(_) => {
-            println!("✅ Saved OptimizedDataFrame to {}", optimized_file);
+            println!("✅ Saved OptimizedDataFrame to {optimized_file}");
 
             // Try to read it back using the I/O module
             match pandrs::io::read_csv(optimized_file, true) {
@@ -122,10 +123,10 @@ fn main() -> Result<()> {
                     );
                     println!("   Column Names: {:?}", loaded_df.column_names());
                 }
-                Err(e) => println!("❌ Failed to load CSV: {}", e),
+                Err(e) => println!("❌ Failed to load CSV: {e}"),
             }
         }
-        Err(e) => println!("❌ Failed to save OptimizedDataFrame: {}", e),
+        Err(e) => println!("❌ Failed to save OptimizedDataFrame: {e}"),
     }
 
     // Demonstrate statistical operations on OptimizedDataFrame

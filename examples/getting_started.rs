@@ -5,6 +5,7 @@
 
 use pandrs::core::error::Result;
 
+#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     println!("🐼 Welcome to PandRS - Pandas-like DataFrames in Rust! 🦀");
     println!("================================================\n");
@@ -34,11 +35,12 @@ fn main() -> Result<()> {
 }
 
 /// Demonstrates basic DataFrame creation and inspection
+#[allow(clippy::result_large_err)]
 fn basic_dataframe_creation() -> Result<()> {
     // Create some sample data
-    let names = vec!["Alice", "Bob", "Charlie", "Diana"];
-    let ages = vec![25, 30, 35, 28];
-    let scores = vec![85.5, 92.0, 78.5, 88.0];
+    let names = ["Alice", "Bob", "Charlie", "Diana"];
+    let ages = [25, 30, 35, 28];
+    let scores = [85.5, 92.0, 78.5, 88.0];
 
     // Create a DataFrame (this would need actual implementation)
     println!(
@@ -63,6 +65,7 @@ fn basic_dataframe_creation() -> Result<()> {
 }
 
 /// Demonstrates data manipulation operations
+#[allow(clippy::result_large_err)]
 fn data_manipulation() -> Result<()> {
     println!("  🔍 Filtering data where age > 28");
     println!("  📝 Adding new column 'grade' based on score");
@@ -70,12 +73,13 @@ fn data_manipulation() -> Result<()> {
 
     // Simulate the operations
     let filtered_count = 2; // Alice and Charlie
-    println!("  ✅ Filtered DataFrame: {} rows", filtered_count);
+    println!("  ✅ Filtered DataFrame: {filtered_count} rows");
 
     Ok(())
 }
 
 /// Demonstrates statistical operations
+#[allow(clippy::result_large_err)]
 fn statistical_operations() -> Result<()> {
     println!("  📊 Computing descriptive statistics:");
     println!("    - Mean, median, std deviation");
@@ -90,6 +94,7 @@ fn statistical_operations() -> Result<()> {
 }
 
 /// Demonstrates JIT optimization capabilities
+#[allow(clippy::result_large_err)]
 fn jit_optimization_demo() -> Result<()> {
     use pandrs::optimized::jit::JITConfig;
 
@@ -109,6 +114,7 @@ fn jit_optimization_demo() -> Result<()> {
 }
 
 /// Demonstrates comprehensive error handling
+#[allow(clippy::result_large_err)]
 fn error_handling_demo() -> Result<()> {
     println!("  🛡️  Error Handling Features:");
 

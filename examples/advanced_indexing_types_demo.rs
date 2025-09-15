@@ -10,6 +10,7 @@ use pandrs::dataframe::SpecializedIndexingExt as AdvancedIndexingExt;
 use pandrs::error::Result;
 use pandrs::series::base::Series;
 
+#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     println!("=== Alpha 8: Advanced Indexing Types Example ===\n");
 
@@ -80,7 +81,7 @@ fn main() -> Result<()> {
     df.add_column("Sector".to_string(), sector_series)?;
 
     println!("Original Financial Data:");
-    println!("{:?}", df);
+    println!("{df:?}");
 
     println!("\n=== DatetimeIndex Examples ===\n");
 
@@ -90,7 +91,7 @@ fn main() -> Result<()> {
     let (df_with_dt_index, dt_index) =
         df.set_datetime_index("Date", Some("DatetimeIdx".to_string()))?;
     println!("DataFrame with DatetimeIndex:");
-    println!("{:?}", df_with_dt_index);
+    println!("{df_with_dt_index:?}");
     println!("DatetimeIndex info:");
     println!("  Length: {}", dt_index.len());
     println!("  Name: {:?}", dt_index.name());
@@ -105,21 +106,17 @@ fn main() -> Result<()> {
 
     // Date range filtering
     let start_filter = NaiveDateTime::parse_from_str("2024-01-05 00:00:00", "%Y-%m-%d %H:%M:%S")
-        .map_err(|e| pandrs::error::Error::InvalidValue(format!("Date parsing error: {}", e)))?;
+        .map_err(|e| pandrs::error::Error::InvalidValue(format!("Date parsing error: {e}")))?;
     let end_filter = NaiveDateTime::parse_from_str("2024-01-10 23:59:59", "%Y-%m-%d %H:%M:%S")
-        .map_err(|e| pandrs::error::Error::InvalidValue(format!("Date parsing error: {}", e)))?;
+        .map_err(|e| pandrs::error::Error::InvalidValue(format!("Date parsing error: {e}")))?;
     let filtered_indices = dt_index.filter_range(start_filter, end_filter)?;
-    println!(
-        "  Rows in date range 2024-01-05 to 2024-01-10: {:?}",
-        filtered_indices
-    );
+    println!("  Rows in date range 2024-01-05 to 2024-01-10: {filtered_indices:?}");
 
     // Create date range with frequency
     println!("\nCreating daily date range:");
     let daily_range = DatetimeIndex::date_range(
-        NaiveDateTime::parse_from_str("2024-01-01 09:00:00", "%Y-%m-%d %H:%M:%S").map_err(|e| {
-            pandrs::error::Error::InvalidValue(format!("Date parsing error: {}", e))
-        })?,
+        NaiveDateTime::parse_from_str("2024-01-01 09:00:00", "%Y-%m-%d %H:%M:%S")
+            .map_err(|e| pandrs::error::Error::InvalidValue(format!("Date parsing error: {e}")))?,
         None,
         Some(7),
         "d",
@@ -132,9 +129,8 @@ fn main() -> Result<()> {
 
     println!("\nCreating hourly date range:");
     let hourly_range = DatetimeIndex::date_range(
-        NaiveDateTime::parse_from_str("2024-01-01 09:00:00", "%Y-%m-%d %H:%M:%S").map_err(|e| {
-            pandrs::error::Error::InvalidValue(format!("Date parsing error: {}", e))
-        })?,
+        NaiveDateTime::parse_from_str("2024-01-01 09:00:00", "%Y-%m-%d %H:%M:%S")
+            .map_err(|e| pandrs::error::Error::InvalidValue(format!("Date parsing error: {e}")))?,
         None,
         Some(6),
         "2h",
@@ -148,7 +144,7 @@ fn main() -> Result<()> {
     // Resampling
     println!("\nResampling DatetimeIndex:");
     let resample_groups = dt_index.resample("3d")?;
-    println!("  Resampled to 3-day groups: {:?}", resample_groups);
+    println!("  Resampled to 3-day groups: {resample_groups:?}");
 
     println!("\n=== PeriodIndex Examples ===\n");
 
@@ -162,7 +158,7 @@ fn main() -> Result<()> {
     )?;
 
     println!("DataFrame with PeriodIndex:");
-    println!("{:?}", df_with_period_index);
+    println!("{df_with_period_index:?}");
     println!("PeriodIndex info:");
     println!("  Length: {}", period_index.len());
     println!("  Name: {:?}", period_index.name());
@@ -191,7 +187,7 @@ fn main() -> Result<()> {
     // Find periods containing specific dates
     let target_date = NaiveDate::from_ymd_opt(2024, 3, 15).unwrap();
     let containing_periods = quarterly_periods.find_periods_containing(target_date);
-    println!("  Periods containing 2024-03-15: {:?}", containing_periods);
+    println!("  Periods containing 2024-03-15: {containing_periods:?}");
 
     println!("\n=== IntervalIndex Examples ===\n");
 
@@ -207,7 +203,7 @@ fn main() -> Result<()> {
     )?;
 
     println!("DataFrame with IntervalIndex (price bins):");
-    println!("{:?}", df_with_interval_index);
+    println!("{df_with_interval_index:?}");
     println!("IntervalIndex info:");
     println!("  Length: {}", interval_index.len());
     println!("  Name: {:?}", interval_index.name());
@@ -230,10 +226,7 @@ fn main() -> Result<()> {
     // Find intervals containing specific values
     let target_price = 105.0;
     let containing_intervals = interval_index.find_intervals_containing(target_price);
-    println!(
-        "  Intervals containing price 105.0: {:?}",
-        containing_intervals
-    );
+    println!("  Intervals containing price 105.0: {containing_intervals:?}");
 
     // Create custom interval index
     println!("\nCreating custom intervals:");
@@ -253,7 +246,7 @@ fn main() -> Result<()> {
         df.set_categorical_index("Sector", true, Some("SectorIndex".to_string()))?;
 
     println!("DataFrame with CategoricalIndex:");
-    println!("{:?}", df_with_cat_index);
+    println!("{df_with_cat_index:?}");
     println!("CategoricalIndex info:");
     println!("  Length: {}", cat_index.len());
     println!("  Name: {:?}", cat_index.name());
@@ -265,7 +258,7 @@ fn main() -> Result<()> {
     // Category operations
     println!("\nCategory operations:");
     let value_counts = cat_index.value_counts();
-    println!("  Value counts: {:?}", value_counts);
+    println!("  Value counts: {value_counts:?}");
 
     // Add new categories
     cat_index.add_categories(vec!["Energy".to_string(), "Utilities".to_string()])?;
@@ -299,21 +292,21 @@ fn main() -> Result<()> {
         "F".to_string(),
     ];
 
-    println!("Index 1: {:?}", index1);
-    println!("Index 2: {:?}", index2);
+    println!("Index 1: {index1:?}");
+    println!("Index 2: {index2:?}");
 
     let union_result = IndexOperations::union_string_indexes(&index1, &index2);
-    println!("  Union: {:?}", union_result);
+    println!("  Union: {union_result:?}");
 
     let intersection_result = IndexOperations::intersection_string_indexes(&index1, &index2);
-    println!("  Intersection: {:?}", intersection_result);
+    println!("  Intersection: {intersection_result:?}");
 
     let difference_result = IndexOperations::difference_string_indexes(&index1, &index2);
-    println!("  Difference (1 - 2): {:?}", difference_result);
+    println!("  Difference (1 - 2): {difference_result:?}");
 
     let symmetric_diff_result =
         IndexOperations::symmetric_difference_string_indexes(&index1, &index2);
-    println!("  Symmetric difference: {:?}", symmetric_diff_result);
+    println!("  Symmetric difference: {symmetric_diff_result:?}");
 
     println!("\n=== Index Sorting and Uniqueness ===\n");
 
@@ -341,9 +334,8 @@ fn main() -> Result<()> {
     // Time series analysis with DatetimeIndex
     println!("Time series analysis:");
     let business_days_range = DatetimeIndex::date_range(
-        NaiveDateTime::parse_from_str("2024-01-01 09:00:00", "%Y-%m-%d %H:%M:%S").map_err(|e| {
-            pandrs::error::Error::InvalidValue(format!("Date parsing error: {}", e))
-        })?,
+        NaiveDateTime::parse_from_str("2024-01-01 09:00:00", "%Y-%m-%d %H:%M:%S")
+            .map_err(|e| pandrs::error::Error::InvalidValue(format!("Date parsing error: {e}")))?,
         None,
         Some(10),
         "d",
@@ -353,7 +345,7 @@ fn main() -> Result<()> {
     // Filter out weekends (simplified - would need more complex logic for real business days)
     let weekdays: Vec<u32> = business_days_range.weekday();
     let business_day_mask: Vec<bool> = weekdays.iter().map(|&day| day < 5).collect();
-    println!("  Business day mask (Mon-Fri): {:?}", business_day_mask);
+    println!("  Business day mask (Mon-Fri): {business_day_mask:?}");
 
     // Risk analysis with IntervalIndex
     println!("\nRisk analysis with intervals:");
@@ -378,7 +370,7 @@ fn main() -> Result<()> {
     }
 
     println!("  Risk intervals: {:?}", risk_levels.labels());
-    println!("  Risk labels: {:?}", risk_labels);
+    println!("  Risk labels: {risk_labels:?}");
 
     // Portfolio analysis with CategoricalIndex
     println!("\nPortfolio analysis with categorical sectors:");
@@ -422,6 +414,7 @@ fn main() -> Result<()> {
 }
 
 /// Demonstrate performance with larger datasets
+#[allow(clippy::result_large_err)]
 fn demonstrate_performance() -> Result<()> {
     println!("--- Performance with Large Dataset ---");
 
@@ -429,21 +422,20 @@ fn demonstrate_performance() -> Result<()> {
 
     // Create large dataset for performance testing
     let size = 10000;
-    println!("Creating dataset with {} rows", size);
+    println!("Creating dataset with {size} rows");
 
     // DatetimeIndex performance
     let start = Instant::now();
     let large_dt_index = DatetimeIndex::date_range(
-        NaiveDateTime::parse_from_str("2020-01-01 00:00:00", "%Y-%m-%d %H:%M:%S").map_err(|e| {
-            pandrs::error::Error::InvalidValue(format!("Date parsing error: {}", e))
-        })?,
+        NaiveDateTime::parse_from_str("2020-01-01 00:00:00", "%Y-%m-%d %H:%M:%S")
+            .map_err(|e| pandrs::error::Error::InvalidValue(format!("Date parsing error: {e}")))?,
         None,
         Some(size),
         "h",
         Some("LargeDatetimeIndex".to_string()),
     )?;
     let duration = start.elapsed();
-    println!("DatetimeIndex creation ({} entries): {:?}", size, duration);
+    println!("DatetimeIndex creation ({size} entries): {duration:?}");
 
     // DatetimeIndex component extraction
     let start = Instant::now();
@@ -451,7 +443,7 @@ fn demonstrate_performance() -> Result<()> {
     let _months = large_dt_index.month();
     let _weekdays = large_dt_index.weekday();
     let duration = start.elapsed();
-    println!("DatetimeIndex component extraction: {:?}", duration);
+    println!("DatetimeIndex component extraction: {duration:?}");
 
     // CategoricalIndex performance
     let categories = ["A", "B", "C", "D", "E"];
@@ -467,15 +459,12 @@ fn demonstrate_performance() -> Result<()> {
         false,
     );
     let duration = start.elapsed();
-    println!(
-        "CategoricalIndex creation ({} entries): {:?}",
-        size, duration
-    );
+    println!("CategoricalIndex creation ({size} entries): {duration:?}");
 
     let start = Instant::now();
     let _value_counts = large_cat_index.value_counts();
     let duration = start.elapsed();
-    println!("CategoricalIndex value_counts: {:?}", duration);
+    println!("CategoricalIndex value_counts: {duration:?}");
     println!("Memory usage: {} bytes", large_cat_index.memory_usage());
 
     // IntervalIndex performance
@@ -489,64 +478,62 @@ fn demonstrate_performance() -> Result<()> {
         Some("LargeIntervals".to_string()),
     )?;
     let duration = start.elapsed();
-    println!(
-        "IntervalIndex cut operation ({} values, 100 bins): {:?}",
-        size, duration
-    );
+    println!("IntervalIndex cut operation ({size} values, 100 bins): {duration:?}");
 
     // Index set operations performance
-    let index1: Vec<String> = (0..1000).map(|i| format!("item_{}", i)).collect();
-    let index2: Vec<String> = (500..1500).map(|i| format!("item_{}", i)).collect();
+    let index1: Vec<String> = (0..1000).map(|i| format!("item_{i}")).collect();
+    let index2: Vec<String> = (500..1500).map(|i| format!("item_{i}")).collect();
 
     let start = Instant::now();
     let _union = IndexOperations::union_string_indexes(&index1, &index2);
     let duration = start.elapsed();
-    println!("Index union operation (1000 + 1000 items): {:?}", duration);
+    println!("Index union operation (1000 + 1000 items): {duration:?}");
 
     let start = Instant::now();
     let _intersection = IndexOperations::intersection_string_indexes(&index1, &index2);
     let duration = start.elapsed();
-    println!("Index intersection operation: {:?}", duration);
+    println!("Index intersection operation: {duration:?}");
 
     Ok(())
 }
 
 /// Demonstrate error handling
+#[allow(clippy::result_large_err)]
 fn demonstrate_error_handling() -> Result<()> {
     println!("--- Error Handling Examples ---");
 
     // Invalid date range
     let test_dt = NaiveDateTime::parse_from_str("2024-01-01 09:00:00", "%Y-%m-%d %H:%M:%S")
-        .map_err(|e| pandrs::error::Error::InvalidValue(format!("Date parsing error: {}", e)))?;
+        .map_err(|e| pandrs::error::Error::InvalidValue(format!("Date parsing error: {e}")))?;
 
     match DatetimeIndex::date_range(test_dt, None, None, "d", None) {
         Ok(_) => println!("Unexpected success with invalid date range"),
-        Err(e) => println!("Expected error for invalid date range: {:?}", e),
+        Err(e) => println!("Expected error for invalid date range: {e:?}"),
     }
 
     // Invalid frequency
     match DatetimeIndex::date_range(test_dt, None, Some(5), "invalid_freq", None) {
         Ok(_) => println!("Unexpected success with invalid frequency"),
-        Err(e) => println!("Expected error for invalid frequency: {:?}", e),
+        Err(e) => println!("Expected error for invalid frequency: {e:?}"),
     }
 
     // Invalid interval breaks
     match IntervalIndex::from_breaks(vec![1.0], IntervalClosed::Right, None) {
         Ok(_) => println!("Unexpected success with single break"),
-        Err(e) => println!("Expected error for insufficient breaks: {:?}", e),
+        Err(e) => println!("Expected error for insufficient breaks: {e:?}"),
     }
 
     // Empty values for cutting
     match IntervalIndex::cut(&[], 5, IntervalClosed::Right, None) {
         Ok(_) => println!("Unexpected success with empty values"),
-        Err(e) => println!("Expected error for empty values: {:?}", e),
+        Err(e) => println!("Expected error for empty values: {e:?}"),
     }
 
     // Identical values for cutting
     let identical_values = vec![1.0, 1.0, 1.0, 1.0];
     match IntervalIndex::cut(&identical_values, 3, IntervalClosed::Right, None) {
         Ok(_) => println!("Unexpected success with identical values"),
-        Err(e) => println!("Expected error for identical values: {:?}", e),
+        Err(e) => println!("Expected error for identical values: {e:?}"),
     }
 
     Ok(())

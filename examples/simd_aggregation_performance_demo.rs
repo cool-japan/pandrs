@@ -15,6 +15,8 @@ use pandrs::optimized::jit::simd::{avx2_available, simd_available, simd_capabili
 use pandrs::optimized::OptimizedDataFrame;
 use std::time::Instant;
 
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     println!("PandRS SIMD-Enhanced Aggregation Performance Demo");
     println!("================================================");
@@ -49,6 +51,8 @@ fn main() -> Result<()> {
     Ok(())
 }
 
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn create_test_dataframe(size: usize, prefix: &str) -> Result<OptimizedDataFrame> {
     let mut df = OptimizedDataFrame::new();
 
@@ -75,8 +79,10 @@ fn create_test_dataframe(size: usize, prefix: &str) -> Result<OptimizedDataFrame
     Ok(df)
 }
 
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn benchmark_all_methods(test_name: &str, df: &OptimizedDataFrame) -> Result<()> {
-    println!("{}", test_name);
+    println!("{test_name}");
     println!("{}", "=".repeat(test_name.len()));
 
     let float_col_name = df.column_names()[0].clone();
@@ -111,6 +117,7 @@ struct BenchmarkResults {
     min_time_ms: f64,
 }
 
+#[allow(clippy::result_large_err)]
 fn benchmark_direct_methods(
     df: &OptimizedDataFrame,
     float_col: &str,
@@ -149,22 +156,10 @@ fn benchmark_direct_methods(
     }
     let min_time = start.elapsed().as_secs_f64() * 1000.0 / iterations as f64;
 
-    println!(
-        "  • Sum:   {:.3}ms/op -> Result: {:.2}",
-        sum_time, sum_result
-    );
-    println!(
-        "  • Mean:  {:.3}ms/op -> Result: {:.2}",
-        mean_time, mean_result
-    );
-    println!(
-        "  • Max:   {:.3}ms/op -> Result: {:.2}",
-        max_time, max_result
-    );
-    println!(
-        "  • Min:   {:.3}ms/op -> Result: {:.2}",
-        min_time, min_result
-    );
+    println!("  • Sum:   {sum_time:.3}ms/op -> Result: {sum_result:.2}");
+    println!("  • Mean:  {mean_time:.3}ms/op -> Result: {mean_result:.2}");
+    println!("  • Max:   {max_time:.3}ms/op -> Result: {max_result:.2}");
+    println!("  • Min:   {min_time:.3}ms/op -> Result: {min_result:.2}");
 
     Ok(BenchmarkResults {
         sum_time_ms: sum_time,
@@ -174,6 +169,7 @@ fn benchmark_direct_methods(
     })
 }
 
+#[allow(clippy::result_large_err)]
 fn benchmark_simd_methods(
     df: &OptimizedDataFrame,
     float_col: &str,
@@ -212,22 +208,10 @@ fn benchmark_simd_methods(
     }
     let min_time = start.elapsed().as_secs_f64() * 1000.0 / iterations as f64;
 
-    println!(
-        "  • Sum:   {:.3}ms/op -> Result: {:.2}",
-        sum_time, sum_result
-    );
-    println!(
-        "  • Mean:  {:.3}ms/op -> Result: {:.2}",
-        mean_time, mean_result
-    );
-    println!(
-        "  • Max:   {:.3}ms/op -> Result: {:.2}",
-        max_time, max_result
-    );
-    println!(
-        "  • Min:   {:.3}ms/op -> Result: {:.2}",
-        min_time, min_result
-    );
+    println!("  • Sum:   {sum_time:.3}ms/op -> Result: {sum_result:.2}");
+    println!("  • Mean:  {mean_time:.3}ms/op -> Result: {mean_result:.2}");
+    println!("  • Max:   {max_time:.3}ms/op -> Result: {max_result:.2}");
+    println!("  • Min:   {min_time:.3}ms/op -> Result: {min_result:.2}");
 
     Ok(BenchmarkResults {
         sum_time_ms: sum_time,
@@ -262,19 +246,14 @@ fn print_performance_comparison(direct: &BenchmarkResults, simd: &BenchmarkResul
 
     let avg_speedup = (sum_speedup + mean_speedup + max_speedup + min_speedup) / 4.0;
     if avg_speedup > 1.0 {
-        println!(
-            "  • Average SIMD improvement: {:.1}x faster ✅",
-            avg_speedup
-        );
+        println!("  • Average SIMD improvement: {avg_speedup:.1}x faster ✅");
     } else {
-        println!(
-            "  • Average SIMD impact: {:.1}x (SIMD overhead on small data)",
-            avg_speedup
-        );
+        println!("  • Average SIMD impact: {avg_speedup:.1}x (SIMD overhead on small data)");
         println!("    Note: SIMD benefits increase with larger datasets due to vectorization");
     }
 }
 
+#[allow(clippy::result_large_err)]
 fn verify_method_consistency(
     df: &OptimizedDataFrame,
     float_col: &str,
@@ -288,10 +267,7 @@ fn verify_method_consistency(
     let sum_tolerance = direct_sum.abs() * 1e-12; // Relative tolerance
     assert!(
         sum_diff < sum_tolerance.max(1e-6),
-        "Sum methods inconsistent: {} vs {} (diff: {})",
-        direct_sum,
-        simd_sum,
-        sum_diff
+        "Sum methods inconsistent: {direct_sum} vs {simd_sum} (diff: {sum_diff})"
     );
 
     let direct_mean = df.mean_direct(float_col)?;
@@ -300,28 +276,21 @@ fn verify_method_consistency(
     let mean_tolerance = direct_mean.abs() * 1e-12;
     assert!(
         mean_diff < mean_tolerance.max(1e-6),
-        "Mean methods inconsistent: {} vs {} (diff: {})",
-        direct_mean,
-        simd_mean,
-        mean_diff
+        "Mean methods inconsistent: {direct_mean} vs {simd_mean} (diff: {mean_diff})"
     );
 
     let direct_max = df.max_direct(int_col)?;
     let simd_max = df.max_simd(int_col)?;
     assert!(
         (direct_max - simd_max).abs() < 1e-10,
-        "Max methods inconsistent: {} vs {}",
-        direct_max,
-        simd_max
+        "Max methods inconsistent: {direct_max} vs {simd_max}"
     );
 
     let direct_min = df.min_direct(int_col)?;
     let simd_min = df.min_simd(int_col)?;
     assert!(
         (direct_min - simd_min).abs() < 1e-10,
-        "Min methods inconsistent: {} vs {}",
-        direct_min,
-        simd_min
+        "Min methods inconsistent: {direct_min} vs {simd_min}"
     );
 
     println!("✅ Method consistency verified (within floating-point precision)");

@@ -7,6 +7,7 @@ use pandrs::{DataFrame, Series};
 use pandrs::io::ParquetCompression;
 
 #[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     #[cfg(not(feature = "parquet"))]
     {
@@ -157,6 +158,7 @@ fn main() -> Result<()> {
 
 /// Create sample DataFrame for demonstration
 #[cfg(feature = "parquet")]
+#[allow(clippy::result_large_err)]
 fn create_sample_dataframe() -> Result<DataFrame> {
     let mut df = DataFrame::new();
 

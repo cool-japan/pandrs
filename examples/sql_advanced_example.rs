@@ -4,6 +4,7 @@ use pandrs::error::Result;
 use pandrs::{DataFrame, Series};
 
 #[cfg(feature = "sql")]
+#[allow(unused_imports)]
 use pandrs::io::{
     execute_sql, get_create_table_sql, get_table_schema, has_table, list_tables, read_sql,
     read_sql_advanced, read_sql_table, write_sql_advanced, write_to_sql, DatabaseConnection,
@@ -14,6 +15,7 @@ use pandrs::io::{
 #[allow(unused_imports)]
 use std::collections::HashMap;
 
+#[allow(clippy::result_large_err)]
 #[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     #[cfg(not(feature = "sql"))]
@@ -194,6 +196,7 @@ fn main() -> Result<()> {
 /// Create sample DataFrame for demonstration
 #[cfg(feature = "sql")]
 #[allow(dead_code)]
+#[allow(clippy::result_large_err)]
 fn create_sample_dataframe() -> Result<DataFrame> {
     let mut df = DataFrame::new();
 

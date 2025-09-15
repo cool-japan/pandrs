@@ -97,9 +97,9 @@ pub(crate) fn from_standard_dataframe(
             // Direct copy for Simple Index
             split_df.set_index_from_simple_index(simple_index.clone())?;
         }
-        DataFrameIndex::Multi(_) => {
-            // Multi-index is a future task
-            split_df.set_default_index()?;
+        DataFrameIndex::Multi(multi_index) => {
+            // Convert multi-index to split DataFrame
+            split_df.set_index(DataFrameIndex::Multi(multi_index.clone()))?;
         }
     }
 
@@ -121,13 +121,8 @@ pub(crate) fn from_standard_dataframe(
             // Create a default index first to maintain compatibility
             let _ = opt_df.set_default_index();
 
-            // At present, it is difficult to fully convert using only the public API,
-            // so temporarily handle to ensure the integrity of the already created DataFrame
-            // TODO: Create appropriate public API
-            #[allow(deprecated)]
-            {
-                opt_df.set_index_from_simple_index_internal(simple_index.clone())?;
-            }
+            // Use the public API to set the index
+            opt_df.set_index_from_simple_index(simple_index.clone())?;
         }
     }
 
@@ -156,8 +151,8 @@ pub(crate) fn to_standard_dataframe(
         if let DataFrameIndex::Simple(simple_index) = df_index {
             split_df.set_index_from_simple_index(simple_index.clone())?;
         } else if let DataFrameIndex::Multi(multi_index) = df_index {
-            // Multi-index is not supported yet
-            split_df.set_default_index()?;
+            // Multi-index support
+            split_df.set_index(DataFrameIndex::Multi(multi_index.clone()))?;
         }
     }
 

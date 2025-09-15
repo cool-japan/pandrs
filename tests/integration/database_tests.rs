@@ -8,6 +8,8 @@ use pandrs::connectors::database::*;
 use pandrs::core::error::Result;
 
 #[tokio::test]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 async fn test_database_connection() -> Result<()> {
     let mut connector = MockDatabaseConnector::new();
     let config = DatabaseConfig::new("mock://test");
@@ -27,6 +29,8 @@ async fn test_database_connection() -> Result<()> {
 }
 
 #[tokio::test]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 async fn test_database_query() -> Result<()> {
     let mut connector = MockDatabaseConnector::new();
     let config = DatabaseConfig::new("mock://test");
@@ -43,6 +47,8 @@ async fn test_database_query() -> Result<()> {
 }
 
 #[tokio::test]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 async fn test_database_query_without_connection() -> Result<()> {
     let connector = MockDatabaseConnector::new();
     
@@ -54,6 +60,8 @@ async fn test_database_query_without_connection() -> Result<()> {
 }
 
 #[tokio::test]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 async fn test_database_parameterized_query() -> Result<()> {
     let mut connector = MockDatabaseConnector::new();
     let config = DatabaseConfig::new("mock://test");
@@ -72,6 +80,8 @@ async fn test_database_parameterized_query() -> Result<()> {
 }
 
 #[tokio::test]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 async fn test_database_write_operations() -> Result<()> {
     let mut connector = MockDatabaseConnector::new();
     let config = DatabaseConfig::new("mock://test");
@@ -92,6 +102,8 @@ async fn test_database_write_operations() -> Result<()> {
 }
 
 #[tokio::test]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 async fn test_database_metadata_operations() -> Result<()> {
     let mut connector = MockDatabaseConnector::new();
     let df = test_utils::create_test_dataframe()?;
@@ -120,6 +132,8 @@ async fn test_database_metadata_operations() -> Result<()> {
 }
 
 #[tokio::test]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 async fn test_database_execute_operations() -> Result<()> {
     let mut connector = MockDatabaseConnector::new();
     let config = DatabaseConfig::new("mock://test");
@@ -142,6 +156,8 @@ async fn test_database_execute_operations() -> Result<()> {
 }
 
 #[tokio::test]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 async fn test_database_transaction_management() -> Result<()> {
     let mut connector = MockDatabaseConnector::new();
     let config = DatabaseConfig::new("mock://test");
@@ -159,6 +175,8 @@ async fn test_database_transaction_management() -> Result<()> {
 }
 
 #[tokio::test]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 async fn test_database_configuration_options() -> Result<()> {
     // Test various configuration options
     let config = DatabaseConfig::new("postgresql://localhost/test")
@@ -178,6 +196,8 @@ async fn test_database_configuration_options() -> Result<()> {
 }
 
 #[tokio::test]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 async fn test_database_error_handling() -> Result<()> {
     let mut connector = MockDatabaseConnector::new();
     
@@ -195,6 +215,8 @@ async fn test_database_error_handling() -> Result<()> {
 }
 
 #[tokio::test]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 async fn test_database_large_dataset_handling() -> Result<()> {
     let mut connector = MockDatabaseConnector::new();
     let config = DatabaseConfig::new("mock://test");
@@ -215,6 +237,8 @@ async fn test_database_large_dataset_handling() -> Result<()> {
 }
 
 #[tokio::test]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 async fn test_database_concurrent_operations() -> Result<()> {
     use tokio::task;
     
@@ -246,6 +270,8 @@ async fn test_database_concurrent_operations() -> Result<()> {
 }
 
 #[tokio::test]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 async fn test_database_data_type_handling() -> Result<()> {
     let mut connector = MockDatabaseConnector::new();
     let config = DatabaseConfig::new("mock://test");

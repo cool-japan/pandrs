@@ -41,7 +41,7 @@ fn create_test_metadata() -> ModelMetadata {
         name: "test_model".to_string(),
         version: "1.0.0".to_string(),
         model_type: "linear_regression".to_string(),
-        feature_names: vec!["feature1".to_string(), "feature2".to_string()],
+        feature_names: ["feature1".to_string(), "feature2".to_string()].to_vec(),
         target_name: Some("target".to_string()),
         description: "Test model for serving".to_string(),
         created_at: chrono::Utc::now(),
@@ -210,7 +210,7 @@ fn test_generic_serving_model() {
 
     // Test batch prediction
     let batch_request = BatchPredictionRequest {
-        data: vec![request.data.clone(), request.data.clone()],
+        data: [request.data.clone(), request.data.clone()].to_vec(),
         model_version: Some("1.0.0".to_string()),
         options: None,
     };
@@ -251,11 +251,11 @@ fn test_in_memory_model_registry() {
     let models = registry.list_models().unwrap();
     assert_eq!(models.len(), 1);
     assert_eq!(models[0].name, "test_model");
-    assert_eq!(models[0].versions, vec!["1.0.0"]);
+    assert_eq!(models[0].versions, ["1.0.0"]);
 
     // Test versions
     let versions = registry.list_versions("test_model").unwrap();
-    assert_eq!(versions, vec!["1.0.0"]);
+    assert_eq!(versions, ["1.0.0"]);
 
     // Test latest version
     let latest = registry.get_latest_version("test_model").unwrap();

@@ -14,7 +14,7 @@ fn main() {
     // ====================
     // Create Large DataFrame
     // ====================
-    println!("\n[1] Create Large DataFrame ({} rows)", ROWS);
+    println!("\n[1] Create Large DataFrame ({ROWS} rows)");
 
     // --- Data Generation ---
     let data_gen_start = Instant::now();
@@ -32,7 +32,7 @@ fn main() {
     }
 
     let data_gen_time = data_gen_start.elapsed();
-    println!("Data generation time: {:?}", data_gen_time);
+    println!("Data generation time: {data_gen_time:?}");
 
     // --- DataFrame Construction ---
     let df_construct_start = Instant::now();
@@ -57,7 +57,7 @@ fn main() {
     .unwrap();
 
     let df_construct_time = df_construct_start.elapsed();
-    println!("DataFrame construction time: {:?}", df_construct_time);
+    println!("DataFrame construction time: {df_construct_time:?}");
     println!(
         "Total DataFrame creation time: {:?}",
         data_gen_time + df_construct_time
@@ -83,11 +83,11 @@ fn main() {
         let filtered_df = df.filter("filter_condition").unwrap();
         let duration = start.elapsed();
         serial_total += duration;
-        println!("Serial filtering time (1 run): {:?}", duration);
+        println!("Serial filtering time (1 run): {duration:?}");
         println!("Filtered row count: {}", filtered_df.row_count());
     }
     let serial_time = serial_total / 3;
-    println!("Average serial filtering time: {:?}", serial_time);
+    println!("Average serial filtering time: {serial_time:?}");
 
     // Parallel filtering
     let mut parallel_total = std::time::Duration::new(0, 0);
@@ -96,11 +96,11 @@ fn main() {
         let par_filtered_df = df.par_filter("filter_condition").unwrap();
         let duration = start.elapsed();
         parallel_total += duration;
-        println!("Parallel filtering time (1 run): {:?}", duration);
+        println!("Parallel filtering time (1 run): {duration:?}");
         println!("Filtered row count: {}", par_filtered_df.row_count());
     }
     let parallel_time = parallel_total / 3;
-    println!("Average parallel filtering time: {:?}", parallel_time);
+    println!("Average parallel filtering time: {parallel_time:?}");
 
     println!(
         "Speedup: {:.2}x",
@@ -132,17 +132,11 @@ fn main() {
             .unwrap();
         let duration = start.elapsed();
         serial_total += duration;
-        println!(
-            "Serial grouping and aggregation time (1 run): {:?}",
-            duration
-        );
+        println!("Serial grouping and aggregation time (1 run): {duration:?}");
         println!("Group count: {}", grouped_df.row_count());
     }
     let serial_time = serial_total / 3;
-    println!(
-        "Average serial grouping and aggregation time: {:?}",
-        serial_time
-    );
+    println!("Average serial grouping and aggregation time: {serial_time:?}");
 
     // Parallel grouping and aggregation
     let mut parallel_total = std::time::Duration::new(0, 0);
@@ -189,17 +183,11 @@ fn main() {
 
         let duration = start.elapsed();
         parallel_total += duration;
-        println!(
-            "Parallel grouping and aggregation time (1 run): {:?}",
-            duration
-        );
+        println!("Parallel grouping and aggregation time (1 run): {duration:?}");
         println!("Group count: {}", result_df.row_count());
     }
     let parallel_time = parallel_total / 3;
-    println!(
-        "Average parallel grouping and aggregation time: {:?}",
-        parallel_time
-    );
+    println!("Average parallel grouping and aggregation time: {parallel_time:?}");
 
     println!(
         "Speedup: {:.2}x",
@@ -239,7 +227,7 @@ fn main() {
     }
 
     let serial_time = start.elapsed();
-    println!("Serial computation time: {:?}", serial_time);
+    println!("Serial computation time: {serial_time:?}");
 
     // Parallel computation
     let start = Instant::now();
@@ -271,7 +259,7 @@ fn main() {
         .unwrap();
 
     let parallel_time = start.elapsed();
-    println!("Parallel computation time: {:?}", parallel_time);
+    println!("Parallel computation time: {parallel_time:?}");
 
     println!(
         "Speedup: {:.2}x",

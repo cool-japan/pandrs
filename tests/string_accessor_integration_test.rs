@@ -2,6 +2,8 @@ use pandrs::core::error::Result;
 use pandrs::Series;
 
 #[test]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn test_string_accessor_integration() -> Result<()> {
     // Create a Series with string data
     let data = vec![
@@ -39,17 +41,17 @@ fn test_string_accessor_integration() -> Result<()> {
 
     // Test string length
     let len_result = str_accessor.len()?;
-    let expected_lengths = vec![11i64, 20i64, 22i64, 7i64, 0i64];
+    let expected_lengths = [11i64, 20i64, 22i64, 7i64, 0i64];
     assert_eq!(len_result.values(), &expected_lengths);
 
     // Test contains method
     let contains_result = str_accessor.contains("RUST", true, false)?;
-    let expected_contains = vec![false, true, false, false, false];
+    let expected_contains = [false, true, false, false, false];
     assert_eq!(contains_result.values(), &expected_contains);
 
     // Test case-insensitive contains
     let contains_insensitive = str_accessor.contains("rust", false, false)?;
-    let expected_contains_insensitive = vec![false, true, false, false, false];
+    let expected_contains_insensitive = [false, true, false, false, false];
     assert_eq!(
         contains_insensitive.values(),
         &expected_contains_insensitive
@@ -57,12 +59,12 @@ fn test_string_accessor_integration() -> Result<()> {
 
     // Test startswith
     let startswith_result = str_accessor.startswith("Hello", true)?;
-    let expected_startswith = vec![true, false, false, false, false];
+    let expected_startswith = [true, false, false, false, false];
     assert_eq!(startswith_result.values(), &expected_startswith);
 
     // Test endswith
     let endswith_result = str_accessor.endswith("123", true)?;
-    let expected_endswith = vec![false, false, false, true, false];
+    let expected_endswith = [false, false, false, true, false];
     assert_eq!(endswith_result.values(), &expected_endswith);
 
     // Test strip whitespace
@@ -80,6 +82,8 @@ fn test_string_accessor_integration() -> Result<()> {
 }
 
 #[test]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn test_string_accessor_advanced_operations() -> Result<()> {
     let data = vec![
         "apple,banana,cherry".to_string(),
@@ -132,6 +136,8 @@ fn test_string_accessor_advanced_operations() -> Result<()> {
 }
 
 #[test]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn test_string_accessor_regex_operations() -> Result<()> {
     let data = vec![
         "abc123def".to_string(),
@@ -144,7 +150,7 @@ fn test_string_accessor_regex_operations() -> Result<()> {
 
     // Test regex contains
     let regex_contains = str_accessor.contains(r"\d+", true, true)?;
-    let expected_regex = vec![true, true, false, true];
+    let expected_regex = [true, true, false, true];
     assert_eq!(regex_contains.values(), &expected_regex);
 
     // Test extract with regex (first capture group or whole match)
@@ -159,7 +165,7 @@ fn test_string_accessor_regex_operations() -> Result<()> {
 
     // Test count regex matches
     let count_result = str_accessor.count(r"\d", None)?;
-    let expected_count = vec![3i64, 3i64, 0i64, 3i64]; // "mix3d_n0mb3rs" has digits: 3, 0, 3 = 3 total
+    let expected_count = [3i64, 3i64, 0i64, 3i64]; // "mix3d_n0mb3rs" has digits: 3, 0, 3 = 3 total
     assert_eq!(count_result.values(), &expected_count);
 
     // Test findall
@@ -172,6 +178,8 @@ fn test_string_accessor_regex_operations() -> Result<()> {
 }
 
 #[test]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn test_string_accessor_padding_operations() -> Result<()> {
     let data = vec![
         "short".to_string(),
@@ -216,6 +224,8 @@ fn test_string_accessor_padding_operations() -> Result<()> {
 }
 
 #[test]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn test_string_accessor_strip_operations() -> Result<()> {
     let data = vec![
         "  hello  ".to_string(),
@@ -270,6 +280,8 @@ fn test_string_accessor_strip_operations() -> Result<()> {
 }
 
 #[test]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn test_string_accessor_edge_cases() -> Result<()> {
     // Test with empty strings and special characters
     let data = vec![
@@ -298,17 +310,19 @@ fn test_string_accessor_edge_cases() -> Result<()> {
 
     // Test contains with special characters
     let contains_newline = str_accessor.contains("\n", true, false)?;
-    let expected_newline = vec![false, false, false, true, false];
+    let expected_newline = [false, false, false, true, false];
     assert_eq!(contains_newline.values(), &expected_newline);
 
     let contains_tab = str_accessor.contains("\t", true, false)?;
-    let expected_tab = vec![false, false, false, false, true];
+    let expected_tab = [false, false, false, false, true];
     assert_eq!(contains_tab.values(), &expected_tab);
 
     Ok(())
 }
 
 #[test]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn test_string_accessor_method_chaining_concept() -> Result<()> {
     // Test that we can chain operations by applying multiple string operations
     let data = vec![
@@ -323,7 +337,7 @@ fn test_string_accessor_method_chaining_concept() -> Result<()> {
     let lowered = stripped.str()?.lower()?;
     let contains_result = lowered.str()?.contains("rust", true, false)?;
 
-    let expected_contains = vec![false, true, false];
+    let expected_contains = [false, true, false];
     assert_eq!(contains_result.values(), &expected_contains);
 
     // Simulate chaining: strip -> title -> length
@@ -331,7 +345,7 @@ fn test_string_accessor_method_chaining_concept() -> Result<()> {
     let titled = stripped2.str()?.title()?;
     let lengths = titled.str()?.len()?;
 
-    let expected_lengths = vec![11i64, 16i64, 9i64];
+    let expected_lengths = [11i64, 16i64, 9i64];
     assert_eq!(lengths.values(), &expected_lengths);
 
     Ok(())

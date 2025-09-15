@@ -20,6 +20,7 @@ use pandrs::{error::Error, OptimizedDataFrame};
 use rand::Rng;
 
 #[cfg(all(feature = "optimized", feature = "cuda"))]
+#[allow(clippy::result_large_err)]
 fn main() -> Result<(), Error> {
     println!("Example of PandRS Dimension Reduction Algorithms");
     println!("============================");
@@ -43,6 +44,7 @@ fn main() -> Result<(), Error> {
 
 #[cfg(all(feature = "optimized", feature = "cuda"))]
 // Example of PCA
+#[allow(clippy::result_large_err)]
 fn pca_example(df: &OptimizedDataFrame) -> Result<(), Error> {
     println!("\n==== PCA (Principal Component Analysis) ====");
 
@@ -181,6 +183,7 @@ fn pca_example(df: &OptimizedDataFrame) -> Result<(), Error> {
 
 #[cfg(all(feature = "optimized", feature = "cuda"))]
 // Example of t-SNE
+#[allow(clippy::result_large_err)]
 fn tsne_example(df: &OptimizedDataFrame) -> Result<(), Error> {
     println!("\n==== t-SNE (t-distributed Stochastic Neighbor Embedding) ====");
 
@@ -212,6 +215,7 @@ fn tsne_example(df: &OptimizedDataFrame) -> Result<(), Error> {
 
 #[cfg(all(feature = "optimized", feature = "cuda"))]
 // Calculate and display mean coordinates for each cluster
+#[allow(clippy::result_large_err)]
 fn calculate_cluster_means(df: &OptimizedDataFrame, x_col: &str, y_col: &str) -> Result<(), Error> {
     // Do nothing if there is no cluster column
     if !df.column_names().contains(&"cluster".to_string()) {
@@ -272,6 +276,7 @@ fn calculate_cluster_means(df: &OptimizedDataFrame, x_col: &str, y_col: &str) ->
 
 #[cfg(all(feature = "optimized", feature = "cuda"))]
 // Generate sample data (high-dimensional data with 3 clusters)
+#[allow(clippy::result_large_err)]
 fn create_sample_data() -> Result<OptimizedDataFrame, Error> {
     let mut rng = rand::thread_rng();
     let mut df = OptimizedDataFrame::new();

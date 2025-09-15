@@ -12,6 +12,7 @@ fn main() {
 }
 
 #[cfg(feature = "optimized")]
+#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     println!("=== Optimized MultiIndex Example ===\n");
 

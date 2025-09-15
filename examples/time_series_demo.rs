@@ -8,6 +8,7 @@ use pandrs::time_series::core::{Frequency, TimeSeriesBuilder};
 use pandrs::time_series::decomposition::{DecompositionMethod, SeasonalDecomposition};
 use pandrs::time_series::features::TimeSeriesFeatureExtractor;
 
+#[allow(clippy::result_large_err)]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("🚀 PandRS Time Series Analysis Demo");
     println!("=====================================");

@@ -2,6 +2,8 @@ use pandrs::{DataFrame, PandRSError, Series};
 
 // Test for CSV file operations (using temporary files)
 #[test]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn test_csv_io() -> Result<(), PandRSError> {
     // Skip file I/O and only test the API
     println!("Testing CSV I/O API (skipping actual file I/O)");

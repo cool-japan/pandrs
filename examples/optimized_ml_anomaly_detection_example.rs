@@ -25,6 +25,7 @@ fn main() {
 }
 
 #[cfg(feature = "optimized")]
+#[allow(clippy::result_large_err)]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Generate synthetic anomaly detection data
     println!("✅ Example of Anomaly Detection Algorithms");

@@ -2,6 +2,7 @@ use pandrs::dataframe::TransformExt;
 use pandrs::{DataFrame, MeltOptions, Series, StackOptions, UnstackOptions};
 use std::error::Error;
 
+#[allow(clippy::result_large_err)]
 fn main() -> Result<(), Box<dyn Error>> {
     println!("=== Example of Data Transformation ===\n");
 
@@ -40,7 +41,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     )?;
 
     println!("Original DataFrame:");
-    println!("{:?}", df);
+    println!("{df:?}");
 
     // melt operation - convert from wide to long format
     println!("\n----- melt operation (convert from wide to long format) -----");
@@ -56,7 +57,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     };
 
     let melted_df = df.melt(&melt_options)?;
-    println!("{:?}", melted_df);
+    println!("{melted_df:?}");
 
     // stack operation
     println!("\n----- stack operation (stack columns to rows) -----");
@@ -72,7 +73,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     };
 
     let stacked_df = df.stack(&stack_options)?;
-    println!("{:?}", stacked_df);
+    println!("{stacked_df:?}");
 
     // unstack operation (using melted_df)
     println!("\n----- unstack operation (convert rows to columns) -----");
@@ -84,7 +85,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     };
 
     let unstacked_df = melted_df.unstack(&unstack_options)?;
-    println!("{:?}", unstacked_df);
+    println!("{unstacked_df:?}");
 
     // Concatenate DataFrames
     println!("\n----- Concatenate DataFrames (concat) -----");
@@ -116,12 +117,12 @@ fn main() -> Result<(), Box<dyn Error>> {
     )?;
 
     println!("Additional DataFrame:");
-    println!("{:?}", df2);
+    println!("{df2:?}");
 
     // Concatenate DataFrames
     let concat_df = DataFrame::concat(&[&df, &df2], true)?;
     println!("Concatenated DataFrame:");
-    println!("{:?}", concat_df);
+    println!("{concat_df:?}");
 
     // Conditional aggregation
     println!("\n----- Conditional Aggregation -----");
@@ -145,7 +146,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     )?;
 
     println!("Conditional Aggregation Result (Total March sales by category for rows where February sales are 1000 or more):");
-    println!("{:?}", result);
+    println!("{result:?}");
 
     Ok(())
 }

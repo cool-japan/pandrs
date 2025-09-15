@@ -8,8 +8,10 @@ use std::thread;
 use std::time::Duration;
 
 #[test]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn test_data_stream_basics() -> Result<()> {
-    let headers = vec![
+    let headers = [
         "id".to_string(),
         "value".to_string(),
         "category".to_string(),
@@ -23,12 +25,12 @@ fn test_data_stream_basics() -> Result<()> {
         batch_size: 10,
     };
 
-    let (connector, mut stream) = StreamConnector::new(headers, Some(config));
+    let (connector, mut stream) = StreamConnector::new(headers.to_vec(), Some(config));
 
     // Send some test data
     for i in 0..50 {
         let fields = HashMap::from([
-            ("id".to_string(), format!("{}", i)),
+            ("id".to_string(), format!("{i}")),
             ("value".to_string(), format!("{}", i as f64 / 10.0)),
             ("category".to_string(), format!("cat{}", i % 5)),
         ]);
@@ -56,6 +58,8 @@ fn test_data_stream_basics() -> Result<()> {
 }
 
 #[test]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn test_stream_aggregator() -> Result<()> {
     let headers = vec![
         "id".to_string(),
@@ -80,10 +84,12 @@ fn test_stream_aggregator() -> Result<()> {
 }
 
 #[test]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn test_stream_processor() -> Result<()> {
-    let headers = vec!["id".to_string(), "text".to_string(), "category".to_string()];
+    let headers = ["id".to_string(), "text".to_string(), "category".to_string()];
 
-    let (_connector, stream) = StreamConnector::new(headers, None);
+    let (_connector, stream) = StreamConnector::new(headers.to_vec(), None);
 
     // Create a processor
     let mut processor = StreamProcessor::new(stream);
@@ -111,8 +117,10 @@ fn test_stream_processor() -> Result<()> {
 }
 
 #[test]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn test_window_operation() -> Result<()> {
-    let headers = vec!["timestamp".to_string(), "value".to_string()];
+    let headers = ["timestamp".to_string(), "value".to_string()];
 
     let config = StreamConfig {
         buffer_size: 100,
@@ -122,12 +130,12 @@ fn test_window_operation() -> Result<()> {
         batch_size: 10,
     };
 
-    let (connector, mut stream) = StreamConnector::new(headers, Some(config));
+    let (connector, mut stream) = StreamConnector::new(headers.to_vec(), Some(config));
 
     // Send test data
     for i in 0..50 {
         let fields = HashMap::from([
-            ("timestamp".to_string(), format!("{}", i)),
+            ("timestamp".to_string(), format!("{i}")),
             ("value".to_string(), format!("{}", i as f64)),
         ]);
 
@@ -166,6 +174,8 @@ fn test_window_operation() -> Result<()> {
 }
 
 #[test]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn test_real_time_analytics() -> Result<()> {
     let headers = vec!["timestamp".to_string(), "value".to_string()];
 
@@ -189,7 +199,7 @@ fn test_real_time_analytics() -> Result<()> {
     let sender = analytics.stream.get_sender().unwrap();
     for i in 0..20 {
         let fields = HashMap::from([
-            ("timestamp".to_string(), format!("{}", i)),
+            ("timestamp".to_string(), format!("{i}")),
             ("value".to_string(), format!("{}", i as f64)),
         ]);
 
@@ -224,6 +234,8 @@ fn test_real_time_analytics() -> Result<()> {
 }
 
 #[test]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn test_batch_to_dataframe() -> Result<()> {
     let headers = vec!["id".to_string(), "value".to_string()];
 
@@ -233,7 +245,7 @@ fn test_batch_to_dataframe() -> Result<()> {
     let mut records = Vec::new();
     for i in 0..10 {
         let fields = HashMap::from([
-            ("id".to_string(), format!("{}", i)),
+            ("id".to_string(), format!("{i}")),
             ("value".to_string(), format!("{}", i as f64)),
         ]);
 

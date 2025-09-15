@@ -4,9 +4,11 @@ use pandrs::{DataFrame, Series};
 
 #[test]
 #[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn test_series_rolling_operations() -> Result<()> {
-    let data = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0];
-    let series = Series::new(data, Some("test".to_string()))?;
+    let data = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0];
+    let series = Series::new(data.to_vec(), Some("test".to_string()))?;
 
     // Test rolling mean
     let rolling_mean = series.rolling(3)?.mean()?;
@@ -51,9 +53,11 @@ fn test_series_rolling_operations() -> Result<()> {
 
 #[test]
 #[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn test_series_expanding_operations() -> Result<()> {
-    let data = vec![10.0, 20.0, 30.0, 40.0, 50.0];
-    let series = Series::new(data, Some("test".to_string()))?;
+    let data = [10.0, 20.0, 30.0, 40.0, 50.0];
+    let series = Series::new(data.to_vec(), Some("test".to_string()))?;
 
     // Test expanding mean with min_periods=2
     let expanding_mean = series.expanding(2)?.mean()?;
@@ -87,9 +91,11 @@ fn test_series_expanding_operations() -> Result<()> {
 
 #[test]
 #[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn test_series_ewm_operations() -> Result<()> {
-    let data = vec![10.0, 20.0, 30.0, 40.0, 50.0];
-    let series = Series::new(data, Some("test".to_string()))?;
+    let data = [10.0, 20.0, 30.0, 40.0, 50.0];
+    let series = Series::new(data.to_vec(), Some("test".to_string()))?;
 
     // Test EWM mean with alpha=0.5
     let ewm_mean = series.ewm().alpha(0.5)?.mean()?;
@@ -119,9 +125,11 @@ fn test_series_ewm_operations() -> Result<()> {
 
 #[test]
 #[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn test_rolling_custom_functions() -> Result<()> {
-    let data = vec![1.0, 2.0, 3.0, 4.0, 5.0];
-    let series = Series::new(data, Some("test".to_string()))?;
+    let data = [1.0, 2.0, 3.0, 4.0, 5.0];
+    let series = Series::new(data.to_vec(), Some("test".to_string()))?;
 
     // Test custom range function (max - min)
     let rolling_range = series.rolling(3)?.apply(|window| {
@@ -140,9 +148,11 @@ fn test_rolling_custom_functions() -> Result<()> {
 
 #[test]
 #[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn test_rolling_quantiles() -> Result<()> {
-    let data = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0];
-    let series = Series::new(data, Some("test".to_string()))?;
+    let data = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0];
+    let series = Series::new(data.to_vec(), Some("test".to_string()))?;
 
     // Test 50th percentile (median)
     let rolling_median = series.rolling(3)?.quantile(0.5)?;
@@ -159,10 +169,12 @@ fn test_rolling_quantiles() -> Result<()> {
 
 #[test]
 #[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn test_dataframe_rolling_operations() -> Result<()> {
     // Create test DataFrame
     let mut df = DataFrame::new();
-    let values = vec!["10", "20", "30", "40", "50"];
+    let values = ["10", "20", "30", "40", "50"];
     let dates = vec![
         "2024-01-01",
         "2024-01-02",
@@ -206,9 +218,11 @@ fn test_dataframe_rolling_operations() -> Result<()> {
 
 #[test]
 #[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn test_window_edge_cases() -> Result<()> {
-    let data = vec![1.0, 2.0, 3.0];
-    let series = Series::new(data, Some("test".to_string()))?;
+    let data = [1.0, 2.0, 3.0];
+    let series = Series::new(data.to_vec(), Some("test".to_string()))?;
 
     // Test zero window size (should error)
     assert!(series.rolling(0).is_err());
@@ -232,9 +246,11 @@ fn test_window_edge_cases() -> Result<()> {
 
 #[test]
 #[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn test_rolling_min_periods() -> Result<()> {
-    let data = vec![1.0, 2.0, 3.0, 4.0, 5.0];
-    let series = Series::new(data, Some("test".to_string()))?;
+    let data = [1.0, 2.0, 3.0, 4.0, 5.0];
+    let series = Series::new(data.to_vec(), Some("test".to_string()))?;
 
     // Test rolling with min_periods
     let rolling_min_periods = series.rolling(5)?.min_periods(3).mean()?;
@@ -252,9 +268,11 @@ fn test_rolling_min_periods() -> Result<()> {
 
 #[test]
 #[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn test_centered_rolling() -> Result<()> {
-    let data = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0];
-    let series = Series::new(data, Some("test".to_string()))?;
+    let data = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0];
+    let series = Series::new(data.to_vec(), Some("test".to_string()))?;
 
     // Test centered rolling window
     let rolling_centered = series.rolling(3)?.center(true).mean()?;
@@ -269,9 +287,11 @@ fn test_centered_rolling() -> Result<()> {
 
 #[test]
 #[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn test_window_count_operation() -> Result<()> {
-    let data = vec![1.0, 2.0, 3.0, 4.0, 5.0];
-    let series = Series::new(data, Some("test".to_string()))?;
+    let data = [1.0, 2.0, 3.0, 4.0, 5.0];
+    let series = Series::new(data.to_vec(), Some("test".to_string()))?;
 
     // Test rolling count
     let rolling_count = series.rolling(3)?.count()?;
@@ -288,6 +308,8 @@ fn test_window_count_operation() -> Result<()> {
 
 #[test]
 #[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn test_large_dataset_performance() -> Result<()> {
     // Test with a reasonably large dataset to ensure performance is acceptable
     let large_data: Vec<f64> = (0..1000).map(|i| i as f64).collect();
@@ -300,8 +322,7 @@ fn test_large_dataset_performance() -> Result<()> {
     // Should complete within reasonable time (adjust threshold as needed)
     assert!(
         duration.as_millis() < 1000,
-        "Rolling operation took too long: {:?}",
-        duration
+        "Rolling operation took too long: {duration:?}"
     );
 
     let start = std::time::Instant::now();
@@ -310,8 +331,7 @@ fn test_large_dataset_performance() -> Result<()> {
 
     assert!(
         duration.as_millis() < 1000,
-        "Expanding operation took too long: {:?}",
-        duration
+        "Expanding operation took too long: {duration:?}"
     );
 
     let start = std::time::Instant::now();
@@ -320,8 +340,7 @@ fn test_large_dataset_performance() -> Result<()> {
 
     assert!(
         duration.as_millis() < 1000,
-        "EWM operation took too long: {:?}",
-        duration
+        "EWM operation took too long: {duration:?}"
     );
 
     Ok(())

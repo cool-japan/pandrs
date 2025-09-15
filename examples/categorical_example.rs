@@ -6,6 +6,7 @@ use pandrs::{DataFrame, Series};
 type StringCategorical = Categorical<String>;
 
 #[allow(clippy::result_large_err)]
+#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     println!("=== Example of Using Categorical Data Type ===\n");
 
@@ -24,7 +25,7 @@ fn main() -> Result<()> {
         false, // Unordered
     )?;
 
-    println!("Original Data: {:?}", values);
+    println!("Original Data: {values:?}");
     println!("Categories: {:?}", cat.categories());
     println!("Order Type: {:?}", cat.ordered());
     println!("Data Length: {}", cat.len());
@@ -114,7 +115,7 @@ fn main() -> Result<()> {
         Series::new(pop_str, Some("Population".to_string()))?,
     )?;
 
-    println!("Original DataFrame:\n{:?}", df);
+    println!("Original DataFrame:\n{df:?}");
 
     // ===========================================================
     // Creating Simplified Categorical DataFrame
@@ -148,7 +149,7 @@ fn main() -> Result<()> {
         Series::new(regions_str, Some("Region".to_string()))?,
     )?;
 
-    println!("\nDataFrame after adding categorical data:\n{:?}", df_cat);
+    println!("\nDataFrame after adding categorical data:\n{df_cat:?}");
 
     // Check if columns are categorical
     println!(
@@ -184,7 +185,7 @@ fn main() -> Result<()> {
 
     let multi_df = DataFrame::from_categoricals(multi_categoricals.to_vec())?;
 
-    println!("Multi-Categorical DataFrame:\n{:?}", multi_df);
+    println!("Multi-Categorical DataFrame:\n{multi_df:?}");
     println!(
         "\nIs 'Product' column categorical: {}",
         multi_df.is_categorical("Product")
@@ -218,11 +219,11 @@ fn main() -> Result<()> {
         Series::new(sales_str, Some("Sales".to_string()))?,
     )?;
 
-    println!("Original DataFrame:\n{:?}", df_simple);
+    println!("Original DataFrame:\n{df_simple:?}");
 
     // Aggregate by product
     let product_counts = df_simple.value_counts("Product")?;
-    println!("\nProduct Counts:\n{:?}", product_counts);
+    println!("\nProduct Counts:\n{product_counts:?}");
 
     // Transformation and interaction between categorical and series
     println!("\n--- Interaction between Categorical and Series ---");
@@ -237,7 +238,7 @@ fn main() -> Result<()> {
 
     // Convert to series
     let letter_series = letter_cat.to_series(Some("Letter".to_string()))?;
-    println!("Converted from categorical to series: {:?}", letter_series);
+    println!("Converted from categorical to series: {letter_series:?}");
 
     // Additional information about categorical data
     println!("\n--- Characteristics of Categorical Data ---");

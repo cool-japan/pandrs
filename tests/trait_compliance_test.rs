@@ -14,6 +14,8 @@ pub struct TraitComplianceTestSuite;
 
 impl TraitComplianceTestSuite {
     /// Run all trait compliance tests
+    #[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err)]
     pub fn run_all_tests() -> Result<TestResults> {
         let mut results = TestResults::new();
 
@@ -301,6 +303,12 @@ pub struct TestResults {
     results: Vec<(String, TestResult)>,
 }
 
+impl Default for TestResults {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TestResults {
     pub fn new() -> Self {
         Self {
@@ -344,7 +352,7 @@ impl TestResults {
         println!();
 
         for (name, result) in &self.results {
-            println!("=== {} ===", name);
+            println!("=== {name} ===");
             result.print_details();
             println!();
         }
@@ -596,10 +604,14 @@ mod tests {
 
     #[test]
     fn test_error_propagation() {
+        #[allow(clippy::result_large_err)]
+        #[allow(clippy::result_large_err)]
         fn fallible_operation() -> Result<i32> {
             Err(Error::InvalidOperation("test error".to_string()))
         }
 
+        #[allow(clippy::result_large_err)]
+        #[allow(clippy::result_large_err)]
         fn chain_operations() -> Result<i32> {
             let _value = fallible_operation()?;
             Ok(42)

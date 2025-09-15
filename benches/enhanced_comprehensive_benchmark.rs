@@ -39,7 +39,7 @@ fn create_realistic_dataframe(size: usize, config: &BenchmarkConfig) -> Result<O
 
     // Generate categorical data with realistic cardinality
     let categories: Vec<String> = (0..config.string_cardinality)
-        .map(|i| format!("Category_{:06}", i))
+        .map(|i| format!("Category_{i:06}"))
         .collect();
 
     let mut cat_data = Vec::with_capacity(size);
@@ -159,7 +159,7 @@ fn benchmark_enhanced_aggregations(c: &mut Criterion) {
 
         for (op_name, op_func) in operations.iter() {
             group.bench_with_input(
-                BenchmarkId::new(format!("{}_size_{}", op_name, size), size),
+                BenchmarkId::new(format!("{op_name}_size_{size}"), size),
                 &df,
                 |b, df| {
                     b.iter(|| black_box(op_func(df)));
@@ -169,7 +169,7 @@ fn benchmark_enhanced_aggregations(c: &mut Criterion) {
             // JIT comparison if enabled
             if config.enable_jit_comparison {
                 group.bench_with_input(
-                    BenchmarkId::new(format!("{}_jit_size_{}", op_name, size), size),
+                    BenchmarkId::new(format!("{op_name}_jit_size_{size}"), size),
                     &df,
                     |b, df| {
                         let _jit_config = ParallelConfig::default();

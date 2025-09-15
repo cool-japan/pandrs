@@ -69,9 +69,9 @@ fn test_groupby_mean() {
 fn test_groupby_numeric_keys() {
     // Grouping by numeric keys
     let values = Series::new(vec![10, 20, 30, 40, 50], Some("values".to_string())).unwrap();
-    let keys = vec![1, 2, 1, 2, 3];
+    let keys = [1, 2, 1, 2, 3];
 
-    let group_by = GroupBy::new(keys, &values, Some("numeric_group".to_string())).unwrap();
+    let group_by = GroupBy::new(keys.to_vec(), &values, Some("numeric_group".to_string())).unwrap();
 
     assert_eq!(group_by.group_count(), 3); // 3 groups: 1, 2, 3
 

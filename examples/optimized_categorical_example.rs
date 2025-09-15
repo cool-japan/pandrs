@@ -11,6 +11,7 @@ fn main() {
 }
 
 #[cfg(feature = "optimized")]
+#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     println!("=== Example of Optimized Categorical Data ===\n");
 
@@ -92,9 +93,9 @@ fn main() -> Result<()> {
     let city_view = df.column("city")?;
 
     if let Some(str_col) = city_view.as_string() {
-        for i in 0..df.row_count() {
+        for (i, item) in is_tokyo.iter_mut().enumerate().take(df.row_count()) {
             if let Ok(Some(city)) = str_col.get(i) {
-                is_tokyo[i] = city == "Tokyo";
+                *item = city == "Tokyo";
             }
         }
     }
