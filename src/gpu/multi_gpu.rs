@@ -3,13 +3,13 @@
 //! This module provides functionality to distribute computations across multiple GPU devices
 //! for improved performance and memory capacity.
 
+use ndarray::{Array1, Array2, Axis};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use ndarray::{Array1, Array2, Axis};
 
 use crate::error::{Error, Result};
 use crate::gpu::operations::{GpuMatrix, GpuVector};
-use crate::gpu::{GpuConfig, GpuError, GpuManager, GpuDeviceStatus};
+use crate::gpu::{GpuConfig, GpuDeviceStatus, GpuError, GpuManager};
 
 #[cfg(feature = "cuda")]
 use cudarc::driver::CudaDevice;
@@ -68,7 +68,7 @@ impl MultiGpuManager {
     pub fn new(config: MultiGpuConfig) -> Result<Self> {
         let mut device_managers = HashMap::new();
         let mut device_statuses = HashMap::new();
-        
+
         // Initialize GPU managers for each device
         for &device_id in &config.device_ids {
             let device_config = GpuConfig {
@@ -76,17 +76,17 @@ impl MultiGpuManager {
                 memory_limit: config.memory_limit_per_device,
                 ..GpuConfig::default()
             };
-            
+
             let manager = GpuManager::with_config(device_config);
             let status = manager.device_info();
-            
+
             device_managers.insert(device_id, manager);
             device_statuses.insert(device_id, status);
         }
-        
+
         // Check P2P capabilities
         let p2p_available = Self::check_p2p_support(&config.device_ids);
-        
+
         Ok(Self {
             config,
             device_managers,
@@ -141,14 +141,14 @@ impl MultiGpuManager {
         let num_devices = self.device_count();
         let rows = matrix.data.shape()[0];
         let cols = matrix.data.shape()[1];
-        
+
         let rows_per_device = (rows + num_devices - 1) / num_devices; // Ceiling division
         let mut distributed = Vec::new();
-        
+
         for (i, &device_id) in self.config.device_ids.iter().enumerate() {
             let start_row = i * rows_per_device;
             let end_row = ((i + 1) * rows_per_device).min(rows);
-            
+
             if start_row < rows {
                 let chunk = matrix.data.slice(s![start_row..end_row, ..]).to_owned();
                 let gpu_chunk = GpuMatrix {
@@ -158,7 +158,7 @@ impl MultiGpuManager {
                 distributed.push((device_id, gpu_chunk));
             }
         }
-        
+
         Ok(distributed)
     }
 
@@ -167,14 +167,14 @@ impl MultiGpuManager {
         let num_devices = self.device_count();
         let rows = matrix.data.shape()[0];
         let cols = matrix.data.shape()[1];
-        
+
         let cols_per_device = (cols + num_devices - 1) / num_devices;
         let mut distributed = Vec::new();
-        
+
         for (i, &device_id) in self.config.device_ids.iter().enumerate() {
             let start_col = i * cols_per_device;
             let end_col = ((i + 1) * cols_per_device).min(cols);
-            
+
             if start_col < cols {
                 let chunk = matrix.data.slice(s![.., start_col..end_col]).to_owned();
                 let gpu_chunk = GpuMatrix {
@@ -184,7 +184,7 @@ impl MultiGpuManager {
                 distributed.push((device_id, gpu_chunk));
             }
         }
-        
+
         Ok(distributed)
     }
 
@@ -195,7 +195,9 @@ impl MultiGpuManager {
         if let Some(&first_device) = self.config.device_ids.first() {
             Ok(vec![(first_device, matrix.clone())])
         } else {
-            Err(Error::from(GpuError::DeviceError("No devices available".to_string())))
+            Err(Error::from(GpuError::DeviceError(
+                "No devices available".to_string(),
+            )))
         }
     }
 
@@ -209,7 +211,9 @@ impl MultiGpuManager {
     /// Collect distributed results and combine them
     pub fn collect_results(&self, distributed_results: Vec<(i32, GpuMatrix)>) -> Result<GpuMatrix> {
         if distributed_results.is_empty() {
-            return Err(Error::from(GpuError::ComputationError("No results to collect".to_string())));
+            return Err(Error::from(GpuError::ComputationError(
+                "No results to collect".to_string(),
+            )));
         }
 
         match self.config.distribution_strategy {
@@ -221,34 +225,40 @@ impl MultiGpuManager {
     }
 
     /// Collect data parallel results - concatenate along rows
-    fn collect_data_parallel(&self, mut distributed_results: Vec<(i32, GpuMatrix)>) -> Result<GpuMatrix> {
+    fn collect_data_parallel(
+        &self,
+        mut distributed_results: Vec<(i32, GpuMatrix)>,
+    ) -> Result<GpuMatrix> {
         // Sort by device ID to maintain order
         distributed_results.sort_by_key(|(device_id, _)| *device_id);
-        
+
         let matrices: Vec<Array2<f64>> = distributed_results
             .into_iter()
             .map(|(_, matrix)| matrix.data)
             .collect();
-        
+
         if matrices.is_empty() {
-            return Err(Error::from(GpuError::ComputationError("No matrices to concatenate".to_string())));
+            return Err(Error::from(GpuError::ComputationError(
+                "No matrices to concatenate".to_string(),
+            )));
         }
 
         // Concatenate along axis 0 (rows)
         let first_shape = matrices[0].shape();
         let total_rows: usize = matrices.iter().map(|m| m.shape()[0]).sum();
         let cols = first_shape[1];
-        
+
         let mut result = Array2::zeros((total_rows, cols));
         let mut current_row = 0;
-        
+
         for matrix in matrices {
             let matrix_rows = matrix.shape()[0];
-            result.slice_mut(s![current_row..current_row + matrix_rows, ..])
+            result
+                .slice_mut(s![current_row..current_row + matrix_rows, ..])
                 .assign(&matrix);
             current_row += matrix_rows;
         }
-        
+
         Ok(GpuMatrix {
             data: result,
             on_gpu: false,
@@ -256,33 +266,39 @@ impl MultiGpuManager {
     }
 
     /// Collect model parallel results - concatenate along columns
-    fn collect_model_parallel(&self, mut distributed_results: Vec<(i32, GpuMatrix)>) -> Result<GpuMatrix> {
+    fn collect_model_parallel(
+        &self,
+        mut distributed_results: Vec<(i32, GpuMatrix)>,
+    ) -> Result<GpuMatrix> {
         distributed_results.sort_by_key(|(device_id, _)| *device_id);
-        
+
         let matrices: Vec<Array2<f64>> = distributed_results
             .into_iter()
             .map(|(_, matrix)| matrix.data)
             .collect();
-        
+
         if matrices.is_empty() {
-            return Err(Error::from(GpuError::ComputationError("No matrices to concatenate".to_string())));
+            return Err(Error::from(GpuError::ComputationError(
+                "No matrices to concatenate".to_string(),
+            )));
         }
 
         // Concatenate along axis 1 (columns)
         let first_shape = matrices[0].shape();
         let rows = first_shape[0];
         let total_cols: usize = matrices.iter().map(|m| m.shape()[1]).sum();
-        
+
         let mut result = Array2::zeros((rows, total_cols));
         let mut current_col = 0;
-        
+
         for matrix in matrices {
             let matrix_cols = matrix.shape()[1];
-            result.slice_mut(s![.., current_col..current_col + matrix_cols])
+            result
+                .slice_mut(s![.., current_col..current_col + matrix_cols])
                 .assign(&matrix);
             current_col += matrix_cols;
         }
-        
+
         Ok(GpuMatrix {
             data: result,
             on_gpu: false,
@@ -294,7 +310,9 @@ impl MultiGpuManager {
         if let Some((_, result)) = distributed_results.into_iter().last() {
             Ok(result)
         } else {
-            Err(Error::from(GpuError::ComputationError("No pipeline result".to_string())))
+            Err(Error::from(GpuError::ComputationError(
+                "No pipeline result".to_string(),
+            )))
         }
     }
 
@@ -308,10 +326,10 @@ impl MultiGpuManager {
     pub fn distributed_matmul(&self, a: &GpuMatrix, b: &GpuMatrix) -> Result<GpuMatrix> {
         // Distribute matrix A across devices
         let distributed_a = self.distribute_matrix(a)?;
-        
+
         // Each device computes its chunk of the result
         let mut distributed_results = Vec::new();
-        
+
         for (device_id, a_chunk) in distributed_a {
             if let Some(manager) = self.device_managers.get(&device_id) {
                 // For data parallel, each device multiplies its chunk of A with full B
@@ -320,7 +338,7 @@ impl MultiGpuManager {
                 distributed_results.push((device_id, result_chunk));
             }
         }
-        
+
         // Collect and combine results
         self.collect_results(distributed_results)
     }
@@ -331,7 +349,7 @@ impl MultiGpuManager {
         // 1. Transfer matrices to the specific GPU device
         // 2. Perform the multiplication using device-specific CUDA context
         // 3. Return the result
-        
+
         // For now, perform CPU multiplication as fallback
         let result_data = a.data.dot(&b.data);
         Ok(GpuMatrix {
@@ -357,11 +375,11 @@ impl MultiGpuManager {
     /// Get memory usage across all devices
     pub fn get_memory_usage(&self) -> HashMap<i32, (usize, usize)> {
         let mut usage = HashMap::new();
-        
+
         for (&device_id, status) in &self.device_statuses {
             usage.insert(device_id, (status.used_memory, status.total_memory));
         }
-        
+
         usage
     }
 
@@ -369,11 +387,11 @@ impl MultiGpuManager {
     pub fn balance_load(&mut self) -> Result<()> {
         // Get current memory usage
         let memory_usage = self.get_memory_usage();
-        
+
         // Find devices with low utilization
         let mut low_util_devices = Vec::new();
         let mut high_util_devices = Vec::new();
-        
+
         for (&device_id, &(used, total)) in &memory_usage {
             let utilization = used as f64 / total as f64;
             if utilization < 0.3 {
@@ -382,12 +400,15 @@ impl MultiGpuManager {
                 high_util_devices.push(device_id);
             }
         }
-        
+
         // In a real implementation, would migrate work from high to low utilization devices
         // For now, just log the information
-        log::info!("Load balancing: {} low util devices, {} high util devices", 
-                  low_util_devices.len(), high_util_devices.len());
-        
+        log::info!(
+            "Load balancing: {} low util devices, {} high util devices",
+            low_util_devices.len(),
+            high_util_devices.len()
+        );
+
         Ok(())
     }
 }
@@ -398,11 +419,11 @@ static mut MULTI_GPU_MANAGER: Option<Mutex<MultiGpuManager>> = None;
 /// Initialize global multi-GPU manager
 pub fn init_multi_gpu(config: MultiGpuConfig) -> Result<()> {
     let manager = MultiGpuManager::new(config)?;
-    
+
     unsafe {
         MULTI_GPU_MANAGER = Some(Mutex::new(manager));
     }
-    
+
     Ok(())
 }
 
@@ -445,10 +466,10 @@ mod tests {
             device_ids: vec![0],
             ..MultiGpuConfig::default()
         };
-        
+
         let manager = MultiGpuManager::new(config);
         assert!(manager.is_ok());
-        
+
         let manager = manager.unwrap();
         assert_eq!(manager.device_count(), 1);
     }
@@ -460,24 +481,25 @@ mod tests {
             distribution_strategy: DistributionStrategy::DataParallel,
             ..MultiGpuConfig::default()
         };
-        
+
         let manager = MultiGpuManager::new(config).unwrap();
-        
-        let matrix_data = Array2::from_shape_vec((4, 3), vec![
-            1.0, 2.0, 3.0,
-            4.0, 5.0, 6.0,
-            7.0, 8.0, 9.0,
-            10.0, 11.0, 12.0,
-        ]).unwrap();
-        
+
+        let matrix_data = Array2::from_shape_vec(
+            (4, 3),
+            vec![
+                1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0,
+            ],
+        )
+        .unwrap();
+
         let matrix = GpuMatrix {
             data: matrix_data,
             on_gpu: false,
         };
-        
+
         let distributed = manager.distribute_matrix(&matrix).unwrap();
         assert_eq!(distributed.len(), 2);
-        
+
         // Check that chunks have correct sizes
         let total_rows: usize = distributed.iter().map(|(_, m)| m.data.shape()[0]).sum();
         assert_eq!(total_rows, 4);
@@ -490,18 +512,32 @@ mod tests {
             distribution_strategy: DistributionStrategy::DataParallel,
             ..MultiGpuConfig::default()
         };
-        
+
         let manager = MultiGpuManager::new(config).unwrap();
-        
+
         // Create distributed results
-        let chunk1_data = Array2::from_shape_vec((2, 3), vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]).unwrap();
-        let chunk2_data = Array2::from_shape_vec((2, 3), vec![7.0, 8.0, 9.0, 10.0, 11.0, 12.0]).unwrap();
-        
+        let chunk1_data =
+            Array2::from_shape_vec((2, 3), vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]).unwrap();
+        let chunk2_data =
+            Array2::from_shape_vec((2, 3), vec![7.0, 8.0, 9.0, 10.0, 11.0, 12.0]).unwrap();
+
         let distributed_results = vec![
-            (0, GpuMatrix { data: chunk1_data, on_gpu: false }),
-            (1, GpuMatrix { data: chunk2_data, on_gpu: false }),
+            (
+                0,
+                GpuMatrix {
+                    data: chunk1_data,
+                    on_gpu: false,
+                },
+            ),
+            (
+                1,
+                GpuMatrix {
+                    data: chunk2_data,
+                    on_gpu: false,
+                },
+            ),
         ];
-        
+
         let result = manager.collect_results(distributed_results).unwrap();
         assert_eq!(result.data.shape(), &[4, 3]);
     }

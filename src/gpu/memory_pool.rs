@@ -35,12 +35,12 @@ pub struct MemoryPoolConfig {
 impl Default for MemoryPoolConfig {
     fn default() -> Self {
         Self {
-            initial_size: 256 * 1024 * 1024,    // 256MB
-            max_size: 2 * 1024 * 1024 * 1024,   // 2GB
-            min_allocation_size: 4096,           // 4KB
+            initial_size: 256 * 1024 * 1024,  // 256MB
+            max_size: 2 * 1024 * 1024 * 1024, // 2GB
+            min_allocation_size: 4096,        // 4KB
             enable_compaction: true,
-            cleanup_interval: 30,                // 30 seconds
-            max_allocation_age: 300,             // 5 minutes
+            cleanup_interval: 30,    // 30 seconds
+            max_allocation_age: 300, // 5 minutes
             growth_factor: 1.5,
         }
     }
@@ -125,7 +125,7 @@ impl GpuMemoryPool {
     /// Create a new GPU memory pool
     pub fn new(device_id: i32, config: MemoryPoolConfig) -> Result<Self> {
         let device = Self::get_cuda_device(device_id)?;
-        
+
         let mut pool = Self {
             config,
             device_id,
@@ -140,10 +140,10 @@ impl GpuMemoryPool {
             #[cfg(not(feature = "cuda"))]
             device: None,
         };
-        
+
         // Pre-allocate initial pool
         pool.expand_pool(pool.config.initial_size)?;
-        
+
         Ok(pool)
     }
 
@@ -164,10 +164,10 @@ impl GpuMemoryPool {
     pub fn allocate(&mut self, size: usize) -> Result<GpuAllocation> {
         // Round up to minimum allocation size
         let aligned_size = self.align_size(size);
-        
+
         // Check for periodic cleanup
         self.maybe_cleanup();
-        
+
         // Try to find a suitable free block
         if let Some(block) = self.find_free_block(aligned_size) {
             self.stats.cache_hits += 1;
@@ -181,24 +181,26 @@ impl GpuMemoryPool {
     /// Deallocate memory back to the pool
     pub fn deallocate(&mut self, allocation: GpuAllocation) -> Result<()> {
         let ptr_addr = allocation.ptr_address();
-        
+
         if let Some(block) = self.allocated_blocks.remove(&ptr_addr) {
             let mut block_guard = block.lock().unwrap();
             block_guard.is_free = true;
             block_guard.allocation_info = None;
-            
+
             // Add back to free blocks
             let size = block_guard.size;
-            self.free_blocks.entry(size).or_insert_with(VecDeque::new)
+            self.free_blocks
+                .entry(size)
+                .or_insert_with(VecDeque::new)
                 .push_back(block.clone());
-            
+
             self.stats.total_deallocations += 1;
             self.stats.total_bytes_deallocated += size as u64;
-            
+
             Ok(())
         } else {
             Err(Error::from(GpuError::MemoryError(
-                "Invalid allocation pointer".to_string()
+                "Invalid allocation pointer".to_string(),
             )))
         }
     }
@@ -206,12 +208,12 @@ impl GpuMemoryPool {
     /// Get current memory usage statistics
     pub fn get_stats(&self) -> MemoryPoolStats {
         let mut stats = self.stats.clone();
-        
+
         if stats.total_allocations > 0 {
-            stats.avg_allocation_size = 
+            stats.avg_allocation_size =
                 stats.total_bytes_allocated as f64 / stats.total_allocations as f64;
         }
-        
+
         stats
     }
 
@@ -229,11 +231,11 @@ impl GpuMemoryPool {
     pub fn cleanup(&mut self) -> Result<()> {
         let now = Instant::now();
         let max_age = Duration::from_secs(self.config.max_allocation_age);
-        
+
         // Remove old unused allocations
         let mut removed_size = 0;
         let mut blocks_to_remove = Vec::new();
-        
+
         for (size, blocks) in &mut self.free_blocks {
             blocks.retain(|block| {
                 let block_guard = block.lock().unwrap();
@@ -249,25 +251,25 @@ impl GpuMemoryPool {
                     true
                 }
             });
-            
+
             if blocks.is_empty() {
                 blocks_to_remove.push(*size);
             }
         }
-        
+
         // Remove empty entries
         for size in blocks_to_remove {
             self.free_blocks.remove(&size);
         }
-        
+
         self.current_size -= removed_size;
         self.last_cleanup = now;
-        
+
         // Trigger compaction if enabled
         if self.config.enable_compaction {
             self.compact_memory()?;
         }
-        
+
         Ok(())
     }
 
@@ -277,11 +279,11 @@ impl GpuMemoryPool {
         // 1. Identify fragmented regions
         // 2. Move active allocations to consolidate free space
         // 3. Update all pointers and references
-        
+
         self.stats.compaction_count += 1;
-        
+
         log::info!("Memory compaction completed for device {}", self.device_id);
-        
+
         Ok(())
     }
 
@@ -293,7 +295,7 @@ impl GpuMemoryPool {
                 return Some(block);
             }
         }
-        
+
         // Look for larger blocks that can be split
         for (&block_size, blocks) in self.free_blocks.range_mut(size..) {
             if let Some(block) = blocks.pop_front() {
@@ -305,7 +307,7 @@ impl GpuMemoryPool {
                 return Some(block);
             }
         }
-        
+
         None
     }
 
@@ -320,15 +322,15 @@ impl GpuMemoryPool {
             in_use: true,
             ref_count: 1,
         });
-        
+
         let ptr_addr = self.get_ptr_address(&block_guard);
         drop(block_guard);
-        
+
         self.allocated_blocks.insert(ptr_addr, block);
-        
+
         self.stats.total_allocations += 1;
         self.stats.total_bytes_allocated += size as u64;
-        
+
         Ok(GpuAllocation::new(ptr_addr, size))
     }
 
@@ -337,23 +339,23 @@ impl GpuMemoryPool {
         // Check if we need to expand the pool
         if self.current_size + size > self.config.max_size {
             return Err(Error::from(GpuError::MemoryError(
-                "Memory pool size limit exceeded".to_string()
+                "Memory pool size limit exceeded".to_string(),
             )));
         }
-        
+
         // Allocate new memory block
         let block = self.allocate_gpu_memory(size)?;
         let ptr_addr = self.get_ptr_address(&block);
-        
+
         let block = Arc::new(Mutex::new(block));
         self.allocated_blocks.insert(ptr_addr, block.clone());
-        
+
         self.current_size += size;
         self.peak_usage = self.peak_usage.max(self.current_size);
-        
+
         self.stats.total_allocations += 1;
         self.stats.total_bytes_allocated += size as u64;
-        
+
         Ok(GpuAllocation::new(ptr_addr, size))
     }
 
@@ -375,9 +377,10 @@ impl GpuMemoryPool {
                             ref_count: 1,
                         }),
                     }),
-                    Err(e) => Err(Error::from(GpuError::MemoryError(
-                        format!("GPU memory allocation failed: {}", e)
-                    ))),
+                    Err(e) => Err(Error::from(GpuError::MemoryError(format!(
+                        "GPU memory allocation failed: {}",
+                        e
+                    )))),
                 }
             } else {
                 // Fallback for when CUDA is not available
@@ -429,14 +432,14 @@ impl GpuMemoryPool {
     fn expand_pool(&mut self, additional_size: usize) -> Result<()> {
         if self.current_size + additional_size > self.config.max_size {
             return Err(Error::from(GpuError::MemoryError(
-                "Cannot expand pool beyond maximum size".to_string()
+                "Cannot expand pool beyond maximum size".to_string(),
             )));
         }
-        
+
         // Allocate large block and split it into smaller chunks
         let chunk_size = self.config.min_allocation_size * 16; // 64KB chunks
         let num_chunks = additional_size / chunk_size;
-        
+
         for _ in 0..num_chunks {
             let block = self.allocate_gpu_memory(chunk_size)?;
             let block = Arc::new(Mutex::new(MemoryBlock {
@@ -444,14 +447,15 @@ impl GpuMemoryPool {
                 allocation_info: None,
                 ..block
             }));
-            
-            self.free_blocks.entry(chunk_size)
+
+            self.free_blocks
+                .entry(chunk_size)
                 .or_insert_with(VecDeque::new)
                 .push_back(block);
         }
-        
+
         self.current_size += num_chunks * chunk_size;
-        
+
         Ok(())
     }
 
@@ -527,16 +531,16 @@ impl GlobalMemoryPoolManager {
                 return Ok(pool.clone());
             }
         }
-        
+
         // Create new pool
         let pool = GpuMemoryPool::new(device_id, self.default_config.clone())?;
         let pool = Arc::new(Mutex::new(pool));
-        
+
         {
             let mut pools = self.pools.write().unwrap();
             pools.insert(device_id, pool.clone());
         }
-        
+
         Ok(pool)
     }
 
@@ -544,31 +548,31 @@ impl GlobalMemoryPoolManager {
     pub fn get_all_stats(&self) -> HashMap<i32, MemoryPoolStats> {
         let pools = self.pools.read().unwrap();
         let mut stats = HashMap::new();
-        
+
         for (&device_id, pool) in pools.iter() {
             let pool_guard = pool.lock().unwrap();
             stats.insert(device_id, pool_guard.get_stats());
         }
-        
+
         stats
     }
 
     /// Cleanup all pools
     pub fn cleanup_all(&self) -> Result<()> {
         let pools = self.pools.read().unwrap();
-        
+
         for pool in pools.values() {
             let mut pool_guard = pool.lock().unwrap();
             pool_guard.cleanup()?;
         }
-        
+
         Ok(())
     }
 }
 
 /// Global memory pool manager instance
 lazy_static::lazy_static! {
-    static ref GLOBAL_MEMORY_POOL: GlobalMemoryPoolManager = 
+    static ref GLOBAL_MEMORY_POOL: GlobalMemoryPoolManager =
         GlobalMemoryPoolManager::new(MemoryPoolConfig::default());
 }
 
@@ -608,20 +612,20 @@ mod tests {
             initial_size: 1024 * 1024, // 1MB
             ..MemoryPoolConfig::default()
         };
-        
+
         let mut pool = GpuMemoryPool::new(0, config).unwrap();
-        
+
         // Allocate some memory
         let alloc1 = pool.allocate(1024).unwrap();
         assert_eq!(alloc1.size(), 4096); // Aligned to min allocation size
-        
+
         let alloc2 = pool.allocate(2048).unwrap();
         assert_eq!(alloc2.size(), 4096);
-        
+
         // Deallocate
         pool.deallocate(alloc1).unwrap();
         pool.deallocate(alloc2).unwrap();
-        
+
         // Check stats
         let stats = pool.get_stats();
         assert_eq!(stats.total_allocations, 2);
@@ -632,13 +636,13 @@ mod tests {
     fn test_memory_pool_stats() {
         let config = MemoryPoolConfig::default();
         let mut pool = GpuMemoryPool::new(0, config).unwrap();
-        
+
         let alloc = pool.allocate(1024).unwrap();
         let stats = pool.get_stats();
-        
+
         assert_eq!(stats.total_allocations, 1);
         assert!(stats.avg_allocation_size > 0.0);
-        
+
         pool.deallocate(alloc).unwrap();
         let stats = pool.get_stats();
         assert_eq!(stats.total_deallocations, 1);
@@ -648,7 +652,7 @@ mod tests {
     fn test_global_memory_pool() {
         let manager = get_memory_pool_manager();
         let pool = manager.get_pool(0).unwrap();
-        
+
         // Test that we get the same pool instance
         let pool2 = manager.get_pool(0).unwrap();
         assert_eq!(Arc::as_ptr(&pool), Arc::as_ptr(&pool2));
