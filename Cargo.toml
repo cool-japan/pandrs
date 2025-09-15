@@ -14,13 +14,13 @@ exclude = ["tests/", "benches/", "docs/", "examples/", ".github/"]
 [dependencies]
 num-traits = "0.2.19"
 chrono = { version = "0.4.38", features = ["serde"] }
-serde = { version = "1.0.219", features = ["derive"] }
-serde_json = "1.0.140"
+serde = { version = "1.0.210", features = ["derive"] }
+serde_json = "1.0.132"
 serde_yaml = "0.9.34"  # YAML serialization support
 toml = "0.8.8"  # TOML serialization support
-thiserror = "2.0.12"
+thiserror = "1.0.69"
 csv = "1.3.1"
-rand = "0.9.0"  # Random number generation
+rand = "0.9.2"  # Random number generation
 chrono-tz = "0.9.0"  # Timezone processing - compatible with chrono 0.4.38
 num_cpus = "1.16.0"  # For CPU core detection
 # Due to compatibility issues with plotters, using textplots-rs (text-based plots)
@@ -33,7 +33,7 @@ dirs = "5.0.1"  # Platform-specific user directories
 pbkdf2 = "0.12.2"  # PBKDF2 key derivation for credential security
 sha2 = "0.10.8"  # SHA-2 cryptographic hash functions
 aes-gcm = "0.10.3"  # AES-GCM encryption for secure credential storage
-async-trait = "0.1.75"  # Async trait support for mock implementations
+async-trait = "0.1.81"  # Async trait support for mock implementations
 # Enable Parquet support with latest version - updated for chrono compatibility
 parquet = { version = "53.3.1", optional = true }  # For Parquet file support
 arrow = { version = "53.3.1", optional = true }  # For Arrow format support
@@ -49,7 +49,7 @@ sqlx = { version = "0.7.3", features = ["runtime-tokio", "mysql", "postgres", "s
 rusqlite = "0.30.0"  # SQLite support
 
 # WebAssembly support (optional)
-wasm-bindgen = { version = "0.2.91", optional = true }  # WebAssembly bindings
+wasm-bindgen = { version = "0.2.92", optional = true }  # WebAssembly bindings
 js-sys = { version = "0.3.68", optional = true }  # JavaScript interop
 web-sys = { version = "0.3.68", features = [
     "Document", "Element", "HtmlCanvasElement", "Window",
@@ -64,10 +64,10 @@ ndarray = { version = "0.15.6", optional = true } # N-dimensional arrays
 
 # Distributed processing support (optional) - downgraded for chrono compatibility
 datafusion = { version = "30.0.0", optional = true }  # DataFrame processing engine
-uuid = { version = "1.4.1", features = ["v4", "serde"], optional = true }  # For unique IDs in distributed processing and serving
+uuid = { version = "1.8.0", features = ["v4", "serde"], optional = true }  # For unique IDs in distributed processing and serving
 futures = { version = "0.3.30", optional = true }  # For async operations in distributed processing
-tokio = { version = "1.40", features = ["full"], optional = true }  # Async runtime for streaming and resilience
-log = "0.4.20"  # Logging interface
+tokio = { version = "1.39", features = ["full"], optional = true }  # Async runtime for streaming and resilience
+log = "0.4.21"  # Logging interface
 
 # JIT compilation support (optional)
 cranelift = { version = "0.109.0", optional = true }  # JIT compiler
@@ -116,7 +116,7 @@ stable = ["optimized", "parquet", "excel", "sql", "streaming", "backward_compat"
 resilience = ["dep:tokio"]
 
 [dependencies.tempfile]
-version = "3.8.1"  # Create temporary files and directories
+version = "3.12.0"  # Create temporary files and directories
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
