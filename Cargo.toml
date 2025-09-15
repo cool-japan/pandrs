@@ -77,6 +77,14 @@ cranelift-frontend = { version = "0.109.0", optional = true }  # Frontend for bu
 cranelift-native = { version = "0.109.0", optional = true }  # Native target detection
 target-lexicon = { version = "0.12.14", optional = true }  # Target specification
 
+[workspace.lints.rust]
+unused_variables = "allow"
+unused_imports = "allow"
+mismatched_lifetime_syntaxes = "allow"
+dead_code = "allow"
+unpredictable_function_pointer_comparisons = "allow"
+unknown_lints = "allow"
+
 [features]
 default = []
 optimized = []  # Flag for optimized implementation

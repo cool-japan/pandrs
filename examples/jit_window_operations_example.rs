@@ -398,9 +398,7 @@ fn complex_financial_analysis(df: &DataFrame, jit_context: &JitWindowContext) ->
     let _vol_10 = df.jit_rolling(10, jit_context).std(1)?;
     let _vol_30 = df.jit_rolling(30, jit_context).std(1)?;
     let vol_duration = start.elapsed();
-    println!(
-        "     10-day and 30-day volatility computed in {vol_duration:?}"
-    );
+    println!("     10-day and 30-day volatility computed in {vol_duration:?}");
 
     // Step 3: Risk metrics
     println!("   Step 3: Computing Risk Metrics");

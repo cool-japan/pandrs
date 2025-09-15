@@ -157,9 +157,7 @@ fn test_input_validation() -> Result<()> {
 #[allow(clippy::result_large_err)]
 #[allow(clippy::result_large_err)]
 fn test_regex_caching_performance() -> Result<()> {
-    let large_data: Vec<String> = (0..1000)
-        .map(|i| format!("test_string_{i}_data"))
-        .collect();
+    let large_data: Vec<String> = (0..1000).map(|i| format!("test_string_{i}_data")).collect();
     let series = Series::new(large_data, Some("perf_test".to_string()))?;
     let str_accessor = series.str()?;
 

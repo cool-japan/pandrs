@@ -110,16 +110,13 @@ fn main() -> Result<()> {
     let end_filter = NaiveDateTime::parse_from_str("2024-01-10 23:59:59", "%Y-%m-%d %H:%M:%S")
         .map_err(|e| pandrs::error::Error::InvalidValue(format!("Date parsing error: {e}")))?;
     let filtered_indices = dt_index.filter_range(start_filter, end_filter)?;
-    println!(
-        "  Rows in date range 2024-01-05 to 2024-01-10: {filtered_indices:?}"
-    );
+    println!("  Rows in date range 2024-01-05 to 2024-01-10: {filtered_indices:?}");
 
     // Create date range with frequency
     println!("\nCreating daily date range:");
     let daily_range = DatetimeIndex::date_range(
-        NaiveDateTime::parse_from_str("2024-01-01 09:00:00", "%Y-%m-%d %H:%M:%S").map_err(|e| {
-            pandrs::error::Error::InvalidValue(format!("Date parsing error: {e}"))
-        })?,
+        NaiveDateTime::parse_from_str("2024-01-01 09:00:00", "%Y-%m-%d %H:%M:%S")
+            .map_err(|e| pandrs::error::Error::InvalidValue(format!("Date parsing error: {e}")))?,
         None,
         Some(7),
         "d",
@@ -132,9 +129,8 @@ fn main() -> Result<()> {
 
     println!("\nCreating hourly date range:");
     let hourly_range = DatetimeIndex::date_range(
-        NaiveDateTime::parse_from_str("2024-01-01 09:00:00", "%Y-%m-%d %H:%M:%S").map_err(|e| {
-            pandrs::error::Error::InvalidValue(format!("Date parsing error: {e}"))
-        })?,
+        NaiveDateTime::parse_from_str("2024-01-01 09:00:00", "%Y-%m-%d %H:%M:%S")
+            .map_err(|e| pandrs::error::Error::InvalidValue(format!("Date parsing error: {e}")))?,
         None,
         Some(6),
         "2h",
@@ -230,9 +226,7 @@ fn main() -> Result<()> {
     // Find intervals containing specific values
     let target_price = 105.0;
     let containing_intervals = interval_index.find_intervals_containing(target_price);
-    println!(
-        "  Intervals containing price 105.0: {containing_intervals:?}"
-    );
+    println!("  Intervals containing price 105.0: {containing_intervals:?}");
 
     // Create custom interval index
     println!("\nCreating custom intervals:");
@@ -340,9 +334,8 @@ fn main() -> Result<()> {
     // Time series analysis with DatetimeIndex
     println!("Time series analysis:");
     let business_days_range = DatetimeIndex::date_range(
-        NaiveDateTime::parse_from_str("2024-01-01 09:00:00", "%Y-%m-%d %H:%M:%S").map_err(|e| {
-            pandrs::error::Error::InvalidValue(format!("Date parsing error: {e}"))
-        })?,
+        NaiveDateTime::parse_from_str("2024-01-01 09:00:00", "%Y-%m-%d %H:%M:%S")
+            .map_err(|e| pandrs::error::Error::InvalidValue(format!("Date parsing error: {e}")))?,
         None,
         Some(10),
         "d",
@@ -434,9 +427,8 @@ fn demonstrate_performance() -> Result<()> {
     // DatetimeIndex performance
     let start = Instant::now();
     let large_dt_index = DatetimeIndex::date_range(
-        NaiveDateTime::parse_from_str("2020-01-01 00:00:00", "%Y-%m-%d %H:%M:%S").map_err(|e| {
-            pandrs::error::Error::InvalidValue(format!("Date parsing error: {e}"))
-        })?,
+        NaiveDateTime::parse_from_str("2020-01-01 00:00:00", "%Y-%m-%d %H:%M:%S")
+            .map_err(|e| pandrs::error::Error::InvalidValue(format!("Date parsing error: {e}")))?,
         None,
         Some(size),
         "h",
@@ -467,9 +459,7 @@ fn demonstrate_performance() -> Result<()> {
         false,
     );
     let duration = start.elapsed();
-    println!(
-        "CategoricalIndex creation ({size} entries): {duration:?}"
-    );
+    println!("CategoricalIndex creation ({size} entries): {duration:?}");
 
     let start = Instant::now();
     let _value_counts = large_cat_index.value_counts();
@@ -488,9 +478,7 @@ fn demonstrate_performance() -> Result<()> {
         Some("LargeIntervals".to_string()),
     )?;
     let duration = start.elapsed();
-    println!(
-        "IntervalIndex cut operation ({size} values, 100 bins): {duration:?}"
-    );
+    println!("IntervalIndex cut operation ({size} values, 100 bins): {duration:?}");
 
     // Index set operations performance
     let index1: Vec<String> = (0..1000).map(|i| format!("item_{i}")).collect();

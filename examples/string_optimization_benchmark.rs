@@ -198,9 +198,7 @@ fn main() {
         .unwrap();
 
         let time = start.elapsed();
-        println!(
-            "Optimized Implementation DataFrame Creation Time: {time:?}"
-        );
+        println!("Optimized Implementation DataFrame Creation Time: {time:?}");
     }
 
     println!("\nString Column Optimization Benchmark Completed");

@@ -145,9 +145,7 @@ fn main() -> Result<(), PandRSError> {
         )
         .unwrap();
         let _ = Series::new(
-            (0..100_000)
-                .map(|i| format!("val_{i}"))
-                .collect::<Vec<_>>(),
+            (0..100_000).map(|i| format!("val_{i}")).collect::<Vec<_>>(),
             Some("C".to_string()),
         )
         .unwrap();
@@ -161,9 +159,7 @@ fn main() -> Result<(), PandRSError> {
         )
         .unwrap();
         let col_c = Series::new(
-            (0..100_000)
-                .map(|i| format!("val_{i}"))
-                .collect::<Vec<_>>(),
+            (0..100_000).map(|i| format!("val_{i}")).collect::<Vec<_>>(),
             Some("C".to_string()),
         )
         .unwrap();
@@ -194,9 +190,7 @@ fn main() -> Result<(), PandRSError> {
         let _ = DataFrame::from_map(data, None).unwrap();
     });
 
-    println!(
-        "Pure Rust code DataFrame creation time for 100,000 rows: {large_duration:?}"
-    );
+    println!("Pure Rust code DataFrame creation time for 100,000 rows: {large_duration:?}");
     println!("(Equivalent operation in Python: approximately 0.35 seconds)");
 
     Ok(())

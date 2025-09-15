@@ -215,12 +215,8 @@ fn benchmark_other_operations(data: &[f64]) {
     let max_result = parallel_max.execute(data);
     let max_time = start.elapsed();
 
-    println!(
-        "  Min value: {min_result:.6} (computed in {min_time:?})"
-    );
-    println!(
-        "  Max value: {max_result:.6} (computed in {max_time:?})"
-    );
+    println!("  Min value: {min_result:.6} (computed in {min_time:?})");
+    println!("  Max value: {max_result:.6} (computed in {max_time:?})");
 }
 
 // Benchmark custom parallel function

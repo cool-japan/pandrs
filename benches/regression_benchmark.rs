@@ -52,12 +52,10 @@ impl RegressionDetector {
 
     #[allow(clippy::result_large_err)]
     pub fn save_baseline(&self, baseline: &PerformanceBaseline) -> Result<()> {
-        let json = serde_json::to_string_pretty(baseline).map_err(|e| {
-            pandrs::error::Error::IoError(format!("JSON serialization error: {e}"))
-        })?;
-        fs::write(&self.baseline_path, json).map_err(|e| {
-            pandrs::error::Error::IoError(format!("Failed to write baseline: {e}"))
-        })?;
+        let json = serde_json::to_string_pretty(baseline)
+            .map_err(|e| pandrs::error::Error::IoError(format!("JSON serialization error: {e}")))?;
+        fs::write(&self.baseline_path, json)
+            .map_err(|e| pandrs::error::Error::IoError(format!("Failed to write baseline: {e}")))?;
         Ok(())
     }
 

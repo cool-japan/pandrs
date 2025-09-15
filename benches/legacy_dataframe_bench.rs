@@ -91,9 +91,7 @@ fn bench_column_access(c: &mut Criterion) {
     )
     .unwrap();
     let col_c = Series::new(
-        (0..10_000)
-            .map(|i| format!("val_{i}"))
-            .collect::<Vec<_>>(),
+        (0..10_000).map(|i| format!("val_{i}")).collect::<Vec<_>>(),
         Some("C".to_string()),
     )
     .unwrap();

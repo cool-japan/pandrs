@@ -7,7 +7,7 @@
 
 A high-performance DataFrame library for Rust, providing pandas-like API with advanced features including SIMD optimization, parallel processing, and distributed computing capabilities.
 
-> **📢 Beta Release (0.1.0-beta.1)**: This beta release represents a feature-complete and production-ready implementation. While extensively tested, users should conduct thorough testing in their specific use cases before production deployment.
+> **🚀 Beta Release (0.1.0-beta.1) - Now Available**: This feature-complete beta release is ready for production use. With 345+ comprehensive tests, optimized performance, and extensive documentation, PandRS delivers a robust pandas-like experience for Rust developers. Published to crates.io September 2025.
 
 ## Overview
 
@@ -147,18 +147,30 @@ Enable additional functionality with feature flags:
 
 ```toml
 [dependencies]
-pandrs = { version = "0.1.0-beta.1", features = ["full"] }
+pandrs = { version = "0.1.0-beta.1", features = ["stable"] }
 ```
 
 Available features:
-- `parquet`: Parquet file support
-- `excel`: Excel file support
-- `sql`: Database connectivity
-- `distributed`: Distributed computing
-- `visualization`: Plotting capabilities
-- `cuda`: GPU acceleration (requires CUDA toolkit)
-- `python`: Python bindings
-- `full`: All features except CUDA
+- **Core features:**
+  - `stable`: Recommended stable feature set
+  - `optimized`: Performance optimizations and SIMD
+  - `backward_compat`: Backward compatibility support
+- **Data formats:**
+  - `parquet`: Parquet file support
+  - `excel`: Excel file support
+  - `sql`: Database connectivity
+- **Advanced features:**
+  - `distributed`: Distributed computing with DataFusion
+  - `visualization`: Plotting capabilities
+  - `streaming`: Real-time data processing
+  - `serving`: Model serving and deployment
+- **Experimental:**
+  - `cuda`: GPU acceleration (requires CUDA toolkit)
+  - `wasm`: WebAssembly compilation support
+  - `jit`: Just-in-time compilation
+- **Feature bundles:**
+  - `all-safe`: All stable features (recommended)
+  - `test-safe`: Features safe for testing
 
 ## Performance Benchmarks
 

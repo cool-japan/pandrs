@@ -212,9 +212,7 @@ fn benchmark_query_window_integration(
         } else {
             "JIT Compiled"
         };
-        println!(
-            "     Execution {i}: SMA calculated in {window_time:?} ({status})"
-        );
+        println!("     Execution {i}: SMA calculated in {window_time:?} ({status})");
     }
 
     // Compare with standard approach

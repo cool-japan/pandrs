@@ -118,9 +118,7 @@ fn tutorial_step_1_data_creation() -> Result<(), Box<dyn std::error::Error>> {
         let price = price_binding.as_float64().unwrap().get(i)?.unwrap();
         let revenue_binding = sales_df.column("revenue")?;
         let revenue = revenue_binding.as_float64().unwrap().get(i)?.unwrap();
-        println!(
-            "  {product} | Qty: {quantity} | Price: ${price:.2} | Revenue: ${revenue:.2}"
-        );
+        println!("  {product} | Qty: {quantity} | Price: ${price:.2} | Revenue: ${revenue:.2}");
     }
     println!();
 

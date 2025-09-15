@@ -156,18 +156,10 @@ fn benchmark_direct_methods(
     }
     let min_time = start.elapsed().as_secs_f64() * 1000.0 / iterations as f64;
 
-    println!(
-        "  • Sum:   {sum_time:.3}ms/op -> Result: {sum_result:.2}"
-    );
-    println!(
-        "  • Mean:  {mean_time:.3}ms/op -> Result: {mean_result:.2}"
-    );
-    println!(
-        "  • Max:   {max_time:.3}ms/op -> Result: {max_result:.2}"
-    );
-    println!(
-        "  • Min:   {min_time:.3}ms/op -> Result: {min_result:.2}"
-    );
+    println!("  • Sum:   {sum_time:.3}ms/op -> Result: {sum_result:.2}");
+    println!("  • Mean:  {mean_time:.3}ms/op -> Result: {mean_result:.2}");
+    println!("  • Max:   {max_time:.3}ms/op -> Result: {max_result:.2}");
+    println!("  • Min:   {min_time:.3}ms/op -> Result: {min_result:.2}");
 
     Ok(BenchmarkResults {
         sum_time_ms: sum_time,
@@ -216,18 +208,10 @@ fn benchmark_simd_methods(
     }
     let min_time = start.elapsed().as_secs_f64() * 1000.0 / iterations as f64;
 
-    println!(
-        "  • Sum:   {sum_time:.3}ms/op -> Result: {sum_result:.2}"
-    );
-    println!(
-        "  • Mean:  {mean_time:.3}ms/op -> Result: {mean_result:.2}"
-    );
-    println!(
-        "  • Max:   {max_time:.3}ms/op -> Result: {max_result:.2}"
-    );
-    println!(
-        "  • Min:   {min_time:.3}ms/op -> Result: {min_result:.2}"
-    );
+    println!("  • Sum:   {sum_time:.3}ms/op -> Result: {sum_result:.2}");
+    println!("  • Mean:  {mean_time:.3}ms/op -> Result: {mean_result:.2}");
+    println!("  • Max:   {max_time:.3}ms/op -> Result: {max_result:.2}");
+    println!("  • Min:   {min_time:.3}ms/op -> Result: {min_result:.2}");
 
     Ok(BenchmarkResults {
         sum_time_ms: sum_time,
@@ -262,13 +246,9 @@ fn print_performance_comparison(direct: &BenchmarkResults, simd: &BenchmarkResul
 
     let avg_speedup = (sum_speedup + mean_speedup + max_speedup + min_speedup) / 4.0;
     if avg_speedup > 1.0 {
-        println!(
-            "  • Average SIMD improvement: {avg_speedup:.1}x faster ✅"
-        );
+        println!("  • Average SIMD improvement: {avg_speedup:.1}x faster ✅");
     } else {
-        println!(
-            "  • Average SIMD impact: {avg_speedup:.1}x (SIMD overhead on small data)"
-        );
+        println!("  • Average SIMD impact: {avg_speedup:.1}x (SIMD overhead on small data)");
         println!("    Note: SIMD benefits increase with larger datasets due to vectorization");
     }
 }

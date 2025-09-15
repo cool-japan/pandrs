@@ -212,9 +212,7 @@ fn test_automatic_jit_compilation(df: &DataFrame) -> Result<()> {
             std::cmp::Ordering::Greater => "JIT Executed",
         };
 
-        println!(
-            "    Execution {i}: {duration:?} ({compilation_status})"
-        );
+        println!("    Execution {i}: {duration:?} ({compilation_status})");
 
         // Simulate some delay to make timing differences more visible
         std::thread::sleep(std::time::Duration::from_millis(1));
@@ -401,9 +399,7 @@ fn test_expression_types_jit(_df: &DataFrame) -> Result<()> {
     ];
 
     for (name, expr) in complex_tests {
-        println!(
-            "    {name}: {expr} -> JIT Compilable with optimizations"
-        );
+        println!("    {name}: {expr} -> JIT Compilable with optimizations");
     }
 
     Ok(())
@@ -420,9 +416,7 @@ fn test_jit_configuration(df: &DataFrame) -> Result<()> {
 
     for threshold in thresholds {
         let context = QueryContext::with_jit_settings(true, threshold);
-        println!(
-            "    Threshold {threshold}: Compile after {threshold} executions"
-        );
+        println!("    Threshold {threshold}: Compile after {threshold} executions");
 
         // Execute same expression multiple times
         let expr = "Value * Factor > 25";
@@ -473,9 +467,7 @@ fn demonstrate_real_world_jit(df: &DataFrame) -> Result<()> {
     let context = QueryContext::with_jit_settings(true, 2);
 
     for query in financial_queries {
-        println!(
-            "    Query: {query} -> Optimized for repeated financial analysis"
-        );
+        println!("    Query: {query} -> Optimized for repeated financial analysis");
 
         // Simulate repeated execution (common in financial systems)
         for _i in 0..3 {
@@ -499,9 +491,7 @@ fn demonstrate_real_world_jit(df: &DataFrame) -> Result<()> {
     ];
 
     for query in scientific_queries {
-        println!(
-            "    Query: {query} -> Optimized for scientific computations"
-        );
+        println!("    Query: {query} -> Optimized for scientific computations");
     }
 
     // Scenario 3: Data analysis pipeline
@@ -513,9 +503,7 @@ fn demonstrate_real_world_jit(df: &DataFrame) -> Result<()> {
     ];
 
     for query in analysis_queries {
-        println!(
-            "    Query: {query} -> Optimized for repeated data transformations"
-        );
+        println!("    Query: {query} -> Optimized for repeated data transformations");
     }
 
     println!("\n    Real-world benefits:");

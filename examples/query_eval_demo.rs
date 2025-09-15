@@ -291,9 +291,7 @@ fn demonstrate_performance() -> Result<()> {
     let filtered = large_df.query("Value > 500 && Category == 'A'")?;
     let duration = start.elapsed();
 
-    println!(
-        "Query 'Value > 500 && Category == \"A\"' took: {duration:?}"
-    );
+    println!("Query 'Value > 500 && Category == \"A\"' took: {duration:?}");
     println!("Filtered {} rows to {} rows", size, filtered.row_count());
 
     // Test eval performance

@@ -86,9 +86,7 @@ impl<T: Debug + Clone> DataFrame<T> {
             // self.columns.sort();
             for column_name in &self.columns {
                 let value = row.remove(column_name).ok_or_else(|| {
-                    format!(
-                        "Internal error: value for column '{column_name}' disappeared"
-                    )
+                    format!("Internal error: value for column '{column_name}' disappeared")
                 })?;
                 self.data.insert(column_name.clone(), vec![value]);
             }
@@ -248,14 +246,10 @@ impl<T: Debug + Clone> DataFrame<T> {
     {
         // Check if the join column exists
         if !self.contains_column(join_column) {
-            return Err(
-                format!("Join column '{join_column}' not found in left DataFrame").into(),
-            );
+            return Err(format!("Join column '{join_column}' not found in left DataFrame").into());
         }
         if !other.contains_column(join_column) {
-            return Err(
-                format!("Join column '{join_column}' not found in right DataFrame").into(),
-            );
+            return Err(format!("Join column '{join_column}' not found in right DataFrame").into());
         }
 
         // Prepare a HashMap and column list to store the joined data
@@ -374,9 +368,7 @@ where
             .ok_or_else(|| format!("Column '{column_name}' not found for mean()"))?;
         let n = column.len(); // Number of rows (usize)
         if n == 0 {
-            return Err(
-                format!("Cannot calculate mean of an empty column '{column_name}'").into(),
-            );
+            return Err(format!("Cannot calculate mean of an empty column '{column_name}'").into());
         }
         // Calculate the sum
         let sum_val = self.sum(column_name)?;
@@ -592,9 +584,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             other => other,
         }
     });
-    println!(
-        "Sorted DataFrame (by age asc, height desc):\n{sorted_df_i32:?}"
-    );
+    println!("Sorted DataFrame (by age asc, height desc):\n{sorted_df_i32:?}");
     println!("-----------------------------");
     println!();
 
@@ -632,9 +622,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!("DataFrame 1 (String):\n{df_string:?}");
     println!("DataFrame 2 (String):\n{df_string2:?}");
     let joined_df_string = df_string.join(&df_string2, "name")?;
-    println!(
-        "Joined DataFrame (inner join on name):\n{joined_df_string:?}"
-    );
+    println!("Joined DataFrame (inner join on name):\n{joined_df_string:?}");
     println!("Concatenated names: {:?}", df_string.concat("name", ", ")?);
     println!("-----------------------------");
     println!();
@@ -657,9 +645,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let df_from_csv_f64_result: Result<DataFrame<f64>, Box<dyn Error>> = read_csv(file_path, true);
     match df_from_csv_f64_result {
         Ok(df) => {
-            println!(
-                "Successfully read CSV as f64 (This shouldn't happen):\n{df:?}"
-            );
+            println!("Successfully read CSV as f64 (This shouldn't happen):\n{df:?}");
         }
         Err(e) => {
             println!("Correctly failed to read CSV as f64:");
@@ -678,16 +664,12 @@ fn main() -> Result<(), Box<dyn Error>> {
             }
         }
         Err(e) => {
-            eprintln!(
-                "Failed to read CSV as String (This shouldn't happen): {e}"
-            );
+            eprintln!("Failed to read CSV as String (This shouldn't happen): {e}");
         }
     }
     // Clean up dummy file
     if let Err(e) = std::fs::remove_file(file_path) {
-        eprintln!(
-            "Warning: Failed to remove temporary file '{file_path_str}': {e}"
-        );
+        eprintln!("Warning: Failed to remove temporary file '{file_path_str}': {e}");
     }
     println!("-----------------------------");
 

@@ -23,9 +23,7 @@ mod csv_error_tests {
             Err(Error::CsvError(_)) => {}
             Err(pandrs::PandRSError::Io(_)) => {}
             Err(pandrs::PandRSError::Csv(_)) => {}
-            _ => panic!(
-                "Expected IoError or CsvError for nonexistent file, got: {result:?}"
-            ),
+            _ => panic!("Expected IoError or CsvError for nonexistent file, got: {result:?}"),
         }
     }
 
@@ -526,9 +524,7 @@ mod general_io_tests {
             }
             Err(e) => {
                 // If it fails, should be a disk space or I/O error
-                println!(
-                    "Large file write failed (possibly due to disk space): {e}"
-                );
+                println!("Large file write failed (possibly due to disk space): {e}");
             }
         }
 

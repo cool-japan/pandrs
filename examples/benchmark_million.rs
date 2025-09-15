@@ -81,9 +81,7 @@ fn main() -> Result<()> {
         let _ = DataFrame::from_map(data, None).unwrap();
     });
 
-    println!(
-        "Time to create DataFrame with one million rows in pure Rust: {large_duration:?}"
-    );
+    println!("Time to create DataFrame with one million rows in pure Rust: {large_duration:?}");
 
     Ok(())
 }

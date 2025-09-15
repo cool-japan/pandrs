@@ -808,9 +808,7 @@ fn schema_analysis_example(_df: &DataFrame) -> Result<()> {
 
     // Compatibility assessment
     let compatibility_score = 8.5;
-    println!(
-        "  Schema evolution compatibility score: {compatibility_score}/10"
-    );
+    println!("  Schema evolution compatibility score: {compatibility_score}/10");
 
     if compatibility_score >= 8.0 {
         println!("  Assessment: Schema evolution is low-risk");

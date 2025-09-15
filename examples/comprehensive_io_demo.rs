@@ -606,9 +606,7 @@ fn schema_analysis_example() -> Result<()> {
 
     // Complexity assessment
     let complexity_score = 7.5;
-    println!(
-        "  Overall complexity score: {complexity_score}/10 (moderate)"
-    );
+    println!("  Overall complexity score: {complexity_score}/10 (moderate)");
 
     if complexity_score > 8.0 {
         println!("  Recommendation: Consider schema normalization");
@@ -629,17 +627,13 @@ fn chunked_parquet_processing_example(large_df: &DataFrame) -> Result<()> {
 
     println!("  Chunking configuration:");
     println!("    • Memory limit: {memory_limit_mb} MB");
-    println!(
-        "    • Estimated row size: {estimated_row_size_bytes} bytes"
-    );
+    println!("    • Estimated row size: {estimated_row_size_bytes} bytes");
     println!("    • Rows per chunk: {rows_per_chunk}");
 
     let total_rows = large_df.row_count();
     let num_chunks = total_rows.div_ceil(rows_per_chunk);
 
-    println!(
-        "  Processing {num_chunks} chunks for {total_rows} total rows"
-    );
+    println!("  Processing {num_chunks} chunks for {total_rows} total rows");
 
     // Simulate processing each chunk
     for i in 0..num_chunks.min(3) {
@@ -1087,9 +1081,7 @@ fn format_performance_comparison(_df: &DataFrame) -> Result<()> {
 
     for (format, read_ms, write_ms, size_mb) in formats {
         if size_mb > 0 {
-            println!(
-                "    {format:20} | {read_ms:9} | {write_ms:10} | {size_mb:8}"
-            );
+            println!("    {format:20} | {read_ms:9} | {write_ms:10} | {size_mb:8}");
         } else {
             println!(
                 "    {:20} | {:9} | {:10} | {:8}",
@@ -1164,9 +1156,7 @@ fn parallel_io_example(large_df: &DataFrame) -> Result<()> {
     let speedup = single_threaded_time as f64 / parallel_time as f64;
 
     println!("  Performance improvement:");
-    println!(
-        "    • Single-threaded time: {single_threaded_time} seconds"
-    );
+    println!("    • Single-threaded time: {single_threaded_time} seconds");
     println!("    • Parallel time: {parallel_time} seconds");
     println!("    • Speedup: {speedup:.1}x");
     println!(

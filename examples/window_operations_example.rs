@@ -101,9 +101,7 @@ fn main() -> Result<()> {
             NA::NA => "NA".to_string(),
         };
 
-        println!(
-            "{date}\t{original}\t{mean}\t{sum}\t{std}\\t{min}\t{max}"
-        );
+        println!("{date}\t{original}\t{mean}\t{sum}\t{std}\\t{min}\t{max}");
     }
 
     // 2. Expanding window operations

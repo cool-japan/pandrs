@@ -100,9 +100,7 @@ fn test_optimized_csv_without_header() -> Result<()> {
 
     // Calculate expected column count from CSV content
     let expected_cols = csv_content.lines().next().unwrap().split(',').count();
-    println!(
-        "Expected column count calculated from CSV content: {expected_cols}"
-    );
+    println!("Expected column count calculated from CSV content: {expected_cols}");
     println!("Actual column count: {}", loaded_df.column_count());
     println!("Loaded row count: {}", loaded_df.row_count());
     println!("Column names: {:?}", loaded_df.column_names());

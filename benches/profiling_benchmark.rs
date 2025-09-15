@@ -350,9 +350,7 @@ fn profile_io_operations(c: &mut Criterion) {
                 let mb_per_sec = (file_size_estimate as f64 * iters as f64)
                     / (1024.0 * 1024.0 * elapsed.as_secs_f64());
 
-                println!(
-                    "💾 CSV Write, Size: {size}, Throughput: {mb_per_sec:.2} MB/sec"
-                );
+                println!("💾 CSV Write, Size: {size}, Throughput: {mb_per_sec:.2} MB/sec");
 
                 elapsed
             });
@@ -383,9 +381,7 @@ fn profile_io_operations(c: &mut Criterion) {
                 let mb_per_sec = (file_size_estimate as f64 * iters as f64)
                     / (1024.0 * 1024.0 * elapsed.as_secs_f64());
 
-                println!(
-                    "📦 Parquet Write, Size: {size}, Throughput: {mb_per_sec:.2} MB/sec"
-                );
+                println!("📦 Parquet Write, Size: {size}, Throughput: {mb_per_sec:.2} MB/sec");
 
                 elapsed
             });

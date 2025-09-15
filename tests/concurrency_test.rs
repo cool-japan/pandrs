@@ -390,9 +390,7 @@ mod dataframe_concurrency_tests {
                                 println!("Thread {thread_id} completed groupby iteration {i}");
                             }
                             Err(e) => {
-                                println!(
-                                    "Thread {thread_id} groupby failed at iteration {i}: {e}"
-                                );
+                                println!("Thread {thread_id} groupby failed at iteration {i}: {e}");
                             }
                         }
                     }
@@ -493,9 +491,7 @@ mod concurrent_io_tests {
                                 }
                             }
                             Err(e) => {
-                                panic!(
-                                    "Thread {thread_id} CSV read failed at iteration {i}: {e}"
-                                );
+                                panic!("Thread {thread_id} CSV read failed at iteration {i}: {e}");
                             }
                         }
                     }
@@ -639,9 +635,8 @@ mod race_condition_tests {
                         let mut df = OptimizedDataFrame::new();
 
                         // Create nested string operations
-                        let outer_strings: Vec<String> = (0..50)
-                            .map(|j| format!("outer_{thread_id}_{j}"))
-                            .collect();
+                        let outer_strings: Vec<String> =
+                            (0..50).map(|j| format!("outer_{thread_id}_{j}")).collect();
 
                         df.add_string_column("outer", outer_strings).unwrap();
 
