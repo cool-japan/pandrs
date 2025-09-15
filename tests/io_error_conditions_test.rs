@@ -51,7 +51,6 @@ mod csv_error_tests {
         // Make file read-only (Unix permissions)
         #[cfg(unix)]
         {
-            use std::os::unix::fs::PermissionsExt;
             let mut perms = fs::metadata(&temp_path).unwrap().permissions();
             perms.set_mode(0o444); // Read-only
             fs::set_permissions(&temp_path, perms).unwrap();
@@ -64,8 +63,21 @@ mod csv_error_tests {
         // Try to overwrite read-only file
         let result = df.to_csv(&temp_path, true);
 
+        // Note: This test may pass when running as root since root can override permissions
+        // In CI/production environments where this runs as non-root, it should fail as expected
         #[cfg(unix)]
-        assert!(result.is_err());
+        {
+            // Check if we're running as root by trying to determine UID
+            let running_as_root = std::env::var("USER").unwrap_or_default() == "root" ||
+                                  std::process::Command::new("id").arg("-u").output()
+                                    .map(|output| String::from_utf8_lossy(&output.stdout).trim() == "0")
+                                    .unwrap_or(false);
+
+            if !running_as_root {
+                assert!(result.is_err());
+            }
+            // If running as root, the write may succeed, so we don't assert failure
+        }
 
         // Cleanup
         #[cfg(unix)]
@@ -470,8 +482,6 @@ mod general_io_tests {
 
         #[cfg(unix)]
         {
-            use std::os::unix::fs::PermissionsExt;
-
             // Make directory read-only
             let mut perms = fs::metadata(&temp_dir).unwrap().permissions();
             perms.set_mode(0o444);
@@ -482,7 +492,18 @@ mod general_io_tests {
 
             let test_file = temp_dir.join("test.csv");
             let result = df.to_csv(&test_file, true);
-            assert!(result.is_err());
+
+            // Note: This test may pass when running as root since root can override permissions
+            // In CI/production environments where this runs as non-root, it should fail as expected
+            let running_as_root = std::env::var("USER").unwrap_or_default() == "root" ||
+                                  std::process::Command::new("id").arg("-u").output()
+                                    .map(|output| String::from_utf8_lossy(&output.stdout).trim() == "0")
+                                    .unwrap_or(false);
+
+            if !running_as_root {
+                assert!(result.is_err());
+            }
+            // If running as root, the write may succeed, so we don't assert failure
 
             // Restore permissions for cleanup
             let mut perms = fs::metadata(&temp_dir).unwrap().permissions();

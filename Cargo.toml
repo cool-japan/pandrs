@@ -144,3 +144,6 @@ harness = false
 [[bench]]
 name = "pandas_comparison_benchmark"
 harness = false
+
+[lints]
+workspace = true 
