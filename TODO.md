@@ -2,7 +2,7 @@
 
 ## Current Release
 
-**Version:** 0.1.0-beta.1
+**Version:** 0.1.0-beta.2
 **Release Date:** September 2025
 **Status:** Beta - Feature Complete & Production Ready
 **Test Coverage:** 345+ passing tests with comprehensive test suite  
@@ -77,21 +77,17 @@
 
 ## Roadmap
 
-### v0.2.0 - Performance & Stability (Q3 2025)
+### v0.1.0 - Performance & Stability (Q4 2025)
 - [ ] Enhanced SIMD coverage for all operations
 - [ ] Improved memory management for large datasets
 - [ ] Advanced query optimization
 - [ ] Comprehensive benchmark suite
 - [ ] Production deployment guide
-
-### v0.3.0 - Advanced Analytics (Q4 2025)
 - [ ] Native machine learning algorithms
 - [ ] Advanced time series forecasting
 - [ ] Graph analytics support
 - [ ] Streaming data processing
 - [ ] Real-time analytics dashboard
-
-### v0.4.0 - Enterprise Features (Q1 2026)
 - [ ] Data versioning and lineage
 - [ ] Advanced security features
 - [ ] Audit logging

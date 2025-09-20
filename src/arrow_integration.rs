@@ -465,7 +465,6 @@ mod tests {
     #[cfg(feature = "distributed")]
     fn test_arrow_integration() {
         // Create a test DataFrame
-        let mut columns = HashMap::new();
         let series1 = Series::new(
             vec!["1".to_string(), "2".to_string(), "3".to_string()],
             Some("numbers".to_string()),

@@ -1,6 +1,6 @@
 [package]
 name = "pandrs"
-version = "0.1.0-beta.1"
+version = "0.1.0-beta.2"
 edition = "2021"
 description = "A high-performance DataFrame library for Rust, providing pandas-like API with advanced features including SIMD optimization, parallel processing, and distributed computing capabilities"
 authors = ["Cool Japan"]
@@ -36,8 +36,8 @@ sha2 = "0.10.8"  # SHA-2 cryptographic hash functions
 aes-gcm = "0.10.3"  # AES-GCM encryption for secure credential storage
 async-trait = "0.1.81"  # Async trait support for mock implementations
 # Enable Parquet support with latest version - updated for chrono compatibility
-parquet = { version = "53.3.1", optional = true }  # For Parquet file support
-arrow = { version = "53.3.1", optional = true }  # For Arrow format support
+parquet = { version = "56.1.0", optional = true }  # For Parquet file support
+arrow = { version = "56.1.0", optional = true }  # For Arrow format support
 plotters = { version = "0.3.7", optional = true }
 # For streaming data support
 crossbeam-channel = "0.5.15"  # For concurrent message passing
@@ -46,8 +46,8 @@ memmap2 = "0.9.5"  # For memory-mapped files
 calamine = { version = "0.23.1", optional = true }  # For Excel reading
 simple_excel_writer = { version = "0.2.0", optional = true }  # For Excel writing
 # SQL support
-sqlx = { version = "0.7.3", features = ["runtime-tokio", "mysql", "postgres", "sqlite"], optional = true }
-rusqlite = "0.30.0"  # SQLite support
+sqlx = { version = "0.8.6", features = ["runtime-tokio", "mysql", "postgres", "sqlite"], optional = true }
+rusqlite = "0.32.1"  # SQLite support
 
 # WebAssembly support (optional)
 wasm-bindgen = { version = "0.2.92", optional = true }  # WebAssembly bindings
@@ -64,7 +64,7 @@ half = { version = "2.3.1", optional = true }  # Half-precision floating point s
 ndarray = { version = "0.15.6", optional = true } # N-dimensional arrays
 
 # Distributed processing support (optional) - downgraded for chrono compatibility
-datafusion = { version = "30.0.0", optional = true }  # DataFrame processing engine
+datafusion = { version = "50.0.0", optional = true }  # DataFrame processing engine
 uuid = { version = "1.8.0", features = ["v4", "serde"], optional = true }  # For unique IDs in distributed processing and serving
 futures = { version = "0.3.30", optional = true }  # For async operations in distributed processing
 tokio = { version = "1.39", features = ["full"], optional = true }  # Async runtime for streaming and resilience

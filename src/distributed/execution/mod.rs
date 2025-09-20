@@ -128,6 +128,14 @@ pub enum Operation {
     /// AGGREGATE operation - Group by keys and apply aggregations
     Aggregate(Vec<String>, Vec<AggregateExpr>),
 
+    /// GROUP BY operation - Group by keys and apply aggregations (struct variant)
+    GroupBy {
+        /// Group by keys
+        keys: Vec<String>,
+        /// Aggregation expressions
+        aggregates: Vec<AggregateExpr>,
+    },
+
     /// ORDER BY operation - Sort data
     OrderBy(Vec<SortExpr>),
 

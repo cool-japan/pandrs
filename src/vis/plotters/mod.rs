@@ -127,10 +127,11 @@ pub mod backend {
             }
             PlotKind::Bar => {
                 // For a bar chart, we use indices as x-values
-                let bars = x.iter().zip(y.iter()).enumerate().map(|(i, (&x, &y))| {
-                    let bar_width = x_range / x.len() as f64 * 0.8;
-                    let x0 = x - bar_width / 2.0;
-                    let x1 = x + bar_width / 2.0;
+                let num_bars = x.len() as f64;
+                let bars = x.iter().zip(y.iter()).enumerate().map(|(i, (&x_val, &y))| {
+                    let bar_width = x_range / num_bars * 0.8;
+                    let x0 = x_val - bar_width / 2.0;
+                    let x1 = x_val + bar_width / 2.0;
 
                     Rectangle::new([(x0, 0.0), (x1, y)], color.filled())
                 });
@@ -506,7 +507,7 @@ pub mod backend {
             chart
                 .draw_series(bars)?
                 .label(series_name)
-                .legend(|(x, y)| Rectangle::new([(x, y - 5), (x + 20, y + 5)], color.filled()));
+                .legend(move |(x, y)| Rectangle::new([(x, y - 5), (x + 20, y + 5)], color.filled()));
         } else {
             chart.draw_series(bars)?;
         }

@@ -20,7 +20,7 @@ mod resilience_tests {
             backoff_strategy: BackoffStrategy::Exponential,
             backoff_multiplier: 2.0,
             jitter: false,
-            retryable_errors: ["TestError".to_string()],
+            retryable_errors: vec!["TestError".to_string()],
         };
 
         let retry = RetryMechanism::new(config);
@@ -54,7 +54,7 @@ mod resilience_tests {
             base_delay_ms: 5,
             backoff_strategy: BackoffStrategy::Fixed,
             jitter: false,
-            retryable_errors: ["RetryableError".to_string()],
+            retryable_errors: vec!["RetryableError".to_string()],
             ..Default::default()
         };
 
@@ -83,7 +83,7 @@ mod resilience_tests {
         let config = RetryConfig {
             max_attempts: 3,
             base_delay_ms: 1,
-            retryable_errors: ["RetryableError".to_string()],
+            retryable_errors: vec!["RetryableError".to_string()],
             ..Default::default()
         };
 
@@ -207,7 +207,7 @@ mod resilience_tests {
         let retry_config = RetryConfig {
             max_attempts: 2,
             base_delay_ms: 5,
-            retryable_errors: ["TestError".to_string()],
+            retryable_errors: vec!["TestError".to_string()],
             ..Default::default()
         };
         manager.set_retry_config("test_service", retry_config);
@@ -280,9 +280,9 @@ mod resilience_tests {
     async fn test_custom_backoff_strategy() {
         let config = RetryConfig {
             max_attempts: 4,
-            backoff_strategy: BackoffStrategy::Custom([5, 10, 20, 50]),
+            backoff_strategy: BackoffStrategy::Custom(vec![5, 10, 20, 50]),
             jitter: false,
-            retryable_errors: ["TestError".to_string()],
+            retryable_errors: vec!["TestError".to_string()],
             ..Default::default()
         };
 
@@ -317,7 +317,7 @@ mod resilience_tests {
             base_delay_ms: 10,
             backoff_strategy: BackoffStrategy::Linear,
             jitter: false,
-            retryable_errors: ["TestError".to_string()],
+            retryable_errors: vec!["TestError".to_string()],
             ..Default::default()
         };
 
@@ -374,7 +374,7 @@ mod resilience_tests {
             backoff_strategy: BackoffStrategy::Exponential,
             backoff_multiplier: 10.0, // Would normally create very large delays
             jitter: false,
-            retryable_errors: ["TestError".to_string()],
+            retryable_errors: vec!["TestError".to_string()],
         };
 
         let retry = RetryMechanism::new(config);
