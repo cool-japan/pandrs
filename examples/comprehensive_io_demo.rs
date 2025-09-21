@@ -1,6 +1,6 @@
-//! Comprehensive I/O Examples for PandRS Phase 2 Alpha.6
+//! Comprehensive I/O Examples for PandRS Beta.2
 //!
-//! This example demonstrates all the enhanced I/O capabilities implemented in Phase 2 Alpha.6:
+//! This example demonstrates all the enhanced I/O capabilities implemented in Beta.2:
 //! 1. Excel Support Enhancement - formula preservation, cell formatting, named ranges
 //! 2. Advanced Parquet Features - schema evolution, predicate pushdown, streaming
 //! 3. Database Integration Expansion - async operations, connection pooling, transactions

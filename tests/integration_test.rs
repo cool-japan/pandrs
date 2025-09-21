@@ -1,6 +1,6 @@
-//! Comprehensive integration tests for PandRS alpha.4 release
+//! Comprehensive integration tests for PandRS beta.2 release
 //!
-//! This test suite validates that all major alpha.4 features work correctly
+//! This test suite validates that all major beta.2 features work correctly
 //! both individually and in combination with each other.
 
 use std::collections::HashMap;
@@ -18,7 +18,7 @@ use pandrs::io::parquet::{read_parquet, write_parquet, ParquetCompression};
 #[cfg(feature = "sql")]
 use pandrs::io::sql::{read_sql, write_to_sql};
 
-/// Test the new DataFrame operations introduced in alpha.4
+/// Test the new DataFrame operations introduced in beta.2
 #[test]
 #[allow(clippy::result_large_err)]
 #[allow(clippy::result_large_err)]
@@ -50,7 +50,7 @@ fn test_alpha4_dataframe_operations() -> Result<()> {
     assert_eq!(df.column_names(), ["name", "age", "salary"]);
     assert_eq!(df.row_count(), 3);
 
-    // Test rename_columns (alpha.4 feature)
+    // Test rename_columns (beta.2 feature)
     let mut rename_map = HashMap::new();
     rename_map.insert("name".to_string(), "employee_name".to_string());
     rename_map.insert("age".to_string(), "employee_age".to_string());

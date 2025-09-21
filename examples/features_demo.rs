@@ -4,11 +4,11 @@ use std::collections::HashMap;
 
 #[allow(clippy::result_large_err)]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    println!("PandRS Alpha 4 New Features Demo");
+    println!("PandRS Beta 2 New Features Demo");
     println!("=================================\n");
 
     // ========================================
-    // Series Name Management (New in Alpha 4)
+    // Series Name Management (Beta 2 feature)
     // ========================================
     println!("1. Series Name Management");
     println!("-------------------------");
@@ -32,7 +32,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("String values: {:?}\n", sales_strings.values());
 
     // =============================================
-    // DataFrame Column Management (New in Alpha 4)
+    // DataFrame Column Management (Beta 2 feature)
     // =============================================
     println!("2. DataFrame Column Management");
     println!("------------------------------");
@@ -151,12 +151,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("--------------------------");
 
     // Save to CSV with proper error handling
-    match large_df.to_csv("alpha4_demo_output.csv", true) {
+    match large_df.to_csv("beta2_demo_output.csv", true) {
         Ok(_) => {
             println!("Successfully saved DataFrame to CSV");
 
             // Read it back
-            match pandrs::io::read_csv("alpha4_demo_output.csv", true) {
+            match pandrs::io::read_csv("beta2_demo_output.csv", true) {
                 Ok(loaded_df) => {
                     println!("Successfully loaded DataFrame from CSV");
                     println!(
@@ -192,7 +192,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Sales min: {:.2}", large_df.min("sales")?);
     println!("Sales max: {:.2}", large_df.max("sales")?);
 
-    println!("\n✅ Alpha 4 features demonstration completed successfully!");
+    println!("\n✅ Beta 2 features demonstration completed successfully!");
 
     Ok(())
 }
@@ -202,7 +202,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_alpha4_features() {
+    fn test_beta2_features() {
         // Test the main functionality without I/O operations
         let mut sales_data = Series::new(vec![100, 150, 200], None).unwrap();
         sales_data.set_name("test_sales".to_string());
