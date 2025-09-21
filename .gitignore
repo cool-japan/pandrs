@@ -40,6 +40,7 @@ Desktop.ini
 *.dll
 *.so
 *.dylib
+*.rlib
 
 # Python generated files
 __pycache__/
