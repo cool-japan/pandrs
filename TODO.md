@@ -77,6 +77,11 @@
 
 ## Roadmap
 
+### v0.1.0-beta.3 - Stability Improvements (Q4 2025)
+- [ ] Improve temporary file handling in tests (use std::env::temp_dir() consistently)
+- [ ] Support TMPDIR and other environment variables for temporary files
+- [ ] Implement proper test cleanup for all temporary files
+
 ### v0.1.0 - Performance & Stability (Q4 2025)
 - [ ] Enhanced SIMD coverage for all operations
 - [ ] Improved memory management for large datasets
