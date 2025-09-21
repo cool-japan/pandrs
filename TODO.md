@@ -7,7 +7,7 @@
 **Status:** Beta - Feature Complete & Production Ready
 **Test Coverage:** 345+ passing tests with comprehensive test suite  
 
-## Completed Features (v0.1.0-beta.1)
+## Completed Features (v0.1.0-beta.2)
 
 ### Core Data Structures ✓
 - [x] Series with full pandas-compatible API

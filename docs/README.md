@@ -75,13 +75,13 @@ PandRS offers multiple performance optimization layers. Choose the features that
 ```toml
 [dependencies]
 # Basic usage
-pandrs = "0.1.0"
+pandrs = "0.1.0-beta.2"
 
 # With performance features
-pandrs = { version = "0.1.0", features = ["cuda", "distributed", "jit"] }
+pandrs = { version = "0.1.0-beta.2", features = ["cuda", "distributed", "jit"] }
 
 # All available features
-pandrs = { version = "0.1.0", features = ["all-safe"] }
+pandrs = { version = "0.1.0-beta.2", features = ["all-safe"] }
 ```
 
 #### Feature Flags
@@ -224,7 +224,7 @@ cargo run --example ecosystem_integration_demo --features distributed
 
 ## Version Information
 
-- **Current Version**: 0.1.0
+- **Current Version**: 0.1.0-beta.2
 - **API Stability**: Stable for 0.1.x releases
 - **Performance**: Production-ready with 345+ passing tests
 - **Features**: Complete DataFrame API with advanced analytics capabilities
