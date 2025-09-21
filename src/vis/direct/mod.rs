@@ -203,12 +203,24 @@ where
     ) -> Result<()> {
         let mut settings = PlotSettings::default();
         settings.plot_kind = match plot_kind {
-            crate::vis::config::PlotKind::Line => crate::vis::backward_compat::plotters_ext::PlotKind::Line,
-            crate::vis::config::PlotKind::Scatter => crate::vis::backward_compat::plotters_ext::PlotKind::Scatter,
-            crate::vis::config::PlotKind::Bar => crate::vis::backward_compat::plotters_ext::PlotKind::Bar,
-            crate::vis::config::PlotKind::Histogram => crate::vis::backward_compat::plotters_ext::PlotKind::Histogram,
-            crate::vis::config::PlotKind::BoxPlot => crate::vis::backward_compat::plotters_ext::PlotKind::BoxPlot,
-            crate::vis::config::PlotKind::Area => crate::vis::backward_compat::plotters_ext::PlotKind::Area,
+            crate::vis::config::PlotKind::Line => {
+                crate::vis::backward_compat::plotters_ext::PlotKind::Line
+            }
+            crate::vis::config::PlotKind::Scatter => {
+                crate::vis::backward_compat::plotters_ext::PlotKind::Scatter
+            }
+            crate::vis::config::PlotKind::Bar => {
+                crate::vis::backward_compat::plotters_ext::PlotKind::Bar
+            }
+            crate::vis::config::PlotKind::Histogram => {
+                crate::vis::backward_compat::plotters_ext::PlotKind::Histogram
+            }
+            crate::vis::config::PlotKind::BoxPlot => {
+                crate::vis::backward_compat::plotters_ext::PlotKind::BoxPlot
+            }
+            crate::vis::config::PlotKind::Area => {
+                crate::vis::backward_compat::plotters_ext::PlotKind::Area
+            }
         };
         settings.output_type = crate::vis::backward_compat::plotters_ext::OutputType::SVG;
 
@@ -381,12 +393,24 @@ impl DataFramePlotExt for DataFrame {
     ) -> Result<()> {
         let mut settings = PlotSettings::default();
         settings.plot_kind = match plot_kind {
-            crate::vis::config::PlotKind::Line => crate::vis::backward_compat::plotters_ext::PlotKind::Line,
-            crate::vis::config::PlotKind::Scatter => crate::vis::backward_compat::plotters_ext::PlotKind::Scatter,
-            crate::vis::config::PlotKind::Bar => crate::vis::backward_compat::plotters_ext::PlotKind::Bar,
-            crate::vis::config::PlotKind::Histogram => crate::vis::backward_compat::plotters_ext::PlotKind::Histogram,
-            crate::vis::config::PlotKind::BoxPlot => crate::vis::backward_compat::plotters_ext::PlotKind::BoxPlot,
-            crate::vis::config::PlotKind::Area => crate::vis::backward_compat::plotters_ext::PlotKind::Area,
+            crate::vis::config::PlotKind::Line => {
+                crate::vis::backward_compat::plotters_ext::PlotKind::Line
+            }
+            crate::vis::config::PlotKind::Scatter => {
+                crate::vis::backward_compat::plotters_ext::PlotKind::Scatter
+            }
+            crate::vis::config::PlotKind::Bar => {
+                crate::vis::backward_compat::plotters_ext::PlotKind::Bar
+            }
+            crate::vis::config::PlotKind::Histogram => {
+                crate::vis::backward_compat::plotters_ext::PlotKind::Histogram
+            }
+            crate::vis::config::PlotKind::BoxPlot => {
+                crate::vis::backward_compat::plotters_ext::PlotKind::BoxPlot
+            }
+            crate::vis::config::PlotKind::Area => {
+                crate::vis::backward_compat::plotters_ext::PlotKind::Area
+            }
         };
         settings.output_type = crate::vis::backward_compat::plotters_ext::OutputType::SVG;
 

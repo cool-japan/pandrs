@@ -4,8 +4,8 @@
 //! interactive data visualization in web browsers.
 
 use js_sys::{Array, Function, Object, Reflect};
-use plotters_canvas::CanvasBackend;
 use plotters::drawing::IntoDrawingArea;
+use plotters_canvas::CanvasBackend;
 use std::cell::RefCell;
 use std::rc::Rc;
 use wasm_bindgen::prelude::*;
@@ -364,7 +364,12 @@ impl WebVisualization {
         plot_settings.plot_kind = PlotKind::Line;
 
         // Use existing plotting functionality from plotters_ext module
-        plotters_ext_web::plot_multi_series_for_web(df, &columns_str, drawing_area, &plot_settings)?;
+        plotters_ext_web::plot_multi_series_for_web(
+            df,
+            &columns_str,
+            drawing_area,
+            &plot_settings,
+        )?;
 
         Ok(())
     }
@@ -610,7 +615,7 @@ impl WebVisualization {
 
         if numeric_columns.is_empty() || categorical_columns.is_empty() {
             return Err(Error::InvalidInput(
-                "Need at least one numeric and one categorical column for pie chart".to_string()
+                "Need at least one numeric and one categorical column for pie chart".to_string(),
             ));
         }
 
@@ -649,7 +654,7 @@ impl WebVisualization {
 
         if numeric_columns.len() < 2 {
             return Err(Error::InvalidInput(
-                "Need at least two numeric columns for heatmap".to_string()
+                "Need at least two numeric columns for heatmap".to_string(),
             ));
         }
 
@@ -682,7 +687,7 @@ impl WebVisualization {
 
         if categories.len() != values.len() {
             return Err(Error::DimensionMismatch(
-                "Category and value columns must have the same length".to_string()
+                "Category and value columns must have the same length".to_string(),
             ));
         }
 
@@ -728,7 +733,7 @@ impl WebVisualization {
             self.context
                 .arc(cx, cy, radius, start_angle, start_angle + slice_angle)
                 .map_err(|_| to_js_error("Failed to draw arc"))
-            .unwrap();
+                .unwrap();
             self.context.close_path();
 
             self.context.set_fill_style_str(&color);
@@ -888,8 +893,7 @@ impl WebVisualization {
                 self.context.fill_rect(x, y, cell_width, cell_height);
 
                 // Draw cell outline
-                self.context
-                    .set_stroke_style_str("rgba(255,255,255,0.2)");
+                self.context.set_stroke_style_str("rgba(255,255,255,0.2)");
                 self.context.set_line_width(0.5);
                 self.context.stroke_rect(x, y, cell_width, cell_height);
 
@@ -906,7 +910,7 @@ impl WebVisualization {
                             y + cell_height / 2.0 + 3.0,
                         )
                         .map_err(|_| to_js_error("Failed to render text"))
-                    .unwrap();
+                        .unwrap();
                 }
             }
         }
@@ -930,7 +934,7 @@ impl WebVisualization {
             self.context
                 .fill_text(&display_name, x, y)
                 .map_err(|_| to_js_error("Failed to render text"))
-            .unwrap();
+                .unwrap();
         }
 
         // Draw row labels (use row indices)
@@ -943,7 +947,7 @@ impl WebVisualization {
             self.context
                 .fill_text(&format!("Row {}", i + 1), x, y)
                 .map_err(|_| to_js_error("Failed to render text"))
-            .unwrap();
+                .unwrap();
         }
 
         // Draw color scale

@@ -59,7 +59,9 @@ impl GpuWindowOperation for GpuRollingWindow {
         }
 
         if self.window_size == 0 {
-            return Err(Error::InvalidValue("Window size must be greater than 0".into()));
+            return Err(Error::InvalidValue(
+                "Window size must be greater than 0".into(),
+            ));
         }
 
         // Check if GPU is available and should be used
@@ -160,8 +162,13 @@ impl GpuRollingWindow {
                 WindowOperation::Median => {
                     // Median calculation
                     if window_data.len() > 0 {
-                        let mut sorted: Vec<f64> = window_data.iter().filter(|&&x| !x.is_nan()).cloned().collect();
-                        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+                        let mut sorted: Vec<f64> = window_data
+                            .iter()
+                            .filter(|&&x| !x.is_nan())
+                            .cloned()
+                            .collect();
+                        sorted
+                            .sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
                         if !sorted.is_empty() {
                             let mid = sorted.len() / 2;
                             result[i] = if sorted.len() % 2 == 0 {
@@ -171,11 +178,10 @@ impl GpuRollingWindow {
                             };
                         }
                     }
-                }
-                // WindowOperation::Custom(_) => {
-                //     // Custom operations not supported in GPU mode, fall back to CPU
-                //     return self.apply_cpu(data);
-                // }
+                } // WindowOperation::Custom(_) => {
+                  //     // Custom operations not supported in GPU mode, fall back to CPU
+                  //     return self.apply_cpu(data);
+                  // }
             }
         }
 
@@ -189,7 +195,9 @@ impl GpuRollingWindow {
         }
 
         if self.window_size == 0 {
-            return Err(Error::InvalidValue("Window size must be greater than 0".into()));
+            return Err(Error::InvalidValue(
+                "Window size must be greater than 0".into(),
+            ));
         }
 
         // Allocate vector for results
@@ -268,8 +276,13 @@ impl GpuRollingWindow {
                 WindowOperation::Median => {
                     // Median calculation
                     if window_data.len() > 0 {
-                        let mut sorted: Vec<f64> = window_data.iter().filter(|&&x| !x.is_nan()).cloned().collect();
-                        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+                        let mut sorted: Vec<f64> = window_data
+                            .iter()
+                            .filter(|&&x| !x.is_nan())
+                            .cloned()
+                            .collect();
+                        sorted
+                            .sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
                         if !sorted.is_empty() {
                             let mid = sorted.len() / 2;
                             result[i] = if sorted.len() % 2 == 0 {
@@ -279,11 +292,10 @@ impl GpuRollingWindow {
                             };
                         }
                     }
-                }
-                // WindowOperation::Custom(ref func) => {
-                //     // Apply custom function
-                //     result[i] = func(window_data)?;
-                // }
+                } // WindowOperation::Custom(ref func) => {
+                  //     // Apply custom function
+                  //     result[i] = func(window_data)?;
+                  // }
             }
         }
 
@@ -404,8 +416,13 @@ impl GpuExpandingWindow {
                 WindowOperation::Median => {
                     // Median calculation
                     if window_data.len() > 0 {
-                        let mut sorted: Vec<f64> = window_data.iter().filter(|&&x| !x.is_nan()).cloned().collect();
-                        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+                        let mut sorted: Vec<f64> = window_data
+                            .iter()
+                            .filter(|&&x| !x.is_nan())
+                            .cloned()
+                            .collect();
+                        sorted
+                            .sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
                         if !sorted.is_empty() {
                             let mid = sorted.len() / 2;
                             result[i] = if sorted.len() % 2 == 0 {
@@ -415,11 +432,10 @@ impl GpuExpandingWindow {
                             };
                         }
                     }
-                }
-                // WindowOperation::Custom(_) => {
-                //     // Custom operations not supported in GPU mode, fall back to CPU
-                //     return self.apply_cpu(data);
-                // }
+                } // WindowOperation::Custom(_) => {
+                  //     // Custom operations not supported in GPU mode, fall back to CPU
+                  //     return self.apply_cpu(data);
+                  // }
             }
         }
 
@@ -499,8 +515,13 @@ impl GpuExpandingWindow {
                 WindowOperation::Median => {
                     // Median calculation
                     if window_data.len() > 0 {
-                        let mut sorted: Vec<f64> = window_data.iter().filter(|&&x| !x.is_nan()).cloned().collect();
-                        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+                        let mut sorted: Vec<f64> = window_data
+                            .iter()
+                            .filter(|&&x| !x.is_nan())
+                            .cloned()
+                            .collect();
+                        sorted
+                            .sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
                         if !sorted.is_empty() {
                             let mid = sorted.len() / 2;
                             result[i] = if sorted.len() % 2 == 0 {
@@ -510,11 +531,10 @@ impl GpuExpandingWindow {
                             };
                         }
                     }
-                }
-                // WindowOperation::Custom(ref func) => {
-                //     // Apply custom function
-                //     result[i] = func(window_data)?;
-                // }
+                } // WindowOperation::Custom(ref func) => {
+                  //     // Apply custom function
+                  //     result[i] = func(window_data)?;
+                  // }
             }
         }
 

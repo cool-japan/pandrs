@@ -246,7 +246,7 @@ impl ExecutionContext for DataFusionContext {
         }
 
         let schema = if sql_result.is_empty() {
-            use arrow::datatypes::{Schema, Field};
+            use arrow::datatypes::{Field, Schema};
             std::sync::Arc::new(Schema::new(vec![] as Vec<Field>))
         } else {
             sql_result[0].schema()
@@ -271,9 +271,9 @@ impl ExecutionContext for DataFusionContext {
         } else {
             // If table not found, check our registered tables
             if let Some(partition_set) = self.registered_tables.get(name) {
-                partition_set.schema().cloned().ok_or_else(||
+                partition_set.schema().cloned().ok_or_else(|| {
                     Error::InvalidValue(format!("Schema not found for table '{}'", name))
-                )
+                })
             } else {
                 Err(Error::InvalidValue(format!("Table '{}' not found", name)))
             }

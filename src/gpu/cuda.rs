@@ -13,7 +13,7 @@ use crate::gpu::{GpuError, GpuManager};
 
 // Import CUDA-specific dependencies when the feature is enabled
 #[cfg(feature = "cuda")]
-use cudarc::cublas::{CudaBlas, result::CublasError};
+use cudarc::cublas::{result::CublasError, CudaBlas};
 #[cfg(feature = "cuda")]
 use cudarc::driver::CudaFunction;
 #[cfg(feature = "cuda")]
@@ -181,7 +181,7 @@ pub fn matrix_multiply(a: &GpuMatrix, b: &GpuMatrix, manager: &GpuManager) -> Re
         // In a real implementation, you would use the correct cudarc API
         // For now, just return an error indicating GPU matrix multiplication is not implemented
         return Err(Error::from(GpuError::DeviceError(
-            "GPU matrix multiplication not implemented for cudarc 0.10.0".to_string()
+            "GPU matrix multiplication not implemented for cudarc 0.10.0".to_string(),
         )));
     }
 
@@ -277,7 +277,7 @@ where
     // Note: kernel launch API has changed in cudarc 0.10.0
     // For now, return a placeholder error
     return Err(Error::from(GpuError::DeviceError(
-        "GPU kernel launch not implemented for cudarc 0.10.0".to_string()
+        "GPU kernel launch not implemented for cudarc 0.10.0".to_string(),
     )));
 }
 
@@ -661,7 +661,7 @@ pub fn matrix_sum(a: &GpuMatrix, manager: &GpuManager) -> Result<f64> {
         let incy = 1;
         // Note: CudaBlas API has changed in cudarc 0.10.0
         return Err(Error::from(GpuError::DeviceError(
-            "GPU BLAS operations not implemented for cudarc 0.10.0".to_string()
+            "GPU BLAS operations not implemented for cudarc 0.10.0".to_string(),
         )));
     }
 
@@ -789,7 +789,7 @@ pub fn vector_dot_product(a: &GpuVector, b: &GpuVector, manager: &GpuManager) ->
         let incy = 1;
         // Note: CudaBlas API has changed in cudarc 0.10.0
         return Err(Error::from(GpuError::DeviceError(
-            "GPU BLAS operations not implemented for cudarc 0.10.0".to_string()
+            "GPU BLAS operations not implemented for cudarc 0.10.0".to_string(),
         )));
     }
 
@@ -862,7 +862,7 @@ pub fn vector_add(a: &GpuVector, b: &GpuVector, manager: &GpuManager) -> Result<
         let incy = 1;
         // Note: CudaBlas API has changed in cudarc 0.10.0
         return Err(Error::from(GpuError::DeviceError(
-            "GPU BLAS operations not implemented for cudarc 0.10.0".to_string()
+            "GPU BLAS operations not implemented for cudarc 0.10.0".to_string(),
         )));
     }
 
@@ -908,7 +908,8 @@ fn to_cpu<T: cudarc::driver::DeviceRepr + Copy + Default>(
     let total_elements = shape.0 * shape.1;
     let mut result = vec![T::default(); total_elements];
 
-    match Ok::<(), DriverError>(()) { // device.dtoh_copy(d_data, &mut result) {
+    match Ok::<(), DriverError>(()) {
+        // device.dtoh_copy(d_data, &mut result) {
         Ok(()) => Ok(result),
         Err(e) => Err(Error::from(GpuError::TransferError(format!(
             "Failed to copy data from device: {}",

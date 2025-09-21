@@ -180,8 +180,8 @@ pub fn kmeans(
 ) -> Result<(Array2<f64>, Array1<usize>, f64)> {
     // Check if GPU is available
     let gpu_manager = get_gpu_manager()?;
-    let use_gpu =
-        gpu_manager.is_available() && data.len() >= gpu_manager.context().config().min_size_threshold;
+    let use_gpu = gpu_manager.is_available()
+        && data.len() >= gpu_manager.context().config().min_size_threshold;
 
     if use_gpu {
         kmeans_gpu(data, k, max_iter, tol)
@@ -408,8 +408,8 @@ pub fn pca(
 ) -> Result<(Array2<f64>, Array1<f64>, Array2<f64>)> {
     // Check if GPU is available
     let gpu_manager = get_gpu_manager()?;
-    let use_gpu =
-        gpu_manager.is_available() && data.len() >= gpu_manager.context().config().min_size_threshold;
+    let use_gpu = gpu_manager.is_available()
+        && data.len() >= gpu_manager.context().config().min_size_threshold;
 
     if use_gpu {
         // For simplicity, we'll delegate to the stats module's GPU implementation

@@ -12,8 +12,8 @@ use crate::dataframe::DataFrame;
 use crate::error::{Error, Result};
 use crate::gpu::operations::{GpuMatrix, GpuVector};
 use crate::gpu::{get_gpu_manager, GpuConfig, GpuDeviceStatus};
+use crate::series::window::{WindowExt, WindowOps};
 use crate::series::Series;
-use crate::series::window::{WindowOps, WindowExt};
 
 /// GPU operation types for benchmarking
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

@@ -377,7 +377,9 @@ pub mod backend {
                         chart
                             .draw_series(line_series)?
                             .label(&name)
-                            .legend(move |(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], color));
+                            .legend(move |(x, y)| {
+                                PathElement::new(vec![(x, y), (x + 20, y)], color)
+                            });
                     } else {
                         chart.draw_series(line_series)?;
                     }
@@ -633,24 +635,22 @@ pub mod backend {
                 .configure_mesh()
                 .disable_x_mesh()
                 .x_labels(categories.len())
-                .x_label_formatter(&|idx| {
-                    match idx {
-                        plotters::prelude::SegmentValue::Exact(i) => {
-                            if *i < categories.len() {
-                                categories[*i].to_string()
-                            } else {
-                                "".to_string()
-                            }
+                .x_label_formatter(&|idx| match idx {
+                    plotters::prelude::SegmentValue::Exact(i) => {
+                        if *i < categories.len() {
+                            categories[*i].to_string()
+                        } else {
+                            "".to_string()
                         }
-                        plotters::prelude::SegmentValue::CenterOf(i) => {
-                            if *i < categories.len() {
-                                categories[*i].to_string()
-                            } else {
-                                "".to_string()
-                            }
-                        }
-                        _ => "".to_string(),
                     }
+                    plotters::prelude::SegmentValue::CenterOf(i) => {
+                        if *i < categories.len() {
+                            categories[*i].to_string()
+                        } else {
+                            "".to_string()
+                        }
+                    }
+                    _ => "".to_string(),
                 })
                 .y_desc(&settings.y_label)
                 .draw()?;
@@ -659,24 +659,22 @@ pub mod backend {
                 .configure_mesh()
                 .disable_mesh()
                 .x_labels(categories.len())
-                .x_label_formatter(&|idx| {
-                    match idx {
-                        plotters::prelude::SegmentValue::Exact(i) => {
-                            if *i < categories.len() {
-                                categories[*i].to_string()
-                            } else {
-                                "".to_string()
-                            }
+                .x_label_formatter(&|idx| match idx {
+                    plotters::prelude::SegmentValue::Exact(i) => {
+                        if *i < categories.len() {
+                            categories[*i].to_string()
+                        } else {
+                            "".to_string()
                         }
-                        plotters::prelude::SegmentValue::CenterOf(i) => {
-                            if *i < categories.len() {
-                                categories[*i].to_string()
-                            } else {
-                                "".to_string()
-                            }
-                        }
-                        _ => "".to_string(),
                     }
+                    plotters::prelude::SegmentValue::CenterOf(i) => {
+                        if *i < categories.len() {
+                            categories[*i].to_string()
+                        } else {
+                            "".to_string()
+                        }
+                    }
+                    _ => "".to_string(),
                 })
                 .y_desc(&settings.y_label)
                 .draw()?;

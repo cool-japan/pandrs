@@ -6,12 +6,12 @@
 //! - Matrix inversion using GPU solvers
 //! - Advanced statistical operations
 
-use ndarray::{Array1, Array2, Axis, s};
+use ndarray::{s, Array1, Array2, Axis};
 use std::sync::Arc;
 
 use crate::error::{Error, Result};
 use crate::gpu::operations::{GpuMatrix, GpuVector};
-use crate::gpu::{GpuError, GpuManager, get_gpu_manager};
+use crate::gpu::{get_gpu_manager, GpuError, GpuManager};
 
 #[cfg(feature = "cuda")]
 // cusolver is not available in cudarc 0.10.0
@@ -37,7 +37,9 @@ impl GpuDecomposition {
                     gpu_available: true,
                 })
             } else {
-                Ok(Self { gpu_available: false })
+                Ok(Self {
+                    gpu_available: false,
+                })
             }
         }
         #[cfg(not(feature = "cuda"))]
@@ -103,10 +105,7 @@ impl GpuDecomposition {
     }
 
     #[cfg(feature = "cuda")]
-    fn cuda_qr_decomposition(
-        &self,
-        matrix: &GpuMatrix,
-    ) -> Result<(GpuMatrix, GpuMatrix)> {
+    fn cuda_qr_decomposition(&self, matrix: &GpuMatrix) -> Result<(GpuMatrix, GpuMatrix)> {
         let m = matrix.data.shape()[0];
         let n = matrix.data.shape()[1];
 
@@ -154,10 +153,7 @@ impl GpuDecomposition {
     }
 
     #[cfg(feature = "cuda")]
-    fn cuda_eigen_decomposition(
-        &self,
-        matrix: &GpuMatrix,
-    ) -> Result<(GpuVector, GpuMatrix)> {
+    fn cuda_eigen_decomposition(&self, matrix: &GpuMatrix) -> Result<(GpuVector, GpuMatrix)> {
         let n = matrix.data.shape()[0];
 
         // Placeholder implementation - would use cuSOLVER's syevd routine
@@ -175,10 +171,7 @@ impl GpuDecomposition {
     }
 
     #[cfg(feature = "cuda")]
-    fn cuda_matrix_inverse(
-        &self,
-        matrix: &GpuMatrix,
-    ) -> Result<GpuMatrix> {
+    fn cuda_matrix_inverse(&self, matrix: &GpuMatrix) -> Result<GpuMatrix> {
         let n = matrix.data.shape()[0];
 
         // Placeholder implementation - would use cuSOLVER's getrf + getri routines

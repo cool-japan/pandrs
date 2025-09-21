@@ -3,7 +3,7 @@
 //! This module provides functionality to distribute computations across multiple GPU devices
 //! for improved performance and memory capacity.
 
-use ndarray::{Array1, Array2, Axis, s};
+use ndarray::{s, Array1, Array2, Axis};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
@@ -377,7 +377,9 @@ impl MultiGpuManager {
         let mut usage = HashMap::new();
 
         for (&device_id, status) in &self.device_statuses {
-            let used_memory = status.total_memory.unwrap_or(0)
+            let used_memory = status
+                .total_memory
+                .unwrap_or(0)
                 .saturating_sub(status.free_memory.unwrap_or(0));
             let total_memory = status.total_memory.unwrap_or(0);
             usage.insert(device_id, (used_memory, total_memory));

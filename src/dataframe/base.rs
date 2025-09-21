@@ -465,7 +465,8 @@ impl DataFrame {
             .map_err(|e| Error::InvalidInput(format!("Failed to parse JSON: {}", e)))?;
 
         // Convert JSON object to HashMap
-        let mut data: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
+        let mut data: std::collections::HashMap<String, Vec<String>> =
+            std::collections::HashMap::new();
 
         if let Value::Object(obj) = parsed {
             for (col_name, col_values) in obj {
@@ -482,7 +483,10 @@ impl DataFrame {
                         .collect();
                     data.insert(col_name, string_values);
                 } else {
-                    return Err(Error::InvalidInput(format!("Column '{}' is not an array", col_name)));
+                    return Err(Error::InvalidInput(format!(
+                        "Column '{}' is not an array",
+                        col_name
+                    )));
                 }
             }
         } else {

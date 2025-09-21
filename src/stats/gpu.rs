@@ -15,8 +15,8 @@ use std::collections::HashMap;
 /// Compute correlation matrix using GPU acceleration when available
 pub fn correlation_matrix(data: &Array2<f64>) -> Result<Array2<f64>> {
     let gpu_manager = get_gpu_manager()?;
-    let use_gpu =
-        gpu_manager.is_available() && data.len() >= gpu_manager.context().config().min_size_threshold;
+    let use_gpu = gpu_manager.is_available()
+        && data.len() >= gpu_manager.context().config().min_size_threshold;
 
     if use_gpu {
         // Use GPU implementation
@@ -122,8 +122,8 @@ fn correlation_matrix_cpu(data: &Array2<f64>) -> Result<Array2<f64>> {
 /// Compute covariance matrix using GPU acceleration when available
 pub fn covariance_matrix(data: &Array2<f64>) -> Result<Array2<f64>> {
     let gpu_manager = get_gpu_manager()?;
-    let use_gpu =
-        gpu_manager.is_available() && data.len() >= gpu_manager.context().config().min_size_threshold;
+    let use_gpu = gpu_manager.is_available()
+        && data.len() >= gpu_manager.context().config().min_size_threshold;
 
     if use_gpu {
         // Use GPU implementation
@@ -243,8 +243,8 @@ pub fn describe_gpu(data: &[f64]) -> Result<DescriptiveStats> {
     }
 
     let gpu_manager = get_gpu_manager()?;
-    let use_gpu =
-        gpu_manager.is_available() && data.len() >= gpu_manager.context().config().min_size_threshold;
+    let use_gpu = gpu_manager.is_available()
+        && data.len() >= gpu_manager.context().config().min_size_threshold;
 
     if use_gpu {
         // Convert the slice to an Array1 for GPU processing
@@ -648,7 +648,11 @@ pub fn kmeans(
     let all_indices: Vec<usize> = (0..n_rows).collect();
 
     // Sample without replacement
-    indices = all_indices.as_slice().choose_multiple(&mut rng, k).cloned().collect();
+    indices = all_indices
+        .as_slice()
+        .choose_multiple(&mut rng, k)
+        .cloned()
+        .collect();
 
     for (i, &idx) in indices.iter().enumerate() {
         for j in 0..n_cols {

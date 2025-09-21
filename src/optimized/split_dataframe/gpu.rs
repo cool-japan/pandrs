@@ -6,10 +6,10 @@
 use ndarray::{Array1, Array2};
 use std::sync::Arc;
 
+use crate::column::Column;
 use crate::error::{Error, Result};
 use crate::gpu::operations::{GpuAccelerated, GpuMatrix, GpuVector};
 use crate::gpu::{get_gpu_manager, GpuError, GpuManager};
-use crate::column::Column;
 use crate::optimized::split_dataframe::core::{ColumnView, OptimizedDataFrame};
 
 impl GpuAccelerated for OptimizedDataFrame {
@@ -73,12 +73,14 @@ impl OptimizedDataFrame {
             match &col_view.column {
                 Column::Float64(col) => {
                     for row_idx in 0..n_rows {
-                        matrix[[row_idx, col_idx]] = col.get(row_idx).unwrap_or(Some(0.0)).unwrap_or(0.0);
+                        matrix[[row_idx, col_idx]] =
+                            col.get(row_idx).unwrap_or(Some(0.0)).unwrap_or(0.0);
                     }
                 }
                 Column::Int64(col) => {
                     for row_idx in 0..n_rows {
-                        matrix[[row_idx, col_idx]] = col.get(row_idx).unwrap_or(Some(0)).unwrap_or(0) as f64;
+                        matrix[[row_idx, col_idx]] =
+                            col.get(row_idx).unwrap_or(Some(0)).unwrap_or(0) as f64;
                     }
                 }
                 Column::Boolean(col) => {
@@ -125,7 +127,8 @@ impl OptimizedDataFrame {
             let gpu_centered = GpuMatrix::new(centered_data);
 
             // Compute covariance matrix: X'X / (n-1)
-            let cov_matrix = gpu_centered.data.t().dot(&gpu_centered.data) / (self.row_count() - 1) as f64;
+            let cov_matrix =
+                gpu_centered.data.t().dot(&gpu_centered.data) / (self.row_count() - 1) as f64;
 
             // Convert covariance to correlation
             let mut corr_matrix = Array2::zeros((n_cols, n_cols));
