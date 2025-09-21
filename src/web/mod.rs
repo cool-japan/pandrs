@@ -157,8 +157,7 @@ impl WebVisualization {
     #[wasm_bindgen(constructor)]
     pub fn new(config: WebVisualizationConfig) -> WebResult<WebVisualization> {
         // Get the canvas element
-        let window =
-            web_sys::window().ok_or_else(|| to_js_error("No window object available"))?;
+        let window = web_sys::window().ok_or_else(|| to_js_error("No window object available"))?;
 
         let document = window
             .document()
@@ -206,7 +205,6 @@ impl WebVisualization {
         self.data = Some(Rc::new(RefCell::new(df)));
         Ok(())
     }
-
 
     /// Render the visualization
     #[wasm_bindgen]
@@ -363,12 +361,8 @@ impl WebVisualization {
         plot_settings.plot_kind = PlotKind::Line;
 
         // Use existing plotting functionality from plotters_ext module
-        plotters_ext_web::plot_multi_series_for_web(
-            df,
-            &columns_str,
-            drawing_area,
-            &plot_settings,
-        ).map_err(|e| to_js_error(e))?;
+        plotters_ext_web::plot_multi_series_for_web(df, &columns_str, drawing_area, &plot_settings)
+            .map_err(|e| to_js_error(e))?;
 
         Ok(())
     }
@@ -408,7 +402,8 @@ impl WebVisualization {
         plot_settings.plot_kind = PlotKind::Bar;
 
         // Use existing plotting functionality
-        plotters_ext_web::plot_column_for_web(df, column, drawing_area, &plot_settings).map_err(|e| to_js_error(e))?;
+        plotters_ext_web::plot_column_for_web(df, column, drawing_area, &plot_settings)
+            .map_err(|e| to_js_error(e))?;
 
         Ok(())
     }
@@ -454,7 +449,8 @@ impl WebVisualization {
             y_column,
             drawing_area,
             &plot_settings,
-        ).map_err(|e| to_js_error(e))?;
+        )
+        .map_err(|e| to_js_error(e))?;
 
         Ok(())
     }
@@ -494,7 +490,8 @@ impl WebVisualization {
         plot_settings.plot_kind = PlotKind::Area;
 
         // Use existing plotting functionality
-        plotters_ext_web::plot_column_for_web(df, column, drawing_area, &plot_settings).map_err(|e| to_js_error(e))?;
+        plotters_ext_web::plot_column_for_web(df, column, drawing_area, &plot_settings)
+            .map_err(|e| to_js_error(e))?;
 
         Ok(())
     }
@@ -540,7 +537,8 @@ impl WebVisualization {
             10, // Default 10 bins
             drawing_area,
             &plot_settings,
-        ).map_err(|e| to_js_error(e))?;
+        )
+        .map_err(|e| to_js_error(e))?;
 
         Ok(())
     }
@@ -589,7 +587,8 @@ impl WebVisualization {
             value_column,
             drawing_area,
             &plot_settings,
-        ).map_err(|e| to_js_error(e))?;
+        )
+        .map_err(|e| to_js_error(e))?;
 
         Ok(())
     }

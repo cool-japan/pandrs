@@ -507,7 +507,9 @@ pub mod backend {
             chart
                 .draw_series(bars)?
                 .label(series_name)
-                .legend(move |(x, y)| Rectangle::new([(x, y - 5), (x + 20, y + 5)], color.filled()));
+                .legend(move |(x, y)| {
+                    Rectangle::new([(x, y - 5), (x + 20, y + 5)], color.filled())
+                });
         } else {
             chart.draw_series(bars)?;
         }
