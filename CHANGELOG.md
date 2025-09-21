@@ -64,7 +64,6 @@ No breaking changes from beta.1:
 - No API changes
 - Performance improvements are automatic
 - Simply update version in Cargo.toml
-- Update SciRS2 crates
 
 ## [0.1.0-beta.1] - 2025-09-15
 
