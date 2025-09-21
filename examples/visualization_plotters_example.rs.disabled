@@ -1,0 +1,117 @@
+#[cfg(feature = "visualization")]
+use pandrs::vis::{DataFramePlotExt, SeriesPlotExt};
+#[cfg(feature = "visualization")]
+use pandrs::vis::{PlotConfig, PlotType};
+#[cfg(feature = "visualization")]
+use pandrs::{DataFrame, Series};
+#[cfg(feature = "visualization")]
+use rand::{rng, Rng};
+
+#[cfg(not(feature = "visualization"))]
+fn main() {
+    println!("This example requires the 'visualization' feature flag to be enabled.");
+    println!("Please recompile with:");
+    println!("  cargo run --example visualization_plotters_example --features \"visualization\"");
+}
+
+#[cfg(feature = "visualization")]
+#[allow(clippy::result_large_err)]
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Generate random data
+    let mut rng = rng();
+    let x: Vec<i32> = (0..100).collect();
+    let y1: Vec<f64> = (0..100)
+        .map(|i| i as f64 + rng.random_range(-5.0..5.0))
+        .collect();
+    let y2: Vec<f64> = (0..100)
+        .map(|i| i as f64 * 0.8 + 10.0 + rng.random_range(-3.0..3.0))
+        .collect();
+    let y3: Vec<f64> = (0..100)
+        .map(|i| 50.0 + 30.0 * (i as f64 * 0.1).sin())
+        .collect();
+
+    // Single series line chart
+    let series1 = Series::new(y1.clone(), Some("Data1".to_string()))?;
+
+    println!("Creating line chart...");
+    series1.line_plot("line_chart.png", Some("Line Chart"))?;
+    println!("-> Saved to line_chart.png");
+
+    // Histogram
+    let hist_data: Vec<f64> = (0..1000).map(|_| rng.random_range(-50.0..50.0)).collect();
+    let hist_series = Series::new(hist_data, Some("Distribution".to_string()))?;
+
+    println!("Creating histogram...");
+    hist_series.histogram("histogram.png", Some(20), Some("Histogram"))?;
+    println!("-> Saved to histogram.png");
+
+    // Use DataFrame for multiple series chart
+    let mut df = DataFrame::new();
+    df.add_column("X".to_string(), Series::new(x, Some("X".to_string()))?)?;
+    df.add_column(
+        "Data1".to_string(),
+        Series::new(y1, Some("Data1".to_string()))?,
+    )?;
+    df.add_column(
+        "Data2".to_string(),
+        Series::new(y2, Some("Data2".to_string()))?,
+    )?;
+    df.add_column(
+        "Data3".to_string(),
+        Series::new(y3.clone(), Some("Data3".to_string()))?,
+    )?;
+
+    println!("Creating scatter plot...");
+    df.scatter_xy("X", "Data1", "scatter_chart.png", Some("Scatter Plot"))?;
+    println!("-> Saved to scatter_chart.png");
+
+    println!("Creating multiple series line chart...");
+    df.multi_line_plot(
+        &["Data1", "Data2", "Data3"],
+        "multi_line_chart.svg",
+        Some("Multiple Series Line Chart"),
+    )?;
+    println!("-> Saved to multi_line_chart.svg");
+
+    // Bar chart
+    let bar_values = vec![15, 30, 25, 40, 20];
+    let categories = vec!["A", "B", "C", "D", "E"];
+
+    let mut bar_df = DataFrame::new();
+    bar_df.add_column(
+        "Category".to_string(),
+        Series::new(categories, Some("Category".to_string()))?,
+    )?;
+    bar_df.add_column(
+        "Value".to_string(),
+        Series::new(bar_values.clone(), Some("Value".to_string()))?,
+    )?;
+
+    println!("Creating bar chart...");
+    // Create bar chart using index
+    // Convert i32 to f32 for compatibility
+    let bar_values_f32: Vec<f32> = bar_values.iter().map(|&x| x as f32).collect();
+    let bar_series = Series::new(bar_values_f32, Some("Value".to_string()))?;
+    let bar_config = PlotConfig {
+        title: "Bar Chart".to_string(),
+        plot_type: PlotType::Line, // Use Line type for now
+        ..PlotConfig::default()
+    };
+    bar_series.plot("bar_chart.png", bar_config)?;
+    println!("-> Saved to bar_chart.png");
+
+    println!("Creating area chart...");
+    // Convert f64 to f32 for compatibility
+    let y3_f32: Vec<f32> = y3.iter().map(|&x| x as f32).collect();
+    let area_series = Series::new(y3_f32, Some("Waveform".to_string()))?;
+    let area_config = PlotConfig {
+        title: "Area Chart".to_string(),
+        plot_type: PlotType::Line, // Use Line type for now
+        ..PlotConfig::default()
+    };
+    area_series.plot("area_chart.png", area_config)?;
+    println!("-> Saved to area_chart.png");
+
+    println!("All charts have been generated.");
+    Ok(())
+}
