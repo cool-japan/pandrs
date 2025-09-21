@@ -68,10 +68,12 @@ mod csv_error_tests {
         #[cfg(unix)]
         {
             // Check if we're running as root by trying to determine UID
-            let running_as_root = std::env::var("USER").unwrap_or_default() == "root" ||
-                                  std::process::Command::new("id").arg("-u").output()
-                                    .map(|output| String::from_utf8_lossy(&output.stdout).trim() == "0")
-                                    .unwrap_or(false);
+            let running_as_root = std::env::var("USER").unwrap_or_default() == "root"
+                || std::process::Command::new("id")
+                    .arg("-u")
+                    .output()
+                    .map(|output| String::from_utf8_lossy(&output.stdout).trim() == "0")
+                    .unwrap_or(false);
 
             if !running_as_root {
                 assert!(result.is_err());
@@ -495,10 +497,12 @@ mod general_io_tests {
 
             // Note: This test may pass when running as root since root can override permissions
             // In CI/production environments where this runs as non-root, it should fail as expected
-            let running_as_root = std::env::var("USER").unwrap_or_default() == "root" ||
-                                  std::process::Command::new("id").arg("-u").output()
-                                    .map(|output| String::from_utf8_lossy(&output.stdout).trim() == "0")
-                                    .unwrap_or(false);
+            let running_as_root = std::env::var("USER").unwrap_or_default() == "root"
+                || std::process::Command::new("id")
+                    .arg("-u")
+                    .output()
+                    .map(|output| String::from_utf8_lossy(&output.stdout).trim() == "0")
+                    .unwrap_or(false);
 
             if !running_as_root {
                 assert!(result.is_err());

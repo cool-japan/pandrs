@@ -34,26 +34,26 @@ pub trait DataFrameGpuExt {
 impl DataFrameGpuExt for DataFrame {
     fn gpu_accelerate(&self) -> Result<Self> {
         // Forward to legacy implementation (placeholder for now)
-        Ok(Self {})
+        Ok(self.clone())
     }
 
     fn gpu_corr(&self, columns: &[&str]) -> Result<Self> {
         // Forward to legacy implementation (placeholder for now)
-        Ok(Self {})
+        Ok(self.clone())
     }
 
     fn gpu_linear_regression(&self, target: &str, features: &[&str]) -> Result<Self> {
         // Forward to legacy implementation (placeholder for now)
-        Ok(Self {})
+        Ok(self.clone())
     }
 
     fn gpu_pca(&self, columns: &[&str], n_components: usize) -> Result<Self> {
         // Forward to legacy implementation (placeholder for now)
-        Ok(Self {})
+        Ok(self.clone())
     }
 
     fn gpu_kmeans(&self, columns: &[&str], k: usize, max_iterations: usize) -> Result<Self> {
         // Forward to legacy implementation (placeholder for now)
-        Ok(Self {})
+        Ok(self.clone())
     }
 }

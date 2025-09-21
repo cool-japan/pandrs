@@ -89,8 +89,9 @@ pub mod pipeline_compat;
 pub use pipeline_compat::{Pipeline as PipelineCompat, Transformer};
 
 // Re-export GPU-accelerated ML functionality when CUDA is enabled
-#[cfg(feature = "cuda")]
-pub use gpu::{GpuKMeans, GpuModelParams, GpuPCA, GpuTSNE};
+// Note: GPU ML modules are not yet implemented
+// #[cfg(feature = "cuda")]
+// pub use gpu::{GpuKMeans, GpuModelParams, GpuPCA, GpuTSNE};
 
 // Re-export advanced ML capabilities
 pub use automl::{AutoML, AutoMLConfig, AutoMLResult, ModelResult, ModelSearchSpace, TaskType};

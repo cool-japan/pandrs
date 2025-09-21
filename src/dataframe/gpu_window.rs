@@ -674,8 +674,8 @@ impl<'a> GpuDataFrameRolling<'a> {
         let mut result_df = DataFrame::new();
 
         // Determine which columns to process
-        let target_columns = if let Some(cols) = self.columns {
-            cols
+        let target_columns = if let Some(ref cols) = self.columns {
+            cols.clone()
         } else {
             // Get numeric columns
             self.dataframe
@@ -691,7 +691,7 @@ impl<'a> GpuDataFrameRolling<'a> {
         // Process each column
         for col_name in target_columns {
             if let Ok(series) = self.dataframe.get_column::<f64>(&col_name) {
-                let data = series.data();
+                let data = series.values();
                 let data_size = data.len();
 
                 // Create function key for caching

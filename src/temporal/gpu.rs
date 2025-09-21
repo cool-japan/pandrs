@@ -6,6 +6,7 @@
 use chrono::{DateTime, Duration, Utc};
 use ndarray::{Array1, Array2, Axis};
 use std::fmt;
+use std::fmt::Debug;
 use std::time::Instant;
 
 use crate::error::{Error, Result};
@@ -58,13 +59,15 @@ impl GpuWindowOperation for GpuRollingWindow {
         }
 
         if self.window_size == 0 {
-            return Err(Error::Value("Window size must be greater than 0".into()));
+            return Err(Error::InvalidValue(
+                "Window size must be greater than 0".into(),
+            ));
         }
 
         // Check if GPU is available and should be used
         let gpu_manager = get_gpu_manager()?;
         let use_gpu = gpu_manager.is_available()
-            && data.len() >= gpu_manager.context().config.min_size_threshold;
+            && data.len() >= gpu_manager.context().config().min_size_threshold;
 
         // If GPU acceleration is available, use it
         if use_gpu {
@@ -156,10 +159,29 @@ impl GpuRollingWindow {
                     // Count non-NaN values
                     result[i] = window_data.iter().filter(|&&x| !x.is_nan()).count() as f64;
                 }
-                WindowOperation::Custom(_) => {
-                    // Custom operations not supported in GPU mode, fall back to CPU
-                    return self.apply_cpu(data);
-                }
+                WindowOperation::Median => {
+                    // Median calculation
+                    if window_data.len() > 0 {
+                        let mut sorted: Vec<f64> = window_data
+                            .iter()
+                            .filter(|&&x| !x.is_nan())
+                            .cloned()
+                            .collect();
+                        sorted
+                            .sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+                        if !sorted.is_empty() {
+                            let mid = sorted.len() / 2;
+                            result[i] = if sorted.len() % 2 == 0 {
+                                (sorted[mid - 1] + sorted[mid]) / 2.0
+                            } else {
+                                sorted[mid]
+                            };
+                        }
+                    }
+                } // WindowOperation::Custom(_) => {
+                  //     // Custom operations not supported in GPU mode, fall back to CPU
+                  //     return self.apply_cpu(data);
+                  // }
             }
         }
 
@@ -173,7 +195,9 @@ impl GpuRollingWindow {
         }
 
         if self.window_size == 0 {
-            return Err(Error::Value("Window size must be greater than 0".into()));
+            return Err(Error::InvalidValue(
+                "Window size must be greater than 0".into(),
+            ));
         }
 
         // Allocate vector for results
@@ -249,10 +273,29 @@ impl GpuRollingWindow {
                     // Count non-NaN values
                     result[i] = window_data.iter().filter(|&&x| !x.is_nan()).count() as f64;
                 }
-                WindowOperation::Custom(ref func) => {
-                    // Apply custom function
-                    result[i] = func(window_data)?;
-                }
+                WindowOperation::Median => {
+                    // Median calculation
+                    if window_data.len() > 0 {
+                        let mut sorted: Vec<f64> = window_data
+                            .iter()
+                            .filter(|&&x| !x.is_nan())
+                            .cloned()
+                            .collect();
+                        sorted
+                            .sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+                        if !sorted.is_empty() {
+                            let mid = sorted.len() / 2;
+                            result[i] = if sorted.len() % 2 == 0 {
+                                (sorted[mid - 1] + sorted[mid]) / 2.0
+                            } else {
+                                sorted[mid]
+                            };
+                        }
+                    }
+                } // WindowOperation::Custom(ref func) => {
+                  //     // Apply custom function
+                  //     result[i] = func(window_data)?;
+                  // }
             }
         }
 
@@ -287,7 +330,7 @@ impl GpuWindowOperation for GpuExpandingWindow {
         // Check if GPU is available and should be used
         let gpu_manager = get_gpu_manager()?;
         let use_gpu = gpu_manager.is_available()
-            && data.len() >= gpu_manager.context().config.min_size_threshold;
+            && data.len() >= gpu_manager.context().config().min_size_threshold;
 
         // If GPU acceleration is available, use it
         if use_gpu {
@@ -370,10 +413,29 @@ impl GpuExpandingWindow {
                     // Count non-NaN values
                     result[i] = window_data.iter().filter(|&&x| !x.is_nan()).count() as f64;
                 }
-                WindowOperation::Custom(_) => {
-                    // Custom operations not supported in GPU mode, fall back to CPU
-                    return self.apply_cpu(data);
-                }
+                WindowOperation::Median => {
+                    // Median calculation
+                    if window_data.len() > 0 {
+                        let mut sorted: Vec<f64> = window_data
+                            .iter()
+                            .filter(|&&x| !x.is_nan())
+                            .cloned()
+                            .collect();
+                        sorted
+                            .sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+                        if !sorted.is_empty() {
+                            let mid = sorted.len() / 2;
+                            result[i] = if sorted.len() % 2 == 0 {
+                                (sorted[mid - 1] + sorted[mid]) / 2.0
+                            } else {
+                                sorted[mid]
+                            };
+                        }
+                    }
+                } // WindowOperation::Custom(_) => {
+                  //     // Custom operations not supported in GPU mode, fall back to CPU
+                  //     return self.apply_cpu(data);
+                  // }
             }
         }
 
@@ -450,10 +512,29 @@ impl GpuExpandingWindow {
                     // Count non-NaN values
                     result[i] = window_data.iter().filter(|&&x| !x.is_nan()).count() as f64;
                 }
-                WindowOperation::Custom(ref func) => {
-                    // Apply custom function
-                    result[i] = func(window_data)?;
-                }
+                WindowOperation::Median => {
+                    // Median calculation
+                    if window_data.len() > 0 {
+                        let mut sorted: Vec<f64> = window_data
+                            .iter()
+                            .filter(|&&x| !x.is_nan())
+                            .cloned()
+                            .collect();
+                        sorted
+                            .sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+                        if !sorted.is_empty() {
+                            let mid = sorted.len() / 2;
+                            result[i] = if sorted.len() % 2 == 0 {
+                                (sorted[mid - 1] + sorted[mid]) / 2.0
+                            } else {
+                                sorted[mid]
+                            };
+                        }
+                    }
+                } // WindowOperation::Custom(ref func) => {
+                  //     // Apply custom function
+                  //     result[i] = func(window_data)?;
+                  // }
             }
         }
 
@@ -487,7 +568,7 @@ impl GpuEWWindow {
     /// Create a new GPU-accelerated exponentially weighted window from span
     pub fn from_span(span: f64, min_periods: usize, adjust: bool, ignore_na: bool) -> Result<Self> {
         if span <= 0.0 {
-            return Err(Error::Value("Span must be positive".into()));
+            return Err(Error::InvalidValue("Span must be positive".into()));
         }
         let alpha = 2.0 / (span + 1.0);
         Ok(GpuEWWindow::new(alpha, min_periods, adjust, ignore_na))
@@ -501,13 +582,13 @@ impl GpuWindowOperation for GpuEWWindow {
         }
 
         if self.alpha <= 0.0 || self.alpha > 1.0 {
-            return Err(Error::Value("Alpha must be in (0, 1]".into()));
+            return Err(Error::InvalidValue("Alpha must be in (0, 1]".into()));
         }
 
         // Check if GPU is available and should be used
         let gpu_manager = get_gpu_manager()?;
         let use_gpu = gpu_manager.is_available()
-            && data.len() >= gpu_manager.context().config.min_size_threshold;
+            && data.len() >= gpu_manager.context().config().min_size_threshold;
 
         // If GPU acceleration is available, use it
         if use_gpu {
@@ -657,10 +738,10 @@ pub trait SeriesTimeGpuExt {
         min_periods: usize,
         operation: WindowOperation,
         center: bool,
-    ) -> Result<Series>;
+    ) -> Result<Series<f64>>;
 
     /// Apply a GPU-accelerated expanding window operation to the series
-    fn gpu_expanding(&self, min_periods: usize, operation: WindowOperation) -> Result<Series>;
+    fn gpu_expanding(&self, min_periods: usize, operation: WindowOperation) -> Result<Series<f64>>;
 
     /// Apply a GPU-accelerated exponentially weighted window operation to the series
     fn gpu_ewm(
@@ -669,7 +750,7 @@ pub trait SeriesTimeGpuExt {
         min_periods: usize,
         adjust: bool,
         ignore_na: bool,
-    ) -> Result<Series>;
+    ) -> Result<Series<f64>>;
 
     /// Apply a GPU-accelerated exponentially weighted window operation to the series from span
     fn gpu_ewm_span(
@@ -678,19 +759,22 @@ pub trait SeriesTimeGpuExt {
         min_periods: usize,
         adjust: bool,
         ignore_na: bool,
-    ) -> Result<Series>;
+    ) -> Result<Series<f64>>;
 }
 
-impl SeriesTimeGpuExt for Series {
+impl<T> SeriesTimeGpuExt for Series<T>
+where
+    T: Debug + Clone + Copy + Default + Send + Sync + Into<f64> + 'static,
+{
     fn gpu_rolling(
         &self,
         window_size: usize,
         min_periods: usize,
         operation: WindowOperation,
         center: bool,
-    ) -> Result<Series> {
+    ) -> Result<Series<f64>> {
         // Get data as f64 vector
-        let data = self.as_f64_vector()?;
+        let data = self.as_f64()?;
 
         // Create GPU-accelerated rolling window
         let window = GpuRollingWindow::new(window_size, min_periods, operation, center);
@@ -702,9 +786,9 @@ impl SeriesTimeGpuExt for Series {
         Series::new(result, self.name().cloned())
     }
 
-    fn gpu_expanding(&self, min_periods: usize, operation: WindowOperation) -> Result<Series> {
+    fn gpu_expanding(&self, min_periods: usize, operation: WindowOperation) -> Result<Series<f64>> {
         // Get data as f64 vector
-        let data = self.as_f64_vector()?;
+        let data = self.as_f64()?;
 
         // Create GPU-accelerated expanding window
         let window = GpuExpandingWindow::new(min_periods, operation);
@@ -722,9 +806,9 @@ impl SeriesTimeGpuExt for Series {
         min_periods: usize,
         adjust: bool,
         ignore_na: bool,
-    ) -> Result<Series> {
+    ) -> Result<Series<f64>> {
         // Get data as f64 vector
-        let data = self.as_f64_vector()?;
+        let data = self.as_f64()?;
 
         // Create GPU-accelerated exponentially weighted window
         let window = GpuEWWindow::new(alpha, min_periods, adjust, ignore_na);
@@ -742,9 +826,9 @@ impl SeriesTimeGpuExt for Series {
         min_periods: usize,
         adjust: bool,
         ignore_na: bool,
-    ) -> Result<Series> {
+    ) -> Result<Series<f64>> {
         // Get data as f64 vector
-        let data = self.as_f64_vector()?;
+        let data = self.as_f64()?;
 
         // Create GPU-accelerated exponentially weighted window from span
         let window = GpuEWWindow::from_span(span, min_periods, adjust, ignore_na)?;

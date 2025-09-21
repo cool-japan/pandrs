@@ -6,11 +6,11 @@
 use ndarray::{Array1, Array2};
 use std::sync::Arc;
 
+use crate::column::Column;
 use crate::error::{Error, Result};
 use crate::gpu::operations::{GpuAccelerated, GpuMatrix, GpuVector};
 use crate::gpu::{get_gpu_manager, GpuError, GpuManager};
-use crate::optimized::split_dataframe::column_ops::ColumnView;
-use crate::optimized::split_dataframe::core::OptimizedDataFrame;
+use crate::optimized::split_dataframe::core::{ColumnView, OptimizedDataFrame};
 
 impl GpuAccelerated for OptimizedDataFrame {
     fn gpu_accelerate(&self) -> Result<Self> {
@@ -29,7 +29,7 @@ impl OptimizedDataFrame {
     pub fn matrix_multiply(&self, columns1: &[&str], columns2: &[&str]) -> Result<Array2<f64>> {
         let gpu_manager = get_gpu_manager()?;
         let use_gpu = gpu_manager.is_available()
-            && self.row_count() >= gpu_manager.context().config.min_size_threshold;
+            && self.row_count() >= gpu_manager.context().config().min_size_threshold;
 
         // Extract columns into matrices
         let matrix1 = self.to_matrix(columns1)?;
@@ -37,14 +37,14 @@ impl OptimizedDataFrame {
 
         if use_gpu {
             // Use GPU acceleration
-            let gpu_matrix1 = GpuMatrix::new(matrix1);
-            let gpu_matrix2 = GpuMatrix::new(matrix2);
+            let gpu_matrix1 = GpuMatrix::new(matrix1.clone());
+            let gpu_matrix2 = GpuMatrix::new(matrix2.clone());
 
             match gpu_matrix1.dot(&gpu_matrix2) {
                 Ok(result) => Ok(result.data),
                 Err(e) => {
                     // If GPU fails and fallback is enabled, try CPU
-                    if gpu_manager.context().config.fallback_to_cpu {
+                    if gpu_manager.context().config().fallback_to_cpu {
                         let mut result = Array2::zeros((matrix1.shape()[0], matrix2.shape()[1]));
                         result = matrix1.dot(&matrix2);
                         Ok(result)
@@ -69,23 +69,27 @@ impl OptimizedDataFrame {
         let mut matrix = Array2::zeros((n_rows, n_cols));
 
         for (col_idx, col_name) in columns.iter().enumerate() {
-            match self.column(*col_name)? {
-                ColumnView::Float(col) => {
+            let col_view = self.column(*col_name)?;
+            match &col_view.column {
+                Column::Float64(col) => {
                     for row_idx in 0..n_rows {
-                        matrix[[row_idx, col_idx]] = col.get(row_idx);
+                        matrix[[row_idx, col_idx]] =
+                            col.get(row_idx).unwrap_or(Some(0.0)).unwrap_or(0.0);
                     }
                 }
-                ColumnView::Int(col) => {
+                Column::Int64(col) => {
                     for row_idx in 0..n_rows {
-                        matrix[[row_idx, col_idx]] = col.get(row_idx) as f64;
+                        matrix[[row_idx, col_idx]] =
+                            col.get(row_idx).unwrap_or(Some(0)).unwrap_or(0) as f64;
                     }
                 }
-                ColumnView::Bool(col) => {
+                Column::Boolean(col) => {
                     for row_idx in 0..n_rows {
-                        matrix[[row_idx, col_idx]] = if col.get(row_idx) { 1.0 } else { 0.0 };
+                        let val = col.get(row_idx).unwrap_or(Some(false)).unwrap_or(false);
+                        matrix[[row_idx, col_idx]] = if val { 1.0 } else { 0.0 };
                     }
                 }
-                ColumnView::String(_) => {
+                Column::String(_) => {
                     return Err(Error::Type(format!(
                         "Cannot convert string column '{}' to numeric matrix",
                         col_name
@@ -101,7 +105,7 @@ impl OptimizedDataFrame {
     pub fn corr_matrix(&self, columns: &[&str]) -> Result<Array2<f64>> {
         let gpu_manager = get_gpu_manager()?;
         let use_gpu = gpu_manager.is_available()
-            && self.row_count() >= gpu_manager.context().config.min_size_threshold;
+            && self.row_count() >= gpu_manager.context().config().min_size_threshold;
 
         // Extract columns into a matrix
         let data_matrix = self.to_matrix(columns)?;
@@ -123,17 +127,8 @@ impl OptimizedDataFrame {
             let gpu_centered = GpuMatrix::new(centered_data);
 
             // Compute covariance matrix: X'X / (n-1)
-            let cov_matrix = match gpu_centered.data.t().dot(&gpu_centered.data) {
-                Ok(result) => result / (self.row_count() - 1) as f64,
-                Err(e) => {
-                    // If GPU fails and fallback is enabled, compute using CPU
-                    if gpu_manager.context().config.fallback_to_cpu {
-                        compute_corr_matrix_cpu(&data_matrix)
-                    } else {
-                        return Err(e);
-                    }
-                }
-            };
+            let cov_matrix =
+                gpu_centered.data.t().dot(&gpu_centered.data) / (self.row_count() - 1) as f64;
 
             // Convert covariance to correlation
             let mut corr_matrix = Array2::zeros((n_cols, n_cols));

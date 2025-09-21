@@ -455,6 +455,48 @@ impl DataFrame {
         Ok(df)
     }
 
+    /// Create a new DataFrame from JSON string
+    /// Expects JSON format like: {"col1": ["val1", "val2"], "col2": ["val3", "val4"]}
+    pub fn from_json(json_str: &str) -> Result<Self> {
+        use serde_json::Value;
+
+        // Parse the JSON string
+        let parsed: Value = serde_json::from_str(json_str)
+            .map_err(|e| Error::InvalidInput(format!("Failed to parse JSON: {}", e)))?;
+
+        // Convert JSON object to HashMap
+        let mut data: std::collections::HashMap<String, Vec<String>> =
+            std::collections::HashMap::new();
+
+        if let Value::Object(obj) = parsed {
+            for (col_name, col_values) in obj {
+                if let Value::Array(values) = col_values {
+                    let string_values: Vec<String> = values
+                        .into_iter()
+                        .map(|v| match v {
+                            Value::String(s) => s,
+                            Value::Number(n) => n.to_string(),
+                            Value::Bool(b) => ToString::to_string(&b),
+                            Value::Null => "".to_string(),
+                            _ => v.to_string(),
+                        })
+                        .collect();
+                    data.insert(col_name, string_values);
+                } else {
+                    return Err(Error::InvalidInput(format!(
+                        "Column '{}' is not an array",
+                        col_name
+                    )));
+                }
+            }
+        } else {
+            return Err(Error::InvalidInput("JSON must be an object".to_string()));
+        }
+
+        // Use existing from_map method
+        Self::from_map(data, None)
+    }
+
     /// Check if the DataFrame has the specified column (alias for contains_column)
     pub fn has_column(&self, column_name: &str) -> bool {
         self.contains_column(column_name)

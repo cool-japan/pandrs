@@ -222,17 +222,10 @@ impl DataFrame {
         }
 
         // Get numeric data
-        let column = self.get_column(col_name).unwrap();
-        let na_values = column.to_numeric_vec()?;
+        let column: &Series<f64> = self.get_column(col_name).unwrap();
+        let values = column.as_f64()?;
 
-        // Handle NA values (treat missing values as 0.0)
-        let values: Vec<f64> = na_values
-            .iter()
-            .map(|na_val| match na_val {
-                crate::NA::Value(val) => *val,
-                crate::NA::NA => 0.0, // Treat missing values as 0.0
-            })
-            .collect();
+        // Values are already f64, no need to handle NA conversion
 
         let indices: Vec<f64> = (0..values.len()).map(|i| i as f64).collect();
 
@@ -305,17 +298,10 @@ impl DataFrame {
         // Prepare data for each column
         let mut series_data = Vec::new();
         for (i, &col_name) in col_names.iter().enumerate() {
-            let column = self.get_column(col_name).unwrap();
-            let na_values = column.to_numeric_vec()?;
+            let column: &Series<f64> = self.get_column(col_name).unwrap();
+            let values = column.as_f64()?;
 
-            // Handle NA values (treat missing values as 0.0)
-            let values: Vec<f64> = na_values
-                .iter()
-                .map(|na_val| match na_val {
-                    crate::NA::Value(val) => *val,
-                    crate::NA::NA => 0.0, // Treat missing values as 0.0
-                })
-                .collect();
+            // Values are already f64, no need to handle NA conversion
 
             let indices: Vec<f64> = (0..values.len()).map(|i| i as f64).collect();
 
@@ -376,27 +362,12 @@ impl DataFrame {
         }
 
         // Get numeric data
-        let x_column = self.get_column(x_col).unwrap();
-        let y_column = self.get_column(y_col).unwrap();
-        let x_na_values = x_column.to_numeric_vec()?;
-        let y_na_values = y_column.to_numeric_vec()?;
+        let x_column: &Series<f64> = self.get_column(x_col).unwrap();
+        let y_column: &Series<f64> = self.get_column(y_col).unwrap();
+        let x_values = x_column.as_f64()?;
+        let y_values = y_column.as_f64()?;
 
-        // Handle NA values (treat missing values as 0.0)
-        let x_values: Vec<f64> = x_na_values
-            .iter()
-            .map(|na_val| match na_val {
-                crate::NA::Value(val) => *val,
-                crate::NA::NA => 0.0, // Treat missing values as 0.0
-            })
-            .collect();
-
-        let y_values: Vec<f64> = y_na_values
-            .iter()
-            .map(|na_val| match na_val {
-                crate::NA::Value(val) => *val,
-                crate::NA::NA => 0.0, // Treat missing values as 0.0
-            })
-            .collect();
+        // Values are already f64, no need to handle NA conversion
 
         // Check data length
         if x_values.len() != y_values.len() {
@@ -474,23 +445,16 @@ impl DataFrame {
         }
 
         // Create mapping of categories and their values
-        let cat_column = self.get_column(category_col).unwrap();
-        let val_column = self.get_column(value_col).unwrap();
+        let cat_column: &Series<String> = self.get_column(category_col).unwrap();
+        let val_column: &Series<f64> = self.get_column(value_col).unwrap();
         let categories = cat_column
             .values()
             .iter()
             .map(|v| v.to_string())
             .collect::<Vec<_>>();
-        let values = val_column.to_numeric_vec()?;
+        let numeric_values = val_column.as_f64()?;
 
-        // Handle NA values (treat missing values as 0.0)
-        let numeric_values: Vec<f64> = values
-            .iter()
-            .map(|na_val| match na_val {
-                crate::NA::Value(val) => *val,
-                crate::NA::NA => 0.0, // Treat missing values as 0.0
-            })
-            .collect();
+        // Values are already f64, no need to handle NA conversion
 
         // Group values by category
         let mut category_map: std::collections::HashMap<String, Vec<f64>> =

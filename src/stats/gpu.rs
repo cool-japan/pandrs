@@ -6,16 +6,17 @@
 
 use crate::error::{Error, Result};
 use crate::gpu::operations::{GpuMatrix, GpuVector};
-use crate::gpu::{get_device_status, get_gpu_manager, GpuError};
+use crate::gpu::{get_gpu_manager, init_gpu, GpuError};
 use crate::stats::DescriptiveStats;
 use ndarray::{Array1, Array2};
+use rand::prelude::IndexedRandom;
 use std::collections::HashMap;
 
 /// Compute correlation matrix using GPU acceleration when available
 pub fn correlation_matrix(data: &Array2<f64>) -> Result<Array2<f64>> {
     let gpu_manager = get_gpu_manager()?;
-    let use_gpu =
-        gpu_manager.is_available() && data.len() >= gpu_manager.context().config.min_size_threshold;
+    let use_gpu = gpu_manager.is_available()
+        && data.len() >= gpu_manager.context().config().min_size_threshold;
 
     if use_gpu {
         // Use GPU implementation
@@ -53,10 +54,7 @@ fn correlation_matrix_gpu(data: &Array2<f64>) -> Result<Array2<f64>> {
 
     // Compute covariance matrix: X'X / (n-1)
     // This uses GPU-accelerated matrix multiplication if available
-    let cov_matrix = match gpu_centered.data.t().dot(&gpu_centered.data) {
-        Ok(result) => result / (n_rows - 1) as f64,
-        Err(e) => return Err(e),
-    };
+    let cov_matrix = gpu_centered.data.t().dot(&gpu_centered.data) / (n_rows - 1) as f64;
 
     // Convert covariance matrix to correlation matrix
     let mut corr_matrix = Array2::zeros((n_cols, n_cols));
@@ -124,8 +122,8 @@ fn correlation_matrix_cpu(data: &Array2<f64>) -> Result<Array2<f64>> {
 /// Compute covariance matrix using GPU acceleration when available
 pub fn covariance_matrix(data: &Array2<f64>) -> Result<Array2<f64>> {
     let gpu_manager = get_gpu_manager()?;
-    let use_gpu =
-        gpu_manager.is_available() && data.len() >= gpu_manager.context().config.min_size_threshold;
+    let use_gpu = gpu_manager.is_available()
+        && data.len() >= gpu_manager.context().config().min_size_threshold;
 
     if use_gpu {
         // Use GPU implementation
@@ -163,10 +161,7 @@ fn covariance_matrix_gpu(data: &Array2<f64>) -> Result<Array2<f64>> {
 
     // Compute covariance matrix: X'X / (n-1)
     // This uses GPU-accelerated matrix multiplication if available
-    let cov_matrix = match gpu_centered.data.t().dot(&gpu_centered.data) {
-        Ok(result) => result / (n_rows - 1) as f64,
-        Err(e) => return Err(e),
-    };
+    let cov_matrix = gpu_centered.data.t().dot(&gpu_centered.data) / (n_rows - 1) as f64;
 
     Ok(cov_matrix)
 }
@@ -248,8 +243,8 @@ pub fn describe_gpu(data: &[f64]) -> Result<DescriptiveStats> {
     }
 
     let gpu_manager = get_gpu_manager()?;
-    let use_gpu =
-        gpu_manager.is_available() && data.len() >= gpu_manager.context().config.min_size_threshold;
+    let use_gpu = gpu_manager.is_available()
+        && data.len() >= gpu_manager.context().config().min_size_threshold;
 
     if use_gpu {
         // Convert the slice to an Array1 for GPU processing
@@ -373,9 +368,9 @@ pub fn describe_gpu(data: &[f64]) -> Result<DescriptiveStats> {
 
 /// Checks if GPU is available and initialized
 fn ensure_gpu_available() -> Result<()> {
-    let status = get_device_status();
+    let status = init_gpu()?;
     if !status.available {
-        return Err(Error::GpuError(
+        return Err(Error::Computation(
             "GPU is not available or initialized".into(),
         ));
     }
@@ -435,16 +430,10 @@ pub fn linear_regression(
     let gpu_y = GpuVector::new(Array1::from_vec(y.to_vec()));
 
     // Calculate X^T * X
-    let xtx = match gpu_x.data.t().dot(&gpu_x.data) {
-        Ok(result) => result,
-        Err(e) => return Err(e),
-    };
+    let xtx = gpu_x.data.t().dot(&gpu_x.data);
 
     // Calculate X^T * y
-    let xty = match gpu_x.data.t().dot(&gpu_y.data) {
-        Ok(result) => result,
-        Err(e) => return Err(e),
-    };
+    let xty = gpu_x.data.t().dot(&gpu_y.data);
 
     // Calculate inverse of X^T * X
     // In a real implementation, this would use a GPU-accelerated library like cuSOLVER
@@ -659,7 +648,11 @@ pub fn kmeans(
     let all_indices: Vec<usize> = (0..n_rows).collect();
 
     // Sample without replacement
-    indices = all_indices.choose_multiple(&mut rng, k).cloned().collect();
+    indices = all_indices
+        .as_slice()
+        .choose_multiple(&mut rng, k)
+        .cloned()
+        .collect();
 
     for (i, &idx) in indices.iter().enumerate() {
         for j in 0..n_cols {
@@ -718,7 +711,7 @@ pub fn kmeans(
                 }
             } else {
                 // Handle empty cluster by assigning a random point
-                let random_idx = rand::random::<usize>() % n_rows;
+                let random_idx = (rand::random::<f64>() * n_rows as f64) as usize;
                 for j in 0..n_cols {
                     new_centroids[[c, j]] = data[[random_idx, j]];
                 }

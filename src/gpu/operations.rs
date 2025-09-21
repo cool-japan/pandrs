@@ -55,11 +55,16 @@ impl GpuMatrix {
         }
     }
 
+    /// Get the CPU data
+    pub fn to_cpu(&self) -> Result<Array2<f64>> {
+        Ok(self.data.clone())
+    }
+
     /// Multiply this matrix by another matrix (CPU fallback)
     pub fn dot_cpu(&self, other: &GpuMatrix) -> Result<GpuMatrix> {
         // Check if dimensions are compatible
         if self.data.shape()[1] != other.data.shape()[0] {
-            return Err(Error::Dimension(format!(
+            return Err(Error::DimensionMismatch(format!(
                 "Incompatible dimensions for matrix multiplication: {:?} and {:?}",
                 self.data.shape(),
                 other.data.shape()
@@ -89,7 +94,7 @@ impl GpuMatrix {
                     Ok(result) => return Ok(result),
                     Err(e) => {
                         // If configured to fallback to CPU, do so
-                        if manager.context().config.fallback_to_cpu {
+                        if manager.context().config().fallback_to_cpu {
                             println!("Warning: GPU matrix multiplication failed ({}). Falling back to CPU.", e);
                         } else {
                             return Err(e.into());
@@ -111,7 +116,7 @@ impl GpuMatrix {
     ) -> Result<GpuMatrix> {
         // Check if dimensions match
         if self.data.shape() != other.data.shape() {
-            return Err(Error::Dimension(format!(
+            return Err(Error::DimensionMismatch(format!(
                 "Incompatible dimensions for element-wise operation: {:?} and {:?}",
                 self.data.shape(),
                 other.data.shape()
@@ -143,7 +148,7 @@ impl GpuMatrix {
                     Ok(result) => return Ok(result),
                     Err(e) => {
                         // If configured to fallback to CPU, do so
-                        if manager.context().config.fallback_to_cpu {
+                        if manager.context().config().fallback_to_cpu {
                             println!("Warning: GPU addition failed ({}). Falling back to CPU.", e);
                         } else {
                             return Err(e.into());
@@ -171,7 +176,7 @@ impl GpuMatrix {
                     Ok(result) => return Ok(result),
                     Err(e) => {
                         // If configured to fallback to CPU, do so
-                        if manager.context().config.fallback_to_cpu {
+                        if manager.context().config().fallback_to_cpu {
                             println!(
                                 "Warning: GPU subtraction failed ({}). Falling back to CPU.",
                                 e
@@ -202,7 +207,7 @@ impl GpuMatrix {
                     Ok(result) => return Ok(result),
                     Err(e) => {
                         // If configured to fallback to CPU, do so
-                        if manager.context().config.fallback_to_cpu {
+                        if manager.context().config().fallback_to_cpu {
                             println!(
                                 "Warning: GPU multiplication failed ({}). Falling back to CPU.",
                                 e
@@ -233,7 +238,7 @@ impl GpuMatrix {
                     Ok(result) => return Ok(result),
                     Err(e) => {
                         // If configured to fallback to CPU, do so
-                        if manager.context().config.fallback_to_cpu {
+                        if manager.context().config().fallback_to_cpu {
                             println!("Warning: GPU division failed ({}). Falling back to CPU.", e);
                         } else {
                             return Err(e.into());
@@ -260,7 +265,7 @@ impl GpuMatrix {
                     Ok(result) => return Ok(result),
                     Err(e) => {
                         // If configured to fallback to CPU, do so
-                        if manager.context().config.fallback_to_cpu {
+                        if manager.context().config().fallback_to_cpu {
                             println!("Warning: GPU sum failed ({}). Falling back to CPU.", e);
                         } else {
                             return Err(e.into());
@@ -300,7 +305,7 @@ impl GpuMatrix {
                     Ok(result) => return Ok(result),
                     Err(e) => {
                         // If configured to fallback to CPU, do so
-                        if manager.context().config.fallback_to_cpu {
+                        if manager.context().config().fallback_to_cpu {
                             println!("Warning: GPU sort failed ({}). Falling back to CPU.", e);
                         } else {
                             return Err(e.into());
@@ -367,7 +372,7 @@ impl GpuAccelerated for DataFrame {
         let mut has_numeric = false;
 
         for col_name in self.column_names() {
-            if self.is_numeric_column(col_name) {
+            if self.is_numeric_column(&col_name) {
                 has_numeric = true;
                 break;
             }
@@ -411,7 +416,7 @@ impl GpuVector {
     pub fn dot(&self, other: &GpuVector) -> Result<f64> {
         // Check if dimensions are compatible
         if self.data.len() != other.data.len() {
-            return Err(Error::Dimension(format!(
+            return Err(Error::DimensionMismatch(format!(
                 "Incompatible dimensions for dot product: {} and {}",
                 self.data.len(),
                 other.data.len()
@@ -430,7 +435,7 @@ impl GpuVector {
                     Ok(result) => return Ok(result),
                     Err(e) => {
                         // If configured to fallback to CPU, do so
-                        if manager.context().config.fallback_to_cpu {
+                        if manager.context().config().fallback_to_cpu {
                             println!(
                                 "Warning: GPU dot product failed ({}). Falling back to CPU.",
                                 e
@@ -456,7 +461,7 @@ impl GpuVector {
     ) -> Result<GpuVector> {
         // Check if dimensions match
         if self.data.len() != other.data.len() {
-            return Err(Error::Dimension(format!(
+            return Err(Error::DimensionMismatch(format!(
                 "Incompatible dimensions for element-wise operation: {} and {}",
                 self.data.len(),
                 other.data.len()
@@ -491,7 +496,7 @@ impl GpuVector {
                     Ok(result) => return Ok(result),
                     Err(e) => {
                         // If configured to fallback to CPU, do so
-                        if manager.context().config.fallback_to_cpu {
+                        if manager.context().config().fallback_to_cpu {
                             println!(
                                 "Warning: GPU vector addition failed ({}). Falling back to CPU.",
                                 e

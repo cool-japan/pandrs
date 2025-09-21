@@ -174,9 +174,9 @@ pub use compute::gpu::{init_gpu, GpuBenchmark, GpuConfig, GpuDeviceStatus};
 #[cfg(feature = "cuda")]
 pub use dataframe::gpu::DataFrameGpuExt;
 #[cfg(feature = "cuda")]
-pub use gpu::benchmark::{BenchmarkOperation, BenchmarkResult, BenchmarkSummary, GpuBenchmark};
+pub use gpu::benchmark::{BenchmarkOperation, BenchmarkResult, BenchmarkSummary};
 #[cfg(feature = "cuda")]
-pub use gpu::{get_gpu_manager, init_gpu, GpuConfig, GpuDeviceStatus, GpuManager};
+pub use gpu::{get_gpu_manager, GpuManager};
 #[cfg(feature = "cuda")]
 pub use temporal::gpu::SeriesTimeGpuExt;
 

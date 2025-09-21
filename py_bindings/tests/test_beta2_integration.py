@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Integration tests for PandRS alpha.4 Python bindings.
+Integration tests for PandRS beta.2 Python bindings.
 
-This test suite validates that all major alpha.4 features work correctly
+This test suite validates that all major beta.2 features work correctly
 through the Python interface.
 """
 
@@ -23,11 +23,11 @@ except ImportError:
     
 
 @pytest.mark.skipif(not PANDRS_AVAILABLE, reason="PandRS not available")
-class TestAlpha4PythonIntegration:
-    """Test alpha.4 features through Python bindings."""
+class TestBeta2PythonIntegration:
+    """Test beta.2 features through Python bindings."""
     
     def test_dataframe_rename_columns(self):
-        """Test DataFrame.rename_columns() method (alpha.4 feature)."""
+        """Test DataFrame.rename_columns() method (beta.2 feature)."""
         # Create test DataFrame
         df = DataFrame({
             'name': ['Alice', 'Bob', 'Carol'],
@@ -54,7 +54,7 @@ class TestAlpha4PythonIntegration:
         assert df.shape == (3, 3)
     
     def test_dataframe_set_columns(self):
-        """Test DataFrame.columns setter (alpha.4 feature)."""
+        """Test DataFrame.columns setter (beta.2 feature)."""
         # Create test DataFrame
         df = DataFrame({
             'col1': [1, 2, 3],
@@ -70,8 +70,8 @@ class TestAlpha4PythonIntegration:
         assert list(df.columns) == new_columns
         assert df.shape == (3, 3)
     
-    def test_optimized_dataframe_alpha4_features(self):
-        """Test OptimizedDataFrame alpha.4 features."""
+    def test_optimized_dataframe_beta2_features(self):
+        """Test OptimizedDataFrame beta.2 features."""
         # Create OptimizedDataFrame
         df = OptimizedDataFrame()
         
@@ -109,7 +109,7 @@ class TestAlpha4PythonIntegration:
     
     @pytest.mark.skipif(not hasattr(pandrs, 'read_parquet'), reason="Parquet support not available")
     def test_parquet_io_integration(self):
-        """Test enhanced Parquet I/O (alpha.4 feature)."""
+        """Test enhanced Parquet I/O (beta.2 feature)."""
         # Create test data
         df = OptimizedDataFrame()
         df.add_string_column('product', ['Widget A', 'Widget B', 'Widget C'])
@@ -140,7 +140,7 @@ class TestAlpha4PythonIntegration:
     
     @pytest.mark.skipif(not hasattr(pandrs, 'read_sql'), reason="SQL support not available")
     def test_sql_io_integration(self):
-        """Test enhanced SQL I/O (alpha.4 feature)."""
+        """Test enhanced SQL I/O (beta.2 feature)."""
         # Create test data
         df = DataFrame({
             'customer_id': [1, 2, 3],
@@ -176,8 +176,8 @@ class TestAlpha4PythonIntegration:
                 if Path(tmp.name).exists():
                     os.unlink(tmp.name)
     
-    def test_pandas_integration_with_alpha4_features(self):
-        """Test pandas integration with alpha.4 features."""
+    def test_pandas_integration_with_beta2_features(self):
+        """Test pandas integration with beta.2 features."""
         # Create pandas DataFrame
         pd_df = pd.DataFrame({
             'department': ['Eng', 'Sales', 'Marketing'],
@@ -188,7 +188,7 @@ class TestAlpha4PythonIntegration:
         # Convert to PandRS OptimizedDataFrame
         pandrs_df = OptimizedDataFrame.from_pandas(pd_df)
         
-        # Use alpha.4 features
+        # Use beta.2 features
         rename_map = {
             'department': 'dept',
             'employees': 'headcount'
@@ -204,12 +204,12 @@ class TestAlpha4PythonIntegration:
         assert 'budget' in result_pd.columns
         assert len(result_pd) == 3
     
-    def test_series_operations_with_alpha4(self):
-        """Test Series operations in alpha.4 context."""
+    def test_series_operations_with_beta2(self):
+        """Test Series operations in beta.2 context."""
         # Create Series
         series = Series('test_series', ['A', 'B', 'C', 'D'])
         
-        # Test name operations (alpha.4 feature)
+        # Test name operations (beta.2 feature)
         assert series.name == 'test_series'
         
         series.name = 'renamed_series'
@@ -219,8 +219,8 @@ class TestAlpha4PythonIntegration:
         values = series.values
         assert values == ['A', 'B', 'C', 'D']
     
-    def test_na_series_alpha4_integration(self):
-        """Test NASeries with alpha.4 features."""
+    def test_na_series_beta2_integration(self):
+        """Test NASeries with beta.2 features."""
         # Create NASeries with None values
         data = ['A', None, 'C', None, 'E']
         na_series = NASeries('test_na', data)
@@ -240,8 +240,8 @@ class TestAlpha4PythonIntegration:
         filled = na_series.fillna('MISSING')
         assert filled.name == 'test_na'  # Name preserved
     
-    def test_error_handling_alpha4(self):
-        """Test error handling for alpha.4 features."""
+    def test_error_handling_beta2(self):
+        """Test error handling for beta.2 features."""
         df = DataFrame({
             'col1': [1, 2, 3],
             'col2': [4, 5, 6]
@@ -265,8 +265,8 @@ class TestAlpha4PythonIntegration:
         with pytest.raises(Exception):
             opt_df.set_column_names(['wrong_count', 'too_many'])  # Only 1 column exists
     
-    def test_performance_characteristics_alpha4(self):
-        """Test performance characteristics of alpha.4 features."""
+    def test_performance_characteristics_beta2(self):
+        """Test performance characteristics of beta.2 features."""
         import time
         
         # Create larger dataset
@@ -309,8 +309,8 @@ class TestAlpha4PythonIntegration:
         assert df.shape == (size, 4)
     
     @pytest.mark.skipif(not hasattr(pandrs, 'gpu'), reason="GPU support not available")
-    def test_gpu_integration_alpha4(self):
-        """Test GPU integration with alpha.4 features."""
+    def test_gpu_integration_beta2(self):
+        """Test GPU integration with beta.2 features."""
         # This test assumes GPU module is available
         try:
             from pandrs.gpu import GpuConfig, init_gpu
@@ -324,7 +324,7 @@ class TestAlpha4PythonIntegration:
                 df.add_float_column('x', [1.0, 2.0, 3.0, 4.0])
                 df.add_float_column('y', [2.0, 4.0, 6.0, 8.0])
                 
-                # Use alpha.4 features with GPU
+                # Use beta.2 features with GPU
                 rename_map = {'x': 'feature1', 'y': 'feature2'}
                 df.rename_columns(rename_map)
                 

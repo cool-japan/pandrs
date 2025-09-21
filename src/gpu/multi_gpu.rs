@@ -3,7 +3,7 @@
 //! This module provides functionality to distribute computations across multiple GPU devices
 //! for improved performance and memory capacity.
 
-use ndarray::{Array1, Array2, Axis};
+use ndarray::{s, Array1, Array2, Axis};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
@@ -193,7 +193,7 @@ impl MultiGpuManager {
         // For pipeline parallel, we don't split the matrix but assign different operations
         // to different devices. For now, just replicate the matrix to the first device.
         if let Some(&first_device) = self.config.device_ids.first() {
-            Ok(vec![(first_device, matrix.clone())])
+            Ok(vec![(first_device, GpuMatrix::new(matrix.to_cpu()?))])
         } else {
             Err(Error::from(GpuError::DeviceError(
                 "No devices available".to_string(),
@@ -211,7 +211,7 @@ impl MultiGpuManager {
     /// Collect distributed results and combine them
     pub fn collect_results(&self, distributed_results: Vec<(i32, GpuMatrix)>) -> Result<GpuMatrix> {
         if distributed_results.is_empty() {
-            return Err(Error::from(GpuError::ComputationError(
+            return Err(Error::from(GpuError::KernelExecutionError(
                 "No results to collect".to_string(),
             )));
         }
@@ -238,7 +238,7 @@ impl MultiGpuManager {
             .collect();
 
         if matrices.is_empty() {
-            return Err(Error::from(GpuError::ComputationError(
+            return Err(Error::from(GpuError::KernelExecutionError(
                 "No matrices to concatenate".to_string(),
             )));
         }
@@ -278,7 +278,7 @@ impl MultiGpuManager {
             .collect();
 
         if matrices.is_empty() {
-            return Err(Error::from(GpuError::ComputationError(
+            return Err(Error::from(GpuError::KernelExecutionError(
                 "No matrices to concatenate".to_string(),
             )));
         }
@@ -310,7 +310,7 @@ impl MultiGpuManager {
         if let Some((_, result)) = distributed_results.into_iter().last() {
             Ok(result)
         } else {
-            Err(Error::from(GpuError::ComputationError(
+            Err(Error::from(GpuError::KernelExecutionError(
                 "No pipeline result".to_string(),
             )))
         }
@@ -377,7 +377,12 @@ impl MultiGpuManager {
         let mut usage = HashMap::new();
 
         for (&device_id, status) in &self.device_statuses {
-            usage.insert(device_id, (status.used_memory, status.total_memory));
+            let used_memory = status
+                .total_memory
+                .unwrap_or(0)
+                .saturating_sub(status.free_memory.unwrap_or(0));
+            let total_memory = status.total_memory.unwrap_or(0);
+            usage.insert(device_id, (used_memory, total_memory));
         }
 
         usage

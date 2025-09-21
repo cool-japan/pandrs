@@ -6,9 +6,9 @@ use std::collections::HashMap;
 #[allow(clippy::result_large_err)]
 #[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
-    println!("=== PandRS Basic Usage Example (Alpha 4) ===");
+    println!("=== PandRS Basic Usage Example (Beta 2) ===");
 
-    // Creating Series with new alpha.4 features
+    // Creating Series with beta.2 features
     let mut ages = Series::new(vec![30, 25, 40], Some("age".to_string()))?;
     let heights = Series::new(vec![180, 175, 182], Some("height".to_string()))?;
     let names = Series::new(
@@ -24,8 +24,8 @@ fn main() -> Result<()> {
     println!("Height Series: {heights:?}");
     println!("Name Series: {names:?}");
 
-    // Demonstrate new Series name management (alpha.4)
-    println!("\n=== Series Name Management (New in Alpha 4) ===");
+    // Demonstrate new Series name management (beta.2)
+    println!("\n=== Series Name Management (Beta 2 feature) ===");
     ages.set_name("person_age".to_string());
     println!("Updated age series name: {:?}", ages.name());
 
@@ -74,7 +74,7 @@ fn main() -> Result<()> {
     );
     println!("Column Names: {:?}", opt_df.column_names());
 
-    // Demonstrate new column management features (alpha.4)
+    // Demonstrate new column management features (beta.2)
     println!("\n=== Column Management (New in Alpha 4) ===");
 
     // Rename specific columns

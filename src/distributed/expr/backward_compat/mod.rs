@@ -597,7 +597,7 @@ pub trait ProjectionExt {
     fn with_column(&self, name: impl Into<String>, expr: Expr) -> Result<DistributedDataFrame>;
 
     /// Filters the DataFrame using an expression
-    fn filter_expr(&self, expr: Expr) -> Result<DistributedDataFrame>;
+    fn filter_expr(&mut self, expr: Expr) -> Result<DistributedDataFrame>;
 
     /// Creates user-defined functions
     fn create_udf(&self, udfs: &[UdfDefinition]) -> Result<DistributedDataFrame>;
@@ -662,7 +662,7 @@ impl ProjectionExt for DistributedDataFrame {
         }
     }
 
-    fn filter_expr(&self, expr: Expr) -> Result<DistributedDataFrame> {
+    fn filter_expr(&mut self, expr: Expr) -> Result<DistributedDataFrame> {
         // Convert the expression to SQL
         let filter_sql = format!("{:?}", expr);
 

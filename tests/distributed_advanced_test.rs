@@ -1,4 +1,4 @@
-//! Advanced distributed processing tests for PandRS alpha.4
+//! Advanced distributed processing tests for PandRS beta.2
 //!
 //! Tests for schema validation, fault tolerance, and complex distributed operations.
 

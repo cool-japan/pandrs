@@ -73,6 +73,11 @@ pub struct ExecutionPlan {
 }
 
 impl ExecutionPlan {
+    /// Get the input datasets
+    pub fn inputs(&self) -> Vec<&str> {
+        vec![&self.input]
+    }
+
     /// Creates a new execution plan
     pub fn new(input: &str) -> Self {
         Self {
@@ -127,6 +132,14 @@ pub enum Operation {
 
     /// AGGREGATE operation - Group by keys and apply aggregations
     Aggregate(Vec<String>, Vec<AggregateExpr>),
+
+    /// GROUP BY operation - Group by keys and apply aggregations (struct variant)
+    GroupBy {
+        /// Group by keys
+        keys: Vec<String>,
+        /// Aggregation expressions
+        aggregates: Vec<AggregateExpr>,
+    },
 
     /// ORDER BY operation - Sort data
     OrderBy(Vec<SortExpr>),

@@ -15,7 +15,7 @@ impl SchemaValidator {
         // Get schemas for input datasets
         let mut input_schemas = Vec::new();
         for input in plan.inputs() {
-            if let Some(schema) = self.schemas.get(input) {
+            if let Some(schema) = self.schema(input) {
                 input_schemas.push(schema);
             } else {
                 return Err(Error::InvalidOperation(format!(
@@ -32,89 +32,105 @@ impl SchemaValidator {
         }
 
         // Validate operation against schemas
-        match plan.operation() {
-            Operation::Select { columns } => self.validate_select(input_schemas[0], columns),
-            Operation::Filter { predicate } => self.validate_filter(input_schemas[0], predicate),
-            Operation::Join {
-                join_type,
-                left_keys,
-                right_keys,
-                ..
-            } => {
-                if input_schemas.len() < 2 {
-                    return Err(Error::InvalidOperation(
-                        "Join operation requires at least two input schemas".to_string(),
-                    ));
+        match plan.operations().first() {
+            None => return Err(Error::InvalidOperation("No operations in plan".to_string())),
+            Some(operation) => match operation {
+                Operation::Select(columns) => self.validate_select(input_schemas[0], &columns),
+                Operation::Filter(predicate) => self.validate_filter(input_schemas[0], &predicate),
+                Operation::Join {
+                    join_type,
+                    left_keys,
+                    right_keys,
+                    ..
+                } => {
+                    if input_schemas.len() < 2 {
+                        return Err(Error::InvalidOperation(
+                            "Join operation requires at least two input schemas".to_string(),
+                        ));
+                    }
+                    self.validate_join(input_schemas[0], input_schemas[1], &left_keys, &right_keys)
                 }
-                self.validate_join(input_schemas[0], input_schemas[1], &left_keys, &right_keys)
-            }
-            Operation::GroupBy { keys, aggregates } => {
-                self.validate_groupby(input_schemas[0], keys, aggregates)
-            }
-            Operation::OrderBy(sort_exprs) => self.validate_orderby(input_schemas[0], sort_exprs),
-            Operation::Window(window_functions) => {
-                self.validate_window(input_schemas[0], window_functions)
-            }
-            Operation::Custom { name, params } => {
-                match name.as_str() {
-                    "select_expr" => {
-                        if let Some(projections_json) = params.get("projections") {
-                            // Parse projections from JSON
-                            let projections: Vec<ColumnProjection> =
-                                serde_json::from_str(projections_json).map_err(|e| {
-                                    Error::DistributedProcessing(format!(
-                                        "Failed to parse projections: {}",
-                                        e
-                                    ))
-                                })?;
+                Operation::GroupBy { keys, aggregates } => {
+                    self.validate_groupby(input_schemas[0], keys, aggregates)
+                }
+                Operation::OrderBy(sort_exprs) => {
+                    self.validate_orderby(input_schemas[0], &sort_exprs)
+                }
+                Operation::Window(window_functions) => {
+                    self.validate_window(input_schemas[0], &window_functions)
+                }
+                _ => {
+                    // For other operations, just return Ok for now
+                    Ok(())
+                }
+                Operation::Custom { name, params } => {
+                    match name.as_str() {
+                        "select_expr" => {
+                            if let Some(projections_json) = params.get("projections") {
+                                // Parse projections from JSON
+                                let projections: Vec<ColumnProjection> =
+                                    serde_json::from_str(projections_json).map_err(|e| {
+                                        Error::DistributedProcessing(format!(
+                                            "Failed to parse projections: {}",
+                                            e
+                                        ))
+                                    })?;
 
-                            self.validate_select_expr(input_schemas[0], &projections)
-                        } else {
-                            Err(Error::InvalidOperation(
-                                "select_expr operation requires projections parameter".to_string(),
-                            ))
+                                self.validate_select_expr(input_schemas[0], &projections)
+                            } else {
+                                Err(Error::InvalidOperation(
+                                    "select_expr operation requires projections parameter"
+                                        .to_string(),
+                                ))
+                            }
+                        }
+                        "with_column" => {
+                            let column_name = params.get("column_name").ok_or_else(|| {
+                                Error::InvalidOperation(
+                                    "with_column operation requires column_name parameter"
+                                        .to_string(),
+                                )
+                            })?;
+
+                            if let Some(projection_json) = params.get("projection") {
+                                let projection: ColumnProjection =
+                                    serde_json::from_str(projection_json).map_err(|e| {
+                                        Error::DistributedProcessing(format!(
+                                            "Failed to parse projection: {}",
+                                            e
+                                        ))
+                                    })?;
+
+                                self.validate_with_column(
+                                    input_schemas[0],
+                                    column_name,
+                                    &projection,
+                                )
+                            } else {
+                                Err(Error::InvalidOperation(
+                                    "with_column operation requires projection parameter"
+                                        .to_string(),
+                                ))
+                            }
+                        }
+                        "create_udf" => {
+                            // UDF creation doesn't require schema validation
+                            Ok(())
+                        }
+                        _ => {
+                            // Unknown custom operation
+                            Err(Error::NotImplemented(format!(
+                                "Schema validation for custom operation '{}' is not implemented",
+                                name
+                            )))
                         }
                     }
-                    "with_column" => {
-                        let column_name = params.get("column_name").ok_or_else(|| {
-                            Error::InvalidOperation(
-                                "with_column operation requires column_name parameter".to_string(),
-                            )
-                        })?;
-
-                        if let Some(projection_json) = params.get("projection") {
-                            let projection: ColumnProjection =
-                                serde_json::from_str(projection_json).map_err(|e| {
-                                    Error::DistributedProcessing(format!(
-                                        "Failed to parse projection: {}",
-                                        e
-                                    ))
-                                })?;
-
-                            self.validate_with_column(input_schemas[0], column_name, &projection)
-                        } else {
-                            Err(Error::InvalidOperation(
-                                "with_column operation requires projection parameter".to_string(),
-                            ))
-                        }
-                    }
-                    "create_udf" => {
-                        // UDF creation doesn't require schema validation
-                        Ok(())
-                    }
-                    _ => {
-                        // Unknown custom operation
-                        Err(Error::NotImplemented(format!(
-                            "Schema validation for custom operation '{}' is not implemented",
-                            name
-                        )))
-                    }
                 }
-            }
-            Operation::Limit { .. } => {
-                // Limit doesn't require schema validation
-                Ok(())
-            }
+                Operation::Limit { .. } => {
+                    // Limit doesn't require schema validation
+                    Ok(())
+                }
+            },
         }
     }
 
