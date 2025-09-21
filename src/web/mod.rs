@@ -5,6 +5,7 @@
 
 use js_sys::{Array, Function, Object, Reflect};
 use plotters_canvas::CanvasBackend;
+use plotters::drawing::IntoDrawingArea;
 use std::cell::RefCell;
 use std::rc::Rc;
 use wasm_bindgen::prelude::*;
@@ -209,42 +210,44 @@ impl WebVisualization {
     /// Render the visualization
     #[wasm_bindgen]
     pub fn render(&mut self) -> WebResult<()> {
-        let df = match &self.data {
-            Some(df) => df.borrow(),
-            None => return Err(to_js_error("No data available to visualize".into())),
-        };
+        {
+            let df = match &self.data {
+                Some(df) => df.borrow(),
+                None => return Err(to_js_error("No data available to visualize")),
+            };
 
-        // Clear canvas
-        self.context.clear_rect(
-            0.0,
-            0.0,
-            self.config.width as f64,
-            self.config.height as f64,
-        );
+            // Clear canvas
+            self.context.clear_rect(
+                0.0,
+                0.0,
+                self.config.width as f64,
+                self.config.height as f64,
+            );
 
-        // Get column names
-        let columns = df.column_names();
-        if columns.is_empty() {
-            return Err(to_js_error("DataFrame has no columns".into()));
-        }
+            // Get column names
+            let columns = df.column_names();
+            if columns.is_empty() {
+                return Err(to_js_error("DataFrame has no columns"));
+            }
 
-        // Create a plotters backend with the canvas
-        let backend = CanvasBackend::with_canvas_object(self.canvas.clone())
-            .map_err(|e| to_js_error(format!("Failed to create canvas backend: {}", e)))?;
+            // Create a plotters backend with the canvas
+            let backend = CanvasBackend::with_canvas_object(self.canvas.clone())
+                .ok_or_else(|| to_js_error("Failed to create canvas backend"))?;
 
-        // Convert WebVisualizationConfig to PlotSettings
-        let settings = self.create_plot_settings();
+            // Convert WebVisualizationConfig to PlotSettings
+            let settings = self.create_plot_settings();
 
-        // Render based on visualization type
-        match self.config.viz_type {
-            VisualizationType::Line => self.render_line_chart(&df, backend, &settings)?,
-            VisualizationType::Bar => self.render_bar_chart(&df, backend, &settings)?,
-            VisualizationType::Scatter => self.render_scatter_chart(&df, backend, &settings)?,
-            VisualizationType::Area => self.render_area_chart(&df, backend, &settings)?,
-            VisualizationType::Histogram => self.render_histogram(&df, backend, &settings)?,
-            VisualizationType::BoxPlot => self.render_boxplot(&df, backend, &settings)?,
-            VisualizationType::Pie => self.render_pie_chart(&df, backend, &settings)?,
-            VisualizationType::HeatMap => self.render_heatmap(&df, backend, &settings)?,
+            // Render based on visualization type
+            match self.config.viz_type {
+                VisualizationType::Line => self.render_line_chart(&df, backend, &settings)?,
+                VisualizationType::Bar => self.render_bar_chart(&df, backend, &settings)?,
+                VisualizationType::Scatter => self.render_scatter_chart(&df, backend, &settings)?,
+                VisualizationType::Area => self.render_area_chart(&df, backend, &settings)?,
+                VisualizationType::Histogram => self.render_histogram(&df, backend, &settings)?,
+                VisualizationType::BoxPlot => self.render_boxplot(&df, backend, &settings)?,
+                VisualizationType::Pie => self.render_pie_chart(&df, backend, &settings)?,
+                VisualizationType::HeatMap => self.render_heatmap(&df, backend, &settings)?,
+            }
         }
 
         // Set up event listeners for interactivity if tooltips are enabled
@@ -335,8 +338,8 @@ impl WebVisualization {
         }
 
         if numeric_columns.is_empty() {
-            return Err(to_js_error(
-                "No numeric columns available for line chart".into(),
+            return Err(Error::InvalidInput(
+                "No numeric columns available for line chart".to_string(),
             ));
         }
 
@@ -354,15 +357,14 @@ impl WebVisualization {
         let drawing_area = backend.into_drawing_area();
         drawing_area
             .fill(&plotters::style::colors::WHITE)
-            .map_err(|e| to_js_error(format!("Failed to fill drawing area: {}", e)))?;
+            .map_err(|e| Error::Visualization(format!("Failed to fill drawing area: {}", e)))?;
 
         // Create a temporary plot to set up the chart
         let mut plot_settings = settings.clone();
         plot_settings.plot_kind = PlotKind::Line;
 
         // Use existing plotting functionality from plotters_ext module
-        plotters_ext_web::plot_multi_series_for_web(df, &columns_str, drawing_area, &plot_settings)
-            .map_err(|e| to_js_error(e))?;
+        plotters_ext_web::plot_multi_series_for_web(df, &columns_str, drawing_area, &plot_settings)?;
 
         Ok(())
     }
@@ -383,8 +385,8 @@ impl WebVisualization {
         }
 
         if numeric_columns.is_empty() {
-            return Err(to_js_error(
-                "No numeric columns available for bar chart".into(),
+            return Err(Error::InvalidInput(
+                "No numeric columns available for bar chart".to_string(),
             ));
         }
 
@@ -395,15 +397,14 @@ impl WebVisualization {
         let drawing_area = backend.into_drawing_area();
         drawing_area
             .fill(&plotters::style::colors::WHITE)
-            .map_err(|e| to_js_error(format!("Failed to fill drawing area: {}", e)))?;
+            .map_err(|e| Error::Visualization(format!("Failed to fill drawing area: {}", e)))?;
 
         // Create a temporary plot to set up the chart
         let mut plot_settings = settings.clone();
         plot_settings.plot_kind = PlotKind::Bar;
 
         // Use existing plotting functionality
-        plotters_ext_web::plot_column_for_web(df, column, drawing_area, &plot_settings)
-            .map_err(|e| to_js_error(e))?;
+        plotters_ext_web::plot_column_for_web(df, column, drawing_area, &plot_settings)?;
 
         Ok(())
     }
@@ -424,8 +425,8 @@ impl WebVisualization {
         }
 
         if numeric_columns.len() < 2 {
-            return Err(to_js_error(
-                "Need at least two numeric columns for scatter plot".into(),
+            return Err(Error::InvalidInput(
+                "Need at least two numeric columns for scatter plot".to_string(),
             ));
         }
 
@@ -436,7 +437,7 @@ impl WebVisualization {
         let drawing_area = backend.into_drawing_area();
         drawing_area
             .fill(&plotters::style::colors::WHITE)
-            .map_err(|e| to_js_error(format!("Failed to fill drawing area: {}", e)))?;
+            .map_err(|e| Error::Visualization(format!("Failed to fill drawing area: {}", e)))?;
 
         // Create a temporary plot to set up the chart
         let mut plot_settings = settings.clone();
@@ -449,8 +450,7 @@ impl WebVisualization {
             y_column,
             drawing_area,
             &plot_settings,
-        )
-        .map_err(|e| to_js_error(e))?;
+        )?;
 
         Ok(())
     }
@@ -471,8 +471,8 @@ impl WebVisualization {
         }
 
         if numeric_columns.is_empty() {
-            return Err(to_js_error(
-                "No numeric columns available for area chart".into(),
+            return Err(Error::InvalidInput(
+                "No numeric columns available for area chart".to_string(),
             ));
         }
 
@@ -483,15 +483,14 @@ impl WebVisualization {
         let drawing_area = backend.into_drawing_area();
         drawing_area
             .fill(&plotters::style::colors::WHITE)
-            .map_err(|e| to_js_error(format!("Failed to fill drawing area: {}", e)))?;
+            .map_err(|e| Error::Visualization(format!("Failed to fill drawing area: {}", e)))?;
 
         // Create a temporary plot to set up the chart
         let mut plot_settings = settings.clone();
         plot_settings.plot_kind = PlotKind::Area;
 
         // Use existing plotting functionality
-        plotters_ext_web::plot_column_for_web(df, column, drawing_area, &plot_settings)
-            .map_err(|e| to_js_error(e))?;
+        plotters_ext_web::plot_column_for_web(df, column, drawing_area, &plot_settings)?;
 
         Ok(())
     }
@@ -513,8 +512,8 @@ impl WebVisualization {
         }
 
         if numeric_columns.is_empty() {
-            return Err(to_js_error(
-                "No numeric columns available for histogram".into(),
+            return Err(Error::InvalidInput(
+                "No numeric columns available for histogram".to_string(),
             ));
         }
 
@@ -524,7 +523,7 @@ impl WebVisualization {
         let drawing_area = backend.into_drawing_area();
         drawing_area
             .fill(&plotters::style::colors::WHITE)
-            .map_err(|e| to_js_error(format!("Failed to fill drawing area: {}", e)))?;
+            .map_err(|e| Error::Visualization(format!("Failed to fill drawing area: {}", e)))?;
 
         // Create a temporary plot to set up the chart
         let mut plot_settings = settings.clone();
@@ -537,8 +536,7 @@ impl WebVisualization {
             10, // Default 10 bins
             drawing_area,
             &plot_settings,
-        )
-        .map_err(|e| to_js_error(e))?;
+        )?;
 
         Ok(())
     }
@@ -562,8 +560,8 @@ impl WebVisualization {
         }
 
         if numeric_columns.is_empty() || categorical_columns.is_empty() {
-            return Err(to_js_error(
-                "Need at least one numeric and one categorical column for boxplot".into(),
+            return Err(Error::InvalidInput(
+                "Need at least one numeric and one categorical column for boxplot".to_string(),
             ));
         }
 
@@ -574,7 +572,7 @@ impl WebVisualization {
         let drawing_area = backend.into_drawing_area();
         drawing_area
             .fill(&plotters::style::colors::WHITE)
-            .map_err(|e| to_js_error(format!("Failed to fill drawing area: {}", e)))?;
+            .map_err(|e| Error::Visualization(format!("Failed to fill drawing area: {}", e)))?;
 
         // Create a temporary plot to set up the chart
         let mut plot_settings = settings.clone();
@@ -587,8 +585,7 @@ impl WebVisualization {
             value_column,
             drawing_area,
             &plot_settings,
-        )
-        .map_err(|e| to_js_error(e))?;
+        )?;
 
         Ok(())
     }
@@ -612,8 +609,8 @@ impl WebVisualization {
         }
 
         if numeric_columns.is_empty() || categorical_columns.is_empty() {
-            return Err(to_js_error(
-                "Need at least one numeric and one categorical column for pie chart".into(),
+            return Err(Error::InvalidInput(
+                "Need at least one numeric and one categorical column for pie chart".to_string()
             ));
         }
 
@@ -624,7 +621,7 @@ impl WebVisualization {
         let drawing_area = backend.into_drawing_area();
         drawing_area
             .fill(&plotters::style::colors::WHITE)
-            .map_err(|e| to_js_error(format!("Failed to fill drawing area: {}", e)))?;
+            .map_err(|e| Error::Visualization(format!("Failed to fill drawing area: {}", e)))?;
 
         // Create a temporary plot to set up the chart
         let plot_settings = settings.clone();
@@ -651,8 +648,8 @@ impl WebVisualization {
         }
 
         if numeric_columns.len() < 2 {
-            return Err(to_js_error(
-                "Need at least two numeric columns for heatmap".into(),
+            return Err(Error::InvalidInput(
+                "Need at least two numeric columns for heatmap".to_string()
             ));
         }
 
@@ -660,7 +657,7 @@ impl WebVisualization {
         let drawing_area = backend.into_drawing_area();
         drawing_area
             .fill(&plotters::style::colors::WHITE)
-            .map_err(|e| to_js_error(format!("Failed to fill drawing area: {}", e)))?;
+            .map_err(|e| Error::Visualization(format!("Failed to fill drawing area: {}", e)))?;
 
         // Create a temporary plot to set up the chart
         let plot_settings = settings.clone();
@@ -684,8 +681,8 @@ impl WebVisualization {
         let values = df.get_column_numeric_values(value_col)?;
 
         if categories.len() != values.len() {
-            return Err(to_js_error(
-                "Category and value columns must have the same length".into(),
+            return Err(Error::DimensionMismatch(
+                "Category and value columns must have the same length".to_string()
             ));
         }
 
@@ -706,10 +703,11 @@ impl WebVisualization {
         // Draw title
         self.context.set_font("16px sans-serif");
         self.context.set_text_align("center");
-        self.context.set_fill_style(&JsValue::from_str("black"));
+        self.context.set_fill_style_str("black");
         self.context
             .fill_text(&settings.title, cx, 30.0)
-            .map_err(|_| to_js_error("Failed to render text".into()))?;
+            .map_err(|_| to_js_error("Failed to render text"))
+            .unwrap();
 
         // Draw pie slices
         let mut start_angle = 0.0;
@@ -729,14 +727,15 @@ impl WebVisualization {
             self.context.move_to(cx, cy);
             self.context
                 .arc(cx, cy, radius, start_angle, start_angle + slice_angle)
-                .map_err(|_| to_js_error("Failed to draw arc".into()))?;
+                .map_err(|_| to_js_error("Failed to draw arc"))
+            .unwrap();
             self.context.close_path();
 
-            self.context.set_fill_style(&JsValue::from_str(&color));
+            self.context.set_fill_style_str(&color);
             self.context.fill();
 
             // Draw slice outline
-            self.context.set_stroke_style(&JsValue::from_str("white"));
+            self.context.set_stroke_style_str("white");
             self.context.set_line_width(1.0);
             self.context.stroke();
 
@@ -748,14 +747,15 @@ impl WebVisualization {
             // Draw percentage label
             let percentage = (value / total * 100.0).round() / 10.0 * 10.0;
             self.context.set_font("12px sans-serif");
-            self.context.set_fill_style(&JsValue::from_str("white"));
+            self.context.set_fill_style_str("white");
             self.context.set_text_align("center");
 
             if percentage >= 5.0 {
                 // Only show label if slice is big enough
                 self.context
                     .fill_text(&format!("{}%", percentage), label_x, label_y)
-                    .map_err(|_| to_js_error("Failed to render text".into()))?;
+                    .map_err(|_| to_js_error("Failed to render text"))
+                    .unwrap();
             }
 
             start_angle += slice_angle;
@@ -776,13 +776,13 @@ impl WebVisualization {
                 let color = format!("rgb({}, {}, {})", r, g, b);
 
                 // Draw color square
-                self.context.set_fill_style(&JsValue::from_str(&color));
+                self.context.set_fill_style_str(&color);
                 self.context
                     .fill_rect(legend_x, legend_y + y_offset, 15.0, 15.0);
 
                 // Draw category name
                 self.context.set_font("12px sans-serif");
-                self.context.set_fill_style(&JsValue::from_str("black"));
+                self.context.set_fill_style_str("black");
                 self.context.set_text_align("left");
 
                 // Truncate long category names
@@ -794,7 +794,8 @@ impl WebVisualization {
 
                 self.context
                     .fill_text(&display_cat, legend_x + 20.0, legend_y + y_offset + 12.0)
-                    .map_err(|_| to_js_error("Failed to render text".into()))?;
+                    .map_err(|_| to_js_error("Failed to render text"))
+                    .unwrap();
 
                 y_offset += 20.0;
                 i += 1;
@@ -821,12 +822,12 @@ impl WebVisualization {
         // Transpose matrix if needed
         let rows = data_matrix.len();
         if rows == 0 {
-            return Err(to_js_error("No data for heatmap".into()));
+            return Err(Error::InvalidInput("No data for heatmap".to_string()));
         }
 
         let cols = data_matrix[0].len();
         if cols == 0 {
-            return Err(to_js_error("Empty columns for heatmap".into()));
+            return Err(Error::InvalidInput("Empty columns for heatmap".to_string()));
         }
 
         // Find min and max values
@@ -848,10 +849,11 @@ impl WebVisualization {
         // Draw title
         self.context.set_font("16px sans-serif");
         self.context.set_text_align("center");
-        self.context.set_fill_style(&JsValue::from_str("black"));
+        self.context.set_fill_style_str("black");
         self.context
             .fill_text(&settings.title, (self.config.width as f64) / 2.0, 30.0)
-            .map_err(|_| to_js_error("Failed to render text".into()))?;
+            .map_err(|_| to_js_error("Failed to render text"))
+            .unwrap();
 
         // Calculate dimensions
         let margin = 70.0;
@@ -882,19 +884,19 @@ impl WebVisualization {
                 let color = format!("rgb({}, 0, {})", r, b);
 
                 // Draw cell
-                self.context.set_fill_style(&JsValue::from_str(&color));
+                self.context.set_fill_style_str(&color);
                 self.context.fill_rect(x, y, cell_width, cell_height);
 
                 // Draw cell outline
                 self.context
-                    .set_stroke_style(&JsValue::from_str("rgba(255,255,255,0.2)"));
+                    .set_stroke_style_str("rgba(255,255,255,0.2)");
                 self.context.set_line_width(0.5);
                 self.context.stroke_rect(x, y, cell_width, cell_height);
 
                 // Draw value text if cells are large enough
                 if cell_width > 30.0 && cell_height > 20.0 {
                     self.context.set_font("10px sans-serif");
-                    self.context.set_fill_style(&JsValue::from_str("white"));
+                    self.context.set_fill_style_str("white");
                     self.context.set_text_align("center");
 
                     self.context
@@ -903,14 +905,15 @@ impl WebVisualization {
                             x + cell_width / 2.0,
                             y + cell_height / 2.0 + 3.0,
                         )
-                        .map_err(|_| to_js_error("Failed to render text".into()))?;
+                        .map_err(|_| to_js_error("Failed to render text"))
+                    .unwrap();
                 }
             }
         }
 
         // Draw column labels
         self.context.set_font("12px sans-serif");
-        self.context.set_fill_style(&JsValue::from_str("black"));
+        self.context.set_fill_style_str("black");
         self.context.set_text_align("center");
 
         for (j, col) in columns.iter().enumerate().take(cols) {
@@ -926,7 +929,8 @@ impl WebVisualization {
 
             self.context
                 .fill_text(&display_name, x, y)
-                .map_err(|_| to_js_error("Failed to render text".into()))?;
+                .map_err(|_| to_js_error("Failed to render text"))
+            .unwrap();
         }
 
         // Draw row labels (use row indices)
@@ -938,7 +942,8 @@ impl WebVisualization {
 
             self.context
                 .fill_text(&format!("Row {}", i + 1), x, y)
-                .map_err(|_| to_js_error("Failed to render text".into()))?;
+                .map_err(|_| to_js_error("Failed to render text"))
+            .unwrap();
         }
 
         // Draw color scale
@@ -953,7 +958,7 @@ impl WebVisualization {
             let b = (255.0 - normalized * 255.0) as u8;
             let color = format!("rgb({}, 0, {})", r, b);
 
-            self.context.set_fill_style(&JsValue::from_str(&color));
+            self.context.set_fill_style_str(&color);
             self.context.fill_rect(
                 scale_x - scale_width / 2.0,
                 scale_y + (1.0 - normalized) * scale_height,
@@ -964,12 +969,13 @@ impl WebVisualization {
 
         // Draw scale labels
         self.context.set_font("10px sans-serif");
-        self.context.set_fill_style(&JsValue::from_str("black"));
+        self.context.set_fill_style_str("black");
         self.context.set_text_align("center");
 
         self.context
             .fill_text(&format!("{:.1}", max_val), scale_x, scale_y - 5.0)
-            .map_err(|_| to_js_error("Failed to render text".into()))?;
+            .map_err(|_| to_js_error("Failed to render text"))
+            .unwrap();
 
         self.context
             .fill_text(
@@ -977,7 +983,8 @@ impl WebVisualization {
                 scale_x,
                 scale_y + scale_height + 15.0,
             )
-            .map_err(|_| to_js_error("Failed to render text".into()))?;
+            .map_err(|_| to_js_error("Failed to render text"))
+            .unwrap();
 
         Ok(())
     }
@@ -988,7 +995,7 @@ impl WebVisualization {
         for (event, listener) in self.event_listeners.drain(..) {
             self.canvas
                 .remove_event_listener_with_callback(&event, listener.as_ref().unchecked_ref())
-                .map_err(|_| to_js_error("Failed to remove event listener".into()))?;
+                .map_err(|_| Error::InvalidInput("Failed to remove event listener".to_string()))?;
         }
 
         // Add mousemove listener for tooltips
@@ -1019,11 +1026,11 @@ impl WebVisualization {
                 );
 
                 // Draw tooltip
-                context_clone.set_fill_style(&JsValue::from_str("rgba(0,0,0,0.7)"));
+                context_clone.set_fill_style_str("rgba(0,0,0,0.7)");
                 context_clone.fill_rect(x + 10.0, y - 20.0, 100.0, 40.0);
 
                 context_clone.set_font("12px sans-serif");
-                context_clone.set_fill_style(&JsValue::from_str("white"));
+                context_clone.set_fill_style_str("white");
                 context_clone.fill_text("Tooltip", x + 15.0, y).unwrap();
             }
         }) as Box<dyn FnMut(_)>);
@@ -1034,7 +1041,7 @@ impl WebVisualization {
                 "mousemove",
                 mousemove_callback.as_ref().unchecked_ref(),
             )
-            .map_err(|_| to_js_error("Failed to add event listener".into()))?;
+            .map_err(|_| Error::InvalidInput("Failed to add event listener".to_string()))?;
 
         // Store the listener to avoid it being dropped
         self.event_listeners
@@ -1048,7 +1055,7 @@ impl WebVisualization {
     pub fn export_image(&self) -> WebResult<String> {
         self.canvas
             .to_data_url()
-            .map_err(|_| to_js_error("Failed to export image".into()))
+            .map_err(|_| to_js_error("Failed to export image"))
     }
 
     /// Update title

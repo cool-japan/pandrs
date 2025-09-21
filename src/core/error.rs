@@ -296,3 +296,11 @@ impl<E: std::error::Error + Send + Sync + 'static> From<plotters::drawing::Drawi
         Error::Visualization(format!("Plot drawing error: {}", err))
     }
 }
+
+// Conversion for WASM/JS errors
+#[cfg(feature = "wasm")]
+impl From<Error> for wasm_bindgen::JsValue {
+    fn from(err: Error) -> Self {
+        wasm_bindgen::JsValue::from_str(&err.to_string())
+    }
+}

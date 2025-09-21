@@ -7,7 +7,7 @@ use crate::error::{Error, Result};
 use crate::gpu::operations::{GpuMatrix, GpuVector};
 use crate::gpu::{get_gpu_manager, GpuError};
 use crate::ml::metrics::regression::{mean_squared_error, r2_score};
-use crate::stats::regression::LinearRegressionResult;
+use crate::stats::LinearRegressionResult;
 use ndarray::{s, Array1, Array2, Axis};
 use std::time::Instant;
 
@@ -19,7 +19,7 @@ pub fn linear_regression(
     // Check if GPU is available
     let gpu_manager = get_gpu_manager()?;
     let use_gpu = gpu_manager.is_available()
-        && x_data.len() >= gpu_manager.context().config.min_size_threshold;
+        && x_data.len() >= gpu_manager.context().config().min_size_threshold;
 
     if use_gpu {
         linear_regression_gpu(x_data, y_data)
@@ -36,7 +36,7 @@ fn linear_regression_gpu(
     let (n_samples, n_features) = x_data.dim();
 
     if n_samples != y_data.len() {
-        return Err(Error::Dimension(format!(
+        return Err(Error::DimensionMismatch(format!(
             "X samples ({}) must match y length ({})",
             n_samples,
             y_data.len()
@@ -57,10 +57,7 @@ fn linear_regression_gpu(
 
     // Compute: beta = (X^T X)^(-1) X^T y
     // First calculate X^T X
-    let x_t_x = match gpu_x.data.t().dot(&gpu_x.data) {
-        Ok(result) => result,
-        Err(e) => return Err(e),
-    };
+    let x_t_x = gpu_x.data.t().dot(&gpu_x.data);
 
     // Calculate (X^T X)^(-1) using CPU (for simplicity)
     // In a full implementation, this would use GPU-accelerated linear algebra
@@ -70,26 +67,17 @@ fn linear_regression_gpu(
     };
 
     // Calculate X^T y
-    let x_t_y = match gpu_x.data.t().dot(&y_data) {
-        Ok(result) => result,
-        Err(e) => return Err(e),
-    };
+    let x_t_y = gpu_x.data.t().dot(&gpu_y.data);
 
     // Calculate beta = (X^T X)^(-1) X^T y
-    let coefficients = match x_t_x_inv.dot(&x_t_y) {
-        Ok(result) => result,
-        Err(e) => return Err(e),
-    };
+    let coefficients = x_t_x_inv.dot(&x_t_y);
 
     // Extract intercept and coefficients
     let intercept = coefficients[0];
     let feature_coefficients = coefficients.slice(s![1..]).to_vec();
 
     // Compute fitted values
-    let fitted_values = match x_with_intercept.dot(&coefficients) {
-        Ok(result) => result.to_vec(),
-        Err(e) => return Err(e),
-    };
+    let fitted_values = x_with_intercept.dot(&coefficients).to_vec();
 
     // Compute residuals
     let residuals: Vec<f64> = y_data
@@ -127,7 +115,7 @@ fn linear_regression_cpu(
     let (n_samples, n_features) = x_data.dim();
 
     if n_samples != y_data.len() {
-        return Err(Error::Dimension(format!(
+        return Err(Error::DimensionMismatch(format!(
             "X samples ({}) must match y length ({})",
             n_samples,
             y_data.len()
@@ -193,7 +181,7 @@ pub fn kmeans(
     // Check if GPU is available
     let gpu_manager = get_gpu_manager()?;
     let use_gpu =
-        gpu_manager.is_available() && data.len() >= gpu_manager.context().config.min_size_threshold;
+        gpu_manager.is_available() && data.len() >= gpu_manager.context().config().min_size_threshold;
 
     if use_gpu {
         kmeans_gpu(data, k, max_iter, tol)
@@ -285,7 +273,7 @@ fn kmeans_gpu(
                 }
             } else {
                 // If a cluster is empty, reinitialize its centroid
-                let random_idx = rand::random::<usize>() % n_samples;
+                let random_idx = rand::random::<f64>() as usize % n_samples;
                 for j in 0..n_features {
                     new_centroids[[c, j]] = data[[random_idx, j]];
                 }
@@ -389,7 +377,7 @@ fn kmeans_cpu(
                 }
             } else {
                 // If a cluster is empty, reinitialize its centroid
-                let random_idx = rand::random::<usize>() % n_samples;
+                let random_idx = rand::random::<f64>() as usize % n_samples;
                 for j in 0..n_features {
                     new_centroids[[c, j]] = data[[random_idx, j]];
                 }
@@ -421,17 +409,14 @@ pub fn pca(
     // Check if GPU is available
     let gpu_manager = get_gpu_manager()?;
     let use_gpu =
-        gpu_manager.is_available() && data.len() >= gpu_manager.context().config.min_size_threshold;
+        gpu_manager.is_available() && data.len() >= gpu_manager.context().config().min_size_threshold;
 
     if use_gpu {
         // For simplicity, we'll delegate to the stats module's GPU implementation
         match crate::stats::gpu::pca(data, n_components) {
             Ok((components, explained_variance)) => {
                 // Transform the data using the components
-                let transformed = match data.dot(&components) {
-                    Ok(result) => result,
-                    Err(e) => return Err(e),
-                };
+                let transformed = data.dot(&components.t());
 
                 Ok((components, explained_variance, transformed))
             }
@@ -459,7 +444,7 @@ fn invert_matrix(matrix: &Array2<f64>) -> Result<Array2<f64>> {
     let (n, m) = matrix.dim();
 
     if n != m {
-        return Err(Error::Dimension(format!(
+        return Err(Error::DimensionMismatch(format!(
             "Matrix must be square for inversion, got {:?}",
             (n, m)
         )));
@@ -489,10 +474,9 @@ fn invert_matrix(matrix: &Array2<f64>) -> Result<Array2<f64>> {
 
         // Check if matrix is singular
         if max_val < 1e-10 {
-            return Err(Error::Other(Box::new(std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                "Matrix is singular and cannot be inverted",
-            ))));
+            return Err(Error::Computation(
+                "Matrix is singular and cannot be inverted".to_string(),
+            ));
         }
 
         // Swap rows if needed

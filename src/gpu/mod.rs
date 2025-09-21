@@ -98,19 +98,15 @@ impl GpuContext {
         {
             // Use cudarc to detect CUDA availability
             match cudarc::driver::CudaDevice::new(0) {
-                Ok(device) => {
-                    let name = device
-                        .name()
-                        .unwrap_or_else(|_| "Unknown CUDA Device".to_string());
-                    let memory_info = device.total_memory().unwrap_or(0);
-
+                Ok(_device) => {
+                    // cudarc 0.10.0 doesn't expose device properties easily
                     return GpuDeviceStatus {
                         available: true,
                         cuda_version: Some("11.0+".to_string()), // cudarc requires CUDA 11.0+
-                        device_name: Some(name),
-                        total_memory: Some(memory_info),
-                        free_memory: Some(memory_info), // Approximation
-                        core_count: None,               // Not easily available through cudarc
+                        device_name: Some("CUDA Device".to_string()),
+                        total_memory: None, // Not available in cudarc 0.10.0
+                        free_memory: None,  // Not available in cudarc 0.10.0
+                        core_count: None,   // Not available in cudarc 0.10.0
                     };
                 }
                 Err(_) => {
@@ -146,6 +142,11 @@ impl GpuContext {
     /// Check if operation should be offloaded to GPU based on size threshold
     pub fn should_use_gpu(&self, size: usize) -> bool {
         self.is_available() && size >= self.config.min_size_threshold
+    }
+
+    /// Get the GPU configuration
+    pub fn config(&self) -> &GpuConfig {
+        &self.config
     }
 }
 
@@ -204,7 +205,7 @@ impl StdError for GpuError {}
 
 impl From<GpuError> for Error {
     fn from(error: GpuError) -> Self {
-        Error::Other(Box::new(error))
+        Error::Computation(error.to_string())
     }
 }
 

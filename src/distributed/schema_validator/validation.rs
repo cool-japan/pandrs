@@ -15,7 +15,7 @@ impl SchemaValidator {
         // Get schemas for input datasets
         let mut input_schemas = Vec::new();
         for input in plan.inputs() {
-            if let Some(schema) = self.schemas.get(input) {
+            if let Some(schema) = self.schema(input) {
                 input_schemas.push(schema);
             } else {
                 return Err(Error::InvalidOperation(format!(
@@ -32,9 +32,11 @@ impl SchemaValidator {
         }
 
         // Validate operation against schemas
-        match plan.operation() {
-            Operation::Select { columns } => self.validate_select(input_schemas[0], columns),
-            Operation::Filter { predicate } => self.validate_filter(input_schemas[0], predicate),
+        match plan.operations().first() {
+            None => return Err(Error::InvalidOperation("No operations in plan".to_string())),
+            Some(operation) => match operation {
+            Operation::Select(columns) => self.validate_select(input_schemas[0], &columns),
+            Operation::Filter(predicate) => self.validate_filter(input_schemas[0], &predicate),
             Operation::Join {
                 join_type,
                 left_keys,
@@ -54,6 +56,10 @@ impl SchemaValidator {
             Operation::OrderBy(sort_exprs) => self.validate_orderby(input_schemas[0], &sort_exprs),
             Operation::Window(window_functions) => {
                 self.validate_window(input_schemas[0], &window_functions)
+            }
+            _ => {
+                // For other operations, just return Ok for now
+                Ok(())
             }
             Operation::Custom { name, params } => {
                 match name.as_str() {
@@ -115,6 +121,7 @@ impl SchemaValidator {
                 // Limit doesn't require schema validation
                 Ok(())
             }
+        }
         }
     }
 

@@ -8,7 +8,7 @@ use crate::error::Result;
 use crate::optimized::dataframe::OptimizedDataFrame;
 // Import the plotters extension methods
 #[cfg(feature = "visualization")]
-use crate::vis::backward_compat::plotters_ext::*;
+use crate::vis::backward_compat::plotters_ext::PlotSettings;
 use crate::vis::config::PlotKind;
 use crate::DataFrame;
 use crate::Series;
@@ -127,7 +127,7 @@ where
 
     fn line_plot<P: AsRef<Path>>(&self, path: P, title: Option<&str>) -> Result<()> {
         let mut settings = PlotSettings::default();
-        settings.plot_kind = PlotKind::Line;
+        settings.plot_kind = crate::vis::backward_compat::plotters_ext::PlotKind::Line;
 
         if let Some(title_str) = title {
             settings.title = title_str.to_string();
@@ -140,7 +140,7 @@ where
 
     fn scatter_plot<P: AsRef<Path>>(&self, path: P, title: Option<&str>) -> Result<()> {
         let mut settings = PlotSettings::default();
-        settings.plot_kind = PlotKind::Scatter;
+        settings.plot_kind = crate::vis::backward_compat::plotters_ext::PlotKind::Scatter;
 
         if let Some(title_str) = title {
             settings.title = title_str.to_string();
@@ -153,7 +153,7 @@ where
 
     fn bar_plot<P: AsRef<Path>>(&self, path: P, title: Option<&str>) -> Result<()> {
         let mut settings = PlotSettings::default();
-        settings.plot_kind = PlotKind::Bar;
+        settings.plot_kind = crate::vis::backward_compat::plotters_ext::PlotKind::Bar;
 
         if let Some(title_str) = title {
             settings.title = title_str.to_string();
@@ -171,7 +171,7 @@ where
         title: Option<&str>,
     ) -> Result<()> {
         let mut settings = PlotSettings::default();
-        settings.plot_kind = PlotKind::Histogram;
+        settings.plot_kind = crate::vis::backward_compat::plotters_ext::PlotKind::Histogram;
 
         if let Some(title_str) = title {
             settings.title = title_str.to_string();
@@ -184,7 +184,7 @@ where
 
     fn area_plot<P: AsRef<Path>>(&self, path: P, title: Option<&str>) -> Result<()> {
         let mut settings = PlotSettings::default();
-        settings.plot_kind = PlotKind::Area;
+        settings.plot_kind = crate::vis::backward_compat::plotters_ext::PlotKind::Area;
 
         if let Some(title_str) = title {
             settings.title = title_str.to_string();
@@ -202,8 +202,15 @@ where
         title: Option<&str>,
     ) -> Result<()> {
         let mut settings = PlotSettings::default();
-        settings.plot_kind = plot_kind;
-        settings.output_type = OutputType::SVG;
+        settings.plot_kind = match plot_kind {
+            crate::vis::config::PlotKind::Line => crate::vis::backward_compat::plotters_ext::PlotKind::Line,
+            crate::vis::config::PlotKind::Scatter => crate::vis::backward_compat::plotters_ext::PlotKind::Scatter,
+            crate::vis::config::PlotKind::Bar => crate::vis::backward_compat::plotters_ext::PlotKind::Bar,
+            crate::vis::config::PlotKind::Histogram => crate::vis::backward_compat::plotters_ext::PlotKind::Histogram,
+            crate::vis::config::PlotKind::BoxPlot => crate::vis::backward_compat::plotters_ext::PlotKind::BoxPlot,
+            crate::vis::config::PlotKind::Area => crate::vis::backward_compat::plotters_ext::PlotKind::Area,
+        };
+        settings.output_type = crate::vis::backward_compat::plotters_ext::OutputType::SVG;
 
         if let Some(title_str) = title {
             settings.title = title_str.to_string();
@@ -240,7 +247,7 @@ impl DataFramePlotExt for DataFrame {
 
     fn line_plot<P: AsRef<Path>>(&self, column: &str, path: P, title: Option<&str>) -> Result<()> {
         let mut settings = PlotSettings::default();
-        settings.plot_kind = PlotKind::Line;
+        settings.plot_kind = crate::vis::backward_compat::plotters_ext::PlotKind::Line;
 
         if let Some(title_str) = title {
             settings.title = title_str.to_string();
@@ -260,7 +267,7 @@ impl DataFramePlotExt for DataFrame {
         title: Option<&str>,
     ) -> Result<()> {
         let mut settings = PlotSettings::default();
-        settings.plot_kind = PlotKind::Scatter;
+        settings.plot_kind = crate::vis::backward_compat::plotters_ext::PlotKind::Scatter;
 
         if let Some(title_str) = title {
             settings.title = title_str.to_string();
@@ -275,7 +282,7 @@ impl DataFramePlotExt for DataFrame {
 
     fn bar_plot<P: AsRef<Path>>(&self, column: &str, path: P, title: Option<&str>) -> Result<()> {
         let mut settings = PlotSettings::default();
-        settings.plot_kind = PlotKind::Bar;
+        settings.plot_kind = crate::vis::backward_compat::plotters_ext::PlotKind::Bar;
 
         if let Some(title_str) = title {
             settings.title = title_str.to_string();
@@ -290,7 +297,7 @@ impl DataFramePlotExt for DataFrame {
 
     fn area_plot<P: AsRef<Path>>(&self, column: &str, path: P, title: Option<&str>) -> Result<()> {
         let mut settings = PlotSettings::default();
-        settings.plot_kind = PlotKind::Area;
+        settings.plot_kind = crate::vis::backward_compat::plotters_ext::PlotKind::Area;
 
         if let Some(title_str) = title {
             settings.title = title_str.to_string();
@@ -311,7 +318,7 @@ impl DataFramePlotExt for DataFrame {
         title: Option<&str>,
     ) -> Result<()> {
         let mut settings = PlotSettings::default();
-        settings.plot_kind = PlotKind::BoxPlot;
+        settings.plot_kind = crate::vis::backward_compat::plotters_ext::PlotKind::BoxPlot;
 
         if let Some(title_str) = title {
             settings.title = title_str.to_string();
@@ -333,7 +340,7 @@ impl DataFramePlotExt for DataFrame {
         title: Option<&str>,
     ) -> Result<()> {
         let mut settings = PlotSettings::default();
-        settings.plot_kind = PlotKind::Scatter;
+        settings.plot_kind = crate::vis::backward_compat::plotters_ext::PlotKind::Scatter;
 
         if let Some(title_str) = title {
             settings.title = title_str.to_string();
@@ -354,7 +361,7 @@ impl DataFramePlotExt for DataFrame {
         title: Option<&str>,
     ) -> Result<()> {
         let mut settings = PlotSettings::default();
-        settings.plot_kind = PlotKind::Line;
+        settings.plot_kind = crate::vis::backward_compat::plotters_ext::PlotKind::Line;
 
         if let Some(title_str) = title {
             settings.title = title_str.to_string();
@@ -373,8 +380,15 @@ impl DataFramePlotExt for DataFrame {
         title: Option<&str>,
     ) -> Result<()> {
         let mut settings = PlotSettings::default();
-        settings.plot_kind = plot_kind;
-        settings.output_type = OutputType::SVG;
+        settings.plot_kind = match plot_kind {
+            crate::vis::config::PlotKind::Line => crate::vis::backward_compat::plotters_ext::PlotKind::Line,
+            crate::vis::config::PlotKind::Scatter => crate::vis::backward_compat::plotters_ext::PlotKind::Scatter,
+            crate::vis::config::PlotKind::Bar => crate::vis::backward_compat::plotters_ext::PlotKind::Bar,
+            crate::vis::config::PlotKind::Histogram => crate::vis::backward_compat::plotters_ext::PlotKind::Histogram,
+            crate::vis::config::PlotKind::BoxPlot => crate::vis::backward_compat::plotters_ext::PlotKind::BoxPlot,
+            crate::vis::config::PlotKind::Area => crate::vis::backward_compat::plotters_ext::PlotKind::Area,
+        };
+        settings.output_type = crate::vis::backward_compat::plotters_ext::OutputType::SVG;
 
         if let Some(title_str) = title {
             settings.title = title_str.to_string();

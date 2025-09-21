@@ -73,6 +73,11 @@ pub struct ExecutionPlan {
 }
 
 impl ExecutionPlan {
+    /// Get the input datasets
+    pub fn inputs(&self) -> Vec<&str> {
+        vec![&self.input]
+    }
+
     /// Creates a new execution plan
     pub fn new(input: &str) -> Self {
         Self {

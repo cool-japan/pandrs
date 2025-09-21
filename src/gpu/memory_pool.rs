@@ -11,7 +11,7 @@ use crate::error::{Error, Result};
 use crate::gpu::{GpuError, GpuManager};
 
 #[cfg(feature = "cuda")]
-use cudarc::driver::{CudaDevice, DevicePtr};
+use cudarc::driver::{CudaDevice, CudaSlice};
 
 /// Configuration for GPU memory pool
 #[derive(Debug, Clone)]
@@ -66,7 +66,7 @@ struct AllocationInfo {
 struct MemoryBlock {
     /// Pointer to the GPU memory
     #[cfg(feature = "cuda")]
-    ptr: DevicePtr<u8>,
+    ptr: Box<CudaSlice<u8>>,
     #[cfg(not(feature = "cuda"))]
     ptr: usize, // Dummy pointer for non-CUDA builds
     /// Size of the block
@@ -199,7 +199,7 @@ impl GpuMemoryPool {
 
             Ok(())
         } else {
-            Err(Error::from(GpuError::MemoryError(
+            Err(Error::from(GpuError::DeviceError(
                 "Invalid allocation pointer".to_string(),
             )))
         }
@@ -338,7 +338,7 @@ impl GpuMemoryPool {
     fn allocate_new_block(&mut self, size: usize) -> Result<GpuAllocation> {
         // Check if we need to expand the pool
         if self.current_size + size > self.config.max_size {
-            return Err(Error::from(GpuError::MemoryError(
+            return Err(Error::from(GpuError::DeviceError(
                 "Memory pool size limit exceeded".to_string(),
             )));
         }
@@ -366,7 +366,7 @@ impl GpuMemoryPool {
             if let Some(ref device) = self.device {
                 match device.alloc_zeros::<u8>(size) {
                     Ok(ptr) => Ok(MemoryBlock {
-                        ptr,
+                        ptr: Box::new(ptr),
                         size,
                         is_free: false,
                         allocation_info: Some(AllocationInfo {
@@ -377,25 +377,16 @@ impl GpuMemoryPool {
                             ref_count: 1,
                         }),
                     }),
-                    Err(e) => Err(Error::from(GpuError::MemoryError(format!(
+                    Err(e) => Err(Error::from(GpuError::DeviceError(format!(
                         "GPU memory allocation failed: {}",
                         e
                     )))),
                 }
             } else {
-                // Fallback for when CUDA is not available
-                Ok(MemoryBlock {
-                    ptr: 0 as *mut u8,
-                    size,
-                    is_free: false,
-                    allocation_info: Some(AllocationInfo {
-                        size,
-                        allocated_at: Instant::now(),
-                        last_accessed: Instant::now(),
-                        in_use: true,
-                        ref_count: 1,
-                    }),
-                })
+                // Fallback - return error when CUDA device is not available
+                Err(Error::from(GpuError::DeviceError(
+                    "CUDA device not available for memory allocation".to_string(),
+                )))
             }
         }
         #[cfg(not(feature = "cuda"))]
@@ -420,7 +411,9 @@ impl GpuMemoryPool {
     fn get_ptr_address(&self, block: &MemoryBlock) -> usize {
         #[cfg(feature = "cuda")]
         {
-            block.ptr.device_ptr() as usize
+            // Use the block's size and position as a unique identifier
+            // Since we can't dereference CudaSlice, use a hash of the block
+            block as *const _ as usize
         }
         #[cfg(not(feature = "cuda"))]
         {
@@ -431,7 +424,7 @@ impl GpuMemoryPool {
     /// Expand the memory pool
     fn expand_pool(&mut self, additional_size: usize) -> Result<()> {
         if self.current_size + additional_size > self.config.max_size {
-            return Err(Error::from(GpuError::MemoryError(
+            return Err(Error::from(GpuError::DeviceError(
                 "Cannot expand pool beyond maximum size".to_string(),
             )));
         }
@@ -570,8 +563,8 @@ impl GlobalMemoryPoolManager {
     }
 }
 
-/// Global memory pool manager instance
 lazy_static::lazy_static! {
+    /// Global memory pool manager instance
     static ref GLOBAL_MEMORY_POOL: GlobalMemoryPoolManager =
         GlobalMemoryPoolManager::new(MemoryPoolConfig::default());
 }

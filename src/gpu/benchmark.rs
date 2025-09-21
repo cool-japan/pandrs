@@ -13,6 +13,7 @@ use crate::error::{Error, Result};
 use crate::gpu::operations::{GpuMatrix, GpuVector};
 use crate::gpu::{get_gpu_manager, GpuConfig, GpuDeviceStatus};
 use crate::series::Series;
+use crate::series::window::{WindowOps, WindowExt};
 
 /// GPU operation types for benchmarking
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -327,11 +328,12 @@ impl GpuBenchmark {
         }
 
         // Get column names
-        let col_names: Vec<&str> = df.column_names().iter().map(|s| s.as_str()).collect();
+        let column_names = df.column_names();
+        let col_names: Vec<&str> = column_names.iter().map(|s| s.as_str()).collect();
 
         // Benchmark CPU implementation
         let cpu_start = Instant::now();
-        let _cpu_result = df.corr()?;
+        let _cpu_result = df.corr_matrix(&col_names)?;
         let cpu_time = cpu_start.elapsed();
 
         let mut cpu_result = BenchmarkResult::new(
@@ -396,8 +398,8 @@ impl GpuBenchmark {
         df.add_column("y".to_string(), Series::new(y_data, Some("y".to_string()))?)?;
 
         // Get feature column names
-        let feature_cols: Vec<&str> = df
-            .column_names()
+        let column_names = df.column_names();
+        let feature_cols: Vec<&str> = column_names
             .iter()
             .filter(|&name| name != "y")
             .map(|s| s.as_str())
@@ -432,7 +434,8 @@ impl GpuBenchmark {
                     true,
                     gpu_time,
                 );
-                result.add_metric("R2", gpu_model.r_squared);
+                // TODO: Fix regression model API to return proper stats
+                // result.add_metric("R2", gpu_model.r_squared);
 
                 Some(result)
             }
@@ -465,12 +468,8 @@ impl GpuBenchmark {
 
         // Benchmark CPU implementation
         let cpu_start = Instant::now();
-        let _cpu_result = series.rolling(
-            window_size,
-            window_size / 2,
-            crate::temporal::window::WindowOperation::Mean,
-            false,
-        )?;
+        let rolling_window = series.rolling(window_size)?;
+        let _cpu_result = rolling_window.mean()?;
         let cpu_time = cpu_start.elapsed();
 
         let cpu_result = BenchmarkResult::new(

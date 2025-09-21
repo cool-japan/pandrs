@@ -6,23 +6,25 @@
 //! - Matrix inversion using GPU solvers
 //! - Advanced statistical operations
 
-use ndarray::{Array1, Array2, Axis};
+use ndarray::{Array1, Array2, Axis, s};
 use std::sync::Arc;
 
 use crate::error::{Error, Result};
 use crate::gpu::operations::{GpuMatrix, GpuVector};
-use crate::gpu::{GpuError, GpuManager};
+use crate::gpu::{GpuError, GpuManager, get_gpu_manager};
 
 #[cfg(feature = "cuda")]
-use cudarc::cusolver::{CusolverContext, CusolverError};
+// cusolver is not available in cudarc 0.10.0
+// use cudarc::cusolver::{CusolverContext, CusolverError};
 #[cfg(feature = "cuda")]
 use cudarc::driver::{CudaDevice, DevicePtr};
 
 /// GPU-accelerated matrix decomposition operations
 pub struct GpuDecomposition {
-    /// CUDA context for cuSOLVER operations
+    // cusolver is not available in cudarc 0.10.0
+    // We'll use GPU manager for basic operations
     #[cfg(feature = "cuda")]
-    cusolver: Option<Arc<CusolverContext>>,
+    gpu_available: bool,
 }
 
 impl GpuDecomposition {
@@ -31,22 +33,11 @@ impl GpuDecomposition {
         #[cfg(feature = "cuda")]
         {
             if gpu_manager.is_available() {
-                match gpu_manager.get_device() {
-                    Some(device) => {
-                        let cusolver = CusolverContext::new(device.clone()).map_err(|e| {
-                            Error::from(GpuError::DeviceError(format!(
-                                "Failed to initialize cuSOLVER: {}",
-                                e
-                            )))
-                        })?;
-                        Ok(Self {
-                            cusolver: Some(Arc::new(cusolver)),
-                        })
-                    }
-                    None => Ok(Self { cusolver: None }),
-                }
+                Ok(Self {
+                    gpu_available: true,
+                })
             } else {
-                Ok(Self { cusolver: None })
+                Ok(Self { gpu_available: false })
             }
         }
         #[cfg(not(feature = "cuda"))]
@@ -59,9 +50,10 @@ impl GpuDecomposition {
     pub fn qr_decomposition(&self, matrix: &GpuMatrix) -> Result<(GpuMatrix, GpuMatrix)> {
         #[cfg(feature = "cuda")]
         {
-            if let Some(ref cusolver) = self.cusolver {
-                return self.cuda_qr_decomposition(matrix, cusolver);
-            }
+            // cusolver not available, fall back to CPU
+            // if self.gpu_available {
+            //     return self.cuda_qr_decomposition(matrix);
+            // }
         }
 
         // Fallback to CPU implementation
@@ -75,8 +67,8 @@ impl GpuDecomposition {
     ) -> Result<(GpuMatrix, GpuVector, GpuMatrix)> {
         #[cfg(feature = "cuda")]
         {
-            if let Some(ref cusolver) = self.cusolver {
-                return self.cuda_svd_decomposition(matrix, cusolver);
+            if self.gpu_available {
+                return self.cuda_svd_decomposition(matrix);
             }
         }
 
@@ -88,8 +80,8 @@ impl GpuDecomposition {
     pub fn eigen_decomposition(&self, matrix: &GpuMatrix) -> Result<(GpuVector, GpuMatrix)> {
         #[cfg(feature = "cuda")]
         {
-            if let Some(ref cusolver) = self.cusolver {
-                return self.cuda_eigen_decomposition(matrix, cusolver);
+            if self.gpu_available {
+                return self.cuda_eigen_decomposition(matrix);
             }
         }
 
@@ -101,8 +93,8 @@ impl GpuDecomposition {
     pub fn matrix_inverse(&self, matrix: &GpuMatrix) -> Result<GpuMatrix> {
         #[cfg(feature = "cuda")]
         {
-            if let Some(ref cusolver) = self.cusolver {
-                return self.cuda_matrix_inverse(matrix, cusolver);
+            if self.gpu_available {
+                return self.cuda_matrix_inverse(matrix);
             }
         }
 
@@ -114,7 +106,6 @@ impl GpuDecomposition {
     fn cuda_qr_decomposition(
         &self,
         matrix: &GpuMatrix,
-        cusolver: &CusolverContext,
     ) -> Result<(GpuMatrix, GpuMatrix)> {
         let m = matrix.data.shape()[0];
         let n = matrix.data.shape()[1];
@@ -138,7 +129,6 @@ impl GpuDecomposition {
     fn cuda_svd_decomposition(
         &self,
         matrix: &GpuMatrix,
-        cusolver: &CusolverContext,
     ) -> Result<(GpuMatrix, GpuVector, GpuMatrix)> {
         let m = matrix.data.shape()[0];
         let n = matrix.data.shape()[1];
@@ -167,7 +157,6 @@ impl GpuDecomposition {
     fn cuda_eigen_decomposition(
         &self,
         matrix: &GpuMatrix,
-        cusolver: &CusolverContext,
     ) -> Result<(GpuVector, GpuMatrix)> {
         let n = matrix.data.shape()[0];
 
@@ -189,7 +178,6 @@ impl GpuDecomposition {
     fn cuda_matrix_inverse(
         &self,
         matrix: &GpuMatrix,
-        cusolver: &CusolverContext,
     ) -> Result<GpuMatrix> {
         let n = matrix.data.shape()[0];
 
@@ -294,7 +282,7 @@ impl GpuDecomposition {
         let n = matrix.data.shape()[0];
 
         if matrix.data.shape()[1] != n {
-            return Err(Error::Dimension(
+            return Err(Error::DimensionMismatch(
                 "Matrix must be square for inversion".to_string(),
             ));
         }
@@ -376,7 +364,8 @@ pub struct GpuAdvancedStats;
 impl GpuAdvancedStats {
     /// Compute Principal Component Analysis on GPU
     pub fn pca(data: &GpuMatrix, n_components: usize) -> Result<(GpuMatrix, GpuVector, GpuMatrix)> {
-        let decomp = GpuDecomposition::new(&GpuManager::instance())?;
+        let gpu_manager = get_gpu_manager()?;
+        let decomp = GpuDecomposition::new(&gpu_manager)?;
 
         // Center the data
         let mean = data.data.mean_axis(Axis(0)).unwrap();

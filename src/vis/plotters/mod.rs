@@ -105,7 +105,7 @@ pub mod backend {
                     chart
                         .draw_series(line_series)?
                         .label(series_name)
-                        .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], color));
+                        .legend(move |(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], color));
                 } else {
                     chart.draw_series(line_series)?;
                 }
@@ -120,7 +120,7 @@ pub mod backend {
                     chart
                         .draw_series(scatter_series)?
                         .label(series_name)
-                        .legend(|(x, y)| Circle::new((x, y), 3, color.filled()));
+                        .legend(move |(x, y)| Circle::new((x, y), 3, color.filled()));
                 } else {
                     chart.draw_series(scatter_series)?;
                 }
@@ -140,7 +140,7 @@ pub mod backend {
                     chart
                         .draw_series(bars)?
                         .label(series_name)
-                        .legend(|(x, y)| {
+                        .legend(move |(x, y)| {
                             Rectangle::new([(x, y - 5), (x + 20, y + 5)], color.filled())
                         });
                 } else {
@@ -159,7 +159,7 @@ pub mod backend {
                     chart
                         .draw_series(area_series)?
                         .label(series_name)
-                        .legend(|(x, y)| {
+                        .legend(move |(x, y)| {
                             Rectangle::new([(x, y - 5), (x + 20, y + 5)], color.mix(0.2).filled())
                         });
                 } else {
@@ -167,7 +167,7 @@ pub mod backend {
                 }
             }
             _ => {
-                return Err(PandRSError::Feature(format!(
+                return Err(PandRSError::NotImplemented(format!(
                     "Plot kind {:?} not supported for this function",
                     settings.plot_kind
                 )));
@@ -258,7 +258,7 @@ pub mod backend {
                     chart
                         .draw_series(line_series)?
                         .label(series_name)
-                        .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], color));
+                        .legend(move |(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], color));
                 } else {
                     chart.draw_series(line_series)?;
                 }
@@ -273,14 +273,14 @@ pub mod backend {
                     chart
                         .draw_series(scatter_series)?
                         .label(series_name)
-                        .legend(|(x, y)| Circle::new((x, y), 3, color.filled()));
+                        .legend(move |(x, y)| Circle::new((x, y), 3, color.filled()));
                 } else {
                     chart.draw_series(scatter_series)?;
                 }
             }
             // Other plot types would follow the same pattern
             _ => {
-                return Err(PandRSError::Feature(format!(
+                return Err(PandRSError::NotImplemented(format!(
                     "Plot kind {:?} not supported for this function in SVG format",
                     settings.plot_kind
                 )));
@@ -377,14 +377,14 @@ pub mod backend {
                         chart
                             .draw_series(line_series)?
                             .label(&name)
-                            .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], color));
+                            .legend(move |(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], color));
                     } else {
                         chart.draw_series(line_series)?;
                     }
                 }
                 // Add support for other plot types as needed
                 _ => {
-                    return Err(PandRSError::Feature(format!(
+                    return Err(PandRSError::NotImplemented(format!(
                         "Plot kind {:?} not supported for multiple series",
                         settings.plot_kind
                     )));
@@ -420,7 +420,7 @@ pub mod backend {
         // with SVG-specific adaptations
 
         // For brevity, we'll just return a not implemented error for now
-        Err(PandRSError::Feature(
+        Err(PandRSError::NotImplemented(
             "SVG multi-series plotting not fully implemented yet".to_string(),
         ))
     }
@@ -537,7 +537,7 @@ pub mod backend {
         series_name: &str,
     ) -> Result<()> {
         // Similar to PNG implementation but with SVG backend
-        Err(PandRSError::Feature(
+        Err(PandRSError::NotImplemented(
             "SVG histogram plotting not fully implemented yet".to_string(),
         ))
     }
@@ -634,10 +634,22 @@ pub mod backend {
                 .disable_x_mesh()
                 .x_labels(categories.len())
                 .x_label_formatter(&|idx| {
-                    if *idx < categories.len() {
-                        categories[*idx].to_string()
-                    } else {
-                        "".to_string()
+                    match idx {
+                        plotters::prelude::SegmentValue::Exact(i) => {
+                            if *i < categories.len() {
+                                categories[*i].to_string()
+                            } else {
+                                "".to_string()
+                            }
+                        }
+                        plotters::prelude::SegmentValue::CenterOf(i) => {
+                            if *i < categories.len() {
+                                categories[*i].to_string()
+                            } else {
+                                "".to_string()
+                            }
+                        }
+                        _ => "".to_string(),
                     }
                 })
                 .y_desc(&settings.y_label)
@@ -648,10 +660,22 @@ pub mod backend {
                 .disable_mesh()
                 .x_labels(categories.len())
                 .x_label_formatter(&|idx| {
-                    if *idx < categories.len() {
-                        categories[*idx].to_string()
-                    } else {
-                        "".to_string()
+                    match idx {
+                        plotters::prelude::SegmentValue::Exact(i) => {
+                            if *i < categories.len() {
+                                categories[*i].to_string()
+                            } else {
+                                "".to_string()
+                            }
+                        }
+                        plotters::prelude::SegmentValue::CenterOf(i) => {
+                            if *i < categories.len() {
+                                categories[*i].to_string()
+                            } else {
+                                "".to_string()
+                            }
+                        }
+                        _ => "".to_string(),
                     }
                 })
                 .y_desc(&settings.y_label)
@@ -706,18 +730,20 @@ pub mod backend {
 
             // Draw caps
             let width = 0.2;
+            let left_x = (i as f64 - width) as usize;
+            let right_x = (i as f64 + width) as usize;
             chart.draw_series(std::iter::once(PathElement::new(
                 vec![
-                    (SegmentValue::Exact(i as i32) - width, min),
-                    (SegmentValue::Exact(i as i32) + width, min),
+                    (SegmentValue::Exact(left_x), min),
+                    (SegmentValue::Exact(right_x), min),
                 ],
                 color.stroke_width(1),
             )))?;
 
             chart.draw_series(std::iter::once(PathElement::new(
                 vec![
-                    (SegmentValue::Exact(i as i32) - width, max),
-                    (SegmentValue::Exact(i as i32) + width, max),
+                    (SegmentValue::Exact(left_x), max),
+                    (SegmentValue::Exact(right_x), max),
                 ],
                 color.stroke_width(1),
             )))?;
@@ -735,7 +761,7 @@ pub mod backend {
         settings: &PlotSettings,
     ) -> Result<()> {
         // Similar to PNG implementation but with SVG backend
-        Err(PandRSError::Feature(
+        Err(PandRSError::NotImplemented(
             "SVG box plot not fully implemented yet".to_string(),
         ))
     }

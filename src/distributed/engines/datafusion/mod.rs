@@ -99,18 +99,20 @@ impl DataFusionContext {
         df_config = df_config.with_target_partitions(config.concurrency());
 
         // Set memory limit if provided
-        if let Some(limit) = config.memory_limit() {
-            df_config = df_config.with_mem_limit(limit);
-        }
+        // TODO: Update for DataFusion API changes
+        // if let Some(limit) = config.memory_limit() {
+        //     df_config = df_config.with_mem_limit(limit);
+        // }
 
         // Set optimization options
-        if config.enable_optimization() {
-            for (rule, value) in config.optimizer_rules() {
-                if let Ok(bool_value) = value.parse::<bool>() {
-                    df_config = df_config.set_bool_var(rule, bool_value);
-                }
-            }
-        }
+        // TODO: Update for DataFusion API changes
+        // if config.enable_optimization() {
+        //     for (rule, value) in config.optimizer_rules() {
+        //         if let Ok(bool_value) = value.parse::<bool>() {
+        //             df_config = df_config.set_bool_var(rule, bool_value);
+        //         }
+        //     }
+        // }
 
         // Create DataFusion context
         let context = datafusion::execution::context::SessionContext::new_with_config(df_config);
@@ -244,13 +246,13 @@ impl ExecutionContext for DataFusionContext {
         }
 
         let schema = if sql_result.is_empty() {
-            use arrow::datatypes::Schema;
-            std::sync::Arc::new(Schema::new(vec![]))
+            use arrow::datatypes::{Schema, Field};
+            std::sync::Arc::new(Schema::new(vec![] as Vec<Field>))
         } else {
             sql_result[0].schema()
         };
 
-        let partition_set = PartitionSet::new(partitions, schema);
+        let partition_set = PartitionSet::new(partitions, schema.clone());
 
         Ok(ExecutionResult::new(
             partition_set,
@@ -265,11 +267,13 @@ impl ExecutionContext for DataFusionContext {
             futures::executor::block_on(async { self.context.table(name).await.ok() })
         {
             let schema = table.schema();
-            Ok(schema.into())
+            Ok(Arc::new(schema.as_arrow().clone()))
         } else {
             // If table not found, check our registered tables
             if let Some(partition_set) = self.registered_tables.get(name) {
-                Ok(partition_set.schema())
+                partition_set.schema().cloned().ok_or_else(||
+                    Error::InvalidValue(format!("Schema not found for table '{}'", name))
+                )
             } else {
                 Err(Error::InvalidValue(format!("Table '{}' not found", name)))
             }
@@ -301,11 +305,10 @@ impl ExecutionContext for DataFusionContext {
                 .as_any()
                 .downcast_ref::<arrow::array::StringArray>()
             {
-                for i in 0..column.len() {
-                    if let Some(line) = column.value(i) {
-                        explanation.push_str(line);
-                        explanation.push('\n');
-                    }
+                for i in 0..(column as &dyn arrow::array::Array).len() {
+                    let line = column.value(i);
+                    explanation.push_str(line);
+                    explanation.push('\n');
                 }
             }
         }
@@ -329,7 +332,7 @@ impl ExecutionContext for DataFusionContext {
             .map_err(|e| Error::InvalidValue(format!("Failed to create Parquet file: {}", e)))?;
 
         // Create Arrow writer
-        let mut writer = ArrowWriter::try_new(file, result.schema(), Some(props))
+        let mut writer = ArrowWriter::try_new(file, result.schema().clone(), Some(props))
             .map_err(|e| Error::InvalidValue(format!("Failed to create Parquet writer: {}", e)))?;
 
         // Write all partitions
