@@ -4,7 +4,7 @@ use std::io::BufReader;
 use std::path::Path;
 
 #[cfg(feature = "excel")]
-use calamine::{open_workbook, DataType as CellType, Range, Reader, Xlsx};
+use calamine::{open_workbook, Data, Range, Reader, Xlsx};
 #[cfg(feature = "excel")]
 use simple_excel_writer::{Sheet, Workbook};
 
@@ -866,7 +866,7 @@ pub fn read_excel_enhanced<P: AsRef<Path>>(
 
 /// Create DataFrame from Excel range with optimized memory usage
 fn create_dataframe_from_range(
-    range: &Range<CellType>,
+    range: &Range<Data>,
     header: bool,
     skip_rows: usize,
     use_cols: Option<&[&str]>,
@@ -961,10 +961,7 @@ fn create_dataframe_from_range(
 }
 
 /// Extract detailed cell information including formulas and formatting
-fn extract_cell_details(
-    range: &Range<CellType>,
-    options: &ExcelReadOptions,
-) -> Result<Vec<ExcelCell>> {
+fn extract_cell_details(range: &Range<Data>, options: &ExcelReadOptions) -> Result<Vec<ExcelCell>> {
     let mut cells = Vec::new();
 
     for (_row_idx, row) in range.rows().enumerate() {
@@ -973,16 +970,15 @@ fn extract_cell_details(
                 value: cell.to_string(),
                 formula: None,
                 data_type: match cell {
-                    CellType::Int(_) => "Integer".to_string(),
-                    CellType::Float(_) => "Float".to_string(),
-                    CellType::String(_) => "String".to_string(),
-                    CellType::Bool(_) => "Boolean".to_string(),
-                    CellType::DateTime(_) => "DateTime".to_string(),
-                    CellType::Error(_) => "Error".to_string(),
-                    CellType::Empty => "Empty".to_string(),
-                    CellType::Duration(_) => "Duration".to_string(),
-                    CellType::DateTimeIso(_) => "DateTimeISO".to_string(),
-                    CellType::DurationIso(_) => "DurationISO".to_string(),
+                    Data::Int(_) => "Integer".to_string(),
+                    Data::Float(_) => "Float".to_string(),
+                    Data::String(_) => "String".to_string(),
+                    Data::Bool(_) => "Boolean".to_string(),
+                    Data::DateTime(_) => "DateTime".to_string(),
+                    Data::Error(_) => "Error".to_string(),
+                    Data::Empty => "Empty".to_string(),
+                    Data::DateTimeIso(_) => "DateTimeISO".to_string(),
+                    Data::DurationIso(_) => "DurationISO".to_string(),
                 },
                 format: ExcelCellFormat::default(),
             };
@@ -1005,11 +1001,11 @@ fn extract_cell_details(
 }
 
 /// Extract formula from cell (enhanced implementation)
-fn extract_formula_if_available(cell: &CellType) -> Option<String> {
+fn extract_formula_if_available(cell: &Data) -> Option<String> {
     // Enhanced formula detection beyond simple string checking
     match cell {
-        CellType::String(s) if s.starts_with('=') => Some(s.clone()),
-        CellType::String(s)
+        Data::String(s) if s.starts_with('=') => Some(s.clone()),
+        Data::String(s)
             if s.contains("SUM(")
                 || s.contains("AVERAGE(")
                 || s.contains("COUNT(")

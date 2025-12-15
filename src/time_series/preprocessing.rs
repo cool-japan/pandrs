@@ -781,7 +781,6 @@ impl TimeSeriesPreprocessor {
         let std = variance.sqrt();
 
         let mut outliers = Vec::new();
-        let mut value_idx = 0;
 
         for i in 0..ts.len() {
             if let Some(val) = ts.values.get_f64(i) {
@@ -794,7 +793,6 @@ impl TimeSeriesPreprocessor {
                     if z_score > threshold {
                         outliers.push(i);
                     }
-                    value_idx += 1;
                 }
             }
         }

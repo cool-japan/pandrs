@@ -7,7 +7,7 @@
 
 A high-performance DataFrame library for Rust, providing pandas-like API with advanced features including SIMD optimization, parallel processing, and distributed computing capabilities.
 
-> **🚀 Beta Release (0.1.0-beta.2) - Latest Available**: This feature-complete beta release is ready for production use. With 345+ comprehensive tests, optimized performance, and extensive documentation, PandRS delivers a robust pandas-like experience for Rust developers. Published to crates.io September 2025.
+> **🚀 Beta Release (0.1.0-beta.3) - Latest Available**: This feature-complete beta release is ready for production use. With 1000+ comprehensive tests, optimized performance, and extensive documentation, PandRS delivers a robust pandas-like experience for Rust developers. Published to crates.io December 2025.
 
 ## Overview
 
@@ -138,7 +138,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-pandrs = "0.1.0-beta.2"
+pandrs = "0.1.0-beta.3"
 ```
 
 ### Feature Flags
@@ -147,7 +147,7 @@ Enable additional functionality with feature flags:
 
 ```toml
 [dependencies]
-pandrs = { version = "0.1.0-beta.2", features = ["stable"] }
+pandrs = { version = "0.1.0-beta.3", features = ["stable"] }
 ```
 
 Available features:

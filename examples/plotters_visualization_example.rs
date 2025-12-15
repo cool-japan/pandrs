@@ -7,7 +7,7 @@ use pandrs::error::Result;
 #[cfg(feature = "visualization")]
 use pandrs::vis::direct::{DataFramePlotExt, SeriesPlotExt};
 #[cfg(feature = "visualization")]
-use pandrs::vis::PlotKind;
+use pandrs::vis::plotters_ext::PlotKind;
 #[cfg(feature = "visualization")]
 use pandrs::{DataFrame, Series};
 

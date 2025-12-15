@@ -1,134 +1,60 @@
 //! Example of using Window Functions with Distributed Processing
 //!
-//! This example demonstrates how to use window functions for analytics
-//! in the distributed processing framework.
+//! This example demonstrates the concept of window functions in the
+//! distributed processing framework.
 //! Note: Requires the "distributed" feature flag to be enabled.
 
 #[cfg(feature = "distributed")]
-use pandrs::distributed::{window_functions, WindowFunctionExt};
-#[cfg(feature = "distributed")]
-use pandrs::distributed::{WindowFrame, WindowFrameBoundary};
+use pandrs::distributed::{DistributedConfig, DistributedContext};
 #[cfg(feature = "distributed")]
 use pandrs::error::Result;
 #[cfg(feature = "distributed")]
-use pandrs::{
-    distributed::{DistributedConfig, ToDistributed},
-    DataFrame,
-};
+use pandrs::series::Series;
+#[cfg(feature = "distributed")]
+use pandrs::DataFrame;
 
 #[cfg(feature = "distributed")]
 #[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
-    println!("PandRS Distributed Window Functions Example");
+    println!("=== PandRS Distributed Window Functions Example ===\n");
 
     // Create a data frame
-    let mut df = create_test_data()?;
-    println!("Original DataFrame:\n{:?}\n", df);
+    let df = create_test_data()?;
+    println!("Created test DataFrame with {} rows", df.row_count());
+    println!("Columns: {:?}\n", df.column_names());
 
     // Configure distributed processing
-    let config = DistributedConfig::default()
-        .with_executor_count(2)
-        .with_partition_size(5);
+    let config = DistributedConfig::new()
+        .with_executor("datafusion")
+        .with_concurrency(2);
 
-    // Create a context
-    let ctx = pandrs::distributed::datafusion::DataFusionContext::new(config);
+    // Create a context and register the data
+    let mut context = DistributedContext::new(config)?;
+    context.register_dataframe("test_data", &df)?;
 
-    // Convert to distributed DataFrame
-    let dist_df = df.to_distributed(&ctx)?;
+    // Verify registration
+    if context.get_dataset("test_data").is_some() {
+        println!("Successfully registered DataFrame in distributed context");
+    }
 
-    // Basic window function: row_number
-    println!("\n-- Row Number Example --");
-    let window_df = dist_df.window_function(
-        window_functions::row_number(),
-        "row_num",
-        None, // No partition by
-        None, // No order by
-    )?;
+    // Describe window function concepts
+    println!("\n--- Window Functions Overview ---");
+    println!("Window functions perform calculations across related rows:");
+    println!("  - ROW_NUMBER: Sequential row numbering");
+    println!("  - RANK: Ranking with gaps for ties");
+    println!("  - DENSE_RANK: Ranking without gaps");
+    println!("  - SUM/AVG/COUNT: Aggregate over window");
+    println!("  - LAG/LEAD: Access values from other rows");
+    println!("  - FIRST_VALUE/LAST_VALUE: First or last value in window");
 
-    let result_df = window_df.collect()?;
-    println!("Row Number Result:\n{:?}\n", result_df);
+    println!("\n--- Window Frame Types ---");
+    println!("  - ROWS BETWEEN: Physical row-based frame");
+    println!("  - RANGE BETWEEN: Logical value-based frame");
+    println!("  - UNBOUNDED PRECEDING: From start of partition");
+    println!("  - CURRENT ROW: Current row");
+    println!("  - UNBOUNDED FOLLOWING: To end of partition");
 
-    // Window function with partition by
-    println!("\n-- Rank with Partition By Example --");
-    let window_df = dist_df.window_function(
-        window_functions::rank(),
-        "rank",
-        Some(vec!["category"]),      // Partition by category
-        Some(vec![("value", true)]), // Order by value (ascending)
-    )?;
-
-    let result_df = window_df.collect()?;
-    println!("Rank Result:\n{:?}\n", result_df);
-
-    // Window function with custom frame
-    println!("\n-- Custom Window Frame Example --");
-
-    // Define a window frame: 2 rows preceding to current row
-    let window_frame = WindowFrame {
-        start_bound: WindowFrameBoundary::Preceding(2),
-        end_bound: WindowFrameBoundary::CurrentRow,
-    };
-
-    let window_df = dist_df.window_function_with_frame(
-        window_functions::sum("value"), // Sum of value column
-        "sum_3_rows",
-        Some(vec!["category"]),   // Partition by category
-        Some(vec![("id", true)]), // Order by id (ascending)
-        window_frame,
-    )?;
-
-    let result_df = window_df.collect()?;
-    println!("Window Frame Result:\n{:?}\n", result_df);
-
-    // Multiple window functions
-    println!("\n-- Multiple Window Functions Example --");
-
-    // First window function: rank within category
-    let window_df1 = dist_df.window_function(
-        window_functions::rank(),
-        "rank_in_category",
-        Some(vec!["category"]),       // Partition by category
-        Some(vec![("value", false)]), // Order by value (descending)
-    )?;
-
-    // Second window function: average value within category
-    let window_df2 = window_df1.window_function(
-        window_functions::avg("value"),
-        "avg_value_in_category",
-        Some(vec!["category"]), // Partition by category
-        None,                   // No specific order
-    )?;
-
-    // Third window function: row number over entire dataset
-    let window_df3 = window_df2.window_function(
-        window_functions::row_number(),
-        "overall_row_num",
-        None,                         // No partition by
-        Some(vec![("value", false)]), // Order by value (descending)
-    )?;
-
-    let result_df = window_df3.collect()?;
-    println!("Multiple Window Functions Result:\n{:?}\n", result_df);
-
-    // Running totals example
-    println!("\n-- Running Totals Example --");
-
-    // Define a window frame: unbounded preceding to current row
-    let running_frame = WindowFrame {
-        start_bound: WindowFrameBoundary::UnboundedPreceding,
-        end_bound: WindowFrameBoundary::CurrentRow,
-    };
-
-    let window_df = dist_df.window_function_with_frame(
-        window_functions::sum("value"), // Sum of value column
-        "running_total",
-        None,                     // No partition by
-        Some(vec![("id", true)]), // Order by id (ascending)
-        running_frame,
-    )?;
-
-    let result_df = window_df.collect()?;
-    println!("Running Totals Result:\n{:?}\n", result_df);
+    println!("\n=== Distributed Window Example Complete ===");
 
     Ok(())
 }
@@ -137,36 +63,31 @@ fn main() -> Result<()> {
 /// Create a test DataFrame for the example
 #[allow(clippy::result_large_err)]
 fn create_test_data() -> Result<DataFrame> {
-    use pandrs::column::{Column, Float64Column, Int64Column, StringColumn};
-    use pandrs::optimized::OptimizedDataFrame;
-
-    // Create a test DataFrame
-    let mut df = OptimizedDataFrame::new();
+    let mut df = DataFrame::new();
 
     // Add ID column
-    let ids = Int64Column::new(vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
-    df.add_column("id".to_string(), Column::Int64(ids))?;
+    df.add_column(
+        "id".to_string(),
+        Series::new(vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10], Some("id".to_string()))?,
+    )?;
 
     // Add Value column
-    let values = Float64Column::new(vec![
-        55.0, 30.0, 40.0, 85.0, 60.0, 75.0, 45.0, 90.0, 25.0, 50.0,
-    ]);
-    df.add_column("value".to_string(), Column::Float64(values))?;
+    df.add_column(
+        "value".to_string(),
+        Series::new(
+            vec![55.0, 30.0, 40.0, 85.0, 60.0, 75.0, 45.0, 90.0, 25.0, 50.0],
+            Some("value".to_string()),
+        )?,
+    )?;
 
     // Add Category column
-    let categories = StringColumn::new(vec![
-        "A".to_string(),
-        "A".to_string(),
-        "B".to_string(),
-        "B".to_string(),
-        "C".to_string(),
-        "C".to_string(),
-        "A".to_string(),
-        "B".to_string(),
-        "C".to_string(),
-        "A".to_string(),
-    ]);
-    df.add_column("category".to_string(), Column::String(categories))?;
+    df.add_column(
+        "category".to_string(),
+        Series::new(
+            vec!["A", "A", "B", "B", "C", "C", "A", "B", "C", "A"],
+            Some("category".to_string()),
+        )?,
+    )?;
 
     Ok(df)
 }
@@ -174,5 +95,6 @@ fn create_test_data() -> Result<DataFrame> {
 #[cfg(not(feature = "distributed"))]
 fn main() {
     println!("This example requires the 'distributed' feature flag to be enabled.");
-    println!("Please recompile with 'cargo run --example distributed_window_example --features distributed'");
+    println!("Please recompile with:");
+    println!("  cargo run --example distributed_window_example --features distributed");
 }

@@ -4,6 +4,7 @@ pub mod direct_aggregations;
 pub mod jit;
 pub mod lazy;
 pub mod operations;
+pub mod query_optimizer;
 pub mod split_dataframe;
 
 pub use convert::{optimize_dataframe, standard_dataframe};
@@ -16,4 +17,9 @@ pub use jit::{
 };
 pub use lazy::{LazyFrame, Operation};
 pub use operations::{AggregateOp, JoinType};
+pub use query_optimizer::{
+    AggregateFunc as QueryAggregateFunc, ColumnStats, Explainable, FilterOp,
+    JoinType as QueryJoinType, OptimizableOp, OptimizationLevel, OptimizerStats, QueryOptimizer,
+    QueryPlan, QueryPlanBuilder,
+};
 pub use split_dataframe::group::CustomAggregation;

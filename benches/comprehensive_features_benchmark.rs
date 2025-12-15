@@ -1,4 +1,4 @@
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use pandrs::*;
 use std::collections::HashMap;
 
@@ -78,11 +78,11 @@ fn bench_dataframe_creation(c: &mut Criterion) {
 
     for size in [1_000, 10_000, 100_000].iter() {
         group.bench_with_input(BenchmarkId::new("Traditional", size), size, |b, &size| {
-            b.iter(|| black_box(create_test_dataframe(size)))
+            b.iter(|| std::hint::black_box(create_test_dataframe(size)))
         });
 
         group.bench_with_input(BenchmarkId::new("Optimized", size), size, |b, &size| {
-            b.iter(|| black_box(create_optimized_dataframe(size)))
+            b.iter(|| std::hint::black_box(create_optimized_dataframe(size)))
         });
     }
 
@@ -106,7 +106,7 @@ fn bench_column_management(c: &mut Criterion) {
 
                 b.iter(|| {
                     df.rename_columns(&rename_map).unwrap();
-                    black_box(())
+                    std::hint::black_box(())
                 })
             },
         );
@@ -126,7 +126,7 @@ fn bench_column_management(c: &mut Criterion) {
 
                 b.iter(|| {
                     df.set_column_names(new_names.clone()).unwrap();
-                    black_box(())
+                    std::hint::black_box(())
                 })
             },
         );
@@ -143,7 +143,7 @@ fn bench_column_management(c: &mut Criterion) {
 
                 b.iter(|| {
                     df.rename_columns(&rename_map).unwrap();
-                    black_box(())
+                    std::hint::black_box(())
                 })
             },
         );
@@ -165,7 +165,7 @@ fn bench_string_pool_optimization(c: &mut Criterion) {
                 let data: Vec<String> = (0..size)
                     .map(|i| format!("String_{}", i % unique_count))
                     .collect();
-                black_box(data)
+                std::hint::black_box(data)
             })
         });
 
@@ -180,7 +180,7 @@ fn bench_string_pool_optimization(c: &mut Criterion) {
                     Column::String(StringColumn::new(data)),
                 )
                 .unwrap();
-                black_box(df)
+                std::hint::black_box(df)
             })
         });
     }
@@ -207,7 +207,7 @@ fn bench_enhanced_io(c: &mut Criterion) {
                 b.iter(|| {
                     let temp_file = NamedTempFile::new().unwrap();
                     write_parquet(df, temp_file.path(), Some(ParquetCompression::Snappy)).unwrap();
-                    black_box(())
+                    std::hint::black_box(())
                 })
             },
         );
@@ -219,7 +219,7 @@ fn bench_enhanced_io(c: &mut Criterion) {
                 b.iter(|| {
                     let temp_file = NamedTempFile::new().unwrap();
                     write_parquet(df, temp_file.path(), Some(ParquetCompression::Gzip)).unwrap();
-                    black_box(())
+                    std::hint::black_box(())
                 })
             },
         );
@@ -231,7 +231,7 @@ fn bench_enhanced_io(c: &mut Criterion) {
         group.bench_with_input(
             BenchmarkId::new("parquet_read", size),
             temp_file.path(),
-            |b, path| b.iter(|| black_box(read_parquet(path).unwrap())),
+            |b, path| b.iter(|| std::hint::black_box(read_parquet(path).unwrap())),
         );
     }
 
@@ -251,13 +251,13 @@ fn bench_distributed_processing(c: &mut Criterion) {
 
             group.bench_with_input(
                 BenchmarkId::new(format!("sql_aggregation_{}threads", concurrency), size),
-                &(df, *concurrency),
+                &(df.clone(), *concurrency),
                 |b, (df, concurrency)| {
                     b.iter(|| {
                         let mut context = DistributedContext::new_local(*concurrency).unwrap();
                         context.register_dataframe("test_data", df).unwrap();
                         let result = context.sql("SELECT category, AVG(CAST(value AS FLOAT)) as avg_value FROM test_data GROUP BY category").unwrap();
-                        black_box(result)
+                        std::hint::black_box(result)
                     })
                 }
             );
@@ -272,11 +272,11 @@ fn bench_distributed_processing(c: &mut Criterion) {
                     b.iter(|| {
                         let mut context = DistributedContext::new_local(*concurrency).unwrap();
                         context.register_dataframe("test_data", df).unwrap();
-                        let test_df = context.dataset("test_data").unwrap();
+                        let test_df = context.get_dataset_mut("test_data").unwrap();
                         let result = test_df
                             .aggregate(&["category"], &[("value", "avg", "avg_value")])
                             .unwrap();
-                        black_box(result)
+                        std::hint::black_box(result)
                     })
                 },
             );
@@ -299,7 +299,7 @@ fn bench_series_operations(c: &mut Criterion) {
             &data,
             |b, data| {
                 b.iter(|| {
-                    black_box(
+                    std::hint::black_box(
                         pandrs::series::Series::new(data.clone(), Some("test".to_string()))
                             .unwrap(),
                     )
@@ -315,7 +315,7 @@ fn bench_series_operations(c: &mut Criterion) {
                 let mut series = pandrs::series::Series::new(data.clone(), None).unwrap();
                 b.iter(|| {
                     series.set_name("test_name".to_string());
-                    black_box(series.name().cloned())
+                    std::hint::black_box(series.name().cloned())
                 })
             },
         );
@@ -329,7 +329,7 @@ fn bench_series_operations(c: &mut Criterion) {
                     let series = pandrs::series::Series::new(data.clone(), None)
                         .unwrap()
                         .with_name("fluent_name".to_string());
-                    black_box(series)
+                    std::hint::black_box(series)
                 })
             },
         );
@@ -353,7 +353,7 @@ fn bench_memory_usage(c: &mut Criterion) {
                     for i in 0..size {
                         data.push(format!("Category_{}", i % 10)); // High duplication
                     }
-                    black_box(data)
+                    std::hint::black_box(data)
                 })
             },
         );
@@ -372,7 +372,7 @@ fn bench_memory_usage(c: &mut Criterion) {
                         Column::String(StringColumn::new(data)),
                     )
                     .unwrap();
-                    black_box(df)
+                    std::hint::black_box(df)
                 })
             },
         );
@@ -410,7 +410,7 @@ fn bench_aggregation_performance(c: &mut Criterion) {
                         results.insert(cat, sum);
                     }
 
-                    black_box(results)
+                    std::hint::black_box(results)
                 })
             },
         );
@@ -432,7 +432,7 @@ fn bench_type_conversion(c: &mut Criterion) {
             BenchmarkId::new("to_string_series", size),
             &series,
             |b, series: &pandrs::series::Series<i32>| {
-                b.iter(|| black_box(series.to_string_series().unwrap()))
+                b.iter(|| std::hint::black_box(series.to_string_series().unwrap()))
             },
         );
     }
@@ -452,7 +452,7 @@ fn bench_error_handling(c: &mut Criterion) {
             let mut rename_map = HashMap::new();
             rename_map.insert("nonexistent".to_string(), "new_name".to_string());
             let result = df.rename_columns(&rename_map);
-            black_box(result.is_err())
+            std::hint::black_box(result.is_err())
         })
     });
 
@@ -465,7 +465,7 @@ fn bench_error_handling(c: &mut Criterion) {
                 "here".to_string(),
                 "extra".to_string(),
             ]);
-            black_box(result.is_err())
+            std::hint::black_box(result.is_err())
         })
     });
 

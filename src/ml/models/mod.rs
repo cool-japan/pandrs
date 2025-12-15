@@ -198,11 +198,22 @@ pub fn train_test_split_opt(
     Ok((train_data, test_data))
 }
 
+pub mod ensemble;
 pub mod evaluation;
 pub mod linear;
+pub mod neural;
 pub mod selection;
+pub mod tree;
 
 // Re-export commonly used model types and functions
+pub use ensemble::{
+    GradientBoostingClassifier, GradientBoostingConfig, GradientBoostingRegressor,
+    RandomForestClassifier, RandomForestConfig, RandomForestRegressor,
+};
 pub use evaluation::{cross_val_score, learning_curve, validation_curve};
 pub use linear::{LinearRegression, LogisticRegression};
+pub use neural::{
+    Activation, LossFunction, MLPClassifier, MLPConfig, MLPConfigBuilder, MLPRegressor,
+};
 pub use selection::{GridSearchCV, HyperparameterGrid, RandomizedSearchCV};
+pub use tree::{DecisionTreeClassifier, DecisionTreeConfig, DecisionTreeRegressor, SplitCriterion};

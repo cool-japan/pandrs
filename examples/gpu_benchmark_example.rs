@@ -9,12 +9,12 @@
 //! To run without GPU acceleration (CPU fallback):
 //!   cargo run --example gpu_benchmark_example
 
-#[cfg(feature = "cuda")]
+#[cfg(cuda_available)]
 use pandrs::error::Result;
-#[cfg(feature = "cuda")]
+#[cfg(cuda_available)]
 use pandrs::GpuBenchmark;
 
-#[cfg(feature = "cuda")]
+#[cfg(cuda_available)]
 #[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     // Create a GPU benchmark utility
@@ -53,7 +53,7 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-#[cfg(not(feature = "cuda"))]
+#[cfg(not(cuda_available))]
 fn main() {
     println!("This example requires the \"cuda\" feature flag to be enabled.");
     println!("Please recompile with:");

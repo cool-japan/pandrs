@@ -94,23 +94,23 @@ impl GpuContext {
 
     /// Detect available GPU devices and their capabilities
     fn detect_device(_config: &GpuConfig) -> GpuDeviceStatus {
-        #[cfg(feature = "cuda")]
+        #[cfg(cuda_available)]
         {
-            // Use cudarc to detect CUDA availability
-            match cudarc::driver::CudaDevice::new(0) {
-                Ok(_device) => {
-                    // cudarc 0.10.0 doesn't expose device properties easily
+            // Use cudarc to detect CUDA availability (0.18.x uses CudaContext)
+            match cudarc::driver::CudaContext::new(0) {
+                Ok(_context) => {
+                    // cudarc 0.18.x doesn't expose device properties easily
                     return GpuDeviceStatus {
                         available: true,
                         cuda_version: Some("11.0+".to_string()), // cudarc requires CUDA 11.0+
                         device_name: Some("CUDA Device".to_string()),
-                        total_memory: None, // Not available in cudarc 0.10.0
-                        free_memory: None,  // Not available in cudarc 0.10.0
-                        core_count: None,   // Not available in cudarc 0.10.0
+                        total_memory: None, // Not available in cudarc 0.18.x
+                        free_memory: None,  // Not available in cudarc 0.18.x
+                        core_count: None,   // Not available in cudarc 0.18.x
                     };
                 }
                 Err(_) => {
-                    // CUDA not available or device creation failed
+                    // CUDA not available or context creation failed
                 }
             }
         }
@@ -282,7 +282,7 @@ pub fn get_gpu_manager() -> Result<GpuManager> {
 }
 
 // Include appropriate implementation modules based on features
-#[cfg(feature = "cuda")]
+#[cfg(cuda_available)]
 pub mod cuda;
 
 // Include this module regardless of CUDA availability to provide fallback

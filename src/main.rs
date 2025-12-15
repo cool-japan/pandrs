@@ -629,11 +629,11 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // === CSV Reading (f64) ===
     println!("--- CSV Reading Example (f64) ---");
-    let file_path_str = "data_temp.csv";
-    let file_path = Path::new(file_path_str);
+    let file_path = std::env::temp_dir().join("data_temp.csv");
+    let file_path_str = file_path.to_str().unwrap();
     // Create dummy CSV
     {
-        let mut file = File::create(file_path)?;
+        let mut file = File::create(&file_path)?;
         writeln!(file, "value_a,value_b,label")?;
         writeln!(file, "1.1, 2.2, apple")?;
         writeln!(file, "3.3, 4.4, banana")?;
@@ -642,7 +642,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
     println!("Attempting to read: {file_path_str}");
     // Try reading as f64 (should fail on 'label' column)
-    let df_from_csv_f64_result: Result<DataFrame<f64>, Box<dyn Error>> = read_csv(file_path, true);
+    let df_from_csv_f64_result: Result<DataFrame<f64>, Box<dyn Error>> = read_csv(&file_path, true);
     match df_from_csv_f64_result {
         Ok(df) => {
             println!("Successfully read CSV as f64 (This shouldn't happen):\n{df:?}");
@@ -655,7 +655,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!();
     // Try reading as String (should succeed)
     let df_from_csv_string_result: Result<DataFrame<String>, Box<dyn Error>> =
-        read_csv(file_path, true);
+        read_csv(&file_path, true);
     match df_from_csv_string_result {
         Ok(df) => {
             println!("Successfully read CSV as String:\n{df:?}");
@@ -668,8 +668,11 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     }
     // Clean up dummy file
-    if let Err(e) = std::fs::remove_file(file_path) {
-        eprintln!("Warning: Failed to remove temporary file '{file_path_str}': {e}");
+    if let Err(e) = std::fs::remove_file(&file_path) {
+        eprintln!(
+            "Warning: Failed to remove temporary file '{}': {e}",
+            file_path.display()
+        );
     }
     println!("-----------------------------");
 

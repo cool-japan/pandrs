@@ -1,4 +1,4 @@
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use pandrs::error::Result;
 use pandrs::optimized::jit::*;
 use pandrs::optimized::OptimizedDataFrame;
@@ -106,7 +106,7 @@ fn benchmark_enhanced_dataframe_creation(c: &mut Criterion) {
             BenchmarkId::new("realistic_data", size),
             &size,
             |b, &size| {
-                b.iter(|| black_box(create_realistic_dataframe(size, &config).unwrap()));
+                b.iter(|| std::hint::black_box(create_realistic_dataframe(size, &config).unwrap()));
             },
         );
 
@@ -118,7 +118,7 @@ fn benchmark_enhanced_dataframe_creation(c: &mut Criterion) {
                 let float_data: Vec<f64> = (0..size).map(|i| i as f64 * 0.1).collect();
                 df.add_int_column("simple_int", int_data).unwrap();
                 df.add_float_column("simple_float", float_data).unwrap();
-                black_box(df)
+                std::hint::black_box(df)
             });
         });
     }
@@ -162,7 +162,7 @@ fn benchmark_enhanced_aggregations(c: &mut Criterion) {
                 BenchmarkId::new(format!("{op_name}_size_{size}"), size),
                 &df,
                 |b, df| {
-                    b.iter(|| black_box(op_func(df)));
+                    b.iter(|| std::hint::black_box(op_func(df)));
                 },
             );
 
@@ -176,7 +176,7 @@ fn benchmark_enhanced_aggregations(c: &mut Criterion) {
                         b.iter(|| {
                             // Note: JIT config operations not yet implemented in OptimizedDataFrame
                             // Using standard operations for now
-                            black_box(op_func(df))
+                            std::hint::black_box(op_func(df))
                         });
                     },
                 );
@@ -208,7 +208,7 @@ fn benchmark_enhanced_groupby(c: &mut Criterion) {
             BenchmarkId::new("parallel_groupby", cardinality),
             &df,
             |b, df| {
-                b.iter(|| black_box(df.par_groupby(&["category"]).unwrap()));
+                b.iter(|| std::hint::black_box(df.par_groupby(&["category"]).unwrap()));
             },
         );
 
@@ -224,7 +224,7 @@ fn benchmark_enhanced_groupby(c: &mut Criterion) {
                         secondary_groups.push(format!("Group_{}", i % 5));
                     }
                     // Note: This would require extending the API
-                    black_box(df.par_groupby(&["category"]).unwrap())
+                    std::hint::black_box(df.par_groupby(&["category"]).unwrap())
                 });
             },
         );
@@ -248,10 +248,11 @@ fn benchmark_enhanced_io(c: &mut Criterion) {
         group.bench_with_input(BenchmarkId::new("csv_write", size), &df, |b, df| {
             use std::fs;
             b.iter(|| {
-                let temp_path = format!("/tmp/benchmark_test_{}.csv", rand::random::<u32>());
-                df.to_csv(&temp_path, true).unwrap(); // true for write_header
+                let temp_path = std::env::temp_dir()
+                    .join(format!("benchmark_test_{}.csv", rand::random::<u32>()));
+                df.to_csv(temp_path.to_str().unwrap(), true).unwrap(); // true for write_header
                 let _ = fs::remove_file(&temp_path);
-                black_box(())
+                std::hint::black_box(())
             });
         });
 
@@ -261,10 +262,16 @@ fn benchmark_enhanced_io(c: &mut Criterion) {
             use pandrs::io::{write_parquet, ParquetCompression};
             use std::fs;
             b.iter(|| {
-                let temp_path = format!("/tmp/benchmark_test_{}.parquet", rand::random::<u32>());
-                write_parquet(df, &temp_path, Some(ParquetCompression::Snappy)).unwrap();
+                let temp_path = std::env::temp_dir()
+                    .join(format!("benchmark_test_{}.parquet", rand::random::<u32>()));
+                write_parquet(
+                    df,
+                    temp_path.to_str().unwrap(),
+                    Some(ParquetCompression::Snappy),
+                )
+                .unwrap();
                 let _ = fs::remove_file(&temp_path);
-                black_box(())
+                std::hint::black_box(())
             });
         });
     }
@@ -294,7 +301,7 @@ fn benchmark_enhanced_string_ops(c: &mut Criterion) {
                 b.iter(|| {
                     let mut df = OptimizedDataFrame::new();
                     df.add_string_column("test_strings", data.clone()).unwrap();
-                    black_box(())
+                    std::hint::black_box(())
                 });
             },
         );
@@ -306,7 +313,7 @@ fn benchmark_enhanced_string_ops(c: &mut Criterion) {
             |b, data| {
                 b.iter(|| {
                     let lengths: Vec<usize> = data.iter().map(|s| s.len()).collect();
-                    black_box(lengths)
+                    std::hint::black_box(lengths)
                 });
             },
         );
@@ -318,7 +325,7 @@ fn benchmark_enhanced_string_ops(c: &mut Criterion) {
                 b.iter(|| {
                     let filtered: Vec<String> =
                         data.iter().filter(|s| s.len() > 10).cloned().collect();
-                    black_box(filtered)
+                    std::hint::black_box(filtered)
                 });
             },
         );
@@ -345,7 +352,7 @@ fn benchmark_memory_scalability(c: &mut Criterion) {
             |b, &size| {
                 b.iter(|| {
                     let config = BenchmarkConfig::default();
-                    black_box(create_realistic_dataframe(size, &config).unwrap())
+                    std::hint::black_box(create_realistic_dataframe(size, &config).unwrap())
                 });
             },
         );
@@ -360,9 +367,9 @@ fn benchmark_memory_scalability(c: &mut Criterion) {
                 b.iter(|| {
                     // Simulate random column access
                     for _ in 0..100 {
-                        black_box(df.get_int_column("trend_value").unwrap());
-                        black_box(df.get_float_column("score").unwrap());
-                        black_box(df.get_string_column("category").unwrap());
+                        std::hint::black_box(df.get_int_column("trend_value").unwrap());
+                        std::hint::black_box(df.get_float_column("score").unwrap());
+                        std::hint::black_box(df.get_string_column("category").unwrap());
                     }
                 });
             },
@@ -394,19 +401,19 @@ fn benchmark_simd_detailed(c: &mut Criterion) {
             BenchmarkId::new("sum_sequential", size),
             &f64_data,
             |b, data| {
-                b.iter(|| black_box(data.iter().sum::<f64>()));
+                b.iter(|| std::hint::black_box(data.iter().sum::<f64>()));
             },
         );
 
         group.bench_with_input(BenchmarkId::new("sum_simd", size), &f64_data, |b, data| {
-            b.iter(|| black_box(simd_sum_f64(data)));
+            b.iter(|| std::hint::black_box(simd_sum_f64(data)));
         });
 
         group.bench_with_input(
             BenchmarkId::new("sum_parallel", size),
             &f64_data,
             |b, data| {
-                b.iter(|| black_box(parallel::immediate::sum(data, None)));
+                b.iter(|| std::hint::black_box(parallel::immediate::sum(data, None)));
             },
         );
 
@@ -415,7 +422,7 @@ fn benchmark_simd_detailed(c: &mut Criterion) {
             &f64_data,
             |b, data| {
                 // simd_parallel not available, using standard sum
-                b.iter(|| black_box(data.iter().sum::<f64>()));
+                b.iter(|| std::hint::black_box(data.iter().sum::<f64>()));
             },
         );
 
@@ -429,7 +436,7 @@ fn benchmark_simd_detailed(c: &mut Criterion) {
                     let mean = data.iter().sum::<f64>() / data.len() as f64;
                     let variance =
                         data.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / data.len() as f64;
-                    black_box(variance.sqrt())
+                    std::hint::black_box(variance.sqrt())
                 });
             },
         );
@@ -455,7 +462,7 @@ fn benchmark_performance_comparison(c: &mut Criterion) {
             let sum_result = df.sum("trend_value").unwrap();
             let mean_result = df.mean("score").unwrap();
             let grouped = df.par_groupby(&["category"]).unwrap();
-            black_box((sum_result, mean_result, grouped))
+            std::hint::black_box((sum_result, mean_result, grouped))
         });
     });
 
@@ -466,7 +473,7 @@ fn benchmark_performance_comparison(c: &mut Criterion) {
             let sum_result = df.sum("trend_value").unwrap();
             let mean_result = df.mean("score").unwrap();
             let grouped = df.par_groupby(&["category"]).unwrap();
-            black_box((sum_result, mean_result, grouped))
+            std::hint::black_box((sum_result, mean_result, grouped))
         });
     });
 

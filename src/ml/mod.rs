@@ -24,7 +24,7 @@ pub mod sklearn_compat;
 pub mod serving;
 
 // GPU-accelerated ML functionality (conditionally compiled)
-#[cfg(feature = "cuda")]
+#[cfg(cuda_available)]
 pub mod gpu;
 
 // Backward compatibility layer (for legacy code)

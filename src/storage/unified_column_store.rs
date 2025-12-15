@@ -1114,7 +1114,6 @@ impl StorageStrategy for UnifiedColumnStoreStrategy {
         // Gather real statistics from the storage system
         let mut total_size = 0u64;
         let mut compressed_size = 0u64;
-        let mut column_count = 0usize;
         let total_rows = 0u64;
 
         // Read statistics from metadata cache
@@ -1122,7 +1121,6 @@ impl StorageStrategy for UnifiedColumnStoreStrategy {
             for stats in cache.values() {
                 total_size += stats.total_size;
                 compressed_size += stats.compressed_size;
-                column_count += 1;
             }
         }
 

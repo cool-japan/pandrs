@@ -5,6 +5,192 @@ All notable changes to PandRS will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.0-beta.3] - 2025-12-16
+
+### 🎯 Pandas API Completion & Stability
+
+This beta.3 release achieves 100% pandas API compatibility and includes significant stability improvements with comprehensive bug fixes.
+
+**🚀 Available on crates.io**: `cargo add pandrs@0.1.0-beta.3`
+
+### ✨ Key Highlights
+
+- **100% Pandas API Compatibility**: All core pandas DataFrame methods now implemented
+- **933+ Tests Passing**: Expanded test coverage from 345 to 933+ tests
+- **70+ New Methods Added**: Comprehensive window, statistical, and utility operations
+- **Code Organization**: Refactored into modular helper structure for maintainability
+- **Enhanced Categorical Support**: Memory-efficient categorical data with proper code mapping
+- **Bug Fixes**: Fixed intermittent graph algorithm failures and categorical set operations
+- **CUDA/GPU Improvements**: Improved platform detection and macOS compatibility
+- **HTML Output**: Refactored DataFrame HTML output with reordered columns and updated data types
+- **Dependencies**: Updated all dependencies to latest versions
+
+### 🆕 New Pandas-Compatible Methods
+
+#### Row Iteration & Access
+- `iterrows()` - Iterate over DataFrame rows as (index, row) pairs
+- `to_records()` - Convert DataFrame to list of record dictionaries
+- `items()` - Iterate over (column_name, Series) pairs
+- `at()` / `iat()` - Fast label/integer-based scalar access
+- `get_value()` - Get single value by row/column
+
+#### DataFrame Manipulation
+- `drop_rows()` - Remove rows by indices
+- `take()` - Select rows by indices
+- `sample_frac()` - Random sample by fraction
+- `set_index()` / `reset_index()` - Index management
+- `swap_columns()` / `sort_columns()` - Column ordering
+- `insert_column()` - Insert column at specific position
+
+#### DataFrame Properties
+- `shape()` - Get (rows, columns) tuple
+- `size()` - Total number of elements
+- `empty()` - Check if DataFrame is empty
+- `first_row()` / `last_row()` - Access first/last row
+
+#### Data Combination
+- `update()` - Update values from another DataFrame
+- `combine()` - Combine DataFrames with custom function
+- `lookup()` - Label-based lookup
+
+#### String Operations
+- `str_lower()` / `str_upper()` - Case conversion
+- `str_strip()` - Whitespace removal
+- `str_contains()` - Pattern matching
+- `str_replace()` - String replacement
+- `str_split()` - String splitting
+- `str_len()` - String length
+
+#### Column Statistics
+- `var_column()` / `std_column()` - Single column variance/std
+- `corr_columns()` / `cov_columns()` - Correlation/covariance between columns
+
+#### Type Conversion
+- `get_column_as_f64()` - Extract column as f64 vector
+- `get_column_as_string()` - Extract column as String vector
+- `to_categorical()` - Convert column to categorical encoding
+
+#### Advanced Operations
+- `groupby_apply()` - GroupBy with custom functions
+- `row_hash()` - Hash rows for deduplication
+- `duplicated_rows()` - Detect duplicate rows
+
+#### Window Functions (NEW in Beta.3)
+- `rolling_var()` / `rolling_median()` - Rolling variance and median
+- `rolling_count()` - Count non-NaN in rolling window
+- `rolling_apply()` - Custom rolling functions
+- `expanding_var()` - Expanding variance
+- `expanding_apply()` - Custom expanding functions
+
+#### Statistical Functions (NEW in Beta.3)
+- `sem()` - Standard error of the mean
+- `mad()` - Mean absolute deviation
+- `pct_rank()` - Percentile ranking
+- `argmax()` / `argmin()` - Index of extrema
+- `describe_column()` - Single column statistics with quartiles
+- `range()` - Compute max - min
+- `abs_sum()` - Sum of absolute values
+- `is_unique()` - Check uniqueness
+- `mode_with_count()` - Mode with frequency
+- `prod()` - Product aggregation
+- `geometric_mean()` - Geometric average
+- `harmonic_mean()` - Harmonic average
+- `iqr()` - Interquartile range
+- `cv()` - Coefficient of variation
+- `percentile_value()` - Specific percentile
+- `trimmed_mean()` - Outlier-resistant mean
+
+#### Missing Data Handling (NEW in Beta.3)
+- `ffill()` / `bfill()` - Forward/backward fill
+- `fillna_zero()` - Quick zero replacement
+- `coalesce()` - Combine columns with NaN fallback
+- `first_valid()` / `last_valid()` - Find valid values
+- `has_nulls()` / `count_na()` - NaN detection
+
+#### Comparison Operations (NEW in Beta.3)
+- `gt()` / `ge()` / `lt()` / `le()` - Comparison operators
+- `eq_value()` / `ne_value()` - Equality testing
+- `is_between()` - Range checking
+
+#### Column Arithmetic (NEW in Beta.3)
+- `add_columns()` / `sub_columns()` / `mul_columns()` / `div_columns()` - Binary operations
+- `mod_column()` / `floordiv()` - Modulo and floor division
+- `neg()` / `sign()` - Negation and sign extraction
+- `clip_lower()` / `clip_upper()` - One-sided clipping
+- `any_column()` / `all_column()` - Boolean tests
+
+#### Numeric Transformations (NEW in Beta.3)
+- `floor()` / `ceil()` / `trunc()` - Rounding functions
+- `fract()` / `reciprocal()` - Fractional and reciprocal
+- `abs_column()` / `round_column()` - Column-wise operations
+- `is_finite()` / `is_infinite()` - Special value detection
+- `replace_inf()` - Replace infinite values
+
+#### String Operations (NEW in Beta.3)
+- `str_startswith()` / `str_endswith()` - Prefix/suffix matching
+- `str_pad_left()` / `str_pad_right()` / `str_center()` - Padding
+- `str_slice()` - Substring extraction
+- `str_count()` - Count pattern occurrences
+- `str_repeat()` - Repeat strings
+- `str_zfill()` - Zero-fill strings
+
+#### Utility Functions (NEW in Beta.3)
+- `count_value()` - Count specific values
+- `nunique_all()` - Unique counts for all columns
+- `memory_usage_column()` - Column memory profiling
+- `is_numeric_column()` / `is_string_column()` - Type detection
+
+### 🔧 Categorical Data Enhancements
+
+- **Proper Code Mapping**: Integer codes with O(1) HashMap lookup
+- **Memory Efficiency**: `new_compact()` for codes-only storage
+- **Memory Profiling**: `memory_usage_bytes()` method
+- **Encoding Operations**: `encode()` / `decode()` for value conversion
+- **Category Management**: `remove_unused_categories()`, `factorize()`
+- **Fixed Set Operations**: `intersection()` and `difference()` now correctly filter values
+
+### 🏗️ Code Organization Improvements
+
+- **Modular Helper Structure**: Created focused helper modules for better maintainability
+  - `helpers/window_ops.rs` - Rolling and expanding window functions (454 lines)
+  - `helpers/string_ops.rs` - String operation implementations (335 lines)
+  - `helpers/math_ops.rs` - Mathematical transformations (101 lines)
+  - `helpers/aggregations.rs` - Statistical aggregations (105 lines)
+  - `helpers/comparison_ops.rs` - Comparison operations (46 lines)
+- **Delegation Pattern**: 30+ trait methods now delegate to focused helper functions
+- **Maintained Compatibility**: All refactoring preserves existing API and behavior
+
+### 🐛 Bug Fixes
+
+- Fixed intermittent failure in `strongly_connected_components` graph algorithm
+  - Root cause: Incorrect node ID mapping between original and reversed graphs
+  - Solution: Added proper inverse mapping for Kosaraju's algorithm
+- Fixed categorical `intersection()` and `difference()` including filtered-out values
+- Fixed `test_is_numeric_string_column` by using explicit type detection
+
+### 📊 Performance & Quality
+
+- **Test Coverage**: 933+ tests (up from 345 - 170% increase)
+- **Zero Warnings**: All clippy lints pass
+- **Documentation**: All examples and benchmarks compile cleanly
+- **Code Size**: 174,598 lines of Rust code across 549 files
+- **Modular Design**: Helper modules all under 500 lines each
+
+### 🛠️ Technical Details
+
+- **Rust Version**: 1.75+ required
+- **MSRV**: 1.70.0
+- **Test Coverage**: 933+ tests passing
+- **Platforms**: Linux, macOS, Windows
+- **Architecture**: x86_64, ARM64
+
+### 🚀 Migration from Beta.2
+
+No breaking changes from beta.2:
+- All existing code remains compatible
+- New methods are additive
+- Simply update version in Cargo.toml
+
 ## [0.1.0-beta.2] - 2025-09-21
 
 ### 🔧 Enhanced Stability and Performance

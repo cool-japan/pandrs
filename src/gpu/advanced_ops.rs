@@ -13,24 +13,24 @@ use crate::error::{Error, Result};
 use crate::gpu::operations::{GpuMatrix, GpuVector};
 use crate::gpu::{get_gpu_manager, GpuError, GpuManager};
 
-#[cfg(feature = "cuda")]
-// cusolver is not available in cudarc 0.10.0
+#[cfg(cuda_available)]
+// cusolver is not available in cudarc 0.18.x
 // use cudarc::cusolver::{CusolverContext, CusolverError};
-#[cfg(feature = "cuda")]
-use cudarc::driver::{CudaDevice, DevicePtr};
+#[cfg(cuda_available)]
+use cudarc::driver::{CudaContext as CudarcContext, CudaStream};
 
 /// GPU-accelerated matrix decomposition operations
 pub struct GpuDecomposition {
     // cusolver is not available in cudarc 0.10.0
     // We'll use GPU manager for basic operations
-    #[cfg(feature = "cuda")]
+    #[cfg(cuda_available)]
     gpu_available: bool,
 }
 
 impl GpuDecomposition {
     /// Create new GPU decomposition context
     pub fn new(gpu_manager: &GpuManager) -> Result<Self> {
-        #[cfg(feature = "cuda")]
+        #[cfg(cuda_available)]
         {
             if gpu_manager.is_available() {
                 Ok(Self {
@@ -42,7 +42,7 @@ impl GpuDecomposition {
                 })
             }
         }
-        #[cfg(not(feature = "cuda"))]
+        #[cfg(not(cuda_available))]
         {
             Ok(Self {})
         }
@@ -50,7 +50,7 @@ impl GpuDecomposition {
 
     /// Compute QR decomposition on GPU
     pub fn qr_decomposition(&self, matrix: &GpuMatrix) -> Result<(GpuMatrix, GpuMatrix)> {
-        #[cfg(feature = "cuda")]
+        #[cfg(cuda_available)]
         {
             // cusolver not available, fall back to CPU
             // if self.gpu_available {
@@ -67,7 +67,7 @@ impl GpuDecomposition {
         &self,
         matrix: &GpuMatrix,
     ) -> Result<(GpuMatrix, GpuVector, GpuMatrix)> {
-        #[cfg(feature = "cuda")]
+        #[cfg(cuda_available)]
         {
             if self.gpu_available {
                 return self.cuda_svd_decomposition(matrix);
@@ -80,7 +80,7 @@ impl GpuDecomposition {
 
     /// Compute eigenvalues and eigenvectors on GPU
     pub fn eigen_decomposition(&self, matrix: &GpuMatrix) -> Result<(GpuVector, GpuMatrix)> {
-        #[cfg(feature = "cuda")]
+        #[cfg(cuda_available)]
         {
             if self.gpu_available {
                 return self.cuda_eigen_decomposition(matrix);
@@ -93,7 +93,7 @@ impl GpuDecomposition {
 
     /// Compute matrix inverse using GPU LU decomposition
     pub fn matrix_inverse(&self, matrix: &GpuMatrix) -> Result<GpuMatrix> {
-        #[cfg(feature = "cuda")]
+        #[cfg(cuda_available)]
         {
             if self.gpu_available {
                 return self.cuda_matrix_inverse(matrix);
@@ -104,7 +104,7 @@ impl GpuDecomposition {
         self.cpu_matrix_inverse(matrix)
     }
 
-    #[cfg(feature = "cuda")]
+    #[cfg(cuda_available)]
     fn cuda_qr_decomposition(&self, matrix: &GpuMatrix) -> Result<(GpuMatrix, GpuMatrix)> {
         let m = matrix.data.shape()[0];
         let n = matrix.data.shape()[1];
@@ -124,7 +124,7 @@ impl GpuDecomposition {
         Ok((q, r))
     }
 
-    #[cfg(feature = "cuda")]
+    #[cfg(cuda_available)]
     fn cuda_svd_decomposition(
         &self,
         matrix: &GpuMatrix,
@@ -152,7 +152,7 @@ impl GpuDecomposition {
         Ok((u, s, vt))
     }
 
-    #[cfg(feature = "cuda")]
+    #[cfg(cuda_available)]
     fn cuda_eigen_decomposition(&self, matrix: &GpuMatrix) -> Result<(GpuVector, GpuMatrix)> {
         let n = matrix.data.shape()[0];
 
@@ -170,7 +170,7 @@ impl GpuDecomposition {
         Ok((eigenvalues, eigenvectors))
     }
 
-    #[cfg(feature = "cuda")]
+    #[cfg(cuda_available)]
     fn cuda_matrix_inverse(&self, matrix: &GpuMatrix) -> Result<GpuMatrix> {
         let n = matrix.data.shape()[0];
 
@@ -546,7 +546,7 @@ mod tests {
 
     #[test]
     fn test_gpu_qr_decomposition() {
-        let gpu_manager = GpuManager::instance();
+        let gpu_manager = GpuManager::new();
         let decomp = GpuDecomposition::new(&gpu_manager).unwrap();
 
         let matrix_data =
@@ -567,7 +567,7 @@ mod tests {
 
     #[test]
     fn test_matrix_inverse() {
-        let gpu_manager = GpuManager::instance();
+        let gpu_manager = GpuManager::new();
         let decomp = GpuDecomposition::new(&gpu_manager).unwrap();
 
         // Create an invertible matrix

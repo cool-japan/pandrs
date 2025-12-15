@@ -4,7 +4,7 @@
 //! by implementing equivalent functionality and measuring execution time, memory usage,
 //! and throughput characteristics.
 
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use pandrs::dataframe::base::DataFrame;
 use pandrs::error::Result;
 use pandrs::optimized::OptimizedDataFrame;
@@ -82,7 +82,7 @@ fn benchmark_dataframe_creation_vs_pandas(c: &mut Criterion) {
             BenchmarkId::new("pandrs_standard", size),
             size,
             |b, &size| {
-                b.iter(|| black_box(create_pandas_equivalent_data(size).unwrap()));
+                b.iter(|| std::hint::black_box(create_pandas_equivalent_data(size).unwrap()));
             },
         );
 
@@ -90,7 +90,7 @@ fn benchmark_dataframe_creation_vs_pandas(c: &mut Criterion) {
             BenchmarkId::new("pandrs_optimized", size),
             size,
             |b, &size| {
-                b.iter(|| black_box(create_optimized_pandas_data(size).unwrap()));
+                b.iter(|| std::hint::black_box(create_optimized_pandas_data(size).unwrap()));
             },
         );
     }
@@ -115,8 +115,8 @@ fn benchmark_basic_operations_vs_pandas(c: &mut Criterion) {
             &df_standard,
             |b, df: &DataFrame| {
                 b.iter(|| {
-                    black_box(df.get_column::<f64>("value").unwrap());
-                    black_box(df.get_column::<String>("category").unwrap());
+                    std::hint::black_box(df.get_column::<f64>("value").unwrap());
+                    std::hint::black_box(df.get_column::<String>("category").unwrap());
                 });
             },
         );
@@ -126,8 +126,8 @@ fn benchmark_basic_operations_vs_pandas(c: &mut Criterion) {
             &df_optimized,
             |b, df: &OptimizedDataFrame| {
                 b.iter(|| {
-                    black_box(df.get_float_column("value").unwrap());
-                    black_box(df.get_string_column("category").unwrap());
+                    std::hint::black_box(df.get_float_column("value").unwrap());
+                    std::hint::black_box(df.get_string_column("category").unwrap());
                 });
             },
         );
@@ -137,7 +137,7 @@ fn benchmark_basic_operations_vs_pandas(c: &mut Criterion) {
             BenchmarkId::new("row_count_standard", size),
             &df_standard,
             |b, df: &DataFrame| {
-                b.iter(|| black_box(df.row_count()));
+                b.iter(|| std::hint::black_box(df.row_count()));
             },
         );
 
@@ -145,7 +145,7 @@ fn benchmark_basic_operations_vs_pandas(c: &mut Criterion) {
             BenchmarkId::new("row_count_optimized", size),
             &df_optimized,
             |b, df: &OptimizedDataFrame| {
-                b.iter(|| black_box(df.row_count()));
+                b.iter(|| std::hint::black_box(df.row_count()));
             },
         );
     }
@@ -175,7 +175,7 @@ fn benchmark_aggregation_vs_pandas(c: &mut Criterion) {
                             sum += val;
                         }
                     }
-                    black_box(sum);
+                    std::hint::black_box(sum);
                 });
             },
         );
@@ -184,7 +184,7 @@ fn benchmark_aggregation_vs_pandas(c: &mut Criterion) {
             BenchmarkId::new("sum_optimized", size),
             &df_optimized,
             |b, df: &OptimizedDataFrame| {
-                b.iter(|| black_box(df.sum("value").unwrap()));
+                b.iter(|| std::hint::black_box(df.sum("value").unwrap()));
             },
         );
 
@@ -203,7 +203,7 @@ fn benchmark_aggregation_vs_pandas(c: &mut Criterion) {
                             count += 1;
                         }
                     }
-                    black_box(if count > 0 { sum / count as f64 } else { 0.0 });
+                    std::hint::black_box(if count > 0 { sum / count as f64 } else { 0.0 });
                 });
             },
         );
@@ -212,7 +212,7 @@ fn benchmark_aggregation_vs_pandas(c: &mut Criterion) {
             BenchmarkId::new("mean_optimized", size),
             &df_optimized,
             |b, df: &OptimizedDataFrame| {
-                b.iter(|| black_box(df.mean("value").unwrap()));
+                b.iter(|| std::hint::black_box(df.mean("value").unwrap()));
             },
         );
     }
@@ -237,7 +237,7 @@ fn benchmark_groupby_vs_pandas(c: &mut Criterion) {
                     // Note: Groupby operations return HashMap, not aggregated results
                     let _grouped = df.par_groupby(&["category"]).unwrap();
                     // For now, just do a simple sum instead
-                    black_box(df.sum("value").unwrap());
+                    std::hint::black_box(df.sum("value").unwrap());
                 });
             },
         );
@@ -251,7 +251,7 @@ fn benchmark_groupby_vs_pandas(c: &mut Criterion) {
                     // Note: Groupby operations return HashMap, not aggregated results
                     let _grouped = df.par_groupby(&["category"]).unwrap();
                     // For now, just do a simple mean instead
-                    black_box(df.mean("value").unwrap());
+                    std::hint::black_box(df.mean("value").unwrap());
                 });
             },
         );
@@ -272,7 +272,7 @@ fn benchmark_memory_vs_pandas(c: &mut Criterion) {
             size,
             |b, &size| {
                 let df = create_pandas_equivalent_data(size).unwrap();
-                b.iter(|| black_box(df.clone()));
+                b.iter(|| std::hint::black_box(df.clone()));
             },
         );
 
@@ -281,7 +281,7 @@ fn benchmark_memory_vs_pandas(c: &mut Criterion) {
             size,
             |b, &size| {
                 let df = create_optimized_pandas_data(size).unwrap();
-                b.iter(|| black_box(df.clone()));
+                b.iter(|| std::hint::black_box(df.clone()));
             },
         );
 
@@ -299,7 +299,7 @@ fn benchmark_memory_vs_pandas(c: &mut Criterion) {
                             count += 1;
                         }
                     }
-                    black_box(count);
+                    std::hint::black_box(count);
                 });
             },
         );
@@ -334,7 +334,7 @@ fn benchmark_io_vs_pandas(c: &mut Criterion) {
                             csv_data.push(format!("{id},{cat},{val}"));
                         }
                     }
-                    black_box(csv_data);
+                    std::hint::black_box(csv_data);
                 });
             },
         );
@@ -387,7 +387,7 @@ fn benchmark_performance_analysis(c: &mut Criterion) {
             }
 
             let duration = start.elapsed();
-            black_box((sum, mean, filtered_count, duration));
+            std::hint::black_box((sum, mean, filtered_count, duration));
         });
     });
 
@@ -404,7 +404,7 @@ fn benchmark_performance_analysis(c: &mut Criterion) {
             let group_sum = df_optimized.sum("value").unwrap();
 
             let duration = start.elapsed();
-            black_box((sum, mean, group_sum, duration));
+            std::hint::black_box((sum, mean, group_sum, duration));
         });
     });
 

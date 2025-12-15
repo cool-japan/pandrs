@@ -660,8 +660,8 @@ impl AdaptiveOptimizer {
                 / recent_events.len() as f64;
 
             if avg_improvement > 0.2 {
-                learning_params.improvement_threshold =
-                    (learning_params.improvement_threshold + 0.01).min(0.2);
+                // Note: learning_params adjustment computed but not persisted (read-only analysis)
+                let _new_threshold = (learning_params.improvement_threshold + 0.01).min(0.2);
                 report.adjustments.push(
                     "Raised improvement threshold due to high average improvement".to_string(),
                 );

@@ -1,4 +1,4 @@
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use pandrs::error::Result;
 use pandrs::optimized::jit::*;
 use pandrs::optimized::OptimizedDataFrame;
@@ -35,7 +35,7 @@ fn benchmark_dataframe_creation(c: &mut Criterion) {
             BenchmarkId::new("create_dataframe", size),
             size,
             |b, &size| {
-                b.iter(|| black_box(create_test_dataframe(size).unwrap()));
+                b.iter(|| std::hint::black_box(create_test_dataframe(size).unwrap()));
             },
         );
     }
@@ -51,7 +51,7 @@ fn benchmark_groupby_operations(c: &mut Criterion) {
         let df = create_test_dataframe(*size).unwrap();
 
         group.bench_with_input(BenchmarkId::new("par_groupby", size), &df, |b, df| {
-            b.iter(|| black_box(df.par_groupby(&["category"]).unwrap()));
+            b.iter(|| std::hint::black_box(df.par_groupby(&["category"]).unwrap()));
         });
     }
 
@@ -65,20 +65,20 @@ fn benchmark_aggregation_operations(c: &mut Criterion) {
     let df = create_test_dataframe(100_000).unwrap();
 
     group.bench_function("sum_standard", |b| {
-        b.iter(|| black_box(df.sum("value").unwrap()));
+        b.iter(|| std::hint::black_box(df.sum("value").unwrap()));
     });
 
     // JIT config not available, using standard operations
     group.bench_function("mean_standard", |b| {
-        b.iter(|| black_box(df.mean("value").unwrap()));
+        b.iter(|| std::hint::black_box(df.mean("value").unwrap()));
     });
 
     group.bench_function("max_standard", |b| {
-        b.iter(|| black_box(df.max("value").unwrap()));
+        b.iter(|| std::hint::black_box(df.max("value").unwrap()));
     });
 
     group.bench_function("min_standard", |b| {
-        b.iter(|| black_box(df.min("value").unwrap()));
+        b.iter(|| std::hint::black_box(df.min("value").unwrap()));
     });
 
     group.finish();
@@ -94,43 +94,43 @@ fn benchmark_jit_operations(c: &mut Criterion) {
     group.bench_function("parallel_sum_f64", |b| {
         b.iter(|| {
             let sum_func = parallel_sum_f64(None);
-            black_box(sum_func.execute(&test_data))
+            std::hint::black_box(sum_func.execute(&test_data))
         });
     });
 
     group.bench_function("parallel_mean_f64", |b| {
-        b.iter(|| black_box(parallel_mean_f64_value(&test_data, None)));
+        b.iter(|| std::hint::black_box(parallel_mean_f64_value(&test_data, None)));
     });
 
     group.bench_function("parallel_min_f64", |b| {
         b.iter(|| {
             let min_func = parallel_min_f64(None);
-            black_box(min_func.execute(&test_data))
+            std::hint::black_box(min_func.execute(&test_data))
         });
     });
 
     group.bench_function("parallel_max_f64", |b| {
         b.iter(|| {
             let max_func = parallel_max_f64(None);
-            black_box(max_func.execute(&test_data))
+            std::hint::black_box(max_func.execute(&test_data))
         });
     });
 
     // SIMD operations
     group.bench_function("simd_sum_f64", |b| {
-        b.iter(|| black_box(simd_sum_f64(&test_data)));
+        b.iter(|| std::hint::black_box(simd_sum_f64(&test_data)));
     });
 
     group.bench_function("simd_mean_f64", |b| {
-        b.iter(|| black_box(simd_mean_f64(&test_data)));
+        b.iter(|| std::hint::black_box(simd_mean_f64(&test_data)));
     });
 
     group.bench_function("simd_min_f64", |b| {
-        b.iter(|| black_box(simd_min_f64(&test_data)));
+        b.iter(|| std::hint::black_box(simd_min_f64(&test_data)));
     });
 
     group.bench_function("simd_max_f64", |b| {
-        b.iter(|| black_box(simd_max_f64(&test_data)));
+        b.iter(|| std::hint::black_box(simd_max_f64(&test_data)));
     });
 
     group.finish();
@@ -147,7 +147,7 @@ fn benchmark_string_operations(c: &mut Criterion) {
         b.iter(|| {
             let mut df = OptimizedDataFrame::new();
             df.add_string_column("test", string_data.clone()).unwrap();
-            black_box(())
+            std::hint::black_box(())
         });
     });
 
@@ -164,16 +164,16 @@ fn benchmark_memory_operations(c: &mut Criterion) {
             size,
             |b, &size| {
                 let df = create_test_dataframe(size).unwrap();
-                b.iter(|| black_box(df.clone()));
+                b.iter(|| std::hint::black_box(df.clone()));
             },
         );
 
         group.bench_with_input(BenchmarkId::new("column_access", size), size, |b, &size| {
             let df = create_test_dataframe(size).unwrap();
             b.iter(|| {
-                black_box(df.get_int_column("value").unwrap());
-                black_box(df.get_float_column("score").unwrap());
-                black_box(df.get_string_column("category").unwrap());
+                std::hint::black_box(df.get_int_column("value").unwrap());
+                std::hint::black_box(df.get_float_column("score").unwrap());
+                std::hint::black_box(df.get_string_column("category").unwrap());
             });
         });
     }
@@ -201,7 +201,7 @@ fn benchmark_filter_operations(c: &mut Criterion) {
                         }
                     })
                     .collect();
-                black_box(mask);
+                std::hint::black_box(mask);
             });
         });
     }

@@ -87,3 +87,6 @@ examples/weather_*.png
 **/CLAUDE.local.md
 
 **/.claude/settings.local.json
+jupyter_output/*
+**/jupyter_output/
+jupyter_output/*.html

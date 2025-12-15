@@ -3,6 +3,52 @@
 //! This module provides functionality for processing data in a streaming fashion,
 //! allowing for efficient handling of data streams, real-time analytics, and
 //! continuous data processing.
+//!
+//! # Features
+//!
+//! - **Streaming Data Sources**: Read from CSV files, iterators, or custom connectors
+//! - **Backpressure Handling**: Multiple strategies for handling slow consumers
+//! - **Windowed Aggregations**: Tumbling, sliding, session, and count-based windows
+//! - **Real-time Analytics**: Compute metrics like EMA, percentiles, and rate of change
+//!
+//! # Quick Start
+//!
+//! ```rust,ignore
+//! use pandrs::streaming::{DataStream, StreamConfig, StreamAggregator, AggregationType};
+//! use pandrs::streaming::backpressure::{BackpressureBuffer, BackpressureConfig, BackpressureStrategy};
+//! use pandrs::streaming::window::{WindowedAggregator, WindowConfigBuilder, WindowAggregation};
+//! use std::time::Duration;
+//!
+//! // Basic streaming with backpressure
+//! let config = BackpressureConfig {
+//!     high_watermark: 1000,
+//!     low_watermark: 500,
+//!     strategy: BackpressureStrategy::DropOldest,
+//!     ..Default::default()
+//! };
+//! let buffer = BackpressureBuffer::new(config);
+//!
+//! // Windowed aggregation
+//! let window_config = WindowConfigBuilder::new()
+//!     .tumbling(Duration::from_secs(60))
+//!     .build();
+//! let mut agg = WindowedAggregator::new(window_config, "value", WindowAggregation::Sum);
+//! ```
+
+pub mod backpressure;
+pub mod window;
+
+// Re-export backpressure types
+pub use backpressure::{
+    BackpressureBuffer, BackpressureChannel, BackpressureConfig, BackpressureConfigBuilder,
+    BackpressureStats, BackpressureStrategy, FlowController,
+};
+
+// Re-export window types
+pub use window::{
+    MultiColumnAggregator, TimeWindow, WindowAggregation, WindowConfig, WindowConfigBuilder,
+    WindowResult, WindowType, WindowedAggregator,
+};
 
 use crossbeam_channel::{bounded, Receiver, Sender};
 use std::collections::{HashMap, VecDeque};

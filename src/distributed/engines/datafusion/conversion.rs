@@ -441,10 +441,11 @@ fn build_array_from_dataframe(
                     } else if let Ok(ndt) =
                         chrono::NaiveDateTime::parse_from_str(value, "%Y-%m-%d %H:%M:%S")
                     {
-                        ndt.timestamp_nanos_opt().unwrap_or(0)
+                        ndt.and_utc().timestamp_nanos_opt().unwrap_or(0)
                     } else if let Ok(nd) = chrono::NaiveDate::parse_from_str(value, "%Y-%m-%d") {
                         nd.and_hms_opt(0, 0, 0)
                             .unwrap_or_default()
+                            .and_utc()
                             .timestamp_nanos_opt()
                             .unwrap_or(0)
                     } else {

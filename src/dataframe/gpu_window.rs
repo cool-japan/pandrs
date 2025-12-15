@@ -275,7 +275,7 @@ impl GpuWindowContext {
 
     /// GPU-accelerated rolling mean implementation
     fn gpu_rolling_mean(&self, data: &[f64], window_size: usize) -> Result<Vec<f64>> {
-        #[cfg(feature = "cuda")]
+        #[cfg(cuda_available)]
         {
             // In a real CUDA implementation, this would:
             // 1. Allocate GPU memory for input and output
@@ -309,7 +309,7 @@ impl GpuWindowContext {
             Ok(result)
         }
 
-        #[cfg(not(feature = "cuda"))]
+        #[cfg(not(cuda_available))]
         {
             // CPU fallback implementation
             let mut result = vec![f64::NAN; data.len()];
@@ -329,7 +329,7 @@ impl GpuWindowContext {
 
     /// GPU-accelerated rolling sum implementation
     fn gpu_rolling_sum(&self, data: &[f64], window_size: usize) -> Result<Vec<f64>> {
-        #[cfg(feature = "cuda")]
+        #[cfg(cuda_available)]
         {
             let mut result = vec![f64::NAN; data.len()];
 
@@ -353,7 +353,7 @@ impl GpuWindowContext {
             Ok(result)
         }
 
-        #[cfg(not(feature = "cuda"))]
+        #[cfg(not(cuda_available))]
         {
             let mut result = vec![f64::NAN; data.len()];
             for i in window_size - 1..data.len() {
@@ -380,7 +380,7 @@ impl GpuWindowContext {
 
     /// GPU-accelerated rolling variance implementation
     fn gpu_rolling_var(&self, data: &[f64], window_size: usize) -> Result<Vec<f64>> {
-        #[cfg(feature = "cuda")]
+        #[cfg(cuda_available)]
         {
             let mut result = vec![f64::NAN; data.len()];
 
@@ -412,7 +412,7 @@ impl GpuWindowContext {
             Ok(result)
         }
 
-        #[cfg(not(feature = "cuda"))]
+        #[cfg(not(cuda_available))]
         {
             let mut result = vec![f64::NAN; data.len()];
             for i in window_size - 1..data.len() {
@@ -441,7 +441,7 @@ impl GpuWindowContext {
 
     /// GPU-accelerated expanding mean implementation
     fn gpu_expanding_mean(&self, data: &[f64]) -> Result<Vec<f64>> {
-        #[cfg(feature = "cuda")]
+        #[cfg(cuda_available)]
         {
             let mut result = vec![f64::NAN; data.len()];
             let mut cumsum = 0.0;
@@ -454,7 +454,7 @@ impl GpuWindowContext {
             Ok(result)
         }
 
-        #[cfg(not(feature = "cuda"))]
+        #[cfg(not(cuda_available))]
         {
             let mut result = vec![f64::NAN; data.len()];
             let mut cumsum = 0.0;
@@ -470,7 +470,7 @@ impl GpuWindowContext {
 
     /// GPU-accelerated expanding sum implementation
     fn gpu_expanding_sum(&self, data: &[f64]) -> Result<Vec<f64>> {
-        #[cfg(feature = "cuda")]
+        #[cfg(cuda_available)]
         {
             let mut result = vec![0.0; data.len()];
             let mut cumsum = 0.0;
@@ -483,7 +483,7 @@ impl GpuWindowContext {
             Ok(result)
         }
 
-        #[cfg(not(feature = "cuda"))]
+        #[cfg(not(cuda_available))]
         {
             let mut result = vec![0.0; data.len()];
             let mut cumsum = 0.0;
@@ -499,7 +499,7 @@ impl GpuWindowContext {
 
     /// GPU-accelerated exponentially weighted moving mean implementation
     fn gpu_ewm_mean(&self, data: &[f64], alpha: f64) -> Result<Vec<f64>> {
-        #[cfg(feature = "cuda")]
+        #[cfg(cuda_available)]
         {
             let mut result = vec![f64::NAN; data.len()];
 
@@ -514,7 +514,7 @@ impl GpuWindowContext {
             Ok(result)
         }
 
-        #[cfg(not(feature = "cuda"))]
+        #[cfg(not(cuda_available))]
         {
             let mut result = vec![f64::NAN; data.len()];
 
@@ -751,12 +751,12 @@ impl<'a> GpuDataFrameRolling<'a> {
     /// CPU implementation of rolling mean
     fn cpu_rolling_mean(&self, data: &[f64]) -> Result<Vec<f64>> {
         let mut result = vec![f64::NAN; data.len()];
+        if self.window_size == 0 || self.window_size > data.len() {
+            return Ok(result);
+        }
         for i in self.window_size - 1..data.len() {
-            let window_start = if i >= self.window_size - 1 {
-                i - self.window_size + 1
-            } else {
-                0
-            };
+            // Use i + 1 - window_size to avoid usize underflow
+            let window_start = i + 1 - self.window_size;
             let window_end = i + 1;
             let window_data = &data[window_start..window_end];
             result[i] = window_data.iter().sum::<f64>() / window_data.len() as f64;
@@ -767,12 +767,12 @@ impl<'a> GpuDataFrameRolling<'a> {
     /// CPU implementation of rolling sum
     fn cpu_rolling_sum(&self, data: &[f64]) -> Result<Vec<f64>> {
         let mut result = vec![f64::NAN; data.len()];
+        if self.window_size == 0 || self.window_size > data.len() {
+            return Ok(result);
+        }
         for i in self.window_size - 1..data.len() {
-            let window_start = if i >= self.window_size - 1 {
-                i - self.window_size + 1
-            } else {
-                0
-            };
+            // Use i + 1 - window_size to avoid usize underflow
+            let window_start = i + 1 - self.window_size;
             let window_end = i + 1;
             result[i] = data[window_start..window_end].iter().sum::<f64>();
         }
@@ -791,12 +791,12 @@ impl<'a> GpuDataFrameRolling<'a> {
     /// CPU implementation of rolling variance
     fn cpu_rolling_var(&self, data: &[f64]) -> Result<Vec<f64>> {
         let mut result = vec![f64::NAN; data.len()];
+        if self.window_size == 0 || self.window_size > data.len() {
+            return Ok(result);
+        }
         for i in self.window_size - 1..data.len() {
-            let window_start = if i >= self.window_size - 1 {
-                i - self.window_size + 1
-            } else {
-                0
-            };
+            // Use i + 1 - window_size to avoid usize underflow
+            let window_start = i + 1 - self.window_size;
             let window_end = i + 1;
             let window_data = &data[window_start..window_end];
 
@@ -863,11 +863,8 @@ mod tests {
     #[test]
     fn test_gpu_rolling_mean_fallback() -> Result<()> {
         let mut df = DataFrame::new();
-        let data = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0];
-        let series = Series::new(
-            data.iter().map(|v| v.to_string()).collect(),
-            Some("test_col".to_string()),
-        )?;
+        let data: Vec<f64> = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0];
+        let series = Series::new(data, Some("test_col".to_string()))?;
         df.add_column("test_col".to_string(), series)?;
 
         let context = GpuWindowContext::default();

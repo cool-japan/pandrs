@@ -7,7 +7,7 @@ pub mod na;
 pub mod string_accessor;
 pub mod window;
 
-#[cfg(feature = "cuda")]
+#[cfg(cuda_available)]
 pub mod gpu;
 
 // Re-exports for convenience
@@ -19,7 +19,7 @@ pub use string_accessor::StringAccessor;
 pub use window::{Expanding, Rolling, WindowClosed, WindowExt, WindowOps, EWM};
 
 // Optional feature re-exports
-#[cfg(feature = "cuda")]
+#[cfg(cuda_available)]
 pub use gpu::SeriesGpuExt;
 
 // Legacy exports for backward compatibility

@@ -5,14 +5,14 @@
 
 use ndarray::{s, Array1, Array2, Axis};
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::error::{Error, Result};
 use crate::gpu::operations::{GpuMatrix, GpuVector};
 use crate::gpu::{GpuConfig, GpuDeviceStatus, GpuError, GpuManager};
 
-#[cfg(feature = "cuda")]
-use cudarc::driver::CudaDevice;
+#[cfg(cuda_available)]
+use cudarc::driver::CudaContext as CudarcContext;
 
 /// Multi-GPU configuration
 #[derive(Debug, Clone)]
@@ -97,7 +97,7 @@ impl MultiGpuManager {
 
     /// Check if peer-to-peer memory access is supported between devices
     fn check_p2p_support(device_ids: &[i32]) -> bool {
-        #[cfg(feature = "cuda")]
+        #[cfg(cuda_available)]
         {
             // Check if all device pairs support P2P
             for &id1 in device_ids {
@@ -110,7 +110,7 @@ impl MultiGpuManager {
             }
             true
         }
-        #[cfg(not(feature = "cuda"))]
+        #[cfg(not(cuda_available))]
         {
             false
         }
@@ -360,7 +360,7 @@ impl MultiGpuManager {
 
     /// Synchronize all devices
     pub fn synchronize_all(&self) -> Result<()> {
-        #[cfg(feature = "cuda")]
+        #[cfg(cuda_available)]
         {
             for &device_id in &self.config.device_ids {
                 if let Some(manager) = self.device_managers.get(&device_id) {
@@ -419,29 +419,27 @@ impl MultiGpuManager {
 }
 
 /// Global multi-GPU manager
-static mut MULTI_GPU_MANAGER: Option<Mutex<MultiGpuManager>> = None;
+static MULTI_GPU_MANAGER: OnceLock<Mutex<MultiGpuManager>> = OnceLock::new();
 
 /// Initialize global multi-GPU manager
 pub fn init_multi_gpu(config: MultiGpuConfig) -> Result<()> {
     let manager = MultiGpuManager::new(config)?;
 
-    unsafe {
-        MULTI_GPU_MANAGER = Some(Mutex::new(manager));
-    }
+    MULTI_GPU_MANAGER.set(Mutex::new(manager)).map_err(|_| {
+        Error::InvalidOperation("Multi-GPU manager already initialized".to_string())
+    })?;
 
     Ok(())
 }
 
 /// Get the global multi-GPU manager
 pub fn get_multi_gpu_manager() -> Result<Arc<Mutex<MultiGpuManager>>> {
-    unsafe {
-        match &MULTI_GPU_MANAGER {
-            Some(manager) => Ok(Arc::new(Mutex::new(manager.lock().unwrap().clone()))),
-            None => {
-                // Initialize with default config
-                init_multi_gpu(MultiGpuConfig::default())?;
-                get_multi_gpu_manager()
-            }
+    match MULTI_GPU_MANAGER.get() {
+        Some(manager) => Ok(Arc::new(Mutex::new(manager.lock().unwrap().clone()))),
+        None => {
+            // Initialize with default config
+            init_multi_gpu(MultiGpuConfig::default())?;
+            get_multi_gpu_manager()
         }
     }
 }

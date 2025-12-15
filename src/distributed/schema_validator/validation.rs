@@ -59,10 +59,6 @@ impl SchemaValidator {
                 Operation::Window(window_functions) => {
                     self.validate_window(input_schemas[0], &window_functions)
                 }
-                _ => {
-                    // For other operations, just return Ok for now
-                    Ok(())
-                }
                 Operation::Custom { name, params } => {
                     match name.as_str() {
                         "select_expr" => {
@@ -128,6 +124,10 @@ impl SchemaValidator {
                 }
                 Operation::Limit { .. } => {
                     // Limit doesn't require schema validation
+                    Ok(())
+                }
+                _ => {
+                    // For other operations, just return Ok for now
                     Ok(())
                 }
             },

@@ -1,5 +1,5 @@
 // Simple DataFrame benchmarks using Criterion
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion};
 use pandrs::dataframe::serialize::SerializeExt;
 use pandrs::{DataFrame, Series};
 use std::collections::HashMap;
@@ -28,7 +28,7 @@ fn bench_create_small_dataframe(c: &mut Criterion) {
             df.add_column("A".to_string(), col_a).unwrap();
             df.add_column("B".to_string(), col_b).unwrap();
             df.add_column("C".to_string(), col_c).unwrap();
-            black_box(df)
+            std::hint::black_box(df)
         });
     });
 }
@@ -53,7 +53,7 @@ fn bench_create_medium_dataframe(c: &mut Criterion) {
             df.add_column("A".to_string(), col_a).unwrap();
             df.add_column("B".to_string(), col_b).unwrap();
             df.add_column("C".to_string(), col_c).unwrap();
-            black_box(df)
+            std::hint::black_box(df)
         });
     });
 }
@@ -76,7 +76,7 @@ fn bench_create_dataframe_from_map(c: &mut Criterion) {
             );
 
             let df = DataFrame::from_map(data, None).unwrap();
-            black_box(df)
+            std::hint::black_box(df)
         });
     });
 }
@@ -137,7 +137,7 @@ fn bench_to_csv_small(c: &mut Criterion) {
     c.bench_function("to_csv_small", |b| {
         b.iter(|| {
             df.to_csv(path_str).unwrap();
-            black_box(())
+            std::hint::black_box(())
         });
     });
 }
@@ -165,7 +165,7 @@ fn bench_to_json_small(c: &mut Criterion) {
     c.bench_function("to_json_small", |b| {
         b.iter(|| {
             let json = df.to_json().unwrap();
-            black_box(json)
+            std::hint::black_box(json)
         });
     });
 }

@@ -45,8 +45,7 @@ impl OptimizedDataFrame {
                 Err(e) => {
                     // If GPU fails and fallback is enabled, try CPU
                     if gpu_manager.context().config().fallback_to_cpu {
-                        let mut result = Array2::zeros((matrix1.shape()[0], matrix2.shape()[1]));
-                        result = matrix1.dot(&matrix2);
+                        let result = matrix1.dot(&matrix2);
                         Ok(result)
                     } else {
                         Err(e)
@@ -55,8 +54,7 @@ impl OptimizedDataFrame {
             }
         } else {
             // Use CPU implementation
-            let mut result = Array2::zeros((matrix1.shape()[0], matrix2.shape()[1]));
-            result = matrix1.dot(&matrix2);
+            let result = matrix1.dot(&matrix2);
             Ok(result)
         }
     }

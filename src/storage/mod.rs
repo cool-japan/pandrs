@@ -1,5 +1,6 @@
 // Storage engines module
 pub mod adaptive_string_pool;
+pub mod arena;
 pub mod column_store;
 pub mod disk;
 pub mod hybrid_large_scale;
@@ -90,3 +91,6 @@ pub use hybrid_large_scale::{
 pub use simple_unified_string_pool::{
     SimpleStringPoolStats, SimpleStringView, SimpleUnifiedStringPool,
 };
+
+// Re-exports for arena allocator
+pub use arena::{Arena, ArenaStats, ArenaVec, ScopedArena, SyncArena, TypedArena};

@@ -10,18 +10,18 @@
 //! To run without GPU acceleration (CPU fallback):
 //!   cargo run --example gpu_matrix_example
 
-#[cfg(feature = "cuda")]
+#[cfg(cuda_available)]
 use ndarray::{arr2, Array2};
-#[cfg(feature = "cuda")]
+#[cfg(cuda_available)]
 use pandrs::error::Result;
-#[cfg(feature = "cuda")]
+#[cfg(cuda_available)]
 use pandrs::gpu::operations::{GpuMatrix, GpuVector};
-#[cfg(feature = "cuda")]
+#[cfg(cuda_available)]
 use pandrs::gpu::{get_gpu_manager, init_gpu, init_gpu_with_config, GpuConfig, GpuError};
-#[cfg(feature = "cuda")]
+#[cfg(cuda_available)]
 use std::time::Instant;
 
-#[cfg(feature = "cuda")]
+#[cfg(cuda_available)]
 #[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     println!("PandRS GPU-accelerated Matrix Operations Example");
@@ -132,14 +132,14 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-#[cfg(not(feature = "cuda"))]
+#[cfg(not(cuda_available))]
 fn main() {
     println!("This example requires the 'cuda' feature flag to be enabled.");
     println!("Please recompile with:");
     println!("  cargo run --example gpu_matrix_example --features \"cuda\"");
 }
 
-#[cfg(feature = "cuda")]
+#[cfg(cuda_available)]
 fn print_matrix(matrix: &Array2<f64>) {
     for row in matrix.rows() {
         for val in row.iter() {
@@ -149,7 +149,7 @@ fn print_matrix(matrix: &Array2<f64>) {
     }
 }
 
-#[cfg(feature = "cuda")]
+#[cfg(cuda_available)]
 #[allow(clippy::result_large_err)]
 fn run_performance_benchmark() -> Result<()> {
     // Create larger matrices for benchmarking

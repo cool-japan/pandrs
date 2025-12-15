@@ -12,43 +12,48 @@ use crate::gpu::operations::{GpuMatrix, GpuVector};
 use crate::gpu::{GpuError, GpuManager};
 
 // Import CUDA-specific dependencies when the feature is enabled
-#[cfg(feature = "cuda")]
-use cudarc::cublas::{result::CublasError, CudaBlas};
-#[cfg(feature = "cuda")]
+#[cfg(cuda_available)]
+use cudarc::cublas::CudaBlas;
+#[cfg(cuda_available)]
 use cudarc::driver::CudaFunction;
-#[cfg(feature = "cuda")]
-use cudarc::driver::{CudaDevice, CudaSlice, DeviceSlice, DriverError};
-#[cfg(feature = "cuda")]
+#[cfg(cuda_available)]
+use cudarc::driver::{CudaContext as CudarcContext, CudaSlice, CudaStream, DriverError};
+#[cfg(cuda_available)]
 use half::f16;
 
 /// CUDA context wrapper for managing CUDA resources
-#[cfg(feature = "cuda")]
-pub struct CudaContext {
-    /// CUDA device
-    device: Arc<CudaDevice>,
+#[cfg(cuda_available)]
+pub struct PandrsGpuContext {
+    /// CUDA context (cudarc 0.18+ renamed CudaDevice to CudaContext)
+    context: Arc<CudarcContext>,
+    /// CUDA stream for operations
+    stream: Arc<CudaStream>,
     /// cuBLAS handle
     cublas: Arc<CudaBlas>,
     /// Whether the device supports compute capability 7.0+ (Volta or later)
     supports_tensor_cores: bool,
 }
 
-#[cfg(feature = "cuda")]
-impl CudaContext {
+#[cfg(cuda_available)]
+impl PandrsGpuContext {
     /// Create a new CUDA context
     pub fn new(device_id: i32) -> Result<Self> {
-        // Initialize CUDA device
-        let device = match CudaDevice::new(device_id as usize) {
-            Ok(device) => device,
+        // Initialize CUDA context (cudarc 0.18+ uses CudaContext instead of CudaDevice)
+        let context = match CudarcContext::new(device_id as usize) {
+            Ok(ctx) => ctx,
             Err(e) => {
                 return Err(Error::from(GpuError::DeviceError(format!(
-                    "Failed to initialize CUDA device: {}",
+                    "Failed to initialize CUDA context: {}",
                     e
                 ))))
             }
         };
 
+        // Get default stream
+        let stream = context.default_stream();
+
         // Initialize cuBLAS
-        let cublas = match CudaBlas::new(device.clone()) {
+        let cublas = match CudaBlas::new(stream.clone()) {
             Ok(cublas) => Arc::new(cublas),
             Err(e) => {
                 return Err(Error::from(GpuError::DeviceError(format!(
@@ -59,20 +64,26 @@ impl CudaContext {
         };
 
         // Check compute capability
-        // cudarc 0.10.0 doesn't expose device properties easily
+        // cudarc 0.18.x doesn't expose device properties easily
         // Assume modern GPU with tensor core support
         let supports_tensor_cores = true;
 
-        Ok(CudaContext {
-            device,
+        Ok(PandrsGpuContext {
+            context,
+            stream,
             cublas,
             supports_tensor_cores,
         })
     }
 
-    /// Get CUDA device
-    pub fn device(&self) -> Arc<CudaDevice> {
-        self.device.clone()
+    /// Get CUDA context
+    pub fn context(&self) -> Arc<CudarcContext> {
+        self.context.clone()
+    }
+
+    /// Get CUDA stream
+    pub fn stream(&self) -> Arc<CudaStream> {
+        self.stream.clone()
     }
 
     /// Get cuBLAS handle
@@ -86,31 +97,22 @@ impl CudaContext {
     }
 
     /// Load a CUDA kernel from PTX
-    pub fn load_kernel(&self, name: &str, ptx: &str) -> Result<CudaFunction> {
-        use cudarc::nvrtc::Ptx;
-
-        // For now, just return the function if it already exists
-        // The actual PTX loading would need to be done with static function names
-        match self.device.get_func(name, name) {
-            Some(func) => Ok(func),
-            None => {
-                // In a real implementation, we'd load the PTX with static names
-                // For now, return an error
-                Err(Error::from(GpuError::DeviceError(format!(
-                    "Kernel '{}' not found. PTX loading with dynamic names not supported.",
-                    name
-                ))))
-            }
-        }
+    pub fn load_kernel(&self, name: &str, _ptx: &str) -> Result<CudaFunction> {
+        // In cudarc 0.18.x, kernel loading requires load_module() first
+        // For now, return an error since dynamic PTX loading requires proper module handling
+        Err(Error::from(GpuError::DeviceError(format!(
+            "Kernel '{}' not found. PTX loading requires module loading in cudarc 0.18.x.",
+            name
+        ))))
     }
 }
 
 /// Get or create a CUDA context for the specified device
-#[cfg(feature = "cuda")]
-fn get_cuda_context(manager: &GpuManager) -> Result<Arc<CudaContext>> {
+#[cfg(cuda_available)]
+fn get_cuda_context(manager: &GpuManager) -> Result<Arc<PandrsGpuContext>> {
     // In a real implementation, this would maintain a cache of contexts
     // For simplicity, we'll create a new one each time
-    let context = CudaContext::new(manager.context().config().device_id)?;
+    let context = PandrsGpuContext::new(manager.context().config().device_id)?;
     Ok(Arc::new(context))
 }
 
@@ -125,10 +127,10 @@ pub fn matrix_multiply(a: &GpuMatrix, b: &GpuMatrix, manager: &GpuManager) -> Re
         )));
     }
 
-    #[cfg(feature = "cuda")]
+    #[cfg(cuda_available)]
     {
         let cuda_context = get_cuda_context(manager)?;
-        let device = cuda_context.device();
+        let stream = cuda_context.stream();
         let cublas = cuda_context.cublas();
 
         // Get dimensions
@@ -140,8 +142,8 @@ pub fn matrix_multiply(a: &GpuMatrix, b: &GpuMatrix, manager: &GpuManager) -> Re
         let a_data = a.data.as_slice().unwrap();
         let b_data = b.data.as_slice().unwrap();
 
-        // Copy data to device
-        let d_a = match device.htod_copy(a_data.to_vec()) {
+        // Copy data to device using stream (cudarc 0.18+ API uses clone_htod)
+        let _d_a = match stream.clone_htod(a_data) {
             Ok(d_a) => d_a,
             Err(e) => {
                 return Err(Error::from(GpuError::TransferError(format!(
@@ -151,7 +153,7 @@ pub fn matrix_multiply(a: &GpuMatrix, b: &GpuMatrix, manager: &GpuManager) -> Re
             }
         };
 
-        let d_b = match device.htod_copy(b_data.to_vec()) {
+        let _d_b = match stream.clone_htod(b_data) {
             Ok(d_b) => d_b,
             Err(e) => {
                 return Err(Error::from(GpuError::TransferError(format!(
@@ -162,7 +164,7 @@ pub fn matrix_multiply(a: &GpuMatrix, b: &GpuMatrix, manager: &GpuManager) -> Re
         };
 
         // Allocate device memory for result
-        let mut d_c = match unsafe { device.alloc::<f64>((m * n) as usize) } {
+        let _d_c = match stream.alloc_zeros::<f64>((m * n) as usize) {
             Ok(d_c) => d_c,
             Err(e) => {
                 return Err(Error::from(GpuError::DeviceError(format!(
@@ -173,19 +175,18 @@ pub fn matrix_multiply(a: &GpuMatrix, b: &GpuMatrix, manager: &GpuManager) -> Re
         };
 
         // Set up parameters for GEMM
-        let alpha = 1.0f64;
-        let beta = 0.0f64;
+        let _alpha = 1.0f64;
+        let _beta = 0.0f64;
 
         // Perform matrix multiplication
-        // Note: cudarc 0.10.0 API has changed, this is a placeholder
-        // In a real implementation, you would use the correct cudarc API
-        // For now, just return an error indicating GPU matrix multiplication is not implemented
+        // Note: cudarc 0.18.x API - full GEMM implementation would require
+        // proper cuBLAS bindings. For now, return placeholder error.
         return Err(Error::from(GpuError::DeviceError(
-            "GPU matrix multiplication not implemented for cudarc 0.10.0".to_string(),
+            "GPU matrix multiplication not fully implemented for cudarc 0.18.x".to_string(),
         )));
     }
 
-    #[cfg(not(feature = "cuda"))]
+    #[cfg(not(cuda_available))]
     {
         // Create result matrix with appropriate dimensions
         let m = a.data.shape()[0];
@@ -201,7 +202,7 @@ pub fn matrix_multiply(a: &GpuMatrix, b: &GpuMatrix, manager: &GpuManager) -> Re
 }
 
 /// Element-wise operation template for CUDA
-#[cfg(feature = "cuda")]
+#[cfg(cuda_available)]
 fn elementwise_op<F>(
     a: &GpuMatrix,
     b: &GpuMatrix,
@@ -224,21 +225,21 @@ where
     }
 
     let cuda_context = get_cuda_context(manager)?;
-    let device = cuda_context.device();
+    let stream = cuda_context.stream();
 
     // Get dimensions
     let shape = a.data.shape();
     let total_elements = shape[0] * shape[1];
 
     // Load kernel
-    let kernel = cuda_context.load_kernel(op_name, ptx_code)?;
+    let _kernel = cuda_context.load_kernel(op_name, ptx_code)?;
 
     // Allocate device memory
     let a_data = a.data.as_slice().unwrap();
     let b_data = b.data.as_slice().unwrap();
 
-    // Copy data to device
-    let d_a = match device.htod_copy(a_data.to_vec()) {
+    // Copy data to device using stream (cudarc 0.18+ API uses clone_htod)
+    let _d_a = match stream.clone_htod(a_data) {
         Ok(d_a) => d_a,
         Err(e) => {
             return Err(Error::from(GpuError::TransferError(format!(
@@ -248,7 +249,7 @@ where
         }
     };
 
-    let d_b = match device.htod_copy(b_data.to_vec()) {
+    let _d_b = match stream.clone_htod(b_data) {
         Ok(d_b) => d_b,
         Err(e) => {
             return Err(Error::from(GpuError::TransferError(format!(
@@ -259,7 +260,7 @@ where
     };
 
     // Allocate device memory for result
-    let mut d_c = match unsafe { device.alloc::<f64>(total_elements) } {
+    let _d_c = match stream.alloc_zeros::<f64>(total_elements) {
         Ok(d_c) => d_c,
         Err(e) => {
             return Err(Error::from(GpuError::DeviceError(format!(
@@ -270,14 +271,14 @@ where
     };
 
     // Calculate grid and block dimensions
-    let block_size = 256;
-    let grid_size = (total_elements + block_size - 1) / block_size;
+    let _block_size = 256;
+    let _grid_size = (total_elements + _block_size - 1) / _block_size;
 
     // Launch kernel
-    // Note: kernel launch API has changed in cudarc 0.10.0
+    // Note: kernel launch API for cudarc 0.18.x
     // For now, return a placeholder error
     return Err(Error::from(GpuError::DeviceError(
-        "GPU kernel launch not implemented for cudarc 0.10.0".to_string(),
+        "GPU kernel launch not fully implemented for cudarc 0.18.x".to_string(),
     )));
 }
 
@@ -292,7 +293,7 @@ pub fn elementwise_add(a: &GpuMatrix, b: &GpuMatrix, manager: &GpuManager) -> Re
         )));
     }
 
-    #[cfg(feature = "cuda")]
+    #[cfg(cuda_available)]
     {
         // PTX code for element-wise addition kernel
         const PTX_ADD: &str = r#"
@@ -341,7 +342,7 @@ pub fn elementwise_add(a: &GpuMatrix, b: &GpuMatrix, manager: &GpuManager) -> Re
         return elementwise_op::<fn(f64, f64) -> f64>(a, b, manager, "add", PTX_ADD, "addition");
     }
 
-    #[cfg(not(feature = "cuda"))]
+    #[cfg(not(cuda_available))]
     {
         // Create result matrix with same dimensions
         let shape = a.data.shape();
@@ -369,7 +370,7 @@ pub fn elementwise_subtract(
         )));
     }
 
-    #[cfg(feature = "cuda")]
+    #[cfg(cuda_available)]
     {
         // PTX code for element-wise subtraction kernel
         const PTX_SUB: &str = r#"
@@ -425,7 +426,7 @@ pub fn elementwise_subtract(
         );
     }
 
-    #[cfg(not(feature = "cuda"))]
+    #[cfg(not(cuda_available))]
     {
         // Create result matrix with same dimensions
         let shape = a.data.shape();
@@ -453,7 +454,7 @@ pub fn elementwise_multiply(
         )));
     }
 
-    #[cfg(feature = "cuda")]
+    #[cfg(cuda_available)]
     {
         // PTX code for element-wise multiplication kernel
         const PTX_MUL: &str = r#"
@@ -509,7 +510,7 @@ pub fn elementwise_multiply(
         );
     }
 
-    #[cfg(not(feature = "cuda"))]
+    #[cfg(not(cuda_available))]
     {
         // Create result matrix with same dimensions
         let shape = a.data.shape();
@@ -533,7 +534,7 @@ pub fn elementwise_divide(a: &GpuMatrix, b: &GpuMatrix, manager: &GpuManager) ->
         )));
     }
 
-    #[cfg(feature = "cuda")]
+    #[cfg(cuda_available)]
     {
         // PTX code for element-wise division kernel
         const PTX_DIV: &str = r#"
@@ -594,7 +595,7 @@ pub fn elementwise_divide(a: &GpuMatrix, b: &GpuMatrix, manager: &GpuManager) ->
         return elementwise_op::<fn(f64, f64) -> f64>(a, b, manager, "divide", PTX_DIV, "division");
     }
 
-    #[cfg(not(feature = "cuda"))]
+    #[cfg(not(cuda_available))]
     {
         // Create result matrix with same dimensions
         let shape = a.data.shape();
@@ -609,11 +610,11 @@ pub fn elementwise_divide(a: &GpuMatrix, b: &GpuMatrix, manager: &GpuManager) ->
 
 /// Sum of all matrix elements using CUDA
 pub fn matrix_sum(a: &GpuMatrix, manager: &GpuManager) -> Result<f64> {
-    #[cfg(feature = "cuda")]
+    #[cfg(cuda_available)]
     {
         let cuda_context = get_cuda_context(manager)?;
-        let device = cuda_context.device();
-        let cublas = cuda_context.cublas();
+        let stream = cuda_context.stream();
+        let _cublas = cuda_context.cublas();
 
         // Get dimensions
         let shape = a.data.shape();
@@ -622,8 +623,8 @@ pub fn matrix_sum(a: &GpuMatrix, manager: &GpuManager) -> Result<f64> {
         // Allocate device memory
         let a_data = a.data.as_slice().unwrap();
 
-        // Copy data to device
-        let d_a = match device.htod_copy(a_data.to_vec()) {
+        // Copy data to device using stream (cudarc 0.18+ API)
+        let _d_a = match stream.clone_htod(a_data) {
             Ok(d_a) => d_a,
             Err(e) => {
                 return Err(Error::from(GpuError::TransferError(format!(
@@ -635,7 +636,7 @@ pub fn matrix_sum(a: &GpuMatrix, manager: &GpuManager) -> Result<f64> {
 
         // Create a vector of ones for reduction
         let ones = vec![1.0f64; total_elements];
-        let d_ones = match device.htod_copy(ones) {
+        let _d_ones = match stream.clone_htod(&ones) {
             Ok(d_ones) => d_ones,
             Err(e) => {
                 return Err(Error::from(GpuError::TransferError(format!(
@@ -646,7 +647,7 @@ pub fn matrix_sum(a: &GpuMatrix, manager: &GpuManager) -> Result<f64> {
         };
 
         // Allocate device memory for result
-        let mut d_sum = match unsafe { device.alloc::<f64>(1) } {
+        let _d_sum = match stream.alloc_zeros::<f64>(1) {
             Ok(d_sum) => d_sum,
             Err(e) => {
                 return Err(Error::from(GpuError::DeviceError(format!(
@@ -657,15 +658,15 @@ pub fn matrix_sum(a: &GpuMatrix, manager: &GpuManager) -> Result<f64> {
         };
 
         // Compute dot product: sum = A • ones
-        let incx = 1;
-        let incy = 1;
-        // Note: CudaBlas API has changed in cudarc 0.10.0
+        let _incx = 1;
+        let _incy = 1;
+        // Note: CudaBlas API for cudarc 0.18.x
         return Err(Error::from(GpuError::DeviceError(
-            "GPU BLAS operations not implemented for cudarc 0.10.0".to_string(),
+            "GPU BLAS operations not fully implemented for cudarc 0.18.x".to_string(),
         )));
     }
 
-    #[cfg(not(feature = "cuda"))]
+    #[cfg(not(cuda_available))]
     {
         Ok(0.0)
     }
@@ -673,10 +674,10 @@ pub fn matrix_sum(a: &GpuMatrix, manager: &GpuManager) -> Result<f64> {
 
 /// Sort matrix rows using CUDA
 pub fn sort_matrix_rows(a: &GpuMatrix, manager: &GpuManager) -> Result<GpuMatrix> {
-    #[cfg(feature = "cuda")]
+    #[cfg(cuda_available)]
     {
         // PTX code for bitonic sort kernel (simplified for demonstration)
-        const PTX_SORT: &str = r#"
+        const _PTX_SORT: &str = r#"
         .version 7.0
         .target sm_70
         .address_size 64
@@ -694,17 +695,17 @@ pub fn sort_matrix_rows(a: &GpuMatrix, manager: &GpuManager) -> Result<GpuMatrix
         "#;
 
         let cuda_context = get_cuda_context(manager)?;
-        let device = cuda_context.device();
+        let _stream = cuda_context.stream();
 
         // Get dimensions
         let shape = a.data.shape();
-        let height = shape[0];
-        let width = shape[1];
-        let total_elements = height * width;
+        let _height = shape[0];
+        let _width = shape[1];
+        let _total_elements = _height * _width;
 
         // For demonstration, we'll just copy the input to output
         // In a real implementation, we would perform a proper sort
-        let a_data = a.data.as_slice().unwrap();
+        let _a_data = a.data.as_slice().unwrap();
 
         // Create result matrix with same dimensions
         let result_data = a.data.clone();
@@ -715,7 +716,7 @@ pub fn sort_matrix_rows(a: &GpuMatrix, manager: &GpuManager) -> Result<GpuMatrix
         })
     }
 
-    #[cfg(not(feature = "cuda"))]
+    #[cfg(not(cuda_available))]
     {
         // Create result matrix with same dimensions
         let shape = a.data.shape();
@@ -739,21 +740,21 @@ pub fn vector_dot_product(a: &GpuVector, b: &GpuVector, manager: &GpuManager) ->
         )));
     }
 
-    #[cfg(feature = "cuda")]
+    #[cfg(cuda_available)]
     {
         let cuda_context = get_cuda_context(manager)?;
-        let device = cuda_context.device();
-        let cublas = cuda_context.cublas();
+        let stream = cuda_context.stream();
+        let _cublas = cuda_context.cublas();
 
         // Get dimensions
-        let n = a.data.len() as i32;
+        let _n = a.data.len() as i32;
 
         // Allocate device memory
         let a_data = a.data.as_slice().unwrap();
         let b_data = b.data.as_slice().unwrap();
 
-        // Copy data to device
-        let d_a = match device.htod_copy(a_data.to_vec()) {
+        // Copy data to device using stream (cudarc 0.18+ API)
+        let _d_a = match stream.clone_htod(a_data) {
             Ok(d_a) => d_a,
             Err(e) => {
                 return Err(Error::from(GpuError::TransferError(format!(
@@ -763,7 +764,7 @@ pub fn vector_dot_product(a: &GpuVector, b: &GpuVector, manager: &GpuManager) ->
             }
         };
 
-        let d_b = match device.htod_copy(b_data.to_vec()) {
+        let _d_b = match stream.clone_htod(b_data) {
             Ok(d_b) => d_b,
             Err(e) => {
                 return Err(Error::from(GpuError::TransferError(format!(
@@ -774,7 +775,7 @@ pub fn vector_dot_product(a: &GpuVector, b: &GpuVector, manager: &GpuManager) ->
         };
 
         // Allocate device memory for result
-        let mut d_result = match unsafe { device.alloc::<f64>(1) } {
+        let _d_result = match stream.alloc_zeros::<f64>(1) {
             Ok(d_result) => d_result,
             Err(e) => {
                 return Err(Error::from(GpuError::DeviceError(format!(
@@ -785,15 +786,15 @@ pub fn vector_dot_product(a: &GpuVector, b: &GpuVector, manager: &GpuManager) ->
         };
 
         // Perform dot product
-        let incx = 1;
-        let incy = 1;
-        // Note: CudaBlas API has changed in cudarc 0.10.0
+        let _incx = 1;
+        let _incy = 1;
+        // Note: CudaBlas API for cudarc 0.18.x
         return Err(Error::from(GpuError::DeviceError(
-            "GPU BLAS operations not implemented for cudarc 0.10.0".to_string(),
+            "GPU BLAS operations not fully implemented for cudarc 0.18.x".to_string(),
         )));
     }
 
-    #[cfg(not(feature = "cuda"))]
+    #[cfg(not(cuda_available))]
     {
         Ok(0.0)
     }
@@ -810,21 +811,21 @@ pub fn vector_add(a: &GpuVector, b: &GpuVector, manager: &GpuManager) -> Result<
         )));
     }
 
-    #[cfg(feature = "cuda")]
+    #[cfg(cuda_available)]
     {
         let cuda_context = get_cuda_context(manager)?;
-        let device = cuda_context.device();
-        let cublas = cuda_context.cublas();
+        let stream = cuda_context.stream();
+        let _cublas = cuda_context.cublas();
 
         // Get dimensions
-        let n = a.data.len() as i32;
+        let _n = a.data.len() as i32;
 
         // Allocate device memory
         let a_data = a.data.as_slice().unwrap();
         let b_data = b.data.as_slice().unwrap();
 
-        // Copy data to device
-        let d_a = match device.htod_copy(a_data.to_vec()) {
+        // Copy data to device using stream (cudarc 0.18+ API)
+        let _d_a = match stream.clone_htod(a_data) {
             Ok(d_a) => d_a,
             Err(e) => {
                 return Err(Error::from(GpuError::TransferError(format!(
@@ -834,7 +835,7 @@ pub fn vector_add(a: &GpuVector, b: &GpuVector, manager: &GpuManager) -> Result<
             }
         };
 
-        let d_b = match device.htod_copy(b_data.to_vec()) {
+        let _d_b = match stream.clone_htod(b_data) {
             Ok(d_b) => d_b,
             Err(e) => {
                 return Err(Error::from(GpuError::TransferError(format!(
@@ -845,7 +846,7 @@ pub fn vector_add(a: &GpuVector, b: &GpuVector, manager: &GpuManager) -> Result<
         };
 
         // Allocate device memory for result (copy B as the starting point)
-        let mut d_result = match device.htod_copy(b_data.to_vec()) {
+        let _d_result = match stream.clone_htod(b_data) {
             Ok(d_result) => d_result,
             Err(e) => {
                 return Err(Error::from(GpuError::DeviceError(format!(
@@ -857,16 +858,16 @@ pub fn vector_add(a: &GpuVector, b: &GpuVector, manager: &GpuManager) -> Result<
 
         // Perform vector addition: result = a + b
         // Using axpy: y = alpha*x + y (with alpha=1.0, x=a, y=b/result)
-        let alpha = 1.0f64;
-        let incx = 1;
-        let incy = 1;
-        // Note: CudaBlas API has changed in cudarc 0.10.0
+        let _alpha = 1.0f64;
+        let _incx = 1;
+        let _incy = 1;
+        // Note: CudaBlas API for cudarc 0.18.x
         return Err(Error::from(GpuError::DeviceError(
-            "GPU BLAS operations not implemented for cudarc 0.10.0".to_string(),
+            "GPU BLAS operations not fully implemented for cudarc 0.18.x".to_string(),
         )));
     }
 
-    #[cfg(not(feature = "cuda"))]
+    #[cfg(not(cuda_available))]
     {
         // Create result vector with same dimensions
         let len = a.data.len();
@@ -882,10 +883,10 @@ pub fn vector_add(a: &GpuVector, b: &GpuVector, manager: &GpuManager) -> Result<
 // Helper functions for memory management
 
 /// Transfer a CPU matrix to GPU memory
-#[cfg(feature = "cuda")]
-fn to_gpu(matrix: &Array2<f64>, device: &Arc<CudaDevice>) -> Result<CudaSlice<f64>> {
+#[cfg(cuda_available)]
+fn to_gpu(matrix: &Array2<f64>, stream: &Arc<CudaStream>) -> Result<CudaSlice<f64>> {
     let data = matrix.as_slice().unwrap();
-    let d_data = match device.htod_copy(data.to_vec()) {
+    let d_data = match stream.clone_htod(data) {
         Ok(d_data) => d_data,
         Err(e) => {
             return Err(Error::from(GpuError::TransferError(format!(
@@ -899,17 +900,18 @@ fn to_gpu(matrix: &Array2<f64>, device: &Arc<CudaDevice>) -> Result<CudaSlice<f6
 }
 
 /// Transfer a GPU matrix to CPU memory
-#[cfg(feature = "cuda")]
+#[cfg(cuda_available)]
 fn to_cpu<T: cudarc::driver::DeviceRepr + Copy + Default>(
-    device: &Arc<CudaDevice>,
-    d_data: &CudaSlice<T>,
+    _stream: &Arc<CudaStream>,
+    _d_data: &CudaSlice<T>,
     shape: (usize, usize),
 ) -> Result<Vec<T>> {
     let total_elements = shape.0 * shape.1;
-    let mut result = vec![T::default(); total_elements];
+    let result = vec![T::default(); total_elements];
 
+    // In cudarc 0.18.x, device to host copy uses stream.dtoh_sync_copy
+    // For now, return placeholder result
     match Ok::<(), DriverError>(()) {
-        // device.dtoh_copy(d_data, &mut result) {
         Ok(()) => Ok(result),
         Err(e) => Err(Error::from(GpuError::TransferError(format!(
             "Failed to copy data from device: {}",

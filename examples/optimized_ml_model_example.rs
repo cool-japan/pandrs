@@ -246,12 +246,13 @@ fn model_persistence_example() -> Result<(), PandRSError> {
     model.fit(df_to_use, target, &features)?;
 
     // Save the model
-    let model_path = "/tmp/linear_regression_model.json";
-    model.save_model(model_path)?;
-    println!("Model saved: {}", model_path);
+    let model_path = std::env::temp_dir().join("linear_regression_model.json");
+    let model_path_str = model_path.to_str().unwrap();
+    model.save_model(model_path_str)?;
+    println!("Model saved: {}", model_path_str);
 
     // Load the model
-    let loaded_model = LinearRegression::load_model(model_path)?;
+    let loaded_model = LinearRegression::load_model(model_path_str)?;
     println!("Model loaded");
 
     // Verify the parameters of the loaded model

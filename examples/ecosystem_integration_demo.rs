@@ -108,7 +108,7 @@ fn create_sample_dataset() -> Result<DataFrame> {
 
 /// Demonstrate Arrow integration capabilities
 #[allow(clippy::result_large_err)]
-fn arrow_integration_demo(_df: &DataFrame) -> Result<()> {
+fn arrow_integration_demo(df: &DataFrame) -> Result<()> {
     #[cfg(feature = "distributed")]
     {
         use pandrs::arrow_integration::{ArrowConverter, ArrowIntegration, ArrowOperation};
@@ -138,6 +138,7 @@ fn arrow_integration_demo(_df: &DataFrame) -> Result<()> {
 
     #[cfg(not(feature = "distributed"))]
     {
+        let _ = df; // Silence unused variable warning
         println!("    ℹ️  Arrow integration requires 'distributed' feature");
         println!("    💡 Run with: cargo run --example ecosystem_integration_demo --features distributed");
     }

@@ -230,12 +230,6 @@ impl<'a> ExprValidator<'a> {
                             (ExprDataType::Float, _) | (_, ExprDataType::Float) => {
                                 Ok(InferredType::float(nullable))
                             }
-                            // String concatenation is a special case
-                            (ExprDataType::String, ExprDataType::String)
-                                if *op == BinaryOperator::Add =>
-                            {
-                                Ok(InferredType::string(nullable))
-                            }
                             // Other combinations are invalid
                             _ => Err(Error::InvalidOperation(format!(
                                 "Invalid operand types for arithmetic operation: {:?} {} {:?}",

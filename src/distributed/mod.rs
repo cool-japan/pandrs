@@ -91,7 +91,7 @@ pub use schema_validator::SchemaValidator;
 
 // Re-exports from explain (temporarily disabled)
 // #[cfg(feature = "distributed")]
-// pub use explain::{explain_plan, ExplainFormat, ExplainOptions, PlanNode};
+// pub use explain::{ExplainFormat, ExplainOptions};
 
 // Re-exports from fault_tolerance (temporarily disabled)
 // #[cfg(feature = "distributed")]

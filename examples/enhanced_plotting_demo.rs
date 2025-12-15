@@ -280,11 +280,17 @@ mod tests {
 
     #[test]
     fn test_enhanced_plotting_integration() {
+        // Create the plots directory if it doesn't exist
+        let _ = std::fs::create_dir_all("plots");
+
         let result = main();
         assert!(
             result.is_ok(),
             "Enhanced plotting integration example should complete successfully"
         );
+
+        // Clean up created files
+        let _ = std::fs::remove_dir_all("plots");
     }
 
     #[test]

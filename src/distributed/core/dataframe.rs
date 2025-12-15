@@ -117,7 +117,7 @@ impl DistributedDataFrame {
         context.register_in_memory_table(&id, partition_set)?;
 
         // Create distributed DataFrame
-        let mut result = Self {
+        let result = Self {
             config,
             engine,
             context: Arc::new(Mutex::new(context)),

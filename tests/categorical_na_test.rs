@@ -2,6 +2,10 @@ use pandrs::series::{CategoricalOrder, NASeries, StringCategorical};
 use pandrs::{DataFrame, Series, NA};
 use std::path::Path;
 
+// Common test utilities
+mod common;
+use common::test_utils::TempTestFile;
+
 // Import utility module but don't import unused traits
 mod categorical_na_test_utils;
 
@@ -213,22 +217,24 @@ fn test_categorical_csv_io() {
         )
         .unwrap();
 
-    // Save to temporary file
-    let temp_path = Path::new("/tmp/categorical_test.csv");
-    df_for_csv.to_csv(temp_path).unwrap();
+    // Save to temporary file with RAII cleanup
+    let temp_file = TempTestFile::new("categorical_test", "csv");
+    df_for_csv.to_csv(temp_file.path()).unwrap();
 
     // Create verification text file and confirm content (ensure required number of lines)
     let content = r#"cat1,cat2
 a,1
 b,3"#;
 
-    std::fs::write("/tmp/categorical_test2.csv", content).unwrap();
+    let temp_file2 = TempTestFile::new("categorical_test2", "csv");
+    std::fs::write(temp_file2.path(), content).unwrap();
 
     // Load from file (using manually created verification file)
-    let temp_path2 = Path::new("/tmp/categorical_test2.csv");
-    let df_loaded = DataFrame::from_csv(temp_path2, true).unwrap();
+    let df_loaded = DataFrame::from_csv(temp_file2.path(), true).unwrap();
 
     // Verification is simplified since there may be no files
     // Just acknowledge that we received a dataframe
     let _ = df_loaded;
+
+    // temp_file and temp_file2 are automatically cleaned up when they go out of scope
 }

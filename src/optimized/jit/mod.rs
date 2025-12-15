@@ -11,6 +11,9 @@ pub mod groupby;
 pub mod parallel;
 pub mod simd;
 pub mod simd_column_ops;
+pub mod simd_parallel;
+pub mod simd_stats;
+pub mod simd_string;
 
 // Enhanced JIT modules
 pub mod adaptive_optimizer;
@@ -40,6 +43,40 @@ pub use simd_column_ops::{
     simd_add_scalar_i64, simd_compare_f64, simd_compare_i64, simd_divide_f64, simd_multiply_f64,
     simd_multiply_i64, simd_multiply_scalar_f64, simd_sqrt_f64, simd_subtract_f64,
     simd_subtract_i64, ComparisonOp,
+};
+pub use simd_stats::{
+    simd_correlation_f64, simd_cosine_similarity_f64, simd_covariance_f64, simd_dot_product_f64,
+    simd_kurtosis_f64, simd_l2_norm_f64, simd_skewness_f64, simd_std_f64, simd_sum_of_squares_f64,
+    simd_variance_f64, simd_weighted_mean_f64,
+};
+pub use simd_string::{
+    batch_count_alpha,
+    batch_count_digits,
+    batch_count_whitespace,
+    batch_is_ascii,
+    batch_lowercase,
+    // Batch operations
+    batch_uppercase,
+    count_alpha_simd,
+    count_byte_simd,
+    // Character classification
+    count_digits_simd,
+    count_whitespace_simd,
+    // Pattern matching
+    find_byte_simd,
+    has_avx2,
+    has_sse2,
+    // ASCII detection
+    is_ascii_simd,
+    parallel_batch_is_ascii,
+    parallel_batch_lowercase,
+    // Parallel batch operations
+    parallel_batch_uppercase,
+    to_lowercase_simd,
+    // Case conversion
+    to_uppercase_simd,
+    // Statistics
+    SimdStringStats,
 };
 
 // Re-export enhanced types

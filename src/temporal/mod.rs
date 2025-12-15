@@ -8,7 +8,7 @@ pub mod resample;
 pub mod window;
 
 // GPU-accelerated time series operations (conditionally compiled)
-#[cfg(feature = "cuda")]
+#[cfg(cuda_available)]
 pub mod gpu;
 
 // Re-export public items from submodules

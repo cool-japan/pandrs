@@ -163,8 +163,8 @@ fn main() -> Result<()> {
     println!("5. Input and output with CSV file");
 
     // Save to temporary file
-    let temp_path = Path::new("/tmp/categorical_example.csv");
-    df.to_csv(temp_path)?;
+    let temp_path = std::env::temp_dir().join("categorical_example.csv");
+    df.to_csv(&temp_path)?;
 
     println!("Saved to CSV file: {}", temp_path.display());
 

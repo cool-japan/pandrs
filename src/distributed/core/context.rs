@@ -43,6 +43,23 @@ pub struct DistributedContext {
 
 #[cfg(feature = "distributed")]
 impl DistributedContext {
+    /// Creates a new distributed context with local execution
+    ///
+    /// This is a convenience method that creates a local DataFusion context
+    /// with the specified number of threads.
+    ///
+    /// # Arguments
+    ///
+    /// * `concurrency` - The number of threads to use for local execution
+    ///
+    /// # Returns
+    ///
+    /// A new `DistributedContext` configured for local execution
+    pub fn new_local(concurrency: usize) -> Result<Self> {
+        let config = DistributedConfig::new().with_concurrency(concurrency);
+        Self::new(config)
+    }
+
     /// Creates a new distributed context
     pub fn new(config: DistributedConfig) -> Result<Self> {
         // Create the engine based on the config

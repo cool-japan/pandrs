@@ -336,7 +336,7 @@ impl GpuBenchmark {
         let _cpu_result = df.corr_matrix(&col_names)?;
         let cpu_time = cpu_start.elapsed();
 
-        let mut cpu_result = BenchmarkResult::new(
+        let cpu_result = BenchmarkResult::new(
             BenchmarkOperation::Correlation,
             format!("{}x{}", rows, cols),
             false,
@@ -345,7 +345,7 @@ impl GpuBenchmark {
 
         // Benchmark GPU implementation if available
         let gpu_result = if self.device_status.available {
-            #[cfg(feature = "cuda")]
+            #[cfg(cuda_available)]
             {
                 use crate::dataframe::gpu::DataFrameGpuExt;
 
@@ -361,7 +361,7 @@ impl GpuBenchmark {
                 ))
             }
 
-            #[cfg(not(feature = "cuda"))]
+            #[cfg(not(cuda_available))]
             {
                 None
             }
@@ -420,7 +420,7 @@ impl GpuBenchmark {
 
         // Benchmark GPU implementation if available
         let gpu_result = if self.device_status.available {
-            #[cfg(feature = "cuda")]
+            #[cfg(cuda_available)]
             {
                 use crate::dataframe::gpu::DataFrameGpuExt;
 
@@ -428,7 +428,7 @@ impl GpuBenchmark {
                 let gpu_model = df.gpu_linear_regression("y", &feature_cols)?;
                 let gpu_time = gpu_start.elapsed();
 
-                let mut result = BenchmarkResult::new(
+                let result = BenchmarkResult::new(
                     BenchmarkOperation::LinearRegression,
                     format!("{}x{}", rows, cols),
                     true,
@@ -440,7 +440,7 @@ impl GpuBenchmark {
                 Some(result)
             }
 
-            #[cfg(not(feature = "cuda"))]
+            #[cfg(not(cuda_available))]
             {
                 None
             }
@@ -481,7 +481,7 @@ impl GpuBenchmark {
 
         // Benchmark GPU implementation if available
         let gpu_result = if self.device_status.available {
-            #[cfg(feature = "cuda")]
+            #[cfg(cuda_available)]
             {
                 use crate::temporal::gpu::SeriesTimeGpuExt;
 
@@ -502,7 +502,7 @@ impl GpuBenchmark {
                 ))
             }
 
-            #[cfg(not(feature = "cuda"))]
+            #[cfg(not(cuda_available))]
             {
                 None
             }

@@ -1,4 +1,4 @@
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use pandrs::error::Result;
 use pandrs::optimized::jit::*;
 use pandrs::optimized::OptimizedDataFrame;
@@ -158,7 +158,7 @@ fn profile_dataframe_creation(c: &mut Criterion) {
 
                         for _ in 0..iters {
                             let df = create_profiling_dataframe(size, pattern).unwrap();
-                            black_box(df);
+                            std::hint::black_box(df);
                         }
 
                         let elapsed = start.elapsed();
@@ -214,7 +214,7 @@ fn profile_aggregation_operations(c: &mut Criterion) {
 
                 for _ in 0..iters {
                     let result = operation(&df);
-                    black_box(result);
+                    std::hint::black_box(result);
                 }
 
                 let elapsed = start.elapsed();
@@ -291,7 +291,7 @@ fn profile_simd_operations(c: &mut Criterion) {
 
                             for _ in 0..iters {
                                 let result = operation(data);
-                                black_box(result);
+                                std::hint::black_box(result);
                             }
 
                             let elapsed = start.elapsed();
@@ -339,8 +339,9 @@ fn profile_io_operations(c: &mut Criterion) {
                 let start = Instant::now();
 
                 for i in 0..iters {
-                    let temp_path = format!("/tmp/profile_test_{size}_{i}.csv");
-                    df.to_csv(&temp_path, true).unwrap();
+                    let temp_path =
+                        std::env::temp_dir().join(format!("profile_test_{size}_{i}.csv"));
+                    df.to_csv(temp_path.to_str().unwrap(), true).unwrap();
                     std::fs::remove_file(&temp_path).ok();
                 }
 
@@ -365,8 +366,14 @@ fn profile_io_operations(c: &mut Criterion) {
                     #[cfg(feature = "parquet")]
                     {
                         use pandrs::io::{write_parquet, ParquetCompression};
-                        let temp_path = format!("/tmp/profile_test_{}_{}.parquet", size, _i);
-                        write_parquet(df, &temp_path, Some(ParquetCompression::Snappy)).unwrap();
+                        let temp_path = std::env::temp_dir()
+                            .join(format!("profile_test_{}_{}.parquet", size, _i));
+                        write_parquet(
+                            &df,
+                            temp_path.to_str().unwrap(),
+                            Some(ParquetCompression::Snappy),
+                        )
+                        .unwrap();
                         std::fs::remove_file(&temp_path).ok();
                     }
                     #[cfg(not(feature = "parquet"))]
@@ -419,7 +426,7 @@ fn profile_memory_patterns(c: &mut Criterion) {
                         let sum2 = df2.sum("random_int").unwrap();
                         let grouped1 = df1.par_groupby(&["sequential_int"]).unwrap();
 
-                        black_box((sum1, sum2, grouped1));
+                        std::hint::black_box((sum1, sum2, grouped1));
 
                         // DataFrames go out of scope here, triggering deallocation
                     }

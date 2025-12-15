@@ -10,25 +10,25 @@
 //! To run without GPU acceleration (CPU fallback):
 //!   cargo run --example gpu_stats_example
 
-#[cfg(feature = "cuda")]
+#[cfg(cuda_available)]
 use ndarray::{Array1, Array2};
-#[cfg(feature = "cuda")]
+#[cfg(cuda_available)]
 use pandrs::error::Result;
-#[cfg(feature = "cuda")]
+#[cfg(cuda_available)]
 use pandrs::gpu::operations::{GpuMatrix, GpuVector};
-#[cfg(feature = "cuda")]
+#[cfg(cuda_available)]
 use pandrs::gpu::{get_gpu_manager, init_gpu, GpuConfig, GpuManager};
-#[cfg(feature = "cuda")]
+#[cfg(cuda_available)]
 use pandrs::DataFrame;
-#[cfg(feature = "cuda")]
+#[cfg(cuda_available)]
 use pandrs::Series;
-#[cfg(feature = "cuda")]
+#[cfg(cuda_available)]
 use std::time::Instant;
 
-#[cfg(feature = "cuda")]
+#[cfg(cuda_available)]
 use pandrs::stats::gpu;
 
-#[cfg(feature = "cuda")]
+#[cfg(cuda_available)]
 #[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     println!("PandRS GPU-accelerated Statistical Functions Example");
@@ -82,7 +82,7 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-#[cfg(feature = "cuda")]
+#[cfg(cuda_available)]
 /// Generate test data for benchmarking
 fn generate_test_data(rows: usize, cols: usize) -> (Array2<f64>, Array1<f64>) {
     // Generate matrix data
@@ -102,7 +102,7 @@ fn generate_test_data(rows: usize, cols: usize) -> (Array2<f64>, Array1<f64>) {
     (matrix, vector)
 }
 
-#[cfg(feature = "cuda")]
+#[cfg(cuda_available)]
 /// Benchmark correlation matrix computation
 #[allow(clippy::result_large_err)]
 fn benchmark_correlation_matrix(data: &Array2<f64>) -> Result<()> {
@@ -156,7 +156,7 @@ fn benchmark_correlation_matrix(data: &Array2<f64>) -> Result<()> {
     println!("  CPU Time: {} ms", cpu_duration);
 
     // GPU implementation (when available)
-    #[cfg(feature = "cuda")]
+    #[cfg(cuda_available)]
     {
         let gpu_manager = get_gpu_manager()?;
         if gpu_manager.is_available() {
@@ -197,7 +197,7 @@ fn benchmark_correlation_matrix(data: &Array2<f64>) -> Result<()> {
     Ok(())
 }
 
-#[cfg(feature = "cuda")]
+#[cfg(cuda_available)]
 /// Benchmark covariance matrix computation
 #[allow(clippy::result_large_err)]
 fn benchmark_covariance_matrix(data: &Array2<f64>) -> Result<()> {
@@ -244,7 +244,7 @@ fn benchmark_covariance_matrix(data: &Array2<f64>) -> Result<()> {
     println!("  CPU Time: {} ms", cpu_duration);
 
     // GPU implementation (when available)
-    #[cfg(feature = "cuda")]
+    #[cfg(cuda_available)]
     {
         let gpu_manager = get_gpu_manager()?;
         if gpu_manager.is_available() {
@@ -285,7 +285,7 @@ fn benchmark_covariance_matrix(data: &Array2<f64>) -> Result<()> {
     Ok(())
 }
 
-#[cfg(feature = "cuda")]
+#[cfg(cuda_available)]
 /// Benchmark descriptive statistics computation
 #[allow(clippy::result_large_err)]
 fn benchmark_descriptive_stats(data: &Array1<f64>) -> Result<()> {
@@ -308,7 +308,7 @@ fn benchmark_descriptive_stats(data: &Array1<f64>) -> Result<()> {
     );
 
     // GPU implementation (when available)
-    #[cfg(feature = "cuda")]
+    #[cfg(cuda_available)]
     {
         let gpu_manager = get_gpu_manager()?;
         if gpu_manager.is_available() {
@@ -342,7 +342,7 @@ fn benchmark_descriptive_stats(data: &Array1<f64>) -> Result<()> {
 
     Ok(())
 }
-#[cfg(not(feature = "cuda"))]
+#[cfg(not(cuda_available))]
 fn main() {
     println!("This example requires the \"cuda\" feature flag to be enabled.");
     println!("Please recompile with:");

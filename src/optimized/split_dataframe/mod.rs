@@ -49,7 +49,7 @@ pub mod column_view;
 pub mod stats;
 
 // GPU acceleration
-#[cfg(feature = "cuda")]
+#[cfg(cuda_available)]
 pub mod gpu;
 
 // Re-export

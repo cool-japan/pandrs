@@ -12,6 +12,7 @@ pub mod join;
 pub mod multi_index_cross_section;
 pub mod multi_index_results;
 pub mod optimized;
+pub mod pandas_compat;
 pub mod plotting;
 pub mod query;
 pub mod serialize;
@@ -19,9 +20,9 @@ pub mod transform;
 pub mod view;
 pub mod window;
 
-#[cfg(feature = "cuda")]
+#[cfg(cuda_available)]
 pub mod gpu;
-#[cfg(feature = "cuda")]
+#[cfg(cuda_available)]
 pub mod gpu_window;
 
 // Re-exports for convenience
@@ -64,6 +65,9 @@ pub use multi_index_results::{
     utils as multi_index_utils, ColumnHierarchySummary, LevelSummary, MultiIndexColumn,
     MultiIndexDataFrame, MultiIndexDataFrameBuilder, MultiIndexMetadata, ToMultiIndex,
 };
+pub use pandas_compat::{
+    Axis as PandasAxis, CorrelationMatrix, DescribeStats, PandasCompatExt, RankMethod, SeriesValue,
+};
 pub use plotting::{
     utils, ColorScheme, EnhancedPlotExt, FillStyle, GridStyle, InteractivePlot, PlotConfig,
     PlotFormat, PlotKind, PlotStyle, PlotTheme, StatPlotBuilder,
@@ -73,9 +77,9 @@ pub use transform::{MeltOptions, StackOptions, TransformExt, UnstackOptions};
 pub use window::DataFrameWindowExt;
 
 // Optional feature re-exports
-#[cfg(feature = "cuda")]
+#[cfg(cuda_available)]
 pub use gpu::DataFrameGpuExt;
-#[cfg(feature = "cuda")]
+#[cfg(cuda_available)]
 pub use gpu_window::{
     GpuDataFrameRolling, GpuDataFrameWindowExt, GpuWindowContext, GpuWindowStats,
 };

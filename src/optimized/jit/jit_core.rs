@@ -293,13 +293,11 @@ impl JitContext {
 
             // Initialize sum to 0.0
             let zero = builder.ins().f64const(0.0);
-            let sum = Variable::new(0);
-            builder.declare_var(sum, types::F64);
+            let sum = builder.declare_var(types::F64);
             builder.def_var(sum, zero);
 
             // Initialize loop counter
-            let counter = Variable::new(1);
-            builder.declare_var(counter, types::I64);
+            let counter = builder.declare_var(types::I64);
             let zero_i64 = builder.ins().iconst(types::I64, 0);
             builder.def_var(counter, zero_i64);
 

@@ -2,12 +2,12 @@
 pub mod lazy;
 pub mod parallel;
 
-#[cfg(feature = "cuda")]
+#[cfg(cuda_available)]
 pub mod gpu;
 
 // Re-exports
 pub use lazy::LazyFrame;
 pub use parallel::ParallelUtils;
 
-#[cfg(feature = "cuda")]
+#[cfg(cuda_available)]
 pub use gpu::{init_gpu, GpuBenchmark, GpuConfig, GpuDeviceStatus};

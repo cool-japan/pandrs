@@ -416,15 +416,30 @@ impl DataFrame {
 
     /// Create a new DataFrame with only the specified columns
     pub fn select_columns(&self, columns: &[&str]) -> Result<Self> {
-        let result = Self::new();
+        let mut result = Self::new();
 
         for &column_name in columns {
             if !self.contains_column(column_name) {
                 return Err(Error::ColumnNotFound(column_name.to_string()));
             }
 
-            // For simplicity, we're just creating a stub result for now
-            // In a real implementation, we would copy over the actual column data
+            // Copy the column data to the result DataFrame
+            if let Ok(values) = self.get_column_numeric_values(column_name) {
+                result.add_column(
+                    column_name.to_string(),
+                    crate::series::Series::new(values, Some(column_name.to_string()))?,
+                )?;
+            } else if let Ok(values) = self.get_column_string_values(column_name) {
+                result.add_column(
+                    column_name.to_string(),
+                    crate::series::Series::new(values, Some(column_name.to_string()))?,
+                )?;
+            } else {
+                return Err(Error::InvalidValue(format!(
+                    "Unable to determine column type for '{}'",
+                    column_name
+                )));
+            }
         }
 
         Ok(result)
@@ -705,10 +720,91 @@ impl DataFrame {
         self.contains_column(column_name)
     }
 
-    /// Get a categorical column with generic type
+    /// Sample rows from the DataFrame by indices
+    ///
+    /// # Arguments
+    /// * `indices` - A slice of row indices to include in the sampled DataFrame
+    ///
+    /// # Returns
+    /// A new DataFrame containing only the specified rows
     pub fn sample(&self, indices: &[usize]) -> Result<Self> {
-        // Stub implementation - for compatibility only
-        Ok(Self::new())
+        // Validate indices
+        for &idx in indices {
+            if idx >= self.row_count {
+                return Err(Error::InvalidValue(format!(
+                    "Index {} is out of bounds for DataFrame with {} rows",
+                    idx, self.row_count
+                )));
+            }
+        }
+
+        let mut result = Self::new();
+
+        // Sample each column
+        for col_name in &self.column_order {
+            if let Some(col) = self.columns.get(col_name) {
+                // Try f64 column
+                if let Some(float_series) =
+                    col.as_any().downcast_ref::<crate::series::Series<f64>>()
+                {
+                    let sampled_values: Vec<f64> = indices
+                        .iter()
+                        .map(|&idx| float_series.get(idx).cloned().unwrap_or(0.0))
+                        .collect();
+                    let new_series =
+                        crate::series::Series::new(sampled_values, Some(col_name.clone()))?;
+                    result.add_column(col_name.clone(), new_series)?;
+                }
+                // Try i64 column
+                else if let Some(int_series) =
+                    col.as_any().downcast_ref::<crate::series::Series<i64>>()
+                {
+                    let sampled_values: Vec<i64> = indices
+                        .iter()
+                        .map(|&idx| int_series.get(idx).cloned().unwrap_or(0))
+                        .collect();
+                    let new_series =
+                        crate::series::Series::new(sampled_values, Some(col_name.clone()))?;
+                    result.add_column(col_name.clone(), new_series)?;
+                }
+                // Try String column
+                else if let Some(str_series) =
+                    col.as_any().downcast_ref::<crate::series::Series<String>>()
+                {
+                    let sampled_values: Vec<String> = indices
+                        .iter()
+                        .map(|&idx| str_series.get(idx).cloned().unwrap_or_default())
+                        .collect();
+                    let new_series =
+                        crate::series::Series::new(sampled_values, Some(col_name.clone()))?;
+                    result.add_column(col_name.clone(), new_series)?;
+                }
+                // Try bool column
+                else if let Some(bool_series) =
+                    col.as_any().downcast_ref::<crate::series::Series<bool>>()
+                {
+                    let sampled_values: Vec<bool> = indices
+                        .iter()
+                        .map(|&idx| bool_series.get(idx).cloned().unwrap_or(false))
+                        .collect();
+                    let new_series =
+                        crate::series::Series::new(sampled_values, Some(col_name.clone()))?;
+                    result.add_column(col_name.clone(), new_series)?;
+                }
+                // Default to f64 (try to convert)
+                else {
+                    // Fall back to get_column_numeric_values for the entire column then sample
+                    let all_values = self.get_column_numeric_values(col_name)?;
+                    let sampled_values: Vec<f64> =
+                        indices.iter().map(|&idx| all_values[idx]).collect();
+                    let new_series =
+                        crate::series::Series::new(sampled_values, Some(col_name.clone()))?;
+                    result.add_column(col_name.clone(), new_series)?;
+                }
+            }
+        }
+
+        Ok(result)
     }
 
     /// Get a categorical column with generic type

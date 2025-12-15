@@ -14,7 +14,7 @@ mod py_optimized;
 mod pandas_compat;
 
 // GPU acceleration module
-#[cfg(feature = "cuda")]
+#[cfg(cuda_available)]
 mod py_gpu;
 
 /// A Rust-powered DataFrame implementation with pandas-like API
@@ -32,7 +32,7 @@ fn pandrs(m: &Bound<'_, PyModule>) -> PyResult<()> {
     pandas_compat::register_pandas_types(m)?;
 
     // Register GPU acceleration classes if CUDA is enabled
-    #[cfg(feature = "cuda")]
+    #[cfg(cuda_available)]
     py_gpu::register(m.py(), m)?;
 
     // Add module version

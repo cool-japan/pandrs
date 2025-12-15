@@ -200,30 +200,30 @@ mod tests {
         validator.add_udf(
             "calculate_total",
             ExprDataType::Float,
-            [ExprDataType::Float, ExprDataType::Integer],
+            vec![ExprDataType::Float, ExprDataType::Integer],
         );
 
         // Valid function call
         let expr = Expr::call(
             "calculate_total",
-            [Expr::col("price"), Expr::col("quantity")],
+            vec![Expr::col("price"), Expr::col("quantity")],
         );
         let result = validator.validate_expr(&expr)?;
         assert_eq!(result.data_type, ExprDataType::Float);
 
         // Invalid function call (unknown function)
-        let expr = Expr::call("unknown_function", [Expr::col("id")]);
+        let expr = Expr::call("unknown_function", vec![Expr::col("id")]);
         assert!(validator.validate_expr(&expr).is_err());
 
         // Invalid function call (wrong parameter types)
         let expr = Expr::call(
             "calculate_total",
-            [Expr::col("name"), Expr::col("quantity")],
+            vec![Expr::col("name"), Expr::col("quantity")],
         );
         assert!(validator.validate_expr(&expr).is_err());
 
         // Invalid function call (wrong number of parameters)
-        let expr = Expr::call("calculate_total", [Expr::col("price")]);
+        let expr = Expr::call("calculate_total", vec![Expr::col("price")]);
         assert!(validator.validate_expr(&expr).is_err());
 
         Ok(())
@@ -316,13 +316,13 @@ mod tests {
         let validator = ExprValidator::new(&schema);
 
         // Valid coalesce
-        let expr = Expr::coalesce([Expr::col("nullable_value"), Expr::lit(0.0)]);
+        let expr = Expr::coalesce(vec![Expr::col("nullable_value"), Expr::lit(0.0)]);
         let result = validator.validate_expr(&expr)?;
         assert_eq!(result.data_type, ExprDataType::Float);
         assert_eq!(result.nullable, false); // Not nullable because second argument is not nullable
 
         // Invalid coalesce (mixed types)
-        let expr = Expr::coalesce([Expr::col("nullable_value"), Expr::col("id")]);
+        let expr = Expr::coalesce(vec![Expr::col("nullable_value"), Expr::col("id")]);
         assert!(validator.validate_expr(&expr).is_err());
 
         Ok(())

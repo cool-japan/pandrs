@@ -83,7 +83,7 @@ impl GpuMatrix {
     /// Matrix multiplication (with possible GPU acceleration)
     pub fn dot(&self, other: &GpuMatrix) -> Result<GpuMatrix> {
         // Try GPU acceleration if available
-        #[cfg(feature = "cuda")]
+        #[cfg(cuda_available)]
         {
             let manager = crate::gpu::get_gpu_manager()?;
 
@@ -137,7 +137,7 @@ impl GpuMatrix {
     /// Element-wise addition (with possible GPU acceleration)
     pub fn add(&self, other: &GpuMatrix) -> Result<GpuMatrix> {
         // Try GPU acceleration if available
-        #[cfg(feature = "cuda")]
+        #[cfg(cuda_available)]
         {
             let manager = crate::gpu::get_gpu_manager()?;
 
@@ -165,7 +165,7 @@ impl GpuMatrix {
     /// Element-wise subtraction (with possible GPU acceleration)
     pub fn subtract(&self, other: &GpuMatrix) -> Result<GpuMatrix> {
         // Try GPU acceleration if available
-        #[cfg(feature = "cuda")]
+        #[cfg(cuda_available)]
         {
             let manager = crate::gpu::get_gpu_manager()?;
 
@@ -196,7 +196,7 @@ impl GpuMatrix {
     /// Element-wise multiplication (with possible GPU acceleration)
     pub fn multiply(&self, other: &GpuMatrix) -> Result<GpuMatrix> {
         // Try GPU acceleration if available
-        #[cfg(feature = "cuda")]
+        #[cfg(cuda_available)]
         {
             let manager = crate::gpu::get_gpu_manager()?;
 
@@ -227,7 +227,7 @@ impl GpuMatrix {
     /// Element-wise division (with possible GPU acceleration)
     pub fn divide(&self, other: &GpuMatrix) -> Result<GpuMatrix> {
         // Try GPU acceleration if available
-        #[cfg(feature = "cuda")]
+        #[cfg(cuda_available)]
         {
             let manager = crate::gpu::get_gpu_manager()?;
 
@@ -255,7 +255,7 @@ impl GpuMatrix {
     /// Sum of all elements (with possible GPU acceleration)
     pub fn sum(&self) -> Result<f64> {
         // Try GPU acceleration if available
-        #[cfg(feature = "cuda")]
+        #[cfg(cuda_available)]
         {
             let manager = crate::gpu::get_gpu_manager()?;
 
@@ -295,7 +295,7 @@ impl GpuMatrix {
     /// Sort matrix rows (with possible GPU acceleration)
     pub fn sort_rows(&self) -> Result<GpuMatrix> {
         // Try GPU acceleration if available
-        #[cfg(feature = "cuda")]
+        #[cfg(cuda_available)]
         {
             let manager = crate::gpu::get_gpu_manager()?;
 
@@ -424,7 +424,7 @@ impl GpuVector {
         }
 
         // Try GPU acceleration if available
-        #[cfg(feature = "cuda")]
+        #[cfg(cuda_available)]
         {
             let manager = crate::gpu::get_gpu_manager()?;
 
@@ -485,7 +485,7 @@ impl GpuVector {
     /// Element-wise addition (with possible GPU acceleration)
     pub fn add(&self, other: &GpuVector) -> Result<GpuVector> {
         // Try GPU acceleration if available
-        #[cfg(feature = "cuda")]
+        #[cfg(cuda_available)]
         {
             let manager = crate::gpu::get_gpu_manager()?;
 

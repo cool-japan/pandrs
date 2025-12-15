@@ -5,7 +5,9 @@ use pandrs::vis::config::PlotSettings;
 #[cfg(feature = "visualization")]
 use pandrs::vis::direct::{DataFramePlotExt, SeriesPlotExt};
 #[cfg(feature = "visualization")]
-use pandrs::vis::{OutputType, PlotKind};
+use pandrs::vis::plotters_ext::{OutputType, PlotKind as PlottersPlotKind};
+#[cfg(feature = "visualization")]
+use pandrs::vis::PlotKind;
 #[cfg(feature = "visualization")]
 use pandrs::{DataFrame, Series};
 
@@ -140,7 +142,7 @@ fn example_series_plots(s: &Series<f64>) -> Result<()> {
     // SVG output
     s.plot_svg(
         "examples/output/series_svg.svg",
-        PlotKind::Line,
+        PlottersPlotKind::Line,
         Some("SVG Line Plot"),
     )?;
     println!("Created SVG plot: examples/output/series_svg.svg");
@@ -195,7 +197,7 @@ fn example_dataframe_plots(df: &DataFrame) -> Result<()> {
     df.plot_svg(
         "rainfall",
         "examples/output/df_rainfall.svg",
-        PlotKind::Bar,
+        PlottersPlotKind::Bar,
         Some("Rainfall (SVG)"),
     )?;
     println!("Created SVG plot: examples/output/df_rainfall.svg");

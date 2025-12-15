@@ -1,4 +1,4 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
+use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use pandrs::error::Result;
 use pandrs::optimized::jit::*;
 use pandrs::optimized::OptimizedDataFrame;
@@ -106,7 +106,7 @@ fn regression_dataframe_creation(c: &mut Criterion) {
 
     group.bench_function("standard_creation", |b| {
         let start = Instant::now();
-        b.iter(|| black_box(create_regression_test_dataframe(test_size).unwrap()));
+        b.iter(|| std::hint::black_box(create_regression_test_dataframe(test_size).unwrap()));
         let elapsed_ns = start.elapsed().as_nanos() as f64;
 
         if let Some(regression) = detector.check_regression("dataframe_creation", elapsed_ns) {
@@ -151,7 +151,7 @@ fn regression_aggregation_operations(c: &mut Criterion) {
     for (op_name, op_func) in operations {
         group.bench_function(op_name, |b| {
             let start = Instant::now();
-            b.iter(|| black_box(op_func(&df)));
+            b.iter(|| std::hint::black_box(op_func(&df)));
             let elapsed_ns = start.elapsed().as_nanos() as f64;
 
             if let Some(regression) =
@@ -178,7 +178,7 @@ fn regression_groupby_operations(c: &mut Criterion) {
 
     group.bench_function("parallel_groupby", |b| {
         let start = Instant::now();
-        b.iter(|| black_box(df.par_groupby(&["category"]).unwrap()));
+        b.iter(|| std::hint::black_box(df.par_groupby(&["category"]).unwrap()));
         let elapsed_ns = start.elapsed().as_nanos() as f64;
 
         if let Some(regression) = detector.check_regression("parallel_groupby", elapsed_ns) {
@@ -213,7 +213,7 @@ fn regression_simd_operations(c: &mut Criterion) {
     for (op_name, op_func) in simd_operations {
         group.bench_function(op_name, |b| {
             let start = Instant::now();
-            b.iter(|| black_box(op_func(&test_data)));
+            b.iter(|| std::hint::black_box(op_func(&test_data)));
             let elapsed_ns = start.elapsed().as_nanos() as f64;
 
             if let Some(regression) =
@@ -241,10 +241,11 @@ fn regression_io_operations(c: &mut Criterion) {
     group.bench_function("csv_write", |b| {
         let start = Instant::now();
         b.iter(|| {
-            let temp_path = format!("/tmp/regression_test_{}.csv", rand::random::<u32>());
-            df.to_csv(&temp_path, true).unwrap();
+            let temp_path =
+                std::env::temp_dir().join(format!("regression_test_{}.csv", rand::random::<u32>()));
+            df.to_csv(temp_path.to_str().unwrap(), true).unwrap();
             std::fs::remove_file(&temp_path).ok();
-            black_box(())
+            std::hint::black_box(())
         });
         let elapsed_ns = start.elapsed().as_nanos() as f64;
 
@@ -261,10 +262,16 @@ fn regression_io_operations(c: &mut Criterion) {
         let start = Instant::now();
         b.iter(|| {
             use pandrs::io::{write_parquet, ParquetCompression};
-            let temp_path = format!("/tmp/regression_test_{}.parquet", rand::random::<u32>());
-            write_parquet(&df, &temp_path, Some(ParquetCompression::Snappy)).unwrap();
+            let temp_path = std::env::temp_dir()
+                .join(format!("regression_test_{}.parquet", rand::random::<u32>()));
+            write_parquet(
+                &df,
+                temp_path.to_str().unwrap(),
+                Some(ParquetCompression::Snappy),
+            )
+            .unwrap();
             std::fs::remove_file(&temp_path).ok();
-            black_box(())
+            std::hint::black_box(())
         });
         let elapsed_ns = start.elapsed().as_nanos() as f64;
 

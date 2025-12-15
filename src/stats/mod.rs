@@ -21,7 +21,7 @@ pub mod hypothesis;
 pub mod nonparametric;
 
 // GPU-accelerated statistical functions (conditionally compiled)
-#[cfg(feature = "cuda")]
+#[cfg(cuda_available)]
 pub mod gpu;
 
 // Re-export public types and functions
@@ -565,7 +565,7 @@ pub use categorical::frequency_distribution;
 pub use categorical::mode;
 
 // Re-export GPU-accelerated functions when CUDA is enabled
-#[cfg(feature = "cuda")]
+#[cfg(cuda_available)]
 pub use gpu::{
     correlation_matrix as gpu_correlation_matrix, covariance_matrix as gpu_covariance_matrix,
     describe_gpu, feature_importance, kmeans, linear_regression as gpu_linear_regression, pca,

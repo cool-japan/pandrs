@@ -640,7 +640,6 @@ pub fn kmeans(
 
     // For simplicity, initialize centroids randomly
     let mut centroids = Array2::zeros((k, n_cols));
-    let mut indices = Vec::with_capacity(k);
 
     // Select k random rows from data as initial centroids
     use rand::seq::SliceRandom;
@@ -648,7 +647,7 @@ pub fn kmeans(
     let all_indices: Vec<usize> = (0..n_rows).collect();
 
     // Sample without replacement
-    indices = all_indices
+    let indices: Vec<usize> = all_indices
         .as_slice()
         .choose_multiple(&mut rng, k)
         .cloned()
@@ -745,7 +744,7 @@ pub fn kmeans(
 #[cfg(test)]
 mod tests {
     #[test]
-    #[cfg(feature = "cuda")]
+    #[cfg(cuda_available)]
     fn test_describe_gpu() {
         // Test GPU-accelerated descriptive statistics
         // This is just a placeholder for actual tests

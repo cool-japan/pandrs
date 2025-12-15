@@ -750,7 +750,7 @@ fn test_serving_feature_integration() {
     assert!(server.list_models().is_empty());
 
     // Test registry
-    let mut registry = InMemoryModelRegistry::new();
+    let registry = InMemoryModelRegistry::new();
     assert!(registry.list_models().unwrap().is_empty());
 
     // Test monitoring

@@ -1,7 +1,12 @@
+//! Visualization Example using Plotters Backend
+//!
+//! This example demonstrates how to create visualizations using PandRS with the plotters backend.
+//!
+//! To run this example:
+//!   cargo run --example visualization_plotters_example --features visualization
+
 #[cfg(feature = "visualization")]
-use pandrs::vis::{DataFramePlotExt, SeriesPlotExt};
-#[cfg(feature = "visualization")]
-use pandrs::vis::{OutputType, PlotKind, PlotSettings};
+use pandrs::vis::direct::{DataFramePlotExt, SeriesPlotExt};
 #[cfg(feature = "visualization")]
 use pandrs::{DataFrame, Series};
 #[cfg(feature = "visualization")]
@@ -17,54 +22,40 @@ fn main() {
 #[cfg(feature = "visualization")]
 #[allow(clippy::result_large_err)]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    println!("PandRS Visualization Example with Plotters");
+    println!("==========================================");
+
     // Generate random data
     let mut rng = rng();
-    let x: Vec<i32> = (0..100).collect();
     let y1: Vec<f64> = (0..100)
         .map(|i| i as f64 + rng.random_range(-5.0..5.0))
         .collect();
     let y2: Vec<f64> = (0..100)
         .map(|i| i as f64 * 0.8 + 10.0 + rng.random_range(-3.0..3.0))
         .collect();
-    let y3: Vec<f64> = (0..100)
-        .map(|i| 50.0 + 30.0 * (i as f64 * 0.1).sin())
-        .collect();
 
-    // Single series line chart
+    // 1. Single series line chart
+    println!("\n1. Creating line chart...");
     let series1 = Series::new(y1.clone(), Some("Data1".to_string()))?;
+    series1.line_plot("line_chart.png", Some("Line Chart"))?;
+    println!("   -> Saved to line_chart.png");
 
-    let line_settings = PlotSettings {
-        title: "Line Chart".to_string(),
-        x_label: "X Axis".to_string(),
-        y_label: "Y Value".to_string(),
-        plot_kind: PlotKind::Line,
-        ..PlotSettings::default()
-    };
-
-    println!("Creating line chart...");
-    series1.line_plot("line_chart.png", line_settings)?;
-    println!("-> Saved to line_chart.png");
-
-    // Histogram
+    // 2. Histogram
+    println!("\n2. Creating histogram...");
     let hist_data: Vec<f64> = (0..1000).map(|_| rng.random_range(-50.0..50.0)).collect();
     let hist_series = Series::new(hist_data, Some("Distribution".to_string()))?;
+    hist_series.histogram("histogram.png", Some(20), Some("Histogram"))?;
+    println!("   -> Saved to histogram.png");
 
-    let hist_settings = PlotSettings {
-        title: "Histogram".to_string(),
-        x_label: "Value".to_string(),
-        y_label: "Frequency".to_string(),
-        plot_kind: PlotKind::Histogram,
-        output_type: OutputType::PNG,
-        ..PlotSettings::default()
-    };
+    // 3. DataFrame visualization
+    println!("\n3. Creating DataFrame plots...");
 
-    println!("Creating histogram...");
-    hist_series.histogram_plot("histogram.png", 20, hist_settings)?;
-    println!("-> Saved to histogram.png");
-
-    // Use DataFrame for multiple series chart
+    // Create a sample DataFrame
     let mut df = DataFrame::new();
-    df.add_column("X".to_string(), Series::new(x, Some("X".to_string()))?)?;
+    df.add_column(
+        "x".to_string(),
+        Series::new((0..100).collect::<Vec<i32>>(), Some("x".to_string()))?,
+    )?;
     df.add_column(
         "Data1".to_string(),
         Series::new(y1, Some("Data1".to_string()))?,
@@ -73,87 +64,34 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "Data2".to_string(),
         Series::new(y2, Some("Data2".to_string()))?,
     )?;
-    df.add_column(
-        "Data3".to_string(),
-        Series::new(y3.clone(), Some("Data3".to_string()))?,
-    )?;
 
     // Scatter plot
-    let scatter_settings = PlotSettings {
-        title: "Scatter Plot".to_string(),
-        x_label: "X Value".to_string(),
-        y_label: "Y Value".to_string(),
-        plot_kind: PlotKind::Scatter,
-        output_type: OutputType::PNG,
-        ..PlotSettings::default()
-    };
+    df.scatter_xy("x", "Data1", "scatter_chart.png", Some("Scatter Chart"))?;
+    println!("   -> Saved to scatter_chart.png");
 
-    println!("Creating scatter plot...");
-    df.scatter_xy("X", "Data1", "scatter_chart.png", scatter_settings)?;
-    println!("-> Saved to scatter_chart.png");
-
-    // Multiple series line chart
-    let multi_line_settings = PlotSettings {
-        title: "Multiple Series Line Chart".to_string(),
-        x_label: "X Value".to_string(),
-        y_label: "Y Value".to_string(),
-        plot_kind: PlotKind::Line,
-        output_type: OutputType::SVG, // Save as SVG
-        ..PlotSettings::default()
-    };
-
-    println!("Creating multiple series line chart...");
+    // Multi-line plot
     df.multi_line_plot(
-        &["Data1", "Data2", "Data3"],
-        "multi_line_chart.svg",
-        multi_line_settings,
+        &["Data1", "Data2"],
+        "multi_line_chart.png",
+        Some("Multi-Line Chart"),
     )?;
-    println!("-> Saved to multi_line_chart.svg");
+    println!("   -> Saved to multi_line_chart.png");
 
     // Bar chart
-    let bar_values = vec![15, 30, 25, 40, 20];
-    let categories = vec!["A", "B", "C", "D", "E"];
-
-    let mut bar_df = DataFrame::new();
-    bar_df.add_column(
-        "Category".to_string(),
-        Series::new(categories, Some("Category".to_string()))?,
+    let bar_series = Series::new(
+        vec![25.0, 45.0, 30.0, 55.0, 40.0],
+        Some("Values".to_string()),
     )?;
-    bar_df.add_column(
-        "Value".to_string(),
-        Series::new(bar_values.clone(), Some("Value".to_string()))?,
-    )?;
+    bar_series.bar_plot("bar_chart.png", Some("Bar Chart"))?;
+    println!("   -> Saved to bar_chart.png");
 
-    let bar_settings = PlotSettings {
-        title: "Bar Chart".to_string(),
-        x_label: "Category".to_string(),
-        y_label: "Value".to_string(),
-        plot_kind: PlotKind::Bar,
-        output_type: OutputType::PNG,
-        ..PlotSettings::default()
-    };
+    println!("\n=== Visualization Example Completed ===");
+    println!("\nGenerated files:");
+    println!("  - line_chart.png");
+    println!("  - histogram.png");
+    println!("  - scatter_chart.png");
+    println!("  - multi_line_chart.png");
+    println!("  - bar_chart.png");
 
-    println!("Creating bar chart...");
-    // Create bar chart using index
-    let bar_series = Series::new(bar_values, Some("Value".to_string()))?;
-    bar_series.plot("bar_chart.png", bar_settings)?;
-    println!("-> Saved to bar_chart.png");
-
-    // Area chart
-    let area_settings = PlotSettings {
-        title: "Area Chart".to_string(),
-        x_label: "Time".to_string(),
-        y_label: "Value".to_string(),
-        plot_kind: PlotKind::Area,
-        output_type: OutputType::PNG,
-        ..PlotSettings::default()
-    };
-
-    println!("Creating area chart...");
-    let area_series = Series::new(y3, Some("Waveform".to_string()))?;
-    area_series.plot("area_chart.png", area_settings)?;
-    println!("-> Saved to area_chart.png");
-
-    println!("All charts have been generated.");
     Ok(())
 }

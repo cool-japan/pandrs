@@ -2,14 +2,14 @@
 #[cfg(feature = "visualization")]
 use plotters::prelude::*;
 #[cfg(feature = "visualization")]
-use rand::{thread_rng, Rng};
+use rand::{rng, Rng};
 
 // Translated Japanese comments and strings into English
 #[cfg(feature = "visualization")]
 #[allow(clippy::result_large_err)]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Generate random data
-    let mut rng = thread_rng();
+    let mut rng = rng();
 
     // Data for line chart
     let x: Vec<f64> = (0..100).map(|x| x as f64 / 10.0).collect();
