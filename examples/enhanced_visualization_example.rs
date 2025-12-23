@@ -220,13 +220,15 @@ fn example_multi_series_plots(df: &DataFrame) -> Result<()> {
     println!("Created multi-series plot: examples/output/multi_series.png");
 
     // Create a custom setting for multi-series
-    let mut settings = PlotSettings::default();
-    settings.plot_kind = PlotKind::Line;
-    settings.title = "Weather and Visitors Trends".to_string();
-    settings.width = 1200;
-    settings.height = 800;
-    settings.show_grid = true;
-    settings.show_legend = true;
+    let settings = PlotSettings {
+        plot_kind: PlotKind::Line,
+        title: "Weather and Visitors Trends".to_string(),
+        width: 1200,
+        height: 800,
+        show_grid: true,
+        show_legend: true,
+        ..PlotSettings::default()
+    };
 
     // Plot with custom settings
     // Use the multi_line_plot method instead of the deprecated plotters_plot_columns

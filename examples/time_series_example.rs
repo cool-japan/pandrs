@@ -5,7 +5,6 @@ use pandrs::NA;
 use std::str::FromStr;
 
 #[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     println!("=== Time Series Data Example ===");
 

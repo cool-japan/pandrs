@@ -4,7 +4,6 @@ use pandrs::series::datetime_accessor::datetime_constructors;
 use pandrs::{DataFrame, Series};
 
 #[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     println!("=== DateTime Accessor Example ===");
 

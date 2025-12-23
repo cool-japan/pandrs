@@ -7,8 +7,6 @@ use pandrs::{Column, Float64Column, OptimizedDataFrame, StringColumn};
 
 #[test]
 #[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
 fn test_optimized_window_operations() -> Result<()> {
     // Create time series data for testing
     let mut df = OptimizedDataFrame::new();
@@ -61,8 +59,6 @@ fn test_optimized_window_operations() -> Result<()> {
 }
 
 #[test]
-#[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
 #[allow(clippy::result_large_err)]
 fn test_optimized_cumulative_operations() -> Result<()> {
     // Test to simulate cumulative operations

@@ -7,7 +7,6 @@ use pandrs::{DataFrame, Series};
 use pandrs::io::ParquetCompression;
 
 #[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     #[cfg(not(feature = "parquet"))]
     {

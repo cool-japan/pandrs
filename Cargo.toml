@@ -1,6 +1,6 @@
 [package]
 name = "pandrs"
-version = "0.1.0-beta.3"
+version = "0.1.0-rc.1"
 edition = "2021"
 description = "A high-performance DataFrame library for Rust, providing pandas-like API with advanced features including SIMD optimization, parallel processing, and distributed computing capabilities"
 authors = ["Cool Japan"]
@@ -16,9 +16,9 @@ exclude = [".github/"]
 num-traits = "0.2.19"
 chrono = { version = "0.4.42", features = ["serde"] }
 serde = { version = "1.0.228", features = ["derive"] }
-serde_json = "1.0.145"
+serde_json = "1.0.146"
 serde_yaml = "0.9.34"  # YAML serialization support
-toml = "0.9.8"  # TOML serialization support
+toml = "0.9.10"  # TOML serialization support
 thiserror = "2.0.17"
 csv = "1.4.0"
 rand = "0.9.2"  # Random number generation
@@ -47,7 +47,7 @@ calamine = { version = "0.32.0", optional = true }  # For Excel reading
 simple_excel_writer = { version = "0.2.0", optional = true }  # For Excel writing
 # SQL support
 sqlx = { version = "0.8.6", features = ["runtime-tokio", "mysql", "postgres", "sqlite"], optional = true }
-rusqlite = "0.32.0"  # SQLite support (pinned for sqlx compatibility)
+rusqlite = "0.32.1"  # SQLite support (pinned for sqlx compatibility - uses libsqlite3-sys 0.30.x)
 
 # WebAssembly support (optional)
 wasm-bindgen = { version = "0.2.106", optional = true }  # WebAssembly bindings
@@ -70,12 +70,12 @@ tokio = { version = "1.48", features = ["full"], optional = true }  # Async runt
 log = "0.4.29"  # Logging interface
 
 # JIT compilation support (optional)
-cranelift = { version = "0.126.1", optional = true }  # JIT compiler
-cranelift-module = { version = "0.126.1", optional = true }  # Module system for JIT
-cranelift-jit = { version = "0.126.1", optional = true }  # JIT compilation backend
-cranelift-frontend = { version = "0.126.1", optional = true }  # Frontend for building IR
-cranelift-native = { version = "0.126.1", optional = true }  # Native target detection
-target-lexicon = { version = "0.13.3", optional = true }  # Target specification
+cranelift = { version = "0.127.0", optional = true }  # JIT compiler
+cranelift-module = { version = "0.127.0", optional = true }  # Module system for JIT
+cranelift-jit = { version = "0.127.0", optional = true }  # JIT compilation backend
+cranelift-frontend = { version = "0.127.0", optional = true }  # Frontend for building IR
+cranelift-native = { version = "0.127.0", optional = true }  # Native target detection
+target-lexicon = { version = "0.13.4", optional = true }  # Target specification
 
 [workspace.lints.rust]
 unused_variables = "allow"

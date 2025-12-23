@@ -3,8 +3,6 @@ use pandrs::{Column, Float64Column, Int64Column, OptimizedDataFrame};
 
 #[test]
 #[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
 fn test_optimized_series_representation() -> Result<()> {
     // OptimizedDataFrame is column-oriented, and Series are implemented as columns
     let mut df = OptimizedDataFrame::new();
@@ -32,8 +30,6 @@ fn test_optimized_series_representation() -> Result<()> {
 }
 
 #[test]
-#[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
 #[allow(clippy::result_large_err)]
 fn test_optimized_series_numeric_operations() -> Result<()> {
     // Check numeric operations in OptimizedDataFrame

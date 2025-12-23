@@ -23,7 +23,6 @@ fn main() {
 
 #[cfg(feature = "optimized")]
 #[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     println!("PandRS Machine Learning Features Example");
     println!("========================");
@@ -102,7 +101,6 @@ fn main() -> Result<()> {
 
 #[cfg(feature = "optimized")]
 // Create sample data
-#[allow(clippy::result_large_err)]
 #[allow(clippy::result_large_err)]
 fn create_sample_data() -> Result<DataFrame> {
     let mut rng = rand::rng();

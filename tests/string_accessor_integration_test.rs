@@ -3,7 +3,6 @@ use pandrs::Series;
 
 #[test]
 #[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
 fn test_string_accessor_integration() -> Result<()> {
     // Create a Series with string data
     let data = vec![
@@ -83,7 +82,6 @@ fn test_string_accessor_integration() -> Result<()> {
 
 #[test]
 #[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
 fn test_string_accessor_advanced_operations() -> Result<()> {
     let data = vec![
         "apple,banana,cherry".to_string(),
@@ -137,7 +135,6 @@ fn test_string_accessor_advanced_operations() -> Result<()> {
 
 #[test]
 #[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
 fn test_string_accessor_regex_operations() -> Result<()> {
     let data = vec![
         "abc123def".to_string(),
@@ -178,7 +175,6 @@ fn test_string_accessor_regex_operations() -> Result<()> {
 }
 
 #[test]
-#[allow(clippy::result_large_err)]
 #[allow(clippy::result_large_err)]
 fn test_string_accessor_padding_operations() -> Result<()> {
     let data = vec![
@@ -224,7 +220,6 @@ fn test_string_accessor_padding_operations() -> Result<()> {
 }
 
 #[test]
-#[allow(clippy::result_large_err)]
 #[allow(clippy::result_large_err)]
 fn test_string_accessor_strip_operations() -> Result<()> {
     let data = vec![
@@ -281,7 +276,6 @@ fn test_string_accessor_strip_operations() -> Result<()> {
 
 #[test]
 #[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
 fn test_string_accessor_edge_cases() -> Result<()> {
     // Test with empty strings and special characters
     let data = vec![
@@ -321,7 +315,6 @@ fn test_string_accessor_edge_cases() -> Result<()> {
 }
 
 #[test]
-#[allow(clippy::result_large_err)]
 #[allow(clippy::result_large_err)]
 fn test_string_accessor_method_chaining_concept() -> Result<()> {
     // Test that we can chain operations by applying multiple string operations

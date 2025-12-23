@@ -2,7 +2,6 @@ use pandrs::error::Result;
 use pandrs::{DataFrame, Index, MultiIndex};
 
 #[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     println!("=== Example of Using MultiIndex ===\n");
 

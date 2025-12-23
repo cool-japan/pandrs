@@ -21,8 +21,6 @@ use pandrs::io::sql::{read_sql, write_to_sql};
 /// Test the new DataFrame operations introduced in beta.2
 #[test]
 #[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
 fn test_alpha4_dataframe_operations() -> Result<()> {
     // Create a test DataFrame
     let mut df = DataFrame::new();
@@ -95,8 +93,6 @@ fn test_alpha4_dataframe_operations() -> Result<()> {
 /// Test OptimizedDataFrame with alpha.4 features
 #[test]
 #[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
 fn test_alpha4_optimized_dataframe_operations() -> Result<()> {
     let mut df = OptimizedDataFrame::new();
 
@@ -168,7 +164,6 @@ fn test_alpha4_optimized_dataframe_operations() -> Result<()> {
 /// Test enhanced Parquet I/O with real data (alpha.4 feature)
 #[cfg(feature = "parquet")]
 #[test]
-#[allow(clippy::result_large_err)]
 #[allow(clippy::result_large_err)]
 fn test_alpha4_enhanced_parquet_io() -> Result<()> {
     use std::fs::remove_file;
@@ -243,7 +238,6 @@ fn test_alpha4_enhanced_parquet_io() -> Result<()> {
 #[cfg(feature = "sql")]
 #[test]
 #[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
 fn test_alpha4_enhanced_sql_io() -> Result<()> {
     use std::fs::remove_file;
     use std::path::Path;
@@ -316,7 +310,6 @@ fn test_alpha4_enhanced_sql_io() -> Result<()> {
 #[cfg(feature = "distributed")]
 #[test]
 #[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
 fn test_alpha4_distributed_processing_integration() -> Result<()> {
     // Create test data
     let mut df = DataFrame::new();
@@ -369,7 +362,6 @@ fn test_alpha4_distributed_processing_integration() -> Result<()> {
 /// Test cross-feature integration: DataFusion + Parquet + new DataFrame operations
 #[cfg(all(feature = "distributed", feature = "parquet"))]
 #[test]
-#[allow(clippy::result_large_err)]
 #[allow(clippy::result_large_err)]
 fn test_alpha4_cross_feature_integration() -> Result<()> {
     use std::fs::remove_file;
@@ -444,8 +436,6 @@ fn test_alpha4_cross_feature_integration() -> Result<()> {
 /// Test error handling and edge cases in alpha.4 features
 #[test]
 #[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
 fn test_alpha4_error_handling() -> Result<()> {
     let mut df = DataFrame::new();
 
@@ -477,8 +467,6 @@ fn test_alpha4_error_handling() -> Result<()> {
 
 /// Test performance characteristics of alpha.4 features
 #[test]
-#[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
 #[allow(clippy::result_large_err)]
 fn test_alpha4_performance_characteristics() -> Result<()> {
     // Create a larger dataset for performance testing

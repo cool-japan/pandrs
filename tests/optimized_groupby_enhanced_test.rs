@@ -5,8 +5,6 @@ mod optimized_groupby_tests {
 
     /// Set up a test DataFrame for grouping
     #[allow(clippy::result_large_err)]
-    #[allow(clippy::result_large_err)]
-    #[allow(clippy::result_large_err)]
     fn setup_test_df() -> Result<OptimizedDataFrame> {
         let mut df = OptimizedDataFrame::new();
 
@@ -29,8 +27,6 @@ mod optimized_groupby_tests {
 
     #[test]
     #[allow(clippy::result_large_err)]
-    #[allow(clippy::result_large_err)]
-    #[allow(clippy::result_large_err)]
     fn test_dataframe_creation() -> Result<()> {
         let df = setup_test_df()?;
         assert_eq!(df.row_count(), 10);
@@ -43,8 +39,6 @@ mod optimized_groupby_tests {
 
     #[test]
     #[allow(clippy::result_large_err)]
-    #[allow(clippy::result_large_err)]
-    #[allow(clippy::result_large_err)]
     fn test_basic_aggregation() -> Result<()> {
         let _df = setup_test_df()?;
         // Note: group_by functionality would need to be implemented
@@ -54,8 +48,6 @@ mod optimized_groupby_tests {
 
     #[test]
     #[allow(clippy::result_large_err)]
-    #[allow(clippy::result_large_err)]
-    #[allow(clippy::result_large_err)]
     fn test_advanced_aggregation() -> Result<()> {
         let _df = setup_test_df()?;
         // Note: group_by functionality would need to be implemented
@@ -63,8 +55,6 @@ mod optimized_groupby_tests {
     }
 
     #[test]
-    #[allow(clippy::result_large_err)]
-    #[allow(clippy::result_large_err)]
     #[allow(clippy::result_large_err)]
     fn test_multiple_aggregations() -> Result<()> {
         let _df = setup_test_df()?;
@@ -74,8 +64,6 @@ mod optimized_groupby_tests {
 
     #[test]
     #[allow(clippy::result_large_err)]
-    #[allow(clippy::result_large_err)]
-    #[allow(clippy::result_large_err)]
     fn test_filter() -> Result<()> {
         let _df = setup_test_df()?;
         // Note: group_by functionality would need to be implemented
@@ -83,8 +71,6 @@ mod optimized_groupby_tests {
     }
 
     #[test]
-    #[allow(clippy::result_large_err)]
-    #[allow(clippy::result_large_err)]
     #[allow(clippy::result_large_err)]
     fn test_transform() -> Result<()> {
         let _df = setup_test_df()?;

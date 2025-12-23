@@ -26,7 +26,6 @@ fn main() {
 
 #[cfg(feature = "optimized")]
 #[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     println!("Example of PandRS Model Training and Evaluation (OptimizedDataFrame version)");
     println!("==========================================");
@@ -48,7 +47,6 @@ fn main() -> Result<()> {
 
 #[cfg(feature = "optimized")]
 // Regression model example
-#[allow(clippy::result_large_err)]
 #[allow(clippy::result_large_err)]
 fn regression_example() -> Result<()> {
     println!("\n==== Regression Model Example ====");
@@ -129,7 +127,6 @@ fn regression_example() -> Result<()> {
 #[cfg(feature = "optimized")]
 // Classification model example
 #[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
 fn classification_example() -> Result<()> {
     println!("\n==== Classification Model Example ====");
 
@@ -201,7 +198,6 @@ fn classification_example() -> Result<()> {
 
 #[cfg(feature = "optimized")]
 // Model selection and evaluation example
-#[allow(clippy::result_large_err)]
 #[allow(clippy::result_large_err)]
 fn model_selection_example() -> Result<()> {
     println!("\n==== Model Selection and Evaluation Example ====");
@@ -277,7 +273,6 @@ fn model_persistence_example() -> Result<(), PandRSError> {
 #[cfg(feature = "optimized")]
 // Generate regression data
 #[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
 fn create_regression_data() -> Result<OptimizedDataFrame> {
     let mut rng = rand::rng();
 
@@ -319,7 +314,6 @@ fn create_regression_data() -> Result<OptimizedDataFrame> {
 
 #[cfg(feature = "optimized")]
 // Generate classification data
-#[allow(clippy::result_large_err)]
 #[allow(clippy::result_large_err)]
 fn create_classification_data() -> Result<OptimizedDataFrame> {
     let mut rng = rand::rng();

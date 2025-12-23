@@ -7,7 +7,6 @@ mod optimized_custom_aggregation_tests {
 
     /// Set up a test DataFrame for testing
     #[allow(clippy::result_large_err)]
-    #[allow(clippy::result_large_err)]
     fn setup_test_df() -> Result<OptimizedDataFrame> {
         let mut df = OptimizedDataFrame::new();
 
@@ -27,7 +26,6 @@ mod optimized_custom_aggregation_tests {
 
     #[test]
     #[allow(clippy::result_large_err)]
-    #[allow(clippy::result_large_err)]
     fn test_dataframe_creation() -> Result<()> {
         let df = setup_test_df()?;
         assert_eq!(df.row_count(), 10);
@@ -38,7 +36,6 @@ mod optimized_custom_aggregation_tests {
     }
 
     #[test]
-    #[allow(clippy::result_large_err)]
     #[allow(clippy::result_large_err)]
     fn test_basic_aggregation_operations() -> Result<()> {
         let df = setup_test_df()?;
@@ -59,7 +56,6 @@ mod optimized_custom_aggregation_tests {
 
     #[test]
     #[allow(clippy::result_large_err)]
-    #[allow(clippy::result_large_err)]
     fn test_custom_aggregation_method() -> Result<()> {
         let _df = setup_test_df()?;
         // Note: Custom aggregation with group_by functionality would need to be implemented
@@ -69,7 +65,6 @@ mod optimized_custom_aggregation_tests {
 
     #[test]
     #[allow(clippy::result_large_err)]
-    #[allow(clippy::result_large_err)]
     fn test_aggregate_custom_method() -> Result<()> {
         let _df = setup_test_df()?;
         // Note: Custom aggregation with group_by functionality would need to be implemented
@@ -78,7 +73,6 @@ mod optimized_custom_aggregation_tests {
     }
 
     #[test]
-    #[allow(clippy::result_large_err)]
     #[allow(clippy::result_large_err)]
     fn test_statistical_calculations() -> Result<()> {
         let df = setup_test_df()?;

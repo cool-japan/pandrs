@@ -46,7 +46,6 @@ mod tests {
 
     #[test]
     #[allow(clippy::result_large_err)]
-    #[allow(clippy::result_large_err)]
     fn test_column_reference_validation() -> Result<()> {
         let schema = create_test_schema();
         let validator = ExprValidator::new(&schema);
@@ -55,7 +54,7 @@ mod tests {
         let expr = Expr::col("id");
         let result = validator.validate_expr(&expr)?;
         assert_eq!(result.data_type, ExprDataType::Integer);
-        assert_eq!(result.nullable, false);
+        assert!(!result.nullable);
 
         // Invalid column reference
         let expr = Expr::col("nonexistent");
@@ -66,7 +65,6 @@ mod tests {
 
     #[test]
     #[allow(clippy::result_large_err)]
-    #[allow(clippy::result_large_err)]
     fn test_literal_validation() -> Result<()> {
         let schema = create_test_schema();
         let validator = ExprValidator::new(&schema);
@@ -75,31 +73,30 @@ mod tests {
         let expr = Expr::lit(42);
         let result = validator.validate_expr(&expr)?;
         assert_eq!(result.data_type, ExprDataType::Integer);
-        assert_eq!(result.nullable, false);
+        assert!(!result.nullable);
 
         // Float literal
         let expr = Expr::lit(42.5);
         let result = validator.validate_expr(&expr)?;
         assert_eq!(result.data_type, ExprDataType::Float);
-        assert_eq!(result.nullable, false);
+        assert!(!result.nullable);
 
         // String literal
         let expr = Expr::lit("test");
         let result = validator.validate_expr(&expr)?;
         assert_eq!(result.data_type, ExprDataType::String);
-        assert_eq!(result.nullable, false);
+        assert!(!result.nullable);
 
         // Boolean literal
         let expr = Expr::lit(true);
         let result = validator.validate_expr(&expr)?;
         assert_eq!(result.data_type, ExprDataType::Boolean);
-        assert_eq!(result.nullable, false);
+        assert!(!result.nullable);
 
         Ok(())
     }
 
     #[test]
-    #[allow(clippy::result_large_err)]
     #[allow(clippy::result_large_err)]
     fn test_arithmetic_validation() -> Result<()> {
         let schema = create_test_schema();
@@ -138,7 +135,6 @@ mod tests {
 
     #[test]
     #[allow(clippy::result_large_err)]
-    #[allow(clippy::result_large_err)]
     fn test_comparison_validation() -> Result<()> {
         let schema = create_test_schema();
         let validator = ExprValidator::new(&schema);
@@ -167,7 +163,6 @@ mod tests {
 
     #[test]
     #[allow(clippy::result_large_err)]
-    #[allow(clippy::result_large_err)]
     fn test_logical_validation() -> Result<()> {
         let schema = create_test_schema();
         let validator = ExprValidator::new(&schema);
@@ -190,7 +185,6 @@ mod tests {
     }
 
     #[test]
-    #[allow(clippy::result_large_err)]
     #[allow(clippy::result_large_err)]
     fn test_function_validation() -> Result<()> {
         let schema = create_test_schema();
@@ -230,7 +224,6 @@ mod tests {
     }
 
     #[test]
-    #[allow(clippy::result_large_err)]
     #[allow(clippy::result_large_err)]
     fn test_case_validation() -> Result<()> {
         let schema = create_test_schema();
@@ -272,7 +265,6 @@ mod tests {
 
     #[test]
     #[allow(clippy::result_large_err)]
-    #[allow(clippy::result_large_err)]
     fn test_cast_validation() -> Result<()> {
         let schema = create_test_schema();
         let validator = ExprValidator::new(&schema);
@@ -310,7 +302,6 @@ mod tests {
 
     #[test]
     #[allow(clippy::result_large_err)]
-    #[allow(clippy::result_large_err)]
     fn test_coalesce_validation() -> Result<()> {
         let schema = create_test_schema();
         let validator = ExprValidator::new(&schema);
@@ -319,7 +310,7 @@ mod tests {
         let expr = Expr::coalesce(vec![Expr::col("nullable_value"), Expr::lit(0.0)]);
         let result = validator.validate_expr(&expr)?;
         assert_eq!(result.data_type, ExprDataType::Float);
-        assert_eq!(result.nullable, false); // Not nullable because second argument is not nullable
+        assert!(!result.nullable); // Not nullable because second argument is not nullable
 
         // Invalid coalesce (mixed types)
         let expr = Expr::coalesce(vec![Expr::col("nullable_value"), Expr::col("id")]);
@@ -329,7 +320,6 @@ mod tests {
     }
 
     #[test]
-    #[allow(clippy::result_large_err)]
     #[allow(clippy::result_large_err)]
     fn test_projection_validation() -> Result<()> {
         let schema = create_test_schema();
@@ -366,7 +356,6 @@ mod tests {
     }
 
     #[test]
-    #[allow(clippy::result_large_err)]
     #[allow(clippy::result_large_err)]
     fn test_arrow_schema_conversion() -> Result<()> {
         let schema = create_test_schema();

@@ -4,8 +4,6 @@ use pandrs::{DataFrame, Series};
 
 #[test]
 #[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
 fn test_series_rolling_operations() -> Result<()> {
     let data = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0];
     let series = Series::new(data.to_vec(), Some("test".to_string()))?;
@@ -53,8 +51,6 @@ fn test_series_rolling_operations() -> Result<()> {
 
 #[test]
 #[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
 fn test_series_expanding_operations() -> Result<()> {
     let data = [10.0, 20.0, 30.0, 40.0, 50.0];
     let series = Series::new(data.to_vec(), Some("test".to_string()))?;
@@ -91,8 +87,6 @@ fn test_series_expanding_operations() -> Result<()> {
 
 #[test]
 #[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
 fn test_series_ewm_operations() -> Result<()> {
     let data = [10.0, 20.0, 30.0, 40.0, 50.0];
     let series = Series::new(data.to_vec(), Some("test".to_string()))?;
@@ -125,8 +119,6 @@ fn test_series_ewm_operations() -> Result<()> {
 
 #[test]
 #[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
 fn test_rolling_custom_functions() -> Result<()> {
     let data = [1.0, 2.0, 3.0, 4.0, 5.0];
     let series = Series::new(data.to_vec(), Some("test".to_string()))?;
@@ -148,8 +140,6 @@ fn test_rolling_custom_functions() -> Result<()> {
 
 #[test]
 #[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
 fn test_rolling_quantiles() -> Result<()> {
     let data = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0];
     let series = Series::new(data.to_vec(), Some("test".to_string()))?;
@@ -168,8 +158,6 @@ fn test_rolling_quantiles() -> Result<()> {
 }
 
 #[test]
-#[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
 #[allow(clippy::result_large_err)]
 fn test_dataframe_rolling_operations() -> Result<()> {
     // Create test DataFrame
@@ -218,8 +206,6 @@ fn test_dataframe_rolling_operations() -> Result<()> {
 
 #[test]
 #[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
 fn test_window_edge_cases() -> Result<()> {
     let data = [1.0, 2.0, 3.0];
     let series = Series::new(data.to_vec(), Some("test".to_string()))?;
@@ -246,8 +232,6 @@ fn test_window_edge_cases() -> Result<()> {
 
 #[test]
 #[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
 fn test_rolling_min_periods() -> Result<()> {
     let data = [1.0, 2.0, 3.0, 4.0, 5.0];
     let series = Series::new(data.to_vec(), Some("test".to_string()))?;
@@ -268,8 +252,6 @@ fn test_rolling_min_periods() -> Result<()> {
 
 #[test]
 #[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
 fn test_centered_rolling() -> Result<()> {
     let data = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0];
     let series = Series::new(data.to_vec(), Some("test".to_string()))?;
@@ -286,8 +268,6 @@ fn test_centered_rolling() -> Result<()> {
 }
 
 #[test]
-#[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
 #[allow(clippy::result_large_err)]
 fn test_window_count_operation() -> Result<()> {
     let data = [1.0, 2.0, 3.0, 4.0, 5.0];
@@ -307,8 +287,6 @@ fn test_window_count_operation() -> Result<()> {
 }
 
 #[test]
-#[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
 #[allow(clippy::result_large_err)]
 fn test_large_dataset_performance() -> Result<()> {
     // Test with a reasonably large dataset to ensure performance is acceptable

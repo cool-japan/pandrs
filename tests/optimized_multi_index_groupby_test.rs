@@ -3,7 +3,6 @@ use pandrs::optimized::OptimizedDataFrame;
 
 #[test]
 #[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
 fn test_multi_column_dataframe_creation() -> Result<()> {
     // Create a sample DataFrame with multiple columns
     let mut df = OptimizedDataFrame::new();
@@ -36,7 +35,6 @@ fn test_multi_column_dataframe_creation() -> Result<()> {
 }
 
 #[test]
-#[allow(clippy::result_large_err)]
 #[allow(clippy::result_large_err)]
 fn test_multi_index_simulation() -> Result<()> {
     // Test simulating multi-index behavior through manual grouping
@@ -88,7 +86,6 @@ fn test_multi_index_simulation() -> Result<()> {
 }
 
 #[test]
-#[allow(clippy::result_large_err)]
 #[allow(clippy::result_large_err)]
 fn test_hierarchical_data_structure() -> Result<()> {
     // Test DataFrame with hierarchical naming convention

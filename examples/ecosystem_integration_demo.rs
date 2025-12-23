@@ -129,7 +129,7 @@ fn arrow_integration_demo(df: &DataFrame) -> Result<()> {
         println!("    ✓ Computed sum using Arrow kernels");
 
         println!("\n  📦 Batch processing demonstration...");
-        let batches = ArrowConverter::dataframes_to_record_batches(&[df.clone()], Some(250))?;
+        let batches = ArrowConverter::dataframes_to_record_batches(std::slice::from_ref(df), Some(250))?;
         println!(
             "    ✓ Created {} RecordBatches from DataFrame",
             batches.len()

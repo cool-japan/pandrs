@@ -5,7 +5,6 @@ use pandrs::series::window::WindowClosed;
 use pandrs::series::Series;
 
 #[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     println!("PandRS Alpha.7: Enhanced Window Operations Example");
     println!("==================================================");

@@ -4,7 +4,6 @@ use pandrs::Series;
 /// Test all new string validation methods  
 #[test]
 #[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
 fn test_string_validation_methods() -> Result<()> {
     // Test each method individually to avoid confusion
 
@@ -59,7 +58,6 @@ fn test_string_validation_methods() -> Result<()> {
 /// Test swapcase functionality
 #[test]
 #[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
 fn test_swapcase() -> Result<()> {
     let data = vec![
         "Hello World".to_string(),
@@ -85,7 +83,6 @@ fn test_swapcase() -> Result<()> {
 /// Test Unicode character length calculation
 #[test]
 #[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
 fn test_unicode_length() -> Result<()> {
     let data = vec![
         "hello".to_string(),      // 5 ASCII chars
@@ -107,7 +104,6 @@ fn test_unicode_length() -> Result<()> {
 
 /// Test Unicode padding operations
 #[test]
-#[allow(clippy::result_large_err)]
 #[allow(clippy::result_large_err)]
 fn test_unicode_padding() -> Result<()> {
     let data = vec![
@@ -133,7 +129,6 @@ fn test_unicode_padding() -> Result<()> {
 /// Test input validation
 #[test]
 #[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
 fn test_input_validation() -> Result<()> {
     let data = vec!["test".to_string()];
     let series = Series::new(data, Some("validation_test".to_string()))?;
@@ -154,7 +149,6 @@ fn test_input_validation() -> Result<()> {
 
 /// Test regex caching performance
 #[test]
-#[allow(clippy::result_large_err)]
 #[allow(clippy::result_large_err)]
 fn test_regex_caching_performance() -> Result<()> {
     let large_data: Vec<String> = (0..1000).map(|i| format!("test_string_{i}_data")).collect();
@@ -184,7 +178,6 @@ fn test_regex_caching_performance() -> Result<()> {
 /// Test error handling with contextual information
 #[test]
 #[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
 fn test_contextual_error_handling() -> Result<()> {
     let data = vec!["test".to_string()];
     let series = Series::new(data, Some("error_test".to_string()))?;
@@ -205,7 +198,6 @@ fn test_contextual_error_handling() -> Result<()> {
 
 /// Test performance with large datasets
 #[test]
-#[allow(clippy::result_large_err)]
 #[allow(clippy::result_large_err)]
 fn test_large_dataset_performance() -> Result<()> {
     let large_data: Vec<String> = (0..10_000)
@@ -233,7 +225,6 @@ fn test_large_dataset_performance() -> Result<()> {
 
 /// Test edge cases and boundary conditions
 #[test]
-#[allow(clippy::result_large_err)]
 #[allow(clippy::result_large_err)]
 fn test_edge_cases() -> Result<()> {
     // Test with empty series
@@ -268,7 +259,6 @@ fn test_edge_cases() -> Result<()> {
 /// Test method chaining behavior
 #[test]
 #[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
 fn test_method_chaining() -> Result<()> {
     let data = vec!["  Hello World  ".to_string(), "  TEST DATA  ".to_string()];
     let series = Series::new(data, Some("chain_test".to_string()))?;
@@ -292,7 +282,6 @@ fn test_method_chaining() -> Result<()> {
 
 /// Test all regex methods with caching
 #[test]
-#[allow(clippy::result_large_err)]
 #[allow(clippy::result_large_err)]
 fn test_all_regex_methods() -> Result<()> {
     let data = vec![

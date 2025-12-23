@@ -12,7 +12,6 @@ mod tests {
 
     // Helper function to prepare test data
     #[allow(clippy::result_large_err)]
-    #[allow(clippy::result_large_err)]
     fn prepare_test_data(values: Vec<f64>) -> Result<OptimizedDataFrame, PandRSError> {
         // Create OptimizedDataFrame directly
         let mut opt_df = OptimizedDataFrame::new();
@@ -30,7 +29,6 @@ mod tests {
     }
 
     #[test]
-    #[allow(clippy::result_large_err)]
     #[allow(clippy::result_large_err)]
     fn test_standard_scaler() -> Result<(), PandRSError> {
         // Prepare test data
@@ -116,7 +114,6 @@ mod tests {
     }
 
     #[test]
-    #[allow(clippy::result_large_err)]
     #[allow(clippy::result_large_err)]
     fn test_minmax_scaler() -> Result<(), PandRSError> {
         // Prepare test data

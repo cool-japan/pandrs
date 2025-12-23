@@ -4,7 +4,6 @@ use pandrs::{DataFrame, Series};
 use std::collections::HashMap;
 
 #[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     println!("=== PandRS Basic Usage Example (Beta 2) ===");
 

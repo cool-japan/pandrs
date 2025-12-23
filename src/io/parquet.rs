@@ -363,7 +363,7 @@ fn record_batches_to_dataframe(batches: &[RecordBatch], schema: SchemaRef) -> Re
 ///
 /// # Example
 ///
-/// ```ignore
+/// ```text
 /// // Disable DOC test
 /// ```
 pub fn write_parquet(

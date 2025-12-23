@@ -218,7 +218,7 @@ pub fn execute_sql<P: AsRef<Path>>(sql: &str, db_path: P) -> Result<usize> {
 ///
 /// # Example
 ///
-/// ```ignore
+/// ```text
 /// // DOC test disabled
 /// ```
 pub fn write_to_sql<P: AsRef<Path>>(

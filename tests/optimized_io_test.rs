@@ -18,7 +18,6 @@ use tempfile::tempdir;
 
 #[test]
 #[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
 fn test_optimized_csv_io() -> Result<()> {
     // Create temporary directory
     let dir = tempdir().expect("Failed to create temporary directory");
@@ -85,7 +84,6 @@ fn test_optimized_csv_io() -> Result<()> {
 
 #[test]
 #[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
 fn test_optimized_csv_without_header() -> Result<()> {
     // Create temporary directory
     let dir = tempdir().expect("Failed to create temporary directory");
@@ -124,7 +122,6 @@ fn test_optimized_csv_without_header() -> Result<()> {
 
 #[test]
 #[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
 fn test_optimized_csv_empty_dataframe() -> Result<()> {
     // Create temporary directory
     let dir = tempdir().expect("Failed to create temporary directory");
@@ -152,7 +149,6 @@ fn test_optimized_csv_empty_dataframe() -> Result<()> {
 }
 
 #[test]
-#[allow(clippy::result_large_err)]
 #[allow(clippy::result_large_err)]
 fn test_excel_io() -> Result<()> {
     // Create temporary directory
@@ -223,7 +219,6 @@ fn test_excel_io() -> Result<()> {
 
 #[test]
 #[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
 fn test_parquet_io() -> Result<()> {
     // Create temporary directory
     let dir = tempdir()?;
@@ -293,7 +288,6 @@ fn test_parquet_io() -> Result<()> {
 
 #[test]
 #[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
 fn test_sql_io() -> Result<()> {
     // Skip SQLite test (may not be available in CI environments)
     // Or might fail due to Rusqlite dependency issues
@@ -303,7 +297,6 @@ fn test_sql_io() -> Result<()> {
 }
 
 #[test]
-#[allow(clippy::result_large_err)]
 #[allow(clippy::result_large_err)]
 fn test_csv_parquet_integration() -> Result<()> {
     // Create temporary directory

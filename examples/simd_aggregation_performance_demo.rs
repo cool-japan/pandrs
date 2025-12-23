@@ -16,7 +16,6 @@ use pandrs::optimized::OptimizedDataFrame;
 use std::time::Instant;
 
 #[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     println!("PandRS SIMD-Enhanced Aggregation Performance Demo");
     println!("================================================");
@@ -52,7 +51,6 @@ fn main() -> Result<()> {
 }
 
 #[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
 fn create_test_dataframe(size: usize, prefix: &str) -> Result<OptimizedDataFrame> {
     let mut df = OptimizedDataFrame::new();
 
@@ -79,7 +77,6 @@ fn create_test_dataframe(size: usize, prefix: &str) -> Result<OptimizedDataFrame
     Ok(df)
 }
 
-#[allow(clippy::result_large_err)]
 #[allow(clippy::result_large_err)]
 fn benchmark_all_methods(test_name: &str, df: &OptimizedDataFrame) -> Result<()> {
     println!("{test_name}");

@@ -75,8 +75,7 @@ fn formula_preservation_example(_df: &DataFrame) -> Result<()> {
     println!("Demonstrating formula preservation in Excel files...");
 
     // Create Excel cells with formulas
-    let excel_cells = vec![
-        ExcelCell {
+    let excel_cells = [ExcelCell {
             value: "150.25".to_string(),
             formula: Some("=B2*C2".to_string()),
             data_type: "number".to_string(),
@@ -105,8 +104,7 @@ fn formula_preservation_example(_df: &DataFrame) -> Result<()> {
                 background_color: Some("#E6F3FF".to_string()),
                 ..Default::default()
             },
-        },
-    ];
+        }];
 
     println!("  Created Excel cells with formulas:");
     for (i, cell) in excel_cells.iter().enumerate() {

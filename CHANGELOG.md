@@ -5,6 +5,51 @@ All notable changes to PandRS will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.0-rc.1] - 2025-12-23
+
+### 🎯 Release Candidate 1 - Quality & Documentation
+
+This release candidate focuses on code quality, documentation improvements, and preparing for the stable 0.1.0 release.
+
+**🚀 Available on crates.io**: `cargo add pandrs@0.1.0-rc.1`
+
+### ✨ Key Highlights
+
+- **Zero Warnings Policy**: All clippy warnings fixed with `-D warnings` enforcement
+- **Enhanced Documentation**: Improved rustdoc examples and fixed empty code blocks
+- **1742 Tests Passing**: All tests pass with `--all-targets --all-features`
+- **Documentation Tests**: All doctests verified and working
+- **Code Quality**: Fixed duplicated attributes, unnecessary unwraps, and other clippy lints
+- **Dependency Updates**: Latest versions of serde_json, toml, rusqlite, and cranelift
+
+### 🔧 Improvements
+
+#### Code Quality
+- Fixed all clippy warnings across examples and tests
+- Removed duplicated `#[allow]` attributes throughout codebase
+- Replaced `.len() > 0` with `.is_empty()` checks
+- Fixed `is_multiple_of()` manual implementations
+- Improved error handling with `if let` patterns instead of `is_err()` + `unwrap_err()`
+- Fixed needless borrows and clones
+
+#### Documentation
+- Updated version to 0.1.0-rc.1 in lib.rs
+- Fixed empty Rust code blocks in documentation (changed `ignore` to `text`)
+- Verified all doctests compile and run successfully
+- Enhanced API documentation with better examples
+
+#### Testing
+- All 1742 tests passing with nextest
+- Verified documentation tests (113 doctests passing)
+- All targets and features tested successfully
+
+### 📦 Dependencies
+
+- Updated `serde_json` to 1.0.146
+- Updated `toml` to 0.9.10
+- Updated `rusqlite` to 0.32.1
+- Updated `cranelift` family to 0.127.0
+
 ## [0.1.0-beta.3] - 2025-12-16
 
 ### 🎯 Pandas API Completion & Stability

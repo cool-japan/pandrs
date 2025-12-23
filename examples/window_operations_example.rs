@@ -6,7 +6,6 @@ use std::str::FromStr;
 
 // Translated Japanese comments and strings into English
 #[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     println!("=== Example of Window Operations ===\n");
 
@@ -188,7 +187,7 @@ fn main() -> Result<()> {
         sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
 
         let mid = sorted.len() / 2;
-        if sorted.len() % 2 == 0 {
+        if sorted.len().is_multiple_of(2) {
             (sorted[mid - 1] + sorted[mid]) / 2.0
         } else {
             sorted[mid]

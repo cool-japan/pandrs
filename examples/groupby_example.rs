@@ -2,7 +2,6 @@ use pandrs::error::Result;
 use pandrs::{GroupBy, Series};
 
 #[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     println!("=== Example of GroupBy Operations ===");
 

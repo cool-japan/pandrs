@@ -160,12 +160,12 @@ mod string_pool_concurrency_tests {
 
                         let result = df.add_string_column("rapid_test", single_string);
 
-                        if result.is_err() {
+                        if let Err(e) = result {
                             println!(
                                 "Thread {} failed at iteration {}: {}",
                                 thread_id,
                                 i,
-                                result.unwrap_err()
+                                e
                             );
                             return;
                         }
@@ -591,12 +591,12 @@ mod race_condition_tests {
                         let string_data = vec![same_string; 10];
 
                         let result = df.add_string_column("test", string_data);
-                        if result.is_err() {
+                        if let Err(e) = result {
                             panic!(
                                 "Thread {} iteration {} failed: {}",
                                 thread_id,
                                 i,
-                                result.unwrap_err()
+                                e
                             );
                         }
 
@@ -692,12 +692,12 @@ mod race_condition_tests {
                         let repeated_strings = strings.iter().cycle().take(100).cloned().collect();
 
                         let result = df.add_string_column("contention_test", repeated_strings);
-                        if result.is_err() {
+                        if let Err(e) = result {
                             panic!(
                                 "Thread {} failed at high contention iteration {}: {}",
                                 thread_id,
                                 i,
-                                result.unwrap_err()
+                                e
                             );
                         }
 

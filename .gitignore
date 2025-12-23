@@ -79,7 +79,6 @@ py_bindings/.venv/
 /tmp/
 .cargo/
 
-# 可視化出力サンプル
 examples/*.png
 examples/*.svg
 examples/temp_*

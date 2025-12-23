@@ -289,7 +289,7 @@ fn test_custom_aggregate_function() {
         sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
 
         let mid = sorted.len() / 2;
-        if sorted.len() % 2 == 0 {
+        if sorted.len().is_multiple_of(2) {
             (sorted[mid - 1] + sorted[mid]) / 2.0
         } else {
             sorted[mid]
@@ -425,9 +425,8 @@ fn test_window_edge_cases() {
     if result.is_err() {
         // Implementation that errors
         assert!(result.is_err());
-    } else {
+    } else if let Ok(window) = result {
         // More lenient implementation
-        let window = result.unwrap();
         let _ = window.mean(); // Verify it works normally
     }
 
@@ -439,16 +438,16 @@ fn test_window_edge_cases() {
     // 0.0 should be an error value when calculating from span
     let result = ts.ewm(None, Some(0.0), false);
     // Not expecting specific error to accommodate different implementations
-    if result.is_ok() {
-        let alpha_result = result.unwrap().with_alpha(0.0);
+    if let Ok(ewm) = result {
+        let alpha_result = ewm.with_alpha(0.0);
         assert!(alpha_result.is_err());
     }
 
     // 1.1 is out of range for alpha
     let result = ts.ewm(None, Some(1.1), false);
     // Not expecting specific error to accommodate different implementations
-    if result.is_ok() {
-        let alpha_result = result.unwrap().with_alpha(1.1);
+    if let Ok(ewm) = result {
+        let alpha_result = ewm.with_alpha(1.1);
         assert!(alpha_result.is_err());
     }
 
@@ -459,11 +458,11 @@ fn test_window_edge_cases() {
         pandrs::temporal::TimeSeries::new(Vec::new(), Vec::new(), None).unwrap();
     let result = empty_ts.rolling(1);
 
-    if result.is_ok() {
+    if let Ok(window) = result {
         // Implementation that allows empty data
-        let rolling = result.unwrap().mean();
-        if rolling.is_ok() {
-            assert_eq!(rolling.unwrap().len(), 0);
+        let rolling = window.mean();
+        if let Ok(result_series) = rolling {
+            assert_eq!(result_series.len(), 0);
         }
     } else {
         // Implementation that errors on empty data

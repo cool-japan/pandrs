@@ -9,7 +9,6 @@ use std::time::Duration;
 
 #[test]
 #[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
 fn test_data_stream_basics() -> Result<()> {
     let headers = [
         "id".to_string(),
@@ -59,7 +58,6 @@ fn test_data_stream_basics() -> Result<()> {
 
 #[test]
 #[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
 fn test_stream_aggregator() -> Result<()> {
     let headers = vec![
         "id".to_string(),
@@ -84,7 +82,6 @@ fn test_stream_aggregator() -> Result<()> {
 }
 
 #[test]
-#[allow(clippy::result_large_err)]
 #[allow(clippy::result_large_err)]
 fn test_stream_processor() -> Result<()> {
     let headers = ["id".to_string(), "text".to_string(), "category".to_string()];
@@ -117,7 +114,6 @@ fn test_stream_processor() -> Result<()> {
 }
 
 #[test]
-#[allow(clippy::result_large_err)]
 #[allow(clippy::result_large_err)]
 fn test_window_operation() -> Result<()> {
     let headers = ["timestamp".to_string(), "value".to_string()];
@@ -174,7 +170,6 @@ fn test_window_operation() -> Result<()> {
 }
 
 #[test]
-#[allow(clippy::result_large_err)]
 #[allow(clippy::result_large_err)]
 fn test_real_time_analytics() -> Result<()> {
     let headers = vec!["timestamp".to_string(), "value".to_string()];
@@ -234,7 +229,6 @@ fn test_real_time_analytics() -> Result<()> {
 }
 
 #[test]
-#[allow(clippy::result_large_err)]
 #[allow(clippy::result_large_err)]
 fn test_batch_to_dataframe() -> Result<()> {
     let headers = vec!["id".to_string(), "value".to_string()];

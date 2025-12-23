@@ -371,7 +371,7 @@ fn infer_series_from_strings(name: &str, data: &[String]) -> Result<Option<Serie
 ///
 /// # Example
 ///
-/// ```ignore
+/// ```text
 /// // DOC test disabled
 /// ```
 #[cfg(feature = "excel")]

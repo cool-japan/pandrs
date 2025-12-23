@@ -18,7 +18,6 @@ use pandrs::io::{ColumnStats, ParquetCompression, ParquetMetadata, ParquetWriteO
 use pandrs::series::Series;
 
 #[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     println!("PandRS Advanced Parquet Features - Phase 2 Alpha.6");
     println!("==================================================");
@@ -64,7 +63,6 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-#[allow(clippy::result_large_err)]
 #[allow(clippy::result_large_err)]
 fn schema_evolution_example(original_data: &DataFrame, evolved_data: &DataFrame) -> Result<()> {
     println!("Demonstrating Parquet schema evolution capabilities...");
@@ -141,7 +139,6 @@ fn schema_evolution_example(original_data: &DataFrame, evolved_data: &DataFrame)
 }
 
 #[cfg(feature = "parquet")]
-#[allow(clippy::result_large_err)]
 #[allow(clippy::result_large_err)]
 fn compression_algorithms_example(_df: &DataFrame) -> Result<()> {
     println!("Testing advanced compression algorithms...");
@@ -226,7 +223,6 @@ fn compression_algorithms_example(_df: &DataFrame) -> Result<()> {
 }
 
 #[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
 fn predicate_pushdown_example(large_df: &DataFrame) -> Result<()> {
     println!("Demonstrating predicate pushdown optimization...");
 
@@ -295,7 +291,6 @@ fn predicate_pushdown_example(large_df: &DataFrame) -> Result<()> {
 }
 
 #[cfg(feature = "streaming")]
-#[allow(clippy::result_large_err)]
 #[allow(clippy::result_large_err)]
 fn streaming_operations_example(large_df: &DataFrame) -> Result<()> {
     println!("Demonstrating streaming Parquet operations...");
@@ -373,7 +368,6 @@ fn streaming_operations_example(large_df: &DataFrame) -> Result<()> {
     Ok(())
 }
 
-#[allow(clippy::result_large_err)]
 #[allow(clippy::result_large_err)]
 fn chunked_processing_example(large_df: &DataFrame) -> Result<()> {
     println!("Demonstrating memory-efficient chunked processing...");
@@ -457,7 +451,6 @@ fn chunked_processing_example(large_df: &DataFrame) -> Result<()> {
     Ok(())
 }
 
-#[allow(clippy::result_large_err)]
 #[allow(clippy::result_large_err)]
 fn metadata_analysis_example() -> Result<()> {
     println!("Performing comprehensive Parquet metadata analysis...");
@@ -603,7 +596,6 @@ fn metadata_analysis_example() -> Result<()> {
 }
 
 #[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
 fn performance_optimization_example(_large_df: &DataFrame) -> Result<()> {
     println!("Demonstrating performance optimization strategies...");
 
@@ -734,7 +726,6 @@ fn performance_optimization_example(_large_df: &DataFrame) -> Result<()> {
 }
 
 #[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
 fn schema_analysis_example(_df: &DataFrame) -> Result<()> {
     println!("Performing schema analysis and evolution planning...");
 
@@ -826,7 +817,6 @@ fn schema_analysis_example(_df: &DataFrame) -> Result<()> {
 // ============================================================================
 
 #[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
 fn create_original_dataset() -> Result<DataFrame> {
     let mut df = DataFrame::new();
 
@@ -886,7 +876,6 @@ fn create_original_dataset() -> Result<DataFrame> {
 }
 
 #[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
 fn create_evolved_dataset() -> Result<DataFrame> {
     let mut df = create_original_dataset()?;
 
@@ -943,7 +932,6 @@ fn create_evolved_dataset() -> Result<DataFrame> {
     Ok(df)
 }
 
-#[allow(clippy::result_large_err)]
 #[allow(clippy::result_large_err)]
 fn create_large_financial_dataset(size: usize) -> Result<DataFrame> {
     let mut df = DataFrame::new();

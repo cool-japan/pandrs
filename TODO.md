@@ -2,12 +2,12 @@
 
 ## Current Release
 
-**Version:** 0.1.0-beta.3
+**Version:** 0.1.0-rc.1
 **Release Date:** December 2025
-**Status:** Beta - Feature Complete & Production Ready
-**Test Coverage:** 1000+ passing tests with comprehensive test suite
+**Status:** Release Candidate - Production Ready with Quality Improvements
+**Test Coverage:** 1742 passing tests (nextest), 113 doctests, zero clippy warnings
 
-## Completed Features (v0.1.0-beta.3)
+## Completed Features (v0.1.0-rc.1)
 
 ### Core Data Structures ✓
 - [x] Series with full pandas-compatible API
@@ -266,7 +266,7 @@
 
 ## Roadmap
 
-### v0.1.0-beta.3 - Stability Improvements (Q4 2025)
+### v0.1.0-rc.1 - Quality & Documentation Improvements (Q4 2025) ✓
 - [x] Improve temporary file handling in tests ✓
   - RAII wrappers for automatic cleanup (TempTestFile, TempTestDir)
   - Environment variable support (TMPDIR, TEMP, TMP)

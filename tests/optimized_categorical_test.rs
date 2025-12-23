@@ -4,7 +4,6 @@ use pandrs::{Column, OptimizedDataFrame, StringColumn};
 
 #[test]
 #[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
 fn test_optimized_categorical_representation() -> Result<()> {
     // In the optimized version, StringColumn and CategoricalOptimizationMode are used
     // Create a dataframe with categorical values
@@ -54,7 +53,6 @@ fn test_optimized_categorical_representation() -> Result<()> {
 }
 
 #[test]
-#[allow(clippy::result_large_err)]
 #[allow(clippy::result_large_err)]
 fn test_optimized_categorical_operations() -> Result<()> {
     // Create data with categorical values

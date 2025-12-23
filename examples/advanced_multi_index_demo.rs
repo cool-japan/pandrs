@@ -20,7 +20,6 @@ use pandrs::core::error::Result;
 use std::time::Instant;
 
 #[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
     println!("PandRS Advanced MultiIndex with Cross-Section Selection Demo");
     println!("==========================================================");
@@ -54,7 +53,6 @@ fn main() -> Result<()> {
 }
 
 /// Demonstrate comprehensive MultiIndex creation
-#[allow(clippy::result_large_err)]
 #[allow(clippy::result_large_err)]
 fn demo_index_creation() -> Result<()> {
     println!("🏗️ Advanced MultiIndex Creation");
@@ -200,7 +198,6 @@ fn demo_index_creation() -> Result<()> {
 
 /// Demonstrate cross-section selection capabilities
 #[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
 fn demo_cross_section_selection() -> Result<()> {
     println!("🎯 Cross-Section Selection");
     println!("==========================");
@@ -286,7 +283,6 @@ fn demo_cross_section_selection() -> Result<()> {
 }
 
 /// Demonstrate advanced selection criteria
-#[allow(clippy::result_large_err)]
 #[allow(clippy::result_large_err)]
 fn demo_advanced_selection_criteria() -> Result<()> {
     println!("🔍 Advanced Selection Criteria");
@@ -391,7 +387,6 @@ fn demo_advanced_selection_criteria() -> Result<()> {
 
 /// Demonstrate hierarchical operations
 #[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
 fn demo_hierarchical_operations() -> Result<()> {
     println!("🌳 Hierarchical Operations");
     println!("===========================");
@@ -490,7 +485,6 @@ fn demo_hierarchical_operations() -> Result<()> {
 
 /// Demonstrate level management operations
 #[allow(clippy::result_large_err)]
-#[allow(clippy::result_large_err)]
 fn demo_level_management() -> Result<()> {
     println!("⚙️  Level Management Operations");
     println!("==============================");
@@ -572,7 +566,6 @@ fn demo_level_management() -> Result<()> {
 }
 
 /// Demonstrate GroupBy operations
-#[allow(clippy::result_large_err)]
 #[allow(clippy::result_large_err)]
 fn demo_groupby_operations() -> Result<()> {
     println!("📊 GroupBy Operations");
@@ -663,7 +656,6 @@ fn demo_groupby_operations() -> Result<()> {
 }
 
 /// Demonstrate performance features and benchmarks
-#[allow(clippy::result_large_err)]
 #[allow(clippy::result_large_err)]
 fn demo_performance_features() -> Result<()> {
     println!("🚀 Performance Features");

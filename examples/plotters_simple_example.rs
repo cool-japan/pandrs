@@ -47,7 +47,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 &RED.mix(0.8),
             ))?
             .label("sin(x)")
-            .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], &RED.mix(0.8)));
+            .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], RED.mix(0.8)));
 
         chart
             .draw_series(LineSeries::new(
@@ -55,7 +55,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 &BLUE.mix(0.8),
             ))?
             .label("cos(x)")
-            .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], &BLUE.mix(0.8)));
+            .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], BLUE.mix(0.8)));
 
         chart
             .draw_series(LineSeries::new(
@@ -63,12 +63,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 &GREEN.mix(0.8),
             ))?
             .label("sin(x)*0.5 + cos(x)*0.5")
-            .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], &GREEN.mix(0.8)));
+            .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], GREEN.mix(0.8)));
 
         chart
             .configure_series_labels()
-            .background_style(&WHITE.mix(0.8))
-            .border_style(&BLACK)
+            .background_style(WHITE.mix(0.8))
+            .border_style(BLACK)
             .position(SeriesLabelPosition::UpperRight)
             .draw()?;
 
@@ -113,8 +113,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         chart
             .configure_series_labels()
-            .background_style(&WHITE.mix(0.8))
-            .border_style(&BLACK)
+            .background_style(WHITE.mix(0.8))
+            .border_style(BLACK)
             .draw()?;
 
         println!("-> Saved to scatter_chart.png");
@@ -254,15 +254,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .draw_series(AreaSeries::new(
                 x.iter().zip(y.iter()).map(|(&x, &y)| (x, y)),
                 0.0,
-                &RGBColor(46, 204, 113).mix(0.2),
+                RGBColor(46, 204, 113).mix(0.2),
             ))?
             .label("0.5*sin(x) + 0.5")
-            .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], &RGBColor(46, 204, 113)));
+            .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], RGBColor(46, 204, 113)));
 
         chart
             .configure_series_labels()
-            .background_style(&WHITE.mix(0.8))
-            .border_style(&BLACK)
+            .background_style(WHITE.mix(0.8))
+            .border_style(BLACK)
             .draw()?;
 
         println!("-> Saved to area_chart.svg");

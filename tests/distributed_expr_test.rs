@@ -34,8 +34,8 @@ mod tests {
             ColumnProjection::with_alias(Expr::col("b").mul(Expr::lit(2)), "b_doubled");
 
         // Verify projections can be created
-        assert!(format!("{:?}", simple_col).len() > 0);
-        assert!(format!("{:?}", aliased_col).len() > 0);
+        assert!(!format!("{:?}", simple_col).is_empty());
+        assert!(!format!("{:?}", aliased_col).is_empty());
 
         Ok(())
     }
@@ -70,7 +70,7 @@ mod tests {
         );
 
         // Verify UDF definition can be created
-        assert!(format!("{:?}", udf).len() > 0);
+        assert!(!format!("{:?}", udf).is_empty());
 
         Ok(())
     }
@@ -126,10 +126,10 @@ mod tests {
             .or(Expr::col("a").eq(Expr::lit(2)));
 
         // Verify expressions can be created
-        assert!(format!("{:?}", expr).len() > 0);
-        assert!(format!("{:?}", filter_expr).len() > 0);
-        assert!(format!("{:?}", and_expr).len() > 0);
-        assert!(format!("{:?}", or_expr).len() > 0);
+        assert!(!format!("{:?}", expr).is_empty());
+        assert!(!format!("{:?}", filter_expr).is_empty());
+        assert!(!format!("{:?}", and_expr).is_empty());
+        assert!(!format!("{:?}", or_expr).is_empty());
 
         Ok(())
     }
