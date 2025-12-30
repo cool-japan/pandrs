@@ -86,31 +86,28 @@ pub use gpu_window::{
 
 // Re-export from legacy module for backward compatibility
 #[deprecated(
-    since = "0.1.0-alpha.2",
+    since = "0.1.0",
     note = "Use new DataFrame implementation in crate::dataframe::base"
 )]
 pub use crate::dataframe::DataFrame as LegacyDataFrame;
 
-#[deprecated(
-    since = "0.1.0-alpha.2",
-    note = "Use crate::dataframe::transform::MeltOptions"
-)]
+#[deprecated(since = "0.1.0", note = "Use crate::dataframe::transform::MeltOptions")]
 pub use crate::dataframe::transform::MeltOptions as LegacyMeltOptions;
 
 #[deprecated(
-    since = "0.1.0-alpha.2",
+    since = "0.1.0",
     note = "Use crate::dataframe::transform::StackOptions"
 )]
 pub use crate::dataframe::transform::StackOptions as LegacyStackOptions;
 
 #[deprecated(
-    since = "0.1.0-alpha.2",
+    since = "0.1.0",
     note = "Use crate::dataframe::transform::UnstackOptions"
 )]
 pub use crate::dataframe::transform::UnstackOptions as LegacyUnstackOptions;
 
-#[deprecated(since = "0.1.0-alpha.2", note = "Use crate::dataframe::join::JoinType")]
+#[deprecated(since = "0.1.0", note = "Use crate::dataframe::join::JoinType")]
 pub use crate::dataframe::join::JoinType as LegacyJoinType;
 
-#[deprecated(since = "0.1.0-alpha.2", note = "Use crate::dataframe::apply::Axis")]
+#[deprecated(since = "0.1.0", note = "Use crate::dataframe::apply::Axis")]
 pub use crate::dataframe::apply::Axis as LegacyAxis;

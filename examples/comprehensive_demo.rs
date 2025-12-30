@@ -8,8 +8,8 @@ use std::time::Instant;
 
 #[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
-    println!("=== Phase 4 Alpha.8-9: Complete Expression Engine and Query Capabilities ===\n");
-    println!("This example demonstrates all Phase 4 features working together:\n");
+    println!("=== Complete Expression Engine and Query Capabilities ===\n");
+    println!("This example demonstrates all features working together:\n");
     println!("✓ String-based query expressions with advanced parsing");
     println!("✓ Mathematical expression evaluation (.eval() method)");
     println!(
@@ -73,8 +73,8 @@ fn main() -> Result<()> {
     // Showcase integrated features
     showcase_integrated_features(&sample_df)?;
 
-    println!("\n=== Phase 4 Alpha.8-9 Complete ===");
-    println!("\n🎉 All Phase 4 Expression Engine and Query Capabilities implemented!");
+    println!("\n=== Complete Expression Engine and Query Capabilities ===");
+    println!("\n🎉 All Expression Engine and Query Capabilities implemented!");
 
     println!("\n📊 Feature Summary:");
     println!("   • Query Engine: String-based expressions with full SQL-like syntax");
@@ -574,7 +574,7 @@ fn test_error_handling(df: &DataFrame) -> Result<()> {
 /// Showcase integrated features working together
 #[allow(clippy::result_large_err)]
 fn showcase_integrated_features(df: &DataFrame) -> Result<()> {
-    println!("Showcasing integrated Phase 4 features:");
+    println!("Showcasing integrated features:");
 
     // Multi-step analysis combining all features
     println!("\n  🔍 Multi-Step Financial Analysis:");

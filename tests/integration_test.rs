@@ -1,6 +1,6 @@
-//! Comprehensive integration tests for PandRS beta.2 release
+//! Comprehensive integration tests for PandRS
 //!
-//! This test suite validates that all major beta.2 features work correctly
+//! This test suite validates that all major features work correctly
 //! both individually and in combination with each other.
 
 use std::collections::HashMap;
@@ -18,10 +18,10 @@ use pandrs::io::parquet::{read_parquet, write_parquet, ParquetCompression};
 #[cfg(feature = "sql")]
 use pandrs::io::sql::{read_sql, write_to_sql};
 
-/// Test the new DataFrame operations introduced in beta.2
+/// Test DataFrame operations
 #[test]
 #[allow(clippy::result_large_err)]
-fn test_alpha4_dataframe_operations() -> Result<()> {
+fn test_dataframe_operations() -> Result<()> {
     // Create a test DataFrame
     let mut df = DataFrame::new();
 
@@ -48,7 +48,7 @@ fn test_alpha4_dataframe_operations() -> Result<()> {
     assert_eq!(df.column_names(), ["name", "age", "salary"]);
     assert_eq!(df.row_count(), 3);
 
-    // Test rename_columns (beta.2 feature)
+    // Test rename_columns
     let mut rename_map = HashMap::new();
     rename_map.insert("name".to_string(), "employee_name".to_string());
     rename_map.insert("age".to_string(), "employee_age".to_string());
@@ -65,7 +65,7 @@ fn test_alpha4_dataframe_operations() -> Result<()> {
     assert!(!df.contains_column("name")); // Old name should be gone
     assert!(!df.contains_column("age")); // Old name should be gone
 
-    // Test set_column_names (alpha.4 feature)
+    // Test set_column_names
     let new_names = vec![
         "worker_name".to_string(),
         "worker_age".to_string(),
@@ -90,10 +90,10 @@ fn test_alpha4_dataframe_operations() -> Result<()> {
     Ok(())
 }
 
-/// Test OptimizedDataFrame with alpha.4 features
+/// Test OptimizedDataFrame operations
 #[test]
 #[allow(clippy::result_large_err)]
-fn test_alpha4_optimized_dataframe_operations() -> Result<()> {
+fn test_optimized_dataframe_operations() -> Result<()> {
     let mut df = OptimizedDataFrame::new();
 
     // Add test data
@@ -161,15 +161,15 @@ fn test_alpha4_optimized_dataframe_operations() -> Result<()> {
     Ok(())
 }
 
-/// Test enhanced Parquet I/O with real data (alpha.4 feature)
+/// Test enhanced Parquet I/O with real data
 #[cfg(feature = "parquet")]
 #[test]
 #[allow(clippy::result_large_err)]
-fn test_alpha4_enhanced_parquet_io() -> Result<()> {
+fn test_enhanced_parquet_io() -> Result<()> {
     use std::fs::remove_file;
     use std::path::Path;
 
-    let test_file = "test_alpha4_parquet.parquet";
+    let test_file = "test_parquet.parquet";
 
     // Clean up any existing test file
     if Path::new(test_file).exists() {
@@ -221,7 +221,7 @@ fn test_alpha4_enhanced_parquet_io() -> Result<()> {
     let _ = remove_file(test_file);
 
     // Test with Gzip compression
-    let gzip_file = "test_alpha4_gzip.parquet";
+    let gzip_file = "test_gzip.parquet";
     write_parquet(&df, gzip_file, Some(ParquetCompression::Gzip))?;
     assert!(Path::new(gzip_file).exists());
 
@@ -234,15 +234,15 @@ fn test_alpha4_enhanced_parquet_io() -> Result<()> {
     Ok(())
 }
 
-/// Test enhanced SQL I/O with real data (alpha.4 feature)
+/// Test enhanced SQL I/O with real data
 #[cfg(feature = "sql")]
 #[test]
 #[allow(clippy::result_large_err)]
-fn test_alpha4_enhanced_sql_io() -> Result<()> {
+fn test_enhanced_sql_io() -> Result<()> {
     use std::fs::remove_file;
     use std::path::Path;
 
-    let db_file = "test_alpha4.db";
+    let db_file = "test_integration.db";
 
     // Clean up any existing test file
     if Path::new(db_file).exists() {
@@ -306,11 +306,11 @@ fn test_alpha4_enhanced_sql_io() -> Result<()> {
     Ok(())
 }
 
-/// Test distributed processing integration (alpha.4 feature)
+/// Test distributed processing integration
 #[cfg(feature = "distributed")]
 #[test]
 #[allow(clippy::result_large_err)]
-fn test_alpha4_distributed_processing_integration() -> Result<()> {
+fn test_distributed_processing_integration() -> Result<()> {
     // Create test data
     let mut df = DataFrame::new();
 
@@ -363,7 +363,7 @@ fn test_alpha4_distributed_processing_integration() -> Result<()> {
 #[cfg(all(feature = "distributed", feature = "parquet"))]
 #[test]
 #[allow(clippy::result_large_err)]
-fn test_alpha4_cross_feature_integration() -> Result<()> {
+fn test_cross_feature_integration() -> Result<()> {
     use std::fs::remove_file;
     use std::path::Path;
 
@@ -433,10 +433,10 @@ fn test_alpha4_cross_feature_integration() -> Result<()> {
     Ok(())
 }
 
-/// Test error handling and edge cases in alpha.4 features
+/// Test error handling and edge cases
 #[test]
 #[allow(clippy::result_large_err)]
-fn test_alpha4_error_handling() -> Result<()> {
+fn test_error_handling() -> Result<()> {
     let mut df = DataFrame::new();
 
     // Add test data
@@ -465,10 +465,10 @@ fn test_alpha4_error_handling() -> Result<()> {
     Ok(())
 }
 
-/// Test performance characteristics of alpha.4 features
+/// Test performance characteristics
 #[test]
 #[allow(clippy::result_large_err)]
-fn test_alpha4_performance_characteristics() -> Result<()> {
+fn test_performance_characteristics() -> Result<()> {
     // Create a larger dataset for performance testing
     let size = 1000;
 

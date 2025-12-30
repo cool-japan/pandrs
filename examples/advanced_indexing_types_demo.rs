@@ -12,7 +12,7 @@ use pandrs::series::base::Series;
 
 #[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
-    println!("=== Alpha 8: Advanced Indexing Types Example ===\n");
+    println!("=== Advanced Indexing Types Example ===\n");
 
     // Create sample time series financial data
     println!("1. Creating Sample Financial Time Series Data:");
@@ -397,7 +397,7 @@ fn main() -> Result<()> {
     println!("10. Error Handling:");
     demonstrate_error_handling()?;
 
-    println!("\n=== Alpha 8 Advanced Indexing Types Complete ===");
+    println!("\n=== Advanced Indexing Types Complete ===");
     println!("\nNew advanced indexing capabilities implemented:");
     println!("✓ DatetimeIndex with timezone and frequency support");
     println!("✓ PeriodIndex for business periods (annual, quarterly, monthly, weekly, daily)");

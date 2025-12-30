@@ -8,7 +8,7 @@ use std::time::Instant;
 
 #[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
-    println!("=== Alpha 8: Optimized Query Engine Example ===\n");
+    println!("=== Optimized Query Engine Example ===\n");
 
     // Create sample dataset for testing optimizations
     println!("1. Creating Large Sample Dataset for Performance Testing:");
@@ -64,7 +64,7 @@ fn main() -> Result<()> {
     println!("8. Testing Algebraic Simplifications:");
     test_algebraic_simplifications(&sample_df)?;
 
-    println!("\n=== Alpha 8 Optimized Query Engine Complete ===");
+    println!("\n=== Optimized Query Engine Complete ===");
     println!("\nBoolean expression optimizations implemented:");
     println!("✓ Short-circuiting for AND/OR operations");
     println!("✓ Constant folding and compile-time evaluation");

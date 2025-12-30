@@ -161,12 +161,7 @@ mod string_pool_concurrency_tests {
                         let result = df.add_string_column("rapid_test", single_string);
 
                         if let Err(e) = result {
-                            println!(
-                                "Thread {} failed at iteration {}: {}",
-                                thread_id,
-                                i,
-                                e
-                            );
+                            println!("Thread {} failed at iteration {}: {}", thread_id, i, e);
                             return;
                         }
 
@@ -592,12 +587,7 @@ mod race_condition_tests {
 
                         let result = df.add_string_column("test", string_data);
                         if let Err(e) = result {
-                            panic!(
-                                "Thread {} iteration {} failed: {}",
-                                thread_id,
-                                i,
-                                e
-                            );
+                            panic!("Thread {} iteration {} failed: {}", thread_id, i, e);
                         }
 
                         // Immediate access to test for consistency
@@ -695,9 +685,7 @@ mod race_condition_tests {
                         if let Err(e) = result {
                             panic!(
                                 "Thread {} failed at high contention iteration {}: {}",
-                                thread_id,
-                                i,
-                                e
+                                thread_id, i, e
                             );
                         }
 

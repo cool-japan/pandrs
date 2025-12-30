@@ -14,21 +14,21 @@ pub mod models {
 
     /// Trait common to supervised learning models (backward compatibility)
     #[deprecated(
-        since = "0.1.0-alpha.2",
+        since = "0.1.0",
         note = "Use `pandrs::ml::models::SupervisedModel` instead"
     )]
     pub use crate::ml::models::SupervisedModel;
 
     /// Linear Regression Model (backward compatibility)
     #[deprecated(
-        since = "0.1.0-alpha.2",
+        since = "0.1.0",
         note = "Use `pandrs::ml::models::linear::LinearRegression` instead"
     )]
     pub use crate::ml::models::linear::LinearRegression;
 
     /// Logistic Regression Model (backward compatibility)
     #[deprecated(
-        since = "0.1.0-alpha.2",
+        since = "0.1.0",
         note = "Use `pandrs::ml::models::linear::LogisticRegression` instead"
     )]
     pub use crate::ml::models::linear::LogisticRegression;
@@ -40,7 +40,7 @@ pub mod models {
 
         /// Split dataset into training set and test set (backward compatibility)
         #[deprecated(
-            since = "0.1.0-alpha.2",
+            since = "0.1.0",
             note = "Use `pandrs::ml::models::train_test_split` instead"
         )]
         pub fn train_test_split(
@@ -80,7 +80,7 @@ pub mod models {
 
         /// Model evaluation using K-fold cross-validation (backward compatibility)
         #[deprecated(
-            since = "0.1.0-alpha.2",
+            since = "0.1.0",
             note = "Use `pandrs::ml::models::evaluation::cross_val_score` instead"
         )]
         pub fn cross_val_score<M>(
@@ -107,7 +107,7 @@ pub mod models {
 
         /// Model persistence trait (backward compatibility)
         #[deprecated(
-            since = "0.1.0-alpha.2",
+            since = "0.1.0",
             note = "Use `pandrs::ml::models::persistence::ModelPersistence` instead"
         )]
         pub trait ModelPersistence: Sized {
@@ -129,7 +129,7 @@ pub mod anomaly_detection {
 
     /// Isolation Forest anomaly detection algorithm (backward compatibility)
     #[deprecated(
-        since = "0.1.0-alpha.2",
+        since = "0.1.0",
         note = "Use `pandrs::ml::anomaly::IsolationForest` instead"
     )]
     pub struct IsolationForest {
@@ -140,7 +140,7 @@ pub mod anomaly_detection {
     impl IsolationForest {
         /// Create a new IsolationForest instance (backward compatibility)
         #[deprecated(
-            since = "0.1.0-alpha.2",
+            since = "0.1.0",
             note = "Use `pandrs::ml::anomaly::IsolationForest::new` instead"
         )]
         pub fn new(
@@ -161,7 +161,7 @@ pub mod anomaly_detection {
 
         /// Get anomaly scores (backward compatibility)
         #[deprecated(
-            since = "0.1.0-alpha.2",
+            since = "0.1.0",
             note = "Use `pandrs::ml::anomaly::IsolationForest::anomaly_scores` instead"
         )]
         pub fn anomaly_scores(&self) -> &[f64] {
@@ -170,7 +170,7 @@ pub mod anomaly_detection {
 
         /// Get anomaly flags (backward compatibility)
         #[deprecated(
-            since = "0.1.0-alpha.2",
+            since = "0.1.0",
             note = "Use `pandrs::ml::anomaly::IsolationForest::labels` instead"
         )]
         pub fn labels(&self) -> &[i64] {
@@ -180,7 +180,7 @@ pub mod anomaly_detection {
 
     /// Distance metric (backward compatibility)
     #[deprecated(
-        since = "0.1.0-alpha.2",
+        since = "0.1.0",
         note = "Use `pandrs::ml::clustering::DistanceMetric` instead"
     )]
     pub enum DistanceMetric {
@@ -204,7 +204,7 @@ pub mod anomaly_detection {
 
     /// LOF (Local Outlier Factor) anomaly detection algorithm (backward compatibility)
     #[deprecated(
-        since = "0.1.0-alpha.2",
+        since = "0.1.0",
         note = "Use `pandrs::ml::anomaly::LocalOutlierFactor` instead"
     )]
     pub struct LocalOutlierFactor {
@@ -215,7 +215,7 @@ pub mod anomaly_detection {
     impl LocalOutlierFactor {
         /// Create a new LocalOutlierFactor instance (backward compatibility)
         #[deprecated(
-            since = "0.1.0-alpha.2",
+            since = "0.1.0",
             note = "Use `pandrs::ml::anomaly::LocalOutlierFactor::new` instead"
         )]
         pub fn new(n_neighbors: usize, contamination: f64, metric: DistanceMetric) -> Self {
@@ -228,7 +228,7 @@ pub mod anomaly_detection {
 
     /// One-Class SVM anomaly detection algorithm (backward compatibility)
     #[deprecated(
-        since = "0.1.0-alpha.2",
+        since = "0.1.0",
         note = "Use `pandrs::ml::anomaly::OneClassSVM` instead"
     )]
     pub struct OneClassSVM {
@@ -239,7 +239,7 @@ pub mod anomaly_detection {
     impl OneClassSVM {
         /// Create a new OneClassSVM instance (backward compatibility)
         #[deprecated(
-            since = "0.1.0-alpha.2",
+            since = "0.1.0",
             note = "Use `pandrs::ml::anomaly::OneClassSVM::new` instead"
         )]
         pub fn new(nu: f64, gamma: f64, max_iter: usize, tol: f64) -> Self {
@@ -258,7 +258,7 @@ pub mod pipeline {
 
     /// Transformer trait (backward compatibility)
     #[deprecated(
-        since = "0.1.0-alpha.2",
+        since = "0.1.0",
         note = "Use `pandrs::ml::pipeline::PipelineTransformer` instead"
     )]
     pub trait Transformer {
@@ -284,7 +284,7 @@ pub mod metrics {
 
         /// Mean squared error (backward compatibility)
         #[deprecated(
-            since = "0.1.0-alpha.2",
+            since = "0.1.0",
             note = "Use `pandrs::ml::metrics::regression::mean_squared_error` instead"
         )]
         pub fn mean_squared_error(y_true: &[f64], y_pred: &[f64]) -> Result<f64> {
@@ -293,7 +293,7 @@ pub mod metrics {
 
         /// Mean absolute error (backward compatibility)
         #[deprecated(
-            since = "0.1.0-alpha.2",
+            since = "0.1.0",
             note = "Use `pandrs::ml::metrics::regression::mean_absolute_error` instead"
         )]
         pub fn mean_absolute_error(y_true: &[f64], y_pred: &[f64]) -> Result<f64> {
@@ -302,7 +302,7 @@ pub mod metrics {
 
         /// Root mean squared error (backward compatibility)
         #[deprecated(
-            since = "0.1.0-alpha.2",
+            since = "0.1.0",
             note = "Use `pandrs::ml::metrics::regression::root_mean_squared_error` instead"
         )]
         pub fn root_mean_squared_error(y_true: &[f64], y_pred: &[f64]) -> Result<f64> {
@@ -311,7 +311,7 @@ pub mod metrics {
 
         /// R² score (backward compatibility)
         #[deprecated(
-            since = "0.1.0-alpha.2",
+            since = "0.1.0",
             note = "Use `pandrs::ml::metrics::regression::r2_score` instead"
         )]
         pub fn r2_score(y_true: &[f64], y_pred: &[f64]) -> Result<f64> {
@@ -320,7 +320,7 @@ pub mod metrics {
 
         /// Explained variance score (backward compatibility)
         #[deprecated(
-            since = "0.1.0-alpha.2",
+            since = "0.1.0",
             note = "Use `pandrs::ml::metrics::regression::explained_variance_score` instead"
         )]
         pub fn explained_variance_score(y_true: &[f64], y_pred: &[f64]) -> Result<f64> {
@@ -334,7 +334,7 @@ pub mod metrics {
 
         /// Accuracy score (backward compatibility)
         #[deprecated(
-            since = "0.1.0-alpha.2",
+            since = "0.1.0",
             note = "Use `pandrs::ml::metrics::classification::accuracy_score` instead"
         )]
         pub fn accuracy_score(y_true: &[bool], y_pred: &[bool]) -> Result<f64> {
@@ -343,7 +343,7 @@ pub mod metrics {
 
         /// Precision score (backward compatibility)
         #[deprecated(
-            since = "0.1.0-alpha.2",
+            since = "0.1.0",
             note = "Use `pandrs::ml::metrics::classification::precision_score` instead"
         )]
         pub fn precision_score(y_true: &[bool], y_pred: &[bool]) -> Result<f64> {
@@ -352,7 +352,7 @@ pub mod metrics {
 
         /// Recall score (backward compatibility)
         #[deprecated(
-            since = "0.1.0-alpha.2",
+            since = "0.1.0",
             note = "Use `pandrs::ml::metrics::classification::recall_score` instead"
         )]
         pub fn recall_score(y_true: &[bool], y_pred: &[bool]) -> Result<f64> {
@@ -361,7 +361,7 @@ pub mod metrics {
 
         /// F1 score (backward compatibility)
         #[deprecated(
-            since = "0.1.0-alpha.2",
+            since = "0.1.0",
             note = "Use `pandrs::ml::metrics::classification::f1_score` instead"
         )]
         pub fn f1_score(y_true: &[bool], y_pred: &[bool]) -> Result<f64> {

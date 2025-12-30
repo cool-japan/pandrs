@@ -251,20 +251,17 @@ fn clean_databox_value(value: &str) -> String {
 }
 
 /// Re-export transformation options for backward compatibility
-#[deprecated(
-    since = "0.1.0-alpha.2",
-    note = "Use crate::dataframe::transform::MeltOptions"
-)]
+#[deprecated(since = "0.1.0", note = "Use crate::dataframe::transform::MeltOptions")]
 pub use crate::dataframe::transform::MeltOptions as LegacyMeltOptions;
 
 #[deprecated(
-    since = "0.1.0-alpha.2",
+    since = "0.1.0",
     note = "Use crate::dataframe::transform::StackOptions"
 )]
 pub use crate::dataframe::transform::StackOptions as LegacyStackOptions;
 
 #[deprecated(
-    since = "0.1.0-alpha.2",
+    since = "0.1.0",
     note = "Use crate::dataframe::transform::UnstackOptions"
 )]
 pub use crate::dataframe::transform::UnstackOptions as LegacyUnstackOptions;

@@ -3,7 +3,8 @@
 
 fn main() {
     // Register cuda_available as a valid cfg for check-cfg
-    println!("cargo::rustc-check-cfg=cfg(cuda_available)");
+    // Using cargo: syntax for MSRV 1.70.0 compatibility
+    println!("cargo:rustc-check-cfg=cfg(cuda_available)");
 
     // Emit cfg flag for CUDA availability
     // CUDA is only available on non-macOS platforms

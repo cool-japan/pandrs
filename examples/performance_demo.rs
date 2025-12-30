@@ -2,15 +2,15 @@ use pandrs::*;
 use std::collections::HashMap;
 use std::time::Instant;
 
-/// Beta.2 Performance Demonstration
+/// Performance Demonstration
 ///
-/// This example demonstrates the performance improvements available in beta.2
+/// This example demonstrates the performance improvements available in PandRS
 /// and validates the claims made in the documentation.
 fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
-    println!("🚀 PandRS Beta.2 Performance Demonstration");
+    println!("🚀 PandRS Performance Demonstration");
     println!("=============================================\n");
 
-    // Demo 1: Beta.2 Column Management Performance
+    // Demo 1: Column Management Performance
     demo_column_management()?;
 
     // Demo 2: String Pool Optimization
@@ -30,9 +30,9 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-/// Demonstrate Beta.2 column management performance
+/// Demonstrate column management performance
 fn demo_column_management() -> std::result::Result<(), Box<dyn std::error::Error>> {
-    println!("📊 Demo 1: Beta.2 Column Management Performance");
+    println!("📊 Demo 1: Column Management Performance");
     println!("------------------------------------------------");
 
     // Create test DataFrame with multiple columns
@@ -298,7 +298,7 @@ fn demo_memory_usage() -> std::result::Result<(), Box<dyn std::error::Error>> {
 
 /// Demonstrate series operations improvements
 fn demo_series_operations() -> std::result::Result<(), Box<dyn std::error::Error>> {
-    println!("📈 Demo 5: Series Operations (Beta.2)");
+    println!("📈 Demo 5: Series Operations");
     println!("--------------------------------------");
 
     let data: Vec<i32> = (0..10000).collect();
@@ -313,7 +313,7 @@ fn demo_series_operations() -> std::result::Result<(), Box<dyn std::error::Error
         creation_duration.as_secs_f64() * 1000.0
     );
 
-    // Beta.2 name operations
+    // Name operations
     let mut series = pandrs::series::Series::new(data.clone(), None)?;
 
     let start = Instant::now();
@@ -336,7 +336,7 @@ fn demo_series_operations() -> std::result::Result<(), Box<dyn std::error::Error
         fluent_duration.as_secs_f64() * 1000.0
     );
 
-    // Type conversion (Beta.2 enhancement)
+    // Type conversion
     let start = Instant::now();
     let _string_series = series.to_string_series()?;
     let conversion_duration = start.elapsed();
@@ -377,7 +377,7 @@ mod tests {
         )
         .unwrap();
 
-        // Test Beta.2 features
+        // Test features
         let mut rename_map = HashMap::new();
         rename_map.insert("test".to_string(), "renamed".to_string());
         df.rename_columns(&rename_map).unwrap();

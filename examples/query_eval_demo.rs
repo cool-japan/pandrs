@@ -7,7 +7,7 @@ use pandrs::series::base::Series;
 
 #[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
-    println!("=== Alpha 4 Query and Eval Expression Engine Example ===\n");
+    println!("=== Query and Eval Expression Engine Example ===\n");
 
     // Create sample employee data
     println!("1. Creating Sample Employee Data:");
@@ -239,7 +239,7 @@ fn main() -> Result<()> {
     println!("11. Error Handling:");
     demonstrate_error_handling(&df)?;
 
-    println!("\n=== Alpha 4 Query and Eval Engine Complete ===");
+    println!("\n=== Query and Eval Engine Complete ===");
     println!("\nNew query and evaluation capabilities implemented:");
     println!("✓ String-based query expressions (.query() method)");
     println!("✓ Expression evaluation (.eval() method)");

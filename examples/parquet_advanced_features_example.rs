@@ -1,6 +1,6 @@
-//! Advanced Parquet Features Example - Phase 2 Alpha.6
+//! Advanced Parquet Features Example
 //!
-//! This example demonstrates the enhanced Parquet capabilities implemented in Phase 2 Alpha.6:
+//! This example demonstrates the enhanced Parquet capabilities:
 //! - Schema evolution and migration support
 //! - Predicate pushdown for efficient reading
 //! - Advanced compression algorithms
@@ -19,7 +19,7 @@ use pandrs::series::Series;
 
 #[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
-    println!("PandRS Advanced Parquet Features - Phase 2 Alpha.6");
+    println!("PandRS Advanced Parquet Features");
     println!("==================================================");
 
     // Create sample datasets
@@ -464,7 +464,7 @@ fn metadata_analysis_example() -> Result<()> {
         schema: "struct<id:int64,name:string,price:double,volume:int64,date:timestamp,sector:string>".to_string(),
         file_size: Some(85_000_000), // 85 MB
         compression: "ZSTD".to_string(),
-        created_by: Some("pandrs 0.1.0-alpha.4".to_string()),
+        created_by: Some("pandrs 0.1.0".to_string()),
     };
 
         println!("  File metadata:");

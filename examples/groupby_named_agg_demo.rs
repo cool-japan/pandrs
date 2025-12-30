@@ -6,7 +6,7 @@ use std::collections::HashMap;
 
 #[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
-    println!("=== Alpha 4 Enhanced GroupBy with Named Aggregations Example ===\n");
+    println!("=== Enhanced GroupBy with Named Aggregations Example ===\n");
 
     // Create sample sales data
     println!("1. Creating Sample Sales Data:");
@@ -286,7 +286,7 @@ fn main() -> Result<()> {
     println!("Spec Macro Aggregations Result:");
     println!("{spec_result:?}");
 
-    println!("\n=== Alpha 4 Enhanced GroupBy Complete ===");
+    println!("\n=== Enhanced GroupBy Complete ===");
     println!("\nNew GroupBy capabilities implemented:");
     println!("✓ Named aggregations (pandas-like syntax)");
     println!("✓ Multiple aggregations per column");

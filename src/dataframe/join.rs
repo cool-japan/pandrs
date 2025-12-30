@@ -115,5 +115,5 @@ impl JoinExt for DataFrame {
 }
 
 /// Re-export JoinType for backward compatibility
-#[deprecated(since = "0.1.0-alpha.2", note = "Use crate::dataframe::join::JoinType")]
+#[deprecated(since = "0.1.0", note = "Use crate::dataframe::join::JoinType")]
 pub use crate::dataframe::join::JoinType as LegacyJoinType;

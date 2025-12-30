@@ -1,15 +1,14 @@
-//! Comprehensive I/O Examples for PandRS Beta.2
+//! Comprehensive I/O Examples for PandRS
 //!
-//! This example demonstrates all the enhanced I/O capabilities implemented in Beta.2:
+//! This example demonstrates all the enhanced I/O capabilities:
 //! 1. Excel Support Enhancement - formula preservation, cell formatting, named ranges
 //! 2. Advanced Parquet Features - schema evolution, predicate pushdown, streaming
 //! 3. Database Integration Expansion - async operations, connection pooling, transactions
 //!
 //! To run this example:
-//!   cargo run --example comprehensive_io_alpha6_example --features "excel streaming sql"
+//!   cargo run --example comprehensive_io_demo --features "excel streaming sql"
 //!
-//! Note: This example focuses on demonstrating the API concepts and enhanced features
-//! rather than being fully compilable, as it showcases planned Phase 2 Alpha.6 capabilities.
+//! Note: This example focuses on demonstrating the API concepts and enhanced features.
 
 use pandrs::dataframe::base::DataFrame;
 use pandrs::error::Result;
@@ -36,7 +35,7 @@ use std::time::Duration;
 
 #[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
-    println!("PandRS Comprehensive I/O Capabilities - Phase 2 Alpha.6");
+    println!("PandRS Comprehensive I/O Capabilities");
     println!("=======================================================");
 
     // Create sample datasets for demonstration
@@ -58,7 +57,7 @@ fn main() -> Result<()> {
     println!("\n=== 5. Performance and Scalability Demonstrations ===");
     performance_scalability_examples(&large_df)?;
 
-    println!("\nAll Phase 2 Alpha.6 I/O demonstrations completed successfully!");
+    println!("\nAll I/O demonstrations completed successfully!");
     Ok(())
 }
 
@@ -119,7 +118,7 @@ fn excel_enhancement_examples(df: &DataFrame) -> Result<()> {
     #[cfg(not(feature = "excel"))]
     {
         println!("Excel features require 'excel' feature flag to be enabled.");
-        println!("Compile with: cargo run --example comprehensive_io_alpha6_example --features \"excel\"");
+        println!("Compile with: cargo run --example comprehensive_io_demo --features \"excel\"");
     }
 
     Ok(())
@@ -665,7 +664,7 @@ fn parquet_metadata_analysis_example() -> Result<()> {
         schema: "struct<name:string,price:double,volume:int64,date:timestamp>".to_string(),
         file_size: Some(2500000), // 2.5 MB
         compression: "SNAPPY".to_string(),
-        created_by: Some("pandrs 0.1.0-alpha.4".to_string()),
+        created_by: Some("pandrs 0.1.0".to_string()),
     };
 
     println!("  File metadata:");

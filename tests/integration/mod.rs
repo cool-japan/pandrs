@@ -240,7 +240,7 @@ pub mod mock_cloud {
             self.objects.insert(full_key.clone(), data);
             self.metadata.insert(full_key, ObjectMetadata {
                 size: data.len() as u64,
-                last_modified: Some("2024-12-16T10:00:00Z".to_string()),
+                last_modified: Some("2025-12-30T10:00:00Z".to_string()),
                 content_type: Some("application/octet-stream".to_string()),
                 etag: Some("\"mock-etag\"".to_string()),
                 custom_metadata: HashMap::new(),

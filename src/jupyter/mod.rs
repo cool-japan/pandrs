@@ -891,7 +891,7 @@ impl JupyterMagics {
             @line_magic
             def pandrs_info(self, line):
                 """Display PandRS version and configuration info"""
-                return "PandRS Alpha 4 - Enhanced DataFrame library for Rust"
+                return "PandRS 0.1.0 - High-performance DataFrame library for Rust"
             
             @line_magic 
             def pandrs_config(self, line):

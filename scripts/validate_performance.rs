@@ -1,8 +1,8 @@
 #!/usr/bin/env cargo script
 
-//! PandRS Alpha.4 Performance Validation Script
-//! 
-//! This script validates all performance claims made in the alpha.4 documentation
+//! PandRS Performance Validation Script
+//!
+//! This script validates all performance claims made in the documentation
 //! and generates a detailed performance report.
 
 use std::time::Instant;
@@ -42,7 +42,7 @@ impl PerformanceValidator {
     fn generate_report(&self) -> String {
         let mut report = String::new();
         
-        report.push_str("# PandRS Alpha.4 Performance Validation Report\n\n");
+        report.push_str("# PandRS Performance Validation Report\n\n");
         report.push_str(&format!("Generated: {}\n\n", chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC")));
         
         // Summary statistics
@@ -115,7 +115,7 @@ impl PerformanceValidator {
         // Column management claims
         if let Some(column_result) = self.results.iter().find(|r| r.operation.contains("rename_columns")) {
             validation.push_str(&format!(
-                "**Column Management (Alpha.4):**\n\
+                "**Column Management:**\n\
                 - Claimed performance: <1ms for 1000 columns\n\
                 - Actual performance: {}ms\n\
                 - Status: {}\n\n",
@@ -203,9 +203,9 @@ fn test_dataframe_creation(validator: &mut PerformanceValidator) {
     }
 }
 
-/// Test 2: Alpha.4 Column Management Performance
+/// Test 2: Column Management Performance
 fn test_column_management(validator: &mut PerformanceValidator) {
-    println!("Testing Alpha.4 column management performance...");
+    println!("Testing column management performance...");
     
     for size in [1_000, 10_000, 100_000] {
         // Create test DataFrame
@@ -316,7 +316,7 @@ fn test_series_operations(validator: &mut PerformanceValidator) {
             notes: "Series creation with name".to_string(),
         });
         
-        // Alpha.4 name operations
+        // Name operations
         let mut series = pandrs::series::Series::from_vec(data.clone(), None).unwrap();
         let start = Instant::now();
         series.set_name("new_name".to_string());
@@ -329,7 +329,7 @@ fn test_series_operations(validator: &mut PerformanceValidator) {
             duration_ms: duration.as_millis(),
             throughput_ops_per_sec: if duration.as_millis() > 0 { 1000.0 / duration.as_millis() as f64 } else { f64::INFINITY },
             memory_mb: None,
-            notes: "Alpha.4 name management".to_string(),
+            notes: "Name management".to_string(),
         });
         
         // with_name fluent interface
@@ -344,7 +344,7 @@ fn test_series_operations(validator: &mut PerformanceValidator) {
             duration_ms: duration.as_millis(),
             throughput_ops_per_sec: size as f64 / duration.as_secs_f64(),
             memory_mb: None,
-            notes: "Alpha.4 fluent interface".to_string(),
+            notes: "Fluent interface".to_string(),
         });
     }
 }
@@ -401,7 +401,7 @@ fn estimate_string_memory(strings: &[String]) -> f64 {
 
 /// Main validation function
 fn main() {
-    println!("🚀 Starting PandRS Alpha.4 Performance Validation");
+    println!("🚀 Starting PandRS Performance Validation");
     println!("==================================================");
     
     let mut validator = PerformanceValidator::new();
@@ -420,10 +420,10 @@ fn main() {
     println!("{}", report);
     
     // Save report to file
-    if let Err(e) = validator.save_report("ALPHA4_PERFORMANCE_REPORT.md") {
+    if let Err(e) = validator.save_report("PERFORMANCE_REPORT.md") {
         eprintln!("Error saving report: {}", e);
     } else {
-        println!("✅ Performance report saved to ALPHA4_PERFORMANCE_REPORT.md");
+        println!("✅ Performance report saved to PERFORMANCE_REPORT.md");
     }
     
     println!("\n🎯 Performance validation complete!");

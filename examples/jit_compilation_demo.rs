@@ -8,7 +8,7 @@ use std::time::Instant;
 
 #[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
-    println!("=== Alpha 8: JIT Compilation for Repeated Expressions ===\n");
+    println!("=== JIT Compilation for Repeated Expressions ===\n");
 
     // Create sample dataset for JIT testing
     println!("1. Creating Sample Dataset for JIT Performance Testing:");
@@ -64,7 +64,7 @@ fn main() -> Result<()> {
     println!("8. Real-World JIT Compilation Scenarios:");
     demonstrate_real_world_jit(&df)?;
 
-    println!("\n=== Alpha 8 JIT Compilation Complete ===");
+    println!("\n=== JIT Compilation Complete ===");
     println!("\nJIT compilation features implemented:");
     println!("✓ Automatic JIT compilation for frequently executed expressions");
     println!("✓ Expression signature-based caching and compilation threshold");

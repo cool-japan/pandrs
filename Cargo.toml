@@ -1,7 +1,8 @@
 [package]
 name = "pandrs"
-version = "0.1.0-rc.1"
+version = "0.1.0"
 edition = "2021"
+rust-version = "1.70.0"
 description = "A high-performance DataFrame library for Rust, providing pandas-like API with advanced features including SIMD optimization, parallel processing, and distributed computing capabilities"
 authors = ["Cool Japan"]
 license = "MIT OR Apache-2.0"
@@ -12,11 +13,17 @@ categories = ["data-structures", "science", "mathematics"]
 #exclude = ["tests/", "benches/", "docs/", "examples/", ".github/"]
 exclude = [".github/"]
 
+# Configuration for docs.rs
+[package.metadata.docs.rs]
+all-features = false
+features = ["optimized", "jit", "distributed", "serving", "excel", "visualization", "parquet", "sql", "streaming", "backward_compat", "resilience"]
+rustdoc-args = ["--cfg", "docsrs"]
+
 [dependencies]
 num-traits = "0.2.19"
 chrono = { version = "0.4.42", features = ["serde"] }
 serde = { version = "1.0.228", features = ["derive"] }
-serde_json = "1.0.146"
+serde_json = "1.0.148"
 serde_yaml = "0.9.34"  # YAML serialization support
 toml = "0.9.10"  # TOML serialization support
 thiserror = "2.0.17"
@@ -116,7 +123,7 @@ stable = ["optimized", "parquet", "excel", "sql", "streaming", "backward_compat"
 resilience = ["dep:tokio"]
 
 [dependencies.tempfile]
-version = "3.23.0"  # Create temporary files and directories
+version = "3.24.0"  # Create temporary files and directories
 
 [dev-dependencies]
 criterion = { version = "0.8", features = ["html_reports"] }

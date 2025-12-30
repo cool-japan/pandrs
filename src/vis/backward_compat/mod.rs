@@ -15,10 +15,7 @@ use std::path::Path;
 
 // Re-export text-based plotting functionality for backward compatibility
 #[allow(deprecated)]
-#[deprecated(
-    since = "0.1.0-alpha.2",
-    note = "Use `pandrs::vis::text::plot_xy` instead"
-)]
+#[deprecated(since = "0.1.0", note = "Use `pandrs::vis::text::plot_xy` instead")]
 pub use crate::vis::text::plot_xy;
 
 // Implement backward-compatible Series visualization methods
@@ -32,7 +29,7 @@ where
     /// New code should use the `plot_to`, `line_plot`, etc. methods instead.
     #[allow(deprecated)]
     #[deprecated(
-        since = "0.1.0-alpha.2",
+        since = "0.1.0",
         note = "Use `Series.plot_to()` or `Series.line_plot()` instead"
     )]
     pub fn plot<P: AsRef<Path>>(&self, path: P, config: PlotConfig) -> Result<()> {
@@ -50,7 +47,7 @@ impl DataFrame {
     /// Note: This implementation is kept for backward compatibility.
     /// New code should use the `scatter_xy` method instead.
     #[allow(deprecated)]
-    #[deprecated(since = "0.1.0-alpha.2", note = "Use `DataFrame.scatter_xy()` instead")]
+    #[deprecated(since = "0.1.0", note = "Use `DataFrame.scatter_xy()` instead")]
     pub fn plot_xy<P: AsRef<Path>>(
         &self,
         x_col: &str,
@@ -76,10 +73,7 @@ impl DataFrame {
     /// Note: This implementation is kept for backward compatibility.
     /// New code should use the `multi_line_plot` method instead.
     #[allow(deprecated)]
-    #[deprecated(
-        since = "0.1.0-alpha.2",
-        note = "Use `DataFrame.multi_line_plot()` instead"
-    )]
+    #[deprecated(since = "0.1.0", note = "Use `DataFrame.multi_line_plot()` instead")]
     pub fn plot_lines<P: AsRef<Path>>(
         &self,
         columns: &[&str],

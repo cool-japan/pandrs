@@ -1,6 +1,6 @@
-//! Advanced Excel Features Example - Phase 2 Alpha.6
+//! Advanced Excel Features Example
 //!
-//! This example demonstrates the enhanced Excel capabilities implemented in Phase 2 Alpha.6:
+//! This example demonstrates the enhanced Excel capabilities:
 //! - Formula preservation and cell formatting
 //! - Named ranges and workbook analysis
 //! - Large file optimization
@@ -25,7 +25,7 @@ use pandrs::io::{
 
 #[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
-    println!("PandRS Advanced Excel Features - Phase 2 Alpha.6");
+    println!("PandRS Advanced Excel Features");
     println!("===============================================");
 
     #[cfg(feature = "excel")]
@@ -75,7 +75,8 @@ fn formula_preservation_example(_df: &DataFrame) -> Result<()> {
     println!("Demonstrating formula preservation in Excel files...");
 
     // Create Excel cells with formulas
-    let excel_cells = [ExcelCell {
+    let excel_cells = [
+        ExcelCell {
             value: "150.25".to_string(),
             formula: Some("=B2*C2".to_string()),
             data_type: "number".to_string(),
@@ -104,7 +105,8 @@ fn formula_preservation_example(_df: &DataFrame) -> Result<()> {
                 background_color: Some("#E6F3FF".to_string()),
                 ..Default::default()
             },
-        }];
+        },
+    ];
 
     println!("  Created Excel cells with formulas:");
     for (i, cell) in excel_cells.iter().enumerate() {

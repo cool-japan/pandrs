@@ -5,7 +5,7 @@ use crate::core::error::Result;
 
 // Re-export from legacy module for now
 #[deprecated(
-    since = "0.1.0-alpha.2",
+    since = "0.1.0",
     note = "Use new Series implementation in crate::series::base"
 )]
 pub use crate::series::Series as LegacySeries;

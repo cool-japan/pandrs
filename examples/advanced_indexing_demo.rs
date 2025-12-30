@@ -7,7 +7,7 @@ use pandrs::series::base::Series;
 
 #[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
-    println!("=== Alpha 4 Advanced Indexing System Example ===\n");
+    println!("=== Advanced Indexing System Example ===\n");
 
     // Create sample employee data
     println!("1. Creating Sample Employee Data:");
@@ -304,7 +304,7 @@ fn main() -> Result<()> {
     println!("12. Error Handling:");
     demonstrate_error_handling(&df)?;
 
-    println!("\n=== Alpha 4 Advanced Indexing System Complete ===");
+    println!("\n=== Advanced Indexing System Complete ===");
     println!("\nNew advanced indexing capabilities implemented:");
     println!("✓ Position-based indexing (.iloc)");
     println!("✓ Label-based indexing (.loc)");

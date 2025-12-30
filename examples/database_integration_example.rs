@@ -1,6 +1,6 @@
-//! Database Integration Example - Phase 2 Alpha.6
+//! Database Integration Example
 //!
-//! This example demonstrates the enhanced database capabilities implemented in Phase 2 Alpha.6:
+//! This example demonstrates the enhanced database capabilities:
 //! - Async connection pooling with comprehensive statistics
 //! - Transaction management with isolation levels
 //! - Type-safe SQL query builder
@@ -26,7 +26,7 @@ use std::time::Duration;
 
 #[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
-    println!("PandRS Database Integration - Phase 2 Alpha.6");
+    println!("PandRS Database Integration");
     println!("============================================");
 
     // Create sample datasets

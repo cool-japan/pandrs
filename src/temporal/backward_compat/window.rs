@@ -821,4 +821,4 @@ impl<'a, T: Temporal> Window<'a, T> {
     }
 }
 
-// ここでの実装は削除しました - メインのモジュールの実装を使用します
+// Implementation removed here - using main module implementation

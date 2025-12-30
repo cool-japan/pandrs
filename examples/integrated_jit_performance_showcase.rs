@@ -11,7 +11,7 @@ use std::time::Instant;
 fn main() -> Result<()> {
     println!("=== Integrated JIT Performance Showcase ===\n");
     println!("This example demonstrates the complete integration of:");
-    println!("• Phase 4 Alpha.8-9: Expression Engine and Query Capabilities");
+    println!("• Expression Engine and Query Capabilities");
     println!("• JIT-Optimized Window Operations");
     println!("• Performance improvements across different operation types\n");
 

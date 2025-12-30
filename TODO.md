@@ -2,12 +2,12 @@
 
 ## Current Release
 
-**Version:** 0.1.0-rc.1
+**Version:** 0.1.0
 **Release Date:** December 2025
-**Status:** Release Candidate - Production Ready with Quality Improvements
-**Test Coverage:** 1742 passing tests (nextest), 113 doctests, zero clippy warnings
+**Status:** Production Ready - First Stable Release
+**Test Coverage:** 1334+ passing tests (nextest), 113 doctests, zero clippy warnings
 
-## Completed Features (v0.1.0-rc.1)
+## Completed Features (v0.1.0)
 
 ### Core Data Structures ✓
 - [x] Series with full pandas-compatible API
@@ -266,7 +266,7 @@
 
 ## Roadmap
 
-### v0.1.0-rc.1 - Quality & Documentation Improvements (Q4 2025) ✓
+### v0.1.0 - First Stable Release (December 2025) ✓
 - [x] Improve temporary file handling in tests ✓
   - RAII wrappers for automatic cleanup (TempTestFile, TempTestDir)
   - Environment variable support (TMPDIR, TEMP, TMP)
@@ -274,8 +274,6 @@
   - Comprehensive test utilities documentation
 - [x] Support TMPDIR and other environment variables for temporary files ✓
 - [x] Implement proper test cleanup for all temporary files ✓
-
-### v0.1.0 - Performance & Stability (Q4 2025)
 - [x] Enhanced SIMD coverage for all operations ✓
 - [x] Improved memory management for large datasets ✓
   - Arena allocator for bulk memory allocation
@@ -283,7 +281,7 @@
   - Zero-copy operations and cache-aligned allocations
 - [x] Advanced query optimization ✓
 - [x] Comprehensive benchmark suite ✓
-- [ ] Production deployment guide
+- [x] Production deployment guide
 - [x] Native machine learning algorithms ✓
   - Decision Trees (CART algorithm)
   - Random Forest (bootstrap ensemble)
@@ -377,8 +375,8 @@
 
 ## Development Priorities
 
-### Immediate (Beta Phase)
-1. Address user feedback from beta testing
+### Immediate (Post-Release)
+1. Address user feedback from initial release
 2. Performance optimization for identified bottlenecks
 3. Documentation improvements
 4. Example notebook collection
@@ -433,7 +431,7 @@ We welcome contributions in the following areas:
 
 ## Release Process
 
-### Beta Phase (Current)
+### Stable Release (Current)
 1. Feature freeze - no new features
 2. Focus on stability and performance
 3. Address critical bugs only
@@ -463,4 +461,4 @@ We welcome contributions in the following areas:
 ---
 
 Last Updated: December 2025
-Maintainer: Cool Japan Team
+Maintainer: Cool Japan OU (Team KitaSan)

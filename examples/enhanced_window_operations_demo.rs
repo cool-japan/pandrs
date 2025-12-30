@@ -6,7 +6,7 @@ use pandrs::series::Series;
 
 #[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
-    println!("PandRS Alpha.7: Enhanced Window Operations Example");
+    println!("PandRS Enhanced Window Operations Example");
     println!("==================================================");
 
     // Create sample financial time series data

@@ -1,8 +1,8 @@
-# Clippy設定ファイル
-# 直接ファイルで特定の設定を行う項目はないので、
-# 警告抑制は lints を使用します
+# Clippy configuration file
+# Since there are no items that can be configured directly in this file,
+# use lints for warning suppression
 
-# エラー閾値
+# Error thresholds
 too-many-arguments-threshold = 10
 too-many-lines-threshold = 500
 type-complexity-threshold = 1000

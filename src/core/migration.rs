@@ -56,7 +56,7 @@ impl Version {
         self > other && !self.is_compatible_with(other)
     }
 
-    /// Parse version from string (e.g., "0.1.0-alpha.4")
+    /// Parse version from string (e.g., "0.1.0")
     pub fn parse(version_str: &str) -> Result<Self> {
         let parts: Vec<&str> = version_str.split('-').collect();
         let version_part = parts[0];
@@ -679,7 +679,7 @@ impl MigrationPlanBuilder {
 }
 
 /// Current version constant
-pub const CURRENT_VERSION: &str = "0.1.0-alpha.4";
+pub const CURRENT_VERSION: &str = "0.1.0";
 
 #[cfg(test)]
 mod tests {
@@ -687,11 +687,18 @@ mod tests {
 
     #[test]
     fn test_version_parsing() {
-        let version = Version::parse("0.1.0-alpha.4").unwrap();
+        let version = Version::parse("0.1.0").unwrap();
         assert_eq!(version.major, 0);
         assert_eq!(version.minor, 1);
         assert_eq!(version.patch, 0);
-        assert_eq!(version.pre_release, Some("alpha.4".to_string()));
+        assert_eq!(version.pre_release, None);
+
+        // Test pre-release version parsing
+        let pre_version = Version::parse("1.0.0-beta.1").unwrap();
+        assert_eq!(pre_version.major, 1);
+        assert_eq!(pre_version.minor, 0);
+        assert_eq!(pre_version.patch, 0);
+        assert_eq!(pre_version.pre_release, Some("beta.1".to_string()));
     }
 
     #[test]
@@ -707,8 +714,8 @@ mod tests {
 
     #[test]
     fn test_migration_plan_builder() {
-        let from_version = Version::new_pre_release(0, 1, 0, "alpha.3".to_string());
-        let to_version = Version::new_pre_release(0, 1, 0, "alpha.4".to_string());
+        let from_version = Version::new_pre_release(1, 0, 0, "alpha.1".to_string());
+        let to_version = Version::new_pre_release(1, 0, 0, "alpha.2".to_string());
 
         let step = MigrationStep {
             id: "update_traits".to_string(),

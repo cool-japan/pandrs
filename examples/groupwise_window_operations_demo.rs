@@ -6,7 +6,7 @@ use pandrs::series::Series;
 
 #[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
-    println!("PandRS Alpha.7: Group-wise Window Operations Example");
+    println!("PandRS Group-wise Window Operations Example");
     println!("===================================================");
 
     // Create sample multi-asset financial data with groups

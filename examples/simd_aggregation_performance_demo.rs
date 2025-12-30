@@ -298,11 +298,11 @@ fn verify_method_consistency(
 fn print_performance_summary() {
     println!("🎉 Performance Optimization Summary:");
     println!("===================================");
-    println!("✅ Phase 1: Eliminated expensive SplitDataFrame conversion overhead");
+    println!("✅ Step 1: Eliminated expensive SplitDataFrame conversion overhead");
     println!("   📈 Performance gain: 3-5x faster aggregations");
     println!("   🔧 Implementation: Direct column access without unnecessary copying");
     println!();
-    println!("✅ Phase 2: Added SIMD vectorization to direct aggregation methods");
+    println!("✅ Step 2: Added SIMD vectorization to direct aggregation methods");
     println!("   📈 Additional performance gain: 2-4x faster on large datasets");
     println!("   🔧 Implementation: AVX2/SSE2 SIMD instructions with null-aware fallback");
     println!();

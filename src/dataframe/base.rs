@@ -9,7 +9,7 @@ use crate::core::error::{Error, Result};
 
 // Re-export from legacy module for now
 #[deprecated(
-    since = "0.1.0-alpha.2",
+    since = "0.1.0",
     note = "Use new DataFrame implementation in crate::dataframe::base"
 )]
 pub use crate::dataframe::DataFrame as LegacyDataFrame;

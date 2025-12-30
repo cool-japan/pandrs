@@ -1,13 +1,12 @@
 # PandRS
 
-[![Rust CI](https://github.com/cool-japan/pandrs/actions/workflows/rust.yml/badge.svg)](https://github.com/cool-japan/pandrs/actions/workflows/rust.yml)
-[![License: MIT OR Apache-2.0](https://img.shields.io/badge/License-MIT%20OR%20Apache--2.0-blue.svg)](https://opensource.org/licenses/MIT)
 [![Crate](https://img.shields.io/crates/v/pandrs.svg)](https://crates.io/crates/pandrs)
+[![License: MIT OR Apache-2.0](https://img.shields.io/badge/License-MIT%20OR%20Apache--2.0-blue.svg)](https://opensource.org/licenses/MIT)
 [![Documentation](https://docs.rs/pandrs/badge.svg)](https://docs.rs/pandrs)
 
 A high-performance DataFrame library for Rust, providing pandas-like API with advanced features including SIMD optimization, parallel processing, and distributed computing capabilities.
 
-> **🚀 Release Candidate (0.1.0-rc.1) - Latest Available**: This release candidate is ready for production use with comprehensive quality improvements. With 1700+ tests, zero clippy warnings, enhanced documentation, and optimized performance, PandRS delivers a robust pandas-like experience for Rust developers. Published to crates.io December 2025.
+> **🚀 Version 0.1.0 - Production Ready**: PandRS is ready for production use with comprehensive quality improvements. With 1334+ tests, zero clippy warnings, enhanced documentation, and optimized performance, PandRS delivers a robust pandas-like experience for Rust developers. Published to crates.io December 2025.
 
 ## Overview
 
@@ -138,7 +137,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-pandrs = "0.1.0-rc.1"
+pandrs = "0.1.0"
 ```
 
 ### Feature Flags
@@ -147,7 +146,7 @@ Enable additional functionality with feature flags:
 
 ```toml
 [dependencies]
-pandrs = { version = "0.1.0-rc.1", features = ["stable"] }
+pandrs = { version = "0.1.0", features = ["stable"] }
 ```
 
 Available features:

@@ -107,7 +107,7 @@ fn main() -> Result<()> {
         println!("    num_row_groups: 10,");
         println!("    schema: \"Schema definition...\",");
         println!("    compression: \"ZSTD\",");
-        println!("    created_by: Some(\"pandrs-0.1.0-alpha.4\"),");
+        println!("    created_by: Some(\"pandrs-0.1.0\"),");
         println!("}};");
 
         // Demo: Row group analysis

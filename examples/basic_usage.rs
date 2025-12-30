@@ -5,9 +5,9 @@ use std::collections::HashMap;
 
 #[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
-    println!("=== PandRS Basic Usage Example (Beta 2) ===");
+    println!("=== PandRS Basic Usage Example ===");
 
-    // Creating Series with beta.2 features
+    // Creating Series
     let mut ages = Series::new(vec![30, 25, 40], Some("age".to_string()))?;
     let heights = Series::new(vec![180, 175, 182], Some("height".to_string()))?;
     let names = Series::new(
@@ -23,8 +23,8 @@ fn main() -> Result<()> {
     println!("Height Series: {heights:?}");
     println!("Name Series: {names:?}");
 
-    // Demonstrate new Series name management (beta.2)
-    println!("\n=== Series Name Management (Beta 2 feature) ===");
+    // Demonstrate Series name management
+    println!("\n=== Series Name Management ===");
     ages.set_name("person_age".to_string());
     println!("Updated age series name: {:?}", ages.name());
 
@@ -73,8 +73,8 @@ fn main() -> Result<()> {
     );
     println!("Column Names: {:?}", opt_df.column_names());
 
-    // Demonstrate new column management features (beta.2)
-    println!("\n=== Column Management (New in Alpha 4) ===");
+    // Demonstrate column management features
+    println!("\n=== Column Management ===");
 
     // Rename specific columns
     let mut rename_map = HashMap::new();
@@ -157,6 +157,6 @@ fn main() -> Result<()> {
         wrong_type.is_some()
     );
 
-    println!("\n🎉 Alpha 4 Basic Usage Example Complete! 🎉");
+    println!("\n🎉 Basic Usage Example Complete! 🎉");
     Ok(())
 }

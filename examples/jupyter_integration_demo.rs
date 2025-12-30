@@ -1,4 +1,4 @@
-//! Jupyter Integration Example for PandRS Alpha 4
+//! Jupyter Integration Example for PandRS
 //!
 //! This example demonstrates the comprehensive Jupyter notebook integration including:
 //! - Rich HTML display for DataFrames and Series
@@ -19,7 +19,7 @@ use std::fs;
 
 #[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
-    println!("📔 Jupyter Integration Example for PandRS Alpha 4");
+    println!("📔 Jupyter Integration Example for PandRS");
     println!("=================================================\n");
 
     // 1. Initialize Jupyter Integration
@@ -492,7 +492,7 @@ set_jupyter_config(config);
     </div>
 
     <footer style="text-align: center; margin-top: 40px; padding: 20px; color: #666;">
-        <p>🔬 <strong>PandRS Alpha 4</strong> - Enhanced DataFrame Library for Rust</p>
+        <p>🔬 <strong>PandRS 0.1.0</strong> - High-performance DataFrame Library for Rust</p>
         <p>📔 Rich Jupyter integration with interactive widgets and customizable displays</p>
     </footer>
 </body>

@@ -8,7 +8,7 @@ pub mod regression;
 
 // Add backward compatibility layer
 #[deprecated(
-    since = "0.1.0-alpha.2",
+    since = "0.1.0",
     note = "Use regression and classification modules directly instead"
 )]
 pub use regression::{
@@ -17,7 +17,7 @@ pub use regression::{
 };
 
 #[deprecated(
-    since = "0.1.0-alpha.2",
+    since = "0.1.0",
     note = "Use regression and classification modules directly instead"
 )]
 pub use classification::{accuracy_score, f1_score, precision_score, recall_score};

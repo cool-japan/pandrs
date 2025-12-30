@@ -1,4 +1,4 @@
-//! Enhanced Plotting Integration Example for PandRS Alpha 4
+//! Enhanced Plotting Integration Example for PandRS
 //!
 //! This example demonstrates the comprehensive plotting capabilities including:
 //! - Statistical plotting with various chart types
@@ -14,7 +14,7 @@ use std::collections::HashMap;
 
 #[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
-    println!("🎨 Enhanced Plotting Integration Example for PandRS Alpha 4");
+    println!("🎨 Enhanced Plotting Integration Example for PandRS");
     println!("===========================================================\n");
 
     // Create sample data for plotting demonstration

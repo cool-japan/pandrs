@@ -2,9 +2,9 @@ use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use pandrs::*;
 use std::collections::HashMap;
 
-/// Comprehensive benchmarking suite for PandRS Beta.2
+/// Comprehensive benchmarking suite for PandRS
 ///
-/// This benchmark validates all performance claims made in the beta.2 documentation
+/// This benchmark validates all performance claims made in the documentation
 /// and provides detailed performance metrics across all major features.
 // Helper function to create test data
 fn create_test_dataframe(size: usize) -> DataFrame {
@@ -89,9 +89,9 @@ fn bench_dataframe_creation(c: &mut Criterion) {
     group.finish();
 }
 
-/// Benchmark 2: Beta.2 Column Management Operations
+/// Benchmark 2: Column Management Operations
 fn bench_column_management(c: &mut Criterion) {
-    let mut group = c.benchmark_group("Beta.2 Column Management");
+    let mut group = c.benchmark_group("Column Management");
 
     for size in [1_000, 10_000, 100_000].iter() {
         // Test rename_columns performance
@@ -307,7 +307,7 @@ fn bench_series_operations(c: &mut Criterion) {
             },
         );
 
-        // Benchmark series name operations (Beta.2 feature)
+        // Benchmark series name operations
         group.bench_with_input(
             BenchmarkId::new("series_name_operations", size),
             &data,
@@ -320,7 +320,7 @@ fn bench_series_operations(c: &mut Criterion) {
             },
         );
 
-        // Benchmark series with_name (Beta.2 fluent interface)
+        // Benchmark series with_name (fluent interface)
         group.bench_with_input(
             BenchmarkId::new("series_with_name", size),
             &data,
@@ -427,7 +427,7 @@ fn bench_type_conversion(c: &mut Criterion) {
         let int_data: Vec<i32> = (0..*size).collect();
         let series = pandrs::series::Series::new(int_data, Some("test".to_string())).unwrap();
 
-        // Beta.2 enhanced type conversion
+        // Enhanced type conversion
         group.bench_with_input(
             BenchmarkId::new("to_string_series", size),
             &series,

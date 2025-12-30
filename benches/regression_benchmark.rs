@@ -293,7 +293,7 @@ fn establish_baseline() {
 
     let detector = RegressionDetector::new("benchmark_baseline.json", 0.1);
     let mut baseline = PerformanceBaseline {
-        version: "0.1.0-beta.2".to_string(),
+        version: "0.1.0".to_string(),
         timestamp: std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()

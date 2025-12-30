@@ -2255,7 +2255,7 @@ dependencies = [
 
 [[package]]
 name = "pandrs"
-version = "0.1.0-alpha.4"
+version = "0.1.0"
 dependencies = [
  "arrow 53.4.0",
  "chrono",
@@ -2287,7 +2287,7 @@ dependencies = [
 
 [[package]]
 name = "pandrs-python"
-version = "0.1.0-alpha.4"
+version = "0.1.0"
 dependencies = [
  "ndarray 0.16.1",
  "numpy",
