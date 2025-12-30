@@ -1,0 +1,29 @@
+[build-system]
+requires = ["maturin>=1.0,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "pandrs"
+version = "0.1.0"
+requires-python = ">=3.8"
+classifiers = [
+    "Programming Language :: Rust",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Scientific/Engineering :: Information Analysis",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+description = "Rust-powered DataFrame library for Python with pandas-like API"
+dependencies = [
+    "numpy>=1.20.0",
+    "pandas>=1.3.0",
+]
+
+[project.urls]
+Repository = "https://github.com/cool-japan/pandrs"
+
+[tool.maturin]
+features = ["pyo3/extension-module"]

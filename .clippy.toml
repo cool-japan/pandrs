@@ -1,0 +1,8 @@
+# Clippy configuration file
+# Since there are no items that can be configured directly in this file,
+# use lints for warning suppression
+
+# Error thresholds
+too-many-arguments-threshold = 10
+too-many-lines-threshold = 500
+type-complexity-threshold = 1000

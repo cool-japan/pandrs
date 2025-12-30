@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>PandRS - WebAssembly Visualization Example</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 20px;
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            margin-top: 0;
+        }
+        .controls {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        select, button {
+            padding: 8px 12px;
+            border-radius: 4px;
+            border: 1px solid #ddd;
+        }
+        button {
+            background-color: #4285f4;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #3367d6;
+        }
+        .chart-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+        }
+        .chart {
+            flex: 1;
+            min-width: 300px;
+            margin-bottom: 20px;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            background-color: white;
+        }
+        canvas {
+            width: 100%;
+            height: 100%;
+            max-height: 400px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>PandRS WebAssembly Visualization</h1>
+        
+        <div class="controls">
+            <select id="chartType">
+                <option value="line">Line Chart</option>
+                <option value="bar">Bar Chart</option>
+                <option value="scatter">Scatter Plot</option>
+                <option value="area">Area Chart</option>
+                <option value="pie">Pie Chart</option>
+                <option value="histogram">Histogram</option>
+                <option value="boxplot">Box Plot</option>
+                <option value="heatmap">Heat Map</option>
+            </select>
+            
+            <select id="colorTheme">
+                <option value="default">Default Theme</option>
+                <option value="dark">Dark Theme</option>
+                <option value="light">Light Theme</option>
+                <option value="pastel">Pastel Theme</option>
+                <option value="vibrant">Vibrant Theme</option>
+            </select>
+            
+            <button id="renderBtn">Render</button>
+            <button id="exportBtn">Export</button>
+        </div>
+        
+        <div class="chart-container">
+            <div class="chart">
+                <h3>Monthly Data Visualization</h3>
+                <canvas id="mainChart" width="800" height="500"></canvas>
+            </div>
+            
+            <div class="chart">
+                <h3>Category Distribution</h3>
+                <canvas id="secondaryChart" width="800" height="500"></canvas>
+            </div>
+        </div>
+    </div>
+    
+    <script type="module">
+        // Import the WebAssembly module
+        import init, { WebVisualization, WebVisualizationConfig, ColorTheme, VisualizationType } from './pkg/pandrs_wasm.js';
+        
+        // Sample data (would typically come from a backend API)
+        const sampleData = {
+            "columns": ["month", "temperature", "rainfall", "visitors", "location"],
+            "data": [
+                ["Jan", 2.5, 48.2, 15, "Urban"],
+                ["Feb", 3.1, 38.1, 18, "Urban"],
+                ["Mar", 4.8, 35.3, 25, "Urban"],
+                ["Apr", 6.3, 30.6, 32, "Urban"],
+                ["May", 8.2, 28.5, 38, "Suburban"],
+                ["Jun", 13.5, 24.1, 42, "Suburban"],
+                ["Jul", 15.1, 20.5, 50, "Suburban"],
+                ["Aug", 14.9, 22.8, 48, "Suburban"],
+                ["Sep", 11.2, 31.9, 36, "Rural"],
+                ["Oct", 8.5, 40.2, 28, "Rural"],
+                ["Nov", 5.3, 45.5, 22, "Rural"],
+                ["Dec", 3.8, 50.1, 17, "Rural"]
+            ]
+        };
+        
+        // Convert sample data to JSON suitable for PandRS
+        const dataJson = JSON.stringify({
+            "columns": sampleData.columns,
+            "data": sampleData.data
+        });
+        
+        // Initialize the WebAssembly module
+        async function initializeWasm() {
+            await init();
+            
+            // Set up event listeners
+            document.getElementById('renderBtn').addEventListener('click', renderVisualizations);
+            document.getElementById('exportBtn').addEventListener('click', exportCharts);
+            
+            // Initial render
+            renderVisualizations();
+        }
+        
+        function renderVisualizations() {
+            // Get selected options
+            const chartTypeEl = document.getElementById('chartType');
+            const themeEl = document.getElementById('colorTheme');
+            
+            const chartType = chartTypeEl.value;
+            const theme = themeEl.value;
+            
+            // Render main chart
+            renderMainChart(chartType, theme);
+            
+            // Render secondary chart (always a pie chart of locations)
+            renderSecondaryChart(theme);
+        }
+        
+        function renderMainChart(chartType, theme) {
+            try {
+                // Create visualization config
+                const config = new WebVisualizationConfig("mainChart");
+                config.set_title("Monthly Data Visualization");
+                
+                // Set chart type
+                switch (chartType) {
+                    case "line": 
+                        config.set_type(VisualizationType.Line); 
+                        break;
+                    case "bar": 
+                        config.set_type(VisualizationType.Bar); 
+                        break;
+                    case "scatter": 
+                        config.set_type(VisualizationType.Scatter); 
+                        break;
+                    case "area": 
+                        config.set_type(VisualizationType.Area); 
+                        break;
+                    case "pie": 
+                        config.set_type(VisualizationType.Pie); 
+                        break;
+                    case "histogram": 
+                        config.set_type(VisualizationType.Histogram); 
+                        break;
+                    case "boxplot": 
+                        config.set_type(VisualizationType.BoxPlot); 
+                        break;
+                    case "heatmap": 
+                        config.set_type(VisualizationType.HeatMap); 
+                        break;
+                }
+                
+                // Set theme
+                switch (theme) {
+                    case "default": 
+                        config.set_theme(ColorTheme.Default); 
+                        break;
+                    case "dark": 
+                        config.set_theme(ColorTheme.Dark); 
+                        break;
+                    case "light": 
+                        config.set_theme(ColorTheme.Light); 
+                        break;
+                    case "pastel": 
+                        config.set_theme(ColorTheme.Pastel); 
+                        break;
+                    case "vibrant": 
+                        config.set_theme(ColorTheme.Vibrant); 
+                        break;
+                }
+                
+                // Configure chart
+                config.show_tooltips(true);
+                config.show_legend(true);
+                config.animate(true);
+                
+                // Create visualization
+                const viz = new WebVisualization(config);
+                viz.set_data(dataJson);
+                
+                // Render chart
+                viz.render();
+            } catch (e) {
+                console.error("Error rendering main chart:", e);
+            }
+        }
+        
+        function renderSecondaryChart(theme) {
+            try {
+                // Create pie chart config
+                const config = new WebVisualizationConfig("secondaryChart");
+                config.set_title("Location Distribution");
+                config.set_type(VisualizationType.Pie);
+                
+                // Set theme
+                switch (theme) {
+                    case "default": 
+                        config.set_theme(ColorTheme.Default); 
+                        break;
+                    case "dark": 
+                        config.set_theme(ColorTheme.Dark); 
+                        break;
+                    case "light": 
+                        config.set_theme(ColorTheme.Light); 
+                        break;
+                    case "pastel": 
+                        config.set_theme(ColorTheme.Pastel); 
+                        break;
+                    case "vibrant": 
+                        config.set_theme(ColorTheme.Vibrant); 
+                        break;
+                }
+                
+                // Configure chart
+                config.show_tooltips(true);
+                config.show_legend(true);
+                
+                // Create visualization
+                const viz = new WebVisualization(config);
+                viz.set_data(dataJson);
+                
+                // Render chart
+                viz.render();
+            } catch (e) {
+                console.error("Error rendering secondary chart:", e);
+            }
+        }
+        
+        function exportCharts() {
+            try {
+                // Export main chart
+                const mainCanvas = document.getElementById('mainChart');
+                const mainImage = mainCanvas.toDataURL('image/png');
+                
+                // Create download link
+                const link = document.createElement('a');
+                link.href = mainImage;
+                link.download = 'pandrs_chart.png';
+                link.click();
+            } catch (e) {
+                console.error("Error exporting charts:", e);
+            }
+        }
+        
+        // Initialize when page loads
+        window.addEventListener('load', initializeWasm);
+    </script>
+</body>
+</html>
