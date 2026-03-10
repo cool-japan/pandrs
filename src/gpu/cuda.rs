@@ -139,8 +139,14 @@ pub fn matrix_multiply(a: &GpuMatrix, b: &GpuMatrix, manager: &GpuManager) -> Re
         let k = a.data.shape()[1] as i32;
 
         // Allocate device memory
-        let a_data = a.data.as_slice().unwrap();
-        let b_data = b.data.as_slice().unwrap();
+        let a_data = a
+            .data
+            .as_slice()
+            .ok_or_else(|| Error::InvalidOperation("Data not in contiguous layout".into()))?;
+        let b_data = b
+            .data
+            .as_slice()
+            .ok_or_else(|| Error::InvalidOperation("Data not in contiguous layout".into()))?;
 
         // Copy data to device using stream (cudarc 0.18+ API uses clone_htod)
         let _d_a = match stream.clone_htod(a_data) {
@@ -235,8 +241,16 @@ where
     let _kernel = cuda_context.load_kernel(op_name, ptx_code)?;
 
     // Allocate device memory
-    let a_data = a.data.as_slice().unwrap();
-    let b_data = b.data.as_slice().unwrap();
+    let a_data = a.data.as_slice().ok_or_else(|| {
+        Error::from(GpuError::DeviceError(
+            "Matrix A is not contiguous in memory".to_string(),
+        ))
+    })?;
+    let b_data = b.data.as_slice().ok_or_else(|| {
+        Error::from(GpuError::DeviceError(
+            "Matrix B is not contiguous in memory".to_string(),
+        ))
+    })?;
 
     // Copy data to device using stream (cudarc 0.18+ API uses clone_htod)
     let _d_a = match stream.clone_htod(a_data) {
@@ -621,7 +635,10 @@ pub fn matrix_sum(a: &GpuMatrix, manager: &GpuManager) -> Result<f64> {
         let total_elements = shape[0] * shape[1];
 
         // Allocate device memory
-        let a_data = a.data.as_slice().unwrap();
+        let a_data = a
+            .data
+            .as_slice()
+            .ok_or_else(|| Error::InvalidOperation("Data not in contiguous layout".into()))?;
 
         // Copy data to device using stream (cudarc 0.18+ API)
         let _d_a = match stream.clone_htod(a_data) {
@@ -705,7 +722,10 @@ pub fn sort_matrix_rows(a: &GpuMatrix, manager: &GpuManager) -> Result<GpuMatrix
 
         // For demonstration, we'll just copy the input to output
         // In a real implementation, we would perform a proper sort
-        let _a_data = a.data.as_slice().unwrap();
+        let _a_data = a
+            .data
+            .as_slice()
+            .ok_or_else(|| Error::InvalidOperation("Data not in contiguous layout".into()))?;
 
         // Create result matrix with same dimensions
         let result_data = a.data.clone();
@@ -750,8 +770,14 @@ pub fn vector_dot_product(a: &GpuVector, b: &GpuVector, manager: &GpuManager) ->
         let _n = a.data.len() as i32;
 
         // Allocate device memory
-        let a_data = a.data.as_slice().unwrap();
-        let b_data = b.data.as_slice().unwrap();
+        let a_data = a
+            .data
+            .as_slice()
+            .ok_or_else(|| Error::InvalidOperation("Data not in contiguous layout".into()))?;
+        let b_data = b
+            .data
+            .as_slice()
+            .ok_or_else(|| Error::InvalidOperation("Data not in contiguous layout".into()))?;
 
         // Copy data to device using stream (cudarc 0.18+ API)
         let _d_a = match stream.clone_htod(a_data) {
@@ -821,8 +847,14 @@ pub fn vector_add(a: &GpuVector, b: &GpuVector, manager: &GpuManager) -> Result<
         let _n = a.data.len() as i32;
 
         // Allocate device memory
-        let a_data = a.data.as_slice().unwrap();
-        let b_data = b.data.as_slice().unwrap();
+        let a_data = a
+            .data
+            .as_slice()
+            .ok_or_else(|| Error::InvalidOperation("Data not in contiguous layout".into()))?;
+        let b_data = b
+            .data
+            .as_slice()
+            .ok_or_else(|| Error::InvalidOperation("Data not in contiguous layout".into()))?;
 
         // Copy data to device using stream (cudarc 0.18+ API)
         let _d_a = match stream.clone_htod(a_data) {
@@ -885,7 +917,9 @@ pub fn vector_add(a: &GpuVector, b: &GpuVector, manager: &GpuManager) -> Result<
 /// Transfer a CPU matrix to GPU memory
 #[cfg(cuda_available)]
 fn to_gpu(matrix: &Array2<f64>, stream: &Arc<CudaStream>) -> Result<CudaSlice<f64>> {
-    let data = matrix.as_slice().unwrap();
+    let data = matrix
+        .as_slice()
+        .ok_or_else(|| Error::InvalidOperation("Data not in contiguous layout".into()))?;
     let d_data = match stream.clone_htod(data) {
         Ok(d_data) => d_data,
         Err(e) => {

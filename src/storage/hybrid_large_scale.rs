@@ -1240,12 +1240,18 @@ mod tests {
         let mut manager = TierManager::new(config);
 
         let test_data = DataChunk::new_test_data(1024);
-        let data_id = manager.store_data(test_data.clone()).unwrap();
+        let data_id = manager
+            .store_data(test_data.clone())
+            .expect("operation should succeed");
 
-        let retrieved = manager.retrieve_data(data_id).unwrap();
+        let retrieved = manager
+            .retrieve_data(data_id)
+            .expect("operation should succeed");
         assert_eq!(retrieved.len(), test_data.len());
 
-        manager.delete_data(data_id).unwrap();
+        manager
+            .delete_data(data_id)
+            .expect("operation should succeed");
     }
 
     #[test]
@@ -1263,11 +1269,17 @@ mod tests {
         let data_id = DataId(1);
         let chunk = DataChunk::new_test_data(512);
 
-        backend.store_chunk(data_id, &chunk).unwrap();
-        let retrieved = backend.retrieve_chunk(data_id).unwrap();
+        backend
+            .store_chunk(data_id, &chunk)
+            .expect("operation should succeed");
+        let retrieved = backend
+            .retrieve_chunk(data_id)
+            .expect("operation should succeed");
         assert_eq!(retrieved.len(), chunk.len());
 
-        backend.delete_chunk(data_id).unwrap();
+        backend
+            .delete_chunk(data_id)
+            .expect("operation should succeed");
         assert!(backend.retrieve_chunk(data_id).is_err());
     }
 
@@ -1286,10 +1298,14 @@ mod tests {
             ..Default::default()
         };
 
-        let handle = strategy.create_storage(&storage_config).unwrap();
+        let handle = strategy
+            .create_storage(&storage_config)
+            .expect("operation should succeed");
 
         let test_chunk = DataChunk::new_test_data(1024);
-        strategy.write_chunk(&handle, test_chunk.clone()).unwrap();
+        strategy
+            .write_chunk(&handle, test_chunk.clone())
+            .expect("operation should succeed");
 
         let range = ChunkRange::new(0, 1); // Will be interpreted as DataId(0)
                                            // Note: This test might fail because we're using random IDs

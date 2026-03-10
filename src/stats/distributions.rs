@@ -729,7 +729,7 @@ mod tests {
 
     #[test]
     fn test_normal() {
-        let dist = Normal::new(10.0, 2.0).unwrap();
+        let dist = Normal::new(10.0, 2.0).expect("operation should succeed");
 
         assert_eq!(dist.mean(), 10.0);
         assert_eq!(dist.variance(), 4.0);
@@ -740,7 +740,7 @@ mod tests {
 
     #[test]
     fn test_chi_squared() {
-        let dist = ChiSquared::new(5.0).unwrap();
+        let dist = ChiSquared::new(5.0).expect("operation should succeed");
 
         assert_eq!(dist.mean(), 5.0);
         assert_eq!(dist.variance(), 10.0);
@@ -751,7 +751,7 @@ mod tests {
 
     #[test]
     fn test_t_distribution() {
-        let dist = TDistribution::new(10.0).unwrap();
+        let dist = TDistribution::new(10.0).expect("operation should succeed");
 
         assert_eq!(dist.mean(), 0.0);
         assert!(dist.variance() > 1.0); // Should be > 1 for df > 2
@@ -762,7 +762,7 @@ mod tests {
 
     #[test]
     fn test_binomial() {
-        let dist = Binomial::new(10, 0.3).unwrap();
+        let dist = Binomial::new(10, 0.3).expect("operation should succeed");
 
         assert_eq!(dist.mean(), 3.0);
         assert!((dist.variance() - 2.1).abs() < 1e-10);
@@ -774,7 +774,7 @@ mod tests {
 
     #[test]
     fn test_poisson() {
-        let dist = Poisson::new(3.0).unwrap();
+        let dist = Poisson::new(3.0).expect("operation should succeed");
 
         assert_eq!(dist.mean(), 3.0);
         assert_eq!(dist.variance(), 3.0);

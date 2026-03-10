@@ -276,7 +276,7 @@ impl TimeSeriesFeatureExtractor {
 
         // Median and quantiles
         let mut sorted = values.to_vec();
-        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
 
         let median = if sorted.len() % 2 == 0 {
             (sorted[sorted.len() / 2 - 1] + sorted[sorted.len() / 2]) / 2.0
@@ -402,7 +402,7 @@ impl TimeSeriesFeatureExtractor {
         let dominant_idx = psd
             .iter()
             .enumerate()
-            .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
+            .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
             .map(|(idx, _)| idx)
             .unwrap_or(0);
         let dominant_frequency = frequencies[dominant_idx];
@@ -887,7 +887,11 @@ impl TimeSeriesFeatureExtractor {
         for i in 0..total_patterns {
             let pattern = &values[i..i + order];
             let mut indices: Vec<usize> = (0..order).collect();
-            indices.sort_by(|&a, &b| pattern[a].partial_cmp(&pattern[b]).unwrap());
+            indices.sort_by(|&a, &b| {
+                pattern[a]
+                    .partial_cmp(&pattern[b])
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
 
             let permutation = indices
                 .into_iter()
@@ -1208,19 +1212,27 @@ mod tests {
         let mut builder = TimeSeriesBuilder::new();
 
         for i in 0..100 {
-            let timestamp = Utc.timestamp_opt(1640995200 + i * 86400, 0).unwrap();
+            let timestamp = Utc
+                .timestamp_opt(1640995200 + i * 86400, 0)
+                .single()
+                .expect("operation should succeed");
             let value = 10.0 + i as f64 * 0.1 + (2.0 * PI * i as f64 / 10.0).sin() * 2.0;
             builder = builder.add_point(timestamp, value);
         }
 
-        builder.frequency(Frequency::Daily).build().unwrap()
+        builder
+            .frequency(Frequency::Daily)
+            .build()
+            .expect("operation should succeed")
     }
 
     #[test]
     fn test_statistical_features() {
         let ts = create_test_series();
         let extractor = TimeSeriesFeatureExtractor::new();
-        let features = extractor.extract_features(&ts).unwrap();
+        let features = extractor
+            .extract_features(&ts)
+            .expect("operation should succeed");
 
         assert!(features.statistical.mean > 0.0);
         assert!(features.statistical.std > 0.0);
@@ -1233,7 +1245,9 @@ mod tests {
     fn test_window_features() {
         let ts = create_test_series();
         let extractor = TimeSeriesFeatureExtractor::new().with_window_sizes(vec![5, 10]);
-        let features = extractor.extract_features(&ts).unwrap();
+        let features = extractor
+            .extract_features(&ts)
+            .expect("operation should succeed");
 
         assert!(features.window.moving_averages.contains_key(&5));
         assert!(features.window.moving_averages.contains_key(&10));
@@ -1245,7 +1259,9 @@ mod tests {
     fn test_frequency_features() {
         let ts = create_test_series();
         let extractor = TimeSeriesFeatureExtractor::new().with_frequency_features(true);
-        let features = extractor.extract_features(&ts).unwrap();
+        let features = extractor
+            .extract_features(&ts)
+            .expect("operation should succeed");
 
         assert!(features.frequency.dominant_frequency >= 0.0);
         assert!(!features.frequency.psd.is_empty());
@@ -1260,7 +1276,9 @@ mod tests {
     fn test_bollinger_bands() {
         let ts = create_test_series();
         let extractor = TimeSeriesFeatureExtractor::new();
-        let features = extractor.extract_features(&ts).unwrap();
+        let features = extractor
+            .extract_features(&ts)
+            .expect("operation should succeed");
 
         let bb = &features.window.bollinger_bands;
         assert_eq!(bb.upper_band.len(), ts.len());
@@ -1273,7 +1291,9 @@ mod tests {
     fn test_complexity_features() {
         let ts = create_test_series();
         let extractor = TimeSeriesFeatureExtractor::new().with_complexity_features(true);
-        let features = extractor.extract_features(&ts).unwrap();
+        let features = extractor
+            .extract_features(&ts)
+            .expect("operation should succeed");
 
         assert!(features.complexity.approximate_entropy >= 0.0);
         assert!(features.complexity.sample_entropy >= 0.0);
@@ -1288,7 +1308,9 @@ mod tests {
     fn test_zero_crossings() {
         let ts = create_test_series();
         let extractor = TimeSeriesFeatureExtractor::new();
-        let features = extractor.extract_features(&ts).unwrap();
+        let features = extractor
+            .extract_features(&ts)
+            .expect("operation should succeed");
 
         // Should have some zero crossings due to sinusoidal component
         assert!(features.statistical.zero_crossings > 0);
@@ -1298,7 +1320,9 @@ mod tests {
     fn test_peaks_valleys() {
         let ts = create_test_series();
         let extractor = TimeSeriesFeatureExtractor::new();
-        let features = extractor.extract_features(&ts).unwrap();
+        let features = extractor
+            .extract_features(&ts)
+            .expect("operation should succeed");
 
         // Should detect peaks and valleys from sinusoidal component
         assert!(features.statistical.peaks > 0);

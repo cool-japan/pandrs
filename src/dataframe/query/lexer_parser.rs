@@ -7,7 +7,7 @@ use std::iter::Peekable;
 use std::str::Chars;
 
 use super::ast::{BinaryOp, Expr, LiteralValue, Token, UnaryOp};
-use crate::core::error::{Error, Result};
+use crate::core::error::{Error, OptionExt, Result};
 
 /// Lexer for tokenizing query expressions
 pub struct Lexer {
@@ -149,7 +149,9 @@ impl Lexer {
 
     /// Read a string literal
     fn read_string(&mut self) -> Result<Token> {
-        let quote = self.chars.next().unwrap(); // consume opening quote
+        let quote = self.chars.next().ok_or_else(|| {
+            Error::InvalidInput("Expected quote character for string literal".to_string())
+        })?; // consume opening quote
         let mut value = String::new();
 
         while let Some(ch) = self.chars.next() {

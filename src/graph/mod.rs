@@ -24,13 +24,13 @@
 //! let c = graph.add_node("Charlie");
 //!
 //! // Add edges
-//! graph.add_edge(a, b, Some(1.0)).unwrap();
-//! graph.add_edge(b, c, Some(2.0)).unwrap();
-//! graph.add_edge(a, c, Some(3.0)).unwrap();
+//! graph.add_edge(a, b, Some(1.0)).expect("operation should succeed");
+//! graph.add_edge(b, c, Some(2.0)).expect("operation should succeed");
+//! graph.add_edge(a, c, Some(3.0)).expect("operation should succeed");
 //!
 //! // Check connectivity
 //! assert!(graph.has_edge(a, b));
-//! assert_eq!(graph.neighbors(a).unwrap().len(), 2);
+//! assert_eq!(graph.neighbors(a).expect("operation should succeed").len(), 2);
 //! ```
 //!
 //! # Using the Builder Pattern
@@ -62,9 +62,9 @@
 //! let b = graph.add_node("b");
 //! let c = graph.add_node("c");
 //!
-//! graph.add_edge(center, a, None).unwrap();
-//! graph.add_edge(center, b, None).unwrap();
-//! graph.add_edge(center, c, None).unwrap();
+//! graph.add_edge(center, a, None).expect("operation should succeed");
+//! graph.add_edge(center, b, None).expect("operation should succeed");
+//! graph.add_edge(center, c, None).expect("operation should succeed");
 //!
 //! let dc = degree_centrality(&graph);
 //! // Center node has highest degree centrality
@@ -82,11 +82,11 @@
 //! let b = graph.add_node("B");
 //! let c = graph.add_node("C");
 //!
-//! graph.add_edge(a, b, Some(1.0)).unwrap();
-//! graph.add_edge(b, c, Some(2.0)).unwrap();
-//! graph.add_edge(a, c, Some(5.0)).unwrap();
+//! graph.add_edge(a, b, Some(1.0)).expect("operation should succeed");
+//! graph.add_edge(b, c, Some(2.0)).expect("operation should succeed");
+//! graph.add_edge(a, c, Some(5.0)).expect("operation should succeed");
 //!
-//! let result = dijkstra_default(&graph, a).unwrap();
+//! let result = dijkstra_default(&graph, a).expect("operation should succeed");
 //! // Shortest path to C is through B (cost 3), not direct (cost 5)
 //! assert_eq!(result.distance_to(c), Some(3.0));
 //! ```
@@ -387,7 +387,9 @@ mod tests {
         let mut graph: Graph<&str, f64> = Graph::new(GraphType::Undirected);
         let a = graph.add_node("A");
         let b = graph.add_node("B");
-        graph.add_edge(a, b, Some(1.0)).unwrap();
+        graph
+            .add_edge(a, b, Some(1.0))
+            .expect("operation should succeed");
 
         assert_eq!(graph.node_count(), 2);
         assert_eq!(graph.edge_count(), 1);
@@ -413,7 +415,7 @@ mod tests {
             vec![0.0, 1.0, 0.0],
         ];
 
-        let graph = from_adjacency_matrix(&matrix, None, false).unwrap();
+        let graph = from_adjacency_matrix(&matrix, None, false).expect("operation should succeed");
         assert_eq!(graph.node_count(), 3);
         assert_eq!(graph.edge_count(), 2); // Undirected, so 2 edges
 
@@ -443,10 +445,14 @@ mod tests {
         let b = graph.add_node("B");
         let c = graph.add_node("C");
 
-        graph.add_edge(a, b, Some(1.0)).unwrap();
-        graph.add_edge(b, c, Some(2.0)).unwrap();
+        graph
+            .add_edge(a, b, Some(1.0))
+            .expect("operation should succeed");
+        graph
+            .add_edge(b, c, Some(2.0))
+            .expect("operation should succeed");
 
-        let df = to_edge_dataframe(&graph).unwrap();
+        let df = to_edge_dataframe(&graph).expect("operation should succeed");
         assert_eq!(df.row_count(), 2);
         assert!(df.column_names().contains(&"source".to_string()));
         assert!(df.column_names().contains(&"target".to_string()));

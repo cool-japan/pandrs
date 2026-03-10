@@ -342,10 +342,10 @@ where
     for (_, edge) in graph.edges() {
         let weight = weight_fn(edge);
         dist.get_mut(&edge.source)
-            .unwrap()
+            .expect("operation should succeed")
             .insert(edge.target, weight);
         next.get_mut(&edge.source)
-            .unwrap()
+            .expect("operation should succeed")
             .insert(edge.target, Some(edge.target));
     }
 
@@ -359,9 +359,13 @@ where
                 if ik < f64::INFINITY && kj < f64::INFINITY {
                     let through_k = ik + kj;
                     if through_k < dist[&i][&j] {
-                        dist.get_mut(&i).unwrap().insert(j, through_k);
+                        dist.get_mut(&i)
+                            .expect("operation should succeed")
+                            .insert(j, through_k);
                         let k_next = next[&i][&k];
-                        next.get_mut(&i).unwrap().insert(j, k_next);
+                        next.get_mut(&i)
+                            .expect("operation should succeed")
+                            .insert(j, k_next);
                     }
                 }
             }
@@ -542,7 +546,7 @@ where
         let mut next_paths: Vec<Vec<NodeId>> = Vec::new();
 
         for path in current_paths {
-            let last = *path.last().unwrap();
+            let last = *path.last().expect("operation should succeed");
 
             if let Some(neighbors) = graph.neighbors(last) {
                 for neighbor in neighbors {
@@ -685,12 +689,24 @@ mod tests {
         //     4        1        1
         //     v        v        v
         //     D --1--> E <------+
-        graph.add_edge(a, b, Some(1.0)).unwrap();
-        graph.add_edge(b, c, Some(2.0)).unwrap();
-        graph.add_edge(a, d, Some(4.0)).unwrap();
-        graph.add_edge(b, e, Some(1.0)).unwrap();
-        graph.add_edge(c, e, Some(1.0)).unwrap();
-        graph.add_edge(d, e, Some(1.0)).unwrap();
+        graph
+            .add_edge(a, b, Some(1.0))
+            .expect("operation should succeed");
+        graph
+            .add_edge(b, c, Some(2.0))
+            .expect("operation should succeed");
+        graph
+            .add_edge(a, d, Some(4.0))
+            .expect("operation should succeed");
+        graph
+            .add_edge(b, e, Some(1.0))
+            .expect("operation should succeed");
+        graph
+            .add_edge(c, e, Some(1.0))
+            .expect("operation should succeed");
+        graph
+            .add_edge(d, e, Some(1.0))
+            .expect("operation should succeed");
 
         graph
     }
@@ -701,12 +717,12 @@ mod tests {
         let a = NodeId(0);
         let e = NodeId(4);
 
-        let result = dijkstra_default(&graph, a).unwrap();
+        let result = dijkstra_default(&graph, a).expect("operation should succeed");
 
         // Shortest path A -> B -> E = 1 + 1 = 2
-        assert!((result.distance_to(e).unwrap() - 2.0).abs() < 1e-6);
+        assert!((result.distance_to(e).expect("operation should succeed") - 2.0).abs() < 1e-6);
 
-        let path = result.path_to(e).unwrap();
+        let path = result.path_to(e).expect("operation should succeed");
         assert_eq!(path.len(), 3); // A, B, E
     }
 
@@ -716,24 +732,24 @@ mod tests {
         let a = NodeId(0);
         let e = NodeId(4);
 
-        let result = bellman_ford_default(&graph, a).unwrap();
+        let result = bellman_ford_default(&graph, a).expect("operation should succeed");
 
         // Should give same result as Dijkstra for this graph
-        assert!((result.distance_to(e).unwrap() - 2.0).abs() < 1e-6);
+        assert!((result.distance_to(e).expect("operation should succeed") - 2.0).abs() < 1e-6);
     }
 
     #[test]
     fn test_floyd_warshall() {
         let graph = create_weighted_graph();
 
-        let apsp = floyd_warshall_default(&graph).unwrap();
+        let apsp = floyd_warshall_default(&graph).expect("operation should succeed");
 
         let a = NodeId(0);
         let e = NodeId(4);
 
-        assert!((apsp.distance(a, e).unwrap() - 2.0).abs() < 1e-6);
+        assert!((apsp.distance(a, e).expect("operation should succeed") - 2.0).abs() < 1e-6);
 
-        let path = apsp.path(a, e).unwrap();
+        let path = apsp.path(a, e).expect("operation should succeed");
         assert_eq!(path.len(), 3);
     }
 
@@ -747,7 +763,7 @@ mod tests {
         let result = astar(&graph, a, e, |edge| edge.weight.unwrap_or(1.0), |_| 0.0);
 
         assert!(result.is_some());
-        let (path, cost) = result.unwrap();
+        let (path, cost) = result.expect("operation should succeed");
         assert!((cost - 2.0).abs() < 1e-6);
         assert_eq!(path.len(), 3);
     }
@@ -758,7 +774,9 @@ mod tests {
         let a = graph.add_node("A");
         let b = graph.add_node("B");
 
-        graph.add_edge(a, b, Some(-1.0)).unwrap();
+        graph
+            .add_edge(a, b, Some(-1.0))
+            .expect("operation should succeed");
 
         let result = dijkstra_default(&graph, a);
         assert!(result.is_err());
@@ -771,8 +789,12 @@ mod tests {
         let b = graph.add_node("B");
         let c = graph.add_node("C");
 
-        graph.add_edge(a, b, Some(1.0)).unwrap();
-        graph.add_edge(b, c, Some(-1.0)).unwrap();
+        graph
+            .add_edge(a, b, Some(1.0))
+            .expect("operation should succeed");
+        graph
+            .add_edge(b, c, Some(-1.0))
+            .expect("operation should succeed");
 
         // Should work fine - negative weight but no negative cycle
         let result = bellman_ford_default(&graph, a);
@@ -786,9 +808,15 @@ mod tests {
         let b = graph.add_node("B");
         let c = graph.add_node("C");
 
-        graph.add_edge(a, b, Some(1.0)).unwrap();
-        graph.add_edge(b, c, Some(-2.0)).unwrap();
-        graph.add_edge(c, b, Some(0.5)).unwrap(); // Creates negative cycle B -> C -> B
+        graph
+            .add_edge(a, b, Some(1.0))
+            .expect("operation should succeed");
+        graph
+            .add_edge(b, c, Some(-2.0))
+            .expect("operation should succeed");
+        graph
+            .add_edge(c, b, Some(0.5))
+            .expect("operation should succeed"); // Creates negative cycle B -> C -> B
 
         let result = bellman_ford_default(&graph, a);
         assert!(matches!(result, Err(GraphError::NegativeWeightCycle)));

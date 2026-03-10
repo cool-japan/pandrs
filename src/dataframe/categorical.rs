@@ -196,27 +196,30 @@ impl DataFrame {
                 column
             )));
         }
-        
-        let index = self.column_names.iter().position(|c| c == column).unwrap();
+
+        let index = self.column_names.iter().position(|c| c == column)
+            .ok_or_else(|| PandRSError::Column(format!("Column '{}' not found in column_names", column)))?;
         self.column_names.remove(index);
         self.columns.remove(column);
-        
+
         // Remove categorical metadata if it exists
         let meta_key = format!("{}{}", column, CATEGORICAL_META_KEY);
         if self.contains_column(&meta_key) {
-            let index = self.column_names.iter().position(|c| c == &meta_key).unwrap();
+            let index = self.column_names.iter().position(|c| c == &meta_key)
+                .ok_or_else(|| PandRSError::Column(format!("Metadata column '{}' not found in column_names", meta_key)))?;
             self.column_names.remove(index);
             self.columns.remove(&meta_key);
         }
-        
+
         // Remove order metadata if it exists
         let order_key = format!("{}{}", column, CATEGORICAL_ORDER_META_KEY);
         if self.contains_column(&order_key) {
-            let index = self.column_names.iter().position(|c| c == &order_key).unwrap();
+            let index = self.column_names.iter().position(|c| c == &order_key)
+                .ok_or_else(|| PandRSError::Column(format!("Order metadata column '{}' not found in column_names", order_key)))?;
             self.column_names.remove(index);
             self.columns.remove(&order_key);
         }
-        
+
         Ok(())
     }
     

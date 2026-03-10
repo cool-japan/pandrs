@@ -1093,21 +1093,24 @@ mod tests {
             vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0],
             Some("x1".to_string()),
         )
-        .unwrap();
+        .expect("operation should succeed");
         let x2 = Series::new(
             vec![1.0, 1.0, 1.0, 1.0, 1.0, 2.0, 2.0, 2.0, 2.0, 2.0],
             Some("x2".to_string()),
         )
-        .unwrap();
+        .expect("operation should succeed");
         let y = Series::new(
             vec![0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0],
             Some("y".to_string()),
         )
-        .unwrap();
+        .expect("operation should succeed");
 
-        df.add_column("x1".to_string(), x1).unwrap();
-        df.add_column("x2".to_string(), x2).unwrap();
-        df.add_column("y".to_string(), y).unwrap();
+        df.add_column("x1".to_string(), x1)
+            .expect("operation should succeed");
+        df.add_column("x2".to_string(), x2)
+            .expect("operation should succeed");
+        df.add_column("y".to_string(), y)
+            .expect("operation should succeed");
 
         df
     }
@@ -1119,15 +1122,17 @@ mod tests {
             vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0],
             Some("x1".to_string()),
         )
-        .unwrap();
+        .expect("operation should succeed");
         let y = Series::new(
             vec![2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0, 20.0],
             Some("y".to_string()),
         )
-        .unwrap();
+        .expect("operation should succeed");
 
-        df.add_column("x1".to_string(), x1).unwrap();
-        df.add_column("y".to_string(), y).unwrap();
+        df.add_column("x1".to_string(), x1)
+            .expect("operation should succeed");
+        df.add_column("y".to_string(), y)
+            .expect("operation should succeed");
 
         df
     }
@@ -1141,13 +1146,15 @@ mod tests {
             .build();
 
         let mut rf = RandomForestClassifier::new(config);
-        rf.fit(&data, "y").unwrap();
+        rf.fit(&data, "y").expect("operation should succeed");
 
-        let predictions = rf.predict(&data).unwrap();
+        let predictions = rf.predict(&data).expect("operation should succeed");
         assert_eq!(predictions.len(), 10);
 
-        let metrics = rf.evaluate(&data, "y").unwrap();
-        let accuracy = metrics.get_metric("accuracy").unwrap();
+        let metrics = rf.evaluate(&data, "y").expect("operation should succeed");
+        let accuracy = metrics
+            .get_metric("accuracy")
+            .expect("operation should succeed");
         assert!(*accuracy > 0.7);
     }
 
@@ -1160,13 +1167,13 @@ mod tests {
             .build();
 
         let mut rf = RandomForestRegressor::new(config);
-        rf.fit(&data, "y").unwrap();
+        rf.fit(&data, "y").expect("operation should succeed");
 
-        let predictions = rf.predict(&data).unwrap();
+        let predictions = rf.predict(&data).expect("operation should succeed");
         assert_eq!(predictions.len(), 10);
 
-        let metrics = rf.evaluate(&data, "y").unwrap();
-        let r2 = metrics.get_metric("r2").unwrap();
+        let metrics = rf.evaluate(&data, "y").expect("operation should succeed");
+        let r2 = metrics.get_metric("r2").expect("operation should succeed");
         // Random forest may not perfectly fit linear data, so use reasonable threshold
         assert!(*r2 > 0.5, "R² should be positive (got {})", r2);
     }
@@ -1181,13 +1188,13 @@ mod tests {
             .build();
 
         let mut gb = GradientBoostingRegressor::new(config);
-        gb.fit(&data, "y").unwrap();
+        gb.fit(&data, "y").expect("operation should succeed");
 
-        let predictions = gb.predict(&data).unwrap();
+        let predictions = gb.predict(&data).expect("operation should succeed");
         assert_eq!(predictions.len(), 10);
 
-        let metrics = gb.evaluate(&data, "y").unwrap();
-        let r2 = metrics.get_metric("r2").unwrap();
+        let metrics = gb.evaluate(&data, "y").expect("operation should succeed");
+        let r2 = metrics.get_metric("r2").expect("operation should succeed");
         assert!(*r2 > 0.9);
     }
 
@@ -1201,13 +1208,15 @@ mod tests {
             .build();
 
         let mut gb = GradientBoostingClassifier::new(config);
-        gb.fit(&data, "y").unwrap();
+        gb.fit(&data, "y").expect("operation should succeed");
 
-        let predictions = gb.predict(&data).unwrap();
+        let predictions = gb.predict(&data).expect("operation should succeed");
         assert_eq!(predictions.len(), 10);
 
-        let metrics = gb.evaluate(&data, "y").unwrap();
-        let accuracy = metrics.get_metric("accuracy").unwrap();
+        let metrics = gb.evaluate(&data, "y").expect("operation should succeed");
+        let accuracy = metrics
+            .get_metric("accuracy")
+            .expect("operation should succeed");
         assert!(*accuracy > 0.7);
     }
 
@@ -1217,9 +1226,9 @@ mod tests {
         let config = RandomForestConfigBuilder::new().n_estimators(10).build();
 
         let mut rf = RandomForestClassifier::new(config);
-        rf.fit(&data, "y").unwrap();
+        rf.fit(&data, "y").expect("operation should succeed");
 
-        let probs = rf.predict_proba(&data).unwrap();
+        let probs = rf.predict_proba(&data).expect("operation should succeed");
         assert_eq!(probs.len(), 10);
 
         // Probabilities should sum to 1
@@ -1237,12 +1246,15 @@ mod tests {
             .build();
 
         let mut gb = GradientBoostingRegressor::new(config);
-        gb.fit(&data, "y").unwrap();
+        gb.fit(&data, "y").expect("operation should succeed");
 
         let scores = gb.train_scores();
         assert_eq!(scores.len(), 20);
 
         // Training loss should generally decrease
-        assert!(scores.last().unwrap() < scores.first().unwrap());
+        assert!(
+            scores.last().expect("operation should succeed")
+                < scores.first().expect("operation should succeed")
+        );
     }
 }

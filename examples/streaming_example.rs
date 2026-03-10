@@ -260,7 +260,7 @@ fn realtime_analytics_example() -> Result<()> {
     }
 
     // Stop processing
-    analytics.stop();
+    analytics.stop().expect("Failed to stop analytics");
 
     Ok(())
 }

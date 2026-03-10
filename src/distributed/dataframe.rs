@@ -5,6 +5,7 @@
 use std::sync::{Arc, Mutex};
 
 use crate::error::{Error, Result};
+use crate::lock_safe;
 use super::config::DistributedConfig;
 use super::execution::{ExecutionEngine, ExecutionContext, ExecutionPlan, ExecutionResult, Operation, AggregateExpr, JoinType, SortExpr};
 use super::partition::{PartitionSet, PartitionStrategy, Partitioner};
@@ -370,7 +371,7 @@ impl DistributedDataFrame {
         // Use a single execution for multiple operations if possible
         if self.pending_operations.len() == 1 {
             // Single operation - simple case
-            let context = result.context.lock().unwrap();
+            let context = lock_safe!(result.context, "distributed dataframe result context lock")?;
             let exec_result = context.execute(&self.pending_operations[0])?;
             result.current_result = Some(exec_result);
         } else {
@@ -416,7 +417,7 @@ impl DistributedDataFrame {
             // Fall back to sequential execution if combination failed
             if !executed {
                 for plan in &self.pending_operations {
-                    let context = result.context.lock().unwrap();
+                    let context = lock_safe!(result.context, "distributed dataframe result context lock")?;
                     let exec_result = context.execute(plan)?;
                     result.current_result = Some(exec_result);
                 }
@@ -438,7 +439,7 @@ impl DistributedDataFrame {
         }
 
         // Get the last operation
-        let plan = self.pending_operations.last().unwrap();
+        let plan = self.pending_operations.last().expect("operation should succeed");
 
         // Get the context
         let context = self.context.lock()
@@ -556,7 +557,7 @@ impl DistributedDataFrame {
         let output = format!("{}_{}", self.id, generate_unique_id());
         let plan = ExecutionPlan::new(operation, inputs, output.clone());
         
-        let context = self.context.lock().unwrap();
+        let context = lock_safe!(self.context, "distributed dataframe self context lock")?;
         let result = context.execute(&plan)?;
         
         let mut new_df = self.clone_empty();

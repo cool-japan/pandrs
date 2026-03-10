@@ -4,6 +4,7 @@
 //! resource management, scaling, and health monitoring.
 
 use crate::core::error::{Error, Result};
+use crate::lock_safe;
 use crate::ml::serving::{
     BatchPredictionRequest, BatchPredictionResponse, DeploymentConfig, HealthCheckConfig,
     HealthStatus, ModelInfo, ModelMetadata, ModelServing, MonitoringConfig, PredictionRequest,
@@ -227,7 +228,7 @@ impl DeployedModel {
 
         // Mark as running if health check passes
         {
-            let mut metrics = deployed_model.metrics.lock().unwrap();
+            let mut metrics = lock_safe!(deployed_model.metrics, "deployment metrics lock")?;
             metrics.status = DeploymentStatus::Running;
             metrics.updated_at = chrono::Utc::now();
         }
@@ -241,14 +242,14 @@ impl DeployedModel {
     }
 
     /// Get deployment metrics
-    pub fn get_metrics(&self) -> DeploymentMetrics {
-        self.metrics.lock().unwrap().clone()
+    pub fn get_metrics(&self) -> Result<DeploymentMetrics> {
+        Ok(lock_safe!(self.metrics, "deployment metrics lock for get")?.clone())
     }
 
     /// Update deployment metrics
     fn update_metrics(&self) -> Result<()> {
-        let stats = self.stats.lock().unwrap();
-        let mut metrics = self.metrics.lock().unwrap();
+        let stats = lock_safe!(self.stats, "deployment stats lock")?;
+        let mut metrics = lock_safe!(self.metrics, "deployment metrics lock for update")?;
 
         metrics.request_rate = stats.calculate_request_rate();
         metrics.avg_response_time_ms = stats.calculate_avg_response_time();
@@ -269,7 +270,7 @@ impl DeployedModel {
     fn update_health_status(&self) -> Result<()> {
         let health_result = self.model.health_check();
 
-        let mut health_status = self.health_status.lock().unwrap();
+        let mut health_status = lock_safe!(self.health_status, "deployment health status lock")?;
         match health_result {
             Ok(status) => {
                 *health_status = status;
@@ -286,7 +287,7 @@ impl DeployedModel {
 
         // Update deployment status based on health
         {
-            let mut metrics = self.metrics.lock().unwrap();
+            let mut metrics = lock_safe!(self.metrics, "deployment metrics lock")?;
             metrics.last_health_check = chrono::Utc::now();
 
             if health_status.status == "healthy" {
@@ -302,27 +303,27 @@ impl DeployedModel {
     }
 
     /// Check if scaling is needed
-    pub fn should_scale_up(&self) -> bool {
-        let metrics = self.metrics.lock().unwrap();
+    pub fn should_scale_up(&self) -> Result<bool> {
+        let metrics = lock_safe!(self.metrics, "deployment metrics lock")?;
         let config = &self.config.scaling;
 
-        metrics.cpu_utilization > config.scale_up_threshold
-            || metrics.memory_utilization > config.scale_up_threshold
+        Ok(metrics.cpu_utilization > config.scale_up_threshold
+            || metrics.memory_utilization > config.scale_up_threshold)
     }
 
     /// Check if scaling down is needed
-    pub fn should_scale_down(&self) -> bool {
-        let metrics = self.metrics.lock().unwrap();
+    pub fn should_scale_down(&self) -> Result<bool> {
+        let metrics = lock_safe!(self.metrics, "deployment metrics lock")?;
         let config = &self.config.scaling;
 
-        metrics.active_instances > config.min_instances
+        Ok(metrics.active_instances > config.min_instances
             && metrics.cpu_utilization < config.scale_down_threshold
-            && metrics.memory_utilization < config.scale_down_threshold
+            && metrics.memory_utilization < config.scale_down_threshold)
     }
 
     /// Scale up deployment
     pub fn scale_up(&self) -> Result<()> {
-        let mut metrics = self.metrics.lock().unwrap();
+        let mut metrics = lock_safe!(self.metrics, "deployment metrics lock")?;
         let config = &self.config.scaling;
 
         if metrics.active_instances < config.max_instances {
@@ -339,7 +340,7 @@ impl DeployedModel {
 
     /// Scale down deployment
     pub fn scale_down(&self) -> Result<()> {
-        let mut metrics = self.metrics.lock().unwrap();
+        let mut metrics = lock_safe!(self.metrics, "deployment metrics lock")?;
         let config = &self.config.scaling;
 
         if metrics.active_instances > config.min_instances {
@@ -356,7 +357,7 @@ impl DeployedModel {
 
     /// Stop deployment
     pub fn stop(&self) -> Result<()> {
-        let mut metrics = self.metrics.lock().unwrap();
+        let mut metrics = lock_safe!(self.metrics, "deployment metrics lock")?;
         metrics.status = DeploymentStatus::Stopping;
         metrics.updated_at = chrono::Utc::now();
 
@@ -372,7 +373,7 @@ impl DeployedModel {
     pub fn restart(&self) -> Result<()> {
         self.stop()?;
 
-        let mut metrics = self.metrics.lock().unwrap();
+        let mut metrics = lock_safe!(self.metrics, "deployment metrics lock")?;
         metrics.status = DeploymentStatus::Starting;
         metrics.active_instances = self.config.scaling.min_instances;
         metrics.updated_at = chrono::Utc::now();
@@ -381,7 +382,7 @@ impl DeployedModel {
         drop(metrics);
         self.update_health_status()?;
 
-        let mut metrics = self.metrics.lock().unwrap();
+        let mut metrics = lock_safe!(self.metrics, "deployment metrics lock")?;
         metrics.status = DeploymentStatus::Running;
 
         Ok(())
@@ -394,7 +395,7 @@ impl ModelServing for DeployedModel {
 
         // Check if deployment is healthy
         {
-            let metrics = self.metrics.lock().unwrap();
+            let metrics = lock_safe!(self.metrics, "deployment metrics lock")?;
             if metrics.status != DeploymentStatus::Running {
                 return Err(Error::InvalidOperation(format!(
                     "Deployment is not running (status: {:?})",
@@ -409,7 +410,7 @@ impl ModelServing for DeployedModel {
         // Record statistics
         let processing_time = start_time.elapsed().as_millis() as u64;
         {
-            let mut stats = self.stats.lock().unwrap();
+            let mut stats = lock_safe!(self.stats, "deployment stats lock")?;
             match &result {
                 Ok(_) => stats.record_success(processing_time),
                 Err(_) => stats.record_error(),
@@ -427,7 +428,7 @@ impl ModelServing for DeployedModel {
 
         // Check if deployment is healthy
         {
-            let metrics = self.metrics.lock().unwrap();
+            let metrics = lock_safe!(self.metrics, "deployment metrics lock")?;
             if metrics.status != DeploymentStatus::Running {
                 return Err(Error::InvalidOperation(format!(
                     "Deployment is not running (status: {:?})",
@@ -442,7 +443,7 @@ impl ModelServing for DeployedModel {
         // Record statistics
         let processing_time = start_time.elapsed().as_millis() as u64;
         {
-            let mut stats = self.stats.lock().unwrap();
+            let mut stats = lock_safe!(self.stats, "deployment stats lock")?;
             match &result {
                 Ok(response) => {
                     let avg_time = processing_time / request.data.len().max(1) as u64;
@@ -469,7 +470,7 @@ impl ModelServing for DeployedModel {
 
     fn health_check(&self) -> Result<HealthStatus> {
         self.update_health_status()?;
-        Ok(self.health_status.lock().unwrap().clone())
+        Ok(lock_safe!(self.health_status, "deployment health status lock")?.clone())
     }
 
     fn info(&self) -> ModelInfo {
@@ -483,7 +484,10 @@ impl ModelServing for DeployedModel {
 
         info.configuration.insert(
             "deployment_metrics".to_string(),
-            serde_json::to_value(&self.get_metrics()).unwrap_or(serde_json::Value::Null),
+            self.get_metrics()
+                .ok()
+                .and_then(|m| serde_json::to_value(&m).ok())
+                .unwrap_or(serde_json::Value::Null),
         );
 
         info
@@ -556,7 +560,7 @@ impl DeploymentManager {
     pub fn get_deployment_metrics(&self, deployment_name: &str) -> Option<DeploymentMetrics> {
         self.deployments
             .get(deployment_name)
-            .map(|deployment| deployment.get_metrics())
+            .and_then(|deployment| deployment.get_metrics().ok())
     }
 
     /// Scale deployment
@@ -565,7 +569,7 @@ impl DeploymentManager {
             Error::KeyNotFound(format!("Deployment '{}' not found", deployment_name))
         })?;
 
-        let current_instances = deployment.get_metrics().active_instances;
+        let current_instances = deployment.get_metrics()?.active_instances;
 
         if target_instances > current_instances {
             for _ in current_instances..target_instances {
@@ -583,9 +587,9 @@ impl DeploymentManager {
     /// Auto-scale all deployments based on metrics
     pub fn auto_scale_all(&self) -> Result<()> {
         for deployment in self.deployments.values() {
-            if deployment.should_scale_up() {
+            if deployment.should_scale_up()? {
                 deployment.scale_up()?;
-            } else if deployment.should_scale_down() {
+            } else if deployment.should_scale_down()? {
                 deployment.scale_down()?;
             }
         }

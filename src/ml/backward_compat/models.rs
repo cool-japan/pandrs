@@ -744,7 +744,9 @@ pub mod model_selection {
         
         // Add columns
         for col_name in df.column_names() {
-            let column = df.column(col_name).unwrap();
+            let column = df.column(col_name).ok_or_else(|| {
+                Error::ColumnNotFound(format!("Column '{}' not found", col_name))
+            })?;
             
             // Create column for training data
             let train_column = match column.column_type() {
@@ -914,7 +916,9 @@ pub mod model_selection {
             
             // Split data for each column
             for col_name in df.column_names() {
-                let column = df.column(col_name).unwrap();
+                let column = df.column(col_name).ok_or_else(|| {
+                    Error::ColumnNotFound(format!("Column '{}' not found", col_name))
+                })?;
                 
                 // Create columns for training and test data
                 match column.column_type() {
@@ -1090,7 +1094,9 @@ pub mod model_selection {
             
             // Split data for each column
             for col_name in df.column_names() {
-                let column = df.column(col_name).unwrap();
+                let column = df.column(col_name).ok_or_else(|| {
+                    Error::ColumnNotFound(format!("Column '{}' not found", col_name))
+                })?;
                 
                 // Extract values based on indices
                 match column.column_type() {

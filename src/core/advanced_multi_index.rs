@@ -16,13 +16,25 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt;
 use std::sync::Arc;
 
-/// Value type for MultiIndex entries
+/// Value type for MultiIndex entries.
+///
+/// Represents the possible value types that can be used in a multi-level index.
+/// All types implement `Ord` to enable sorted operations and efficient lookups.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum IndexValue {
+    /// String value for text-based indexing.
     String(String),
+
+    /// Integer value for numeric indexing.
     Integer(i64),
+
+    /// Floating point value wrapped in OrderedFloat for comparisons.
     Float(OrderedFloat),
+
+    /// Boolean value for binary indexing.
     Boolean(bool),
+
+    /// Null value representing missing or undefined index entries.
     Null,
 }
 
@@ -73,11 +85,18 @@ pub struct AdvancedMultiIndex {
     xs_cache: HashMap<CrossSectionKey, Vec<usize>>,
 }
 
-/// Key for cross-section selection
+/// Key for cross-section selection.
+///
+/// Used internally to cache cross-section query results for improved performance.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct CrossSectionKey {
+    /// The level index to query on.
     pub level: usize,
+
+    /// The value to match at this level.
     pub key: IndexValue,
+
+    /// Whether to drop this level from the result index.
     pub drop_level: bool,
 }
 
@@ -619,12 +638,23 @@ impl AdvancedMultiIndex {
 
 /// Cache statistics for performance monitoring
 #[derive(Debug, Clone)]
+/// Statistics about the cross-section cache.
+///
+/// Used to monitor cache size and determine when to clear the cache.
 pub struct CacheStats {
+    /// Current number of entries in the cache.
     pub size: usize,
+
+    /// Maximum recommended cache size before clearing.
     pub max_recommended_size: usize,
 }
 
 impl CacheStats {
+    /// Returns whether the cache should be cleared based on current size.
+    ///
+    /// # Returns
+    ///
+    /// `true` if the cache size exceeds the maximum recommended size.
     pub fn should_clear(&self) -> bool {
         self.size > self.max_recommended_size
     }
@@ -719,7 +749,7 @@ mod tests {
             vec![IndexValue::from("B"), IndexValue::from(2)],
         ];
 
-        let index = AdvancedMultiIndex::new(tuples, None).unwrap();
+        let index = AdvancedMultiIndex::new(tuples, None).expect("operation should succeed");
         assert_eq!(index.n_levels(), 2);
         assert_eq!(index.len(), 4);
     }
@@ -733,15 +763,19 @@ mod tests {
             vec![IndexValue::from("B"), IndexValue::from(2)],
         ];
 
-        let mut index = AdvancedMultiIndex::new(tuples, None).unwrap();
+        let mut index = AdvancedMultiIndex::new(tuples, None).expect("operation should succeed");
 
         // Select all rows with 'A' at level 0
-        let result = index.xs(IndexValue::from("A"), 0, false).unwrap();
+        let result = index
+            .xs(IndexValue::from("A"), 0, false)
+            .expect("operation should succeed");
         assert_eq!(result.indices, vec![0, 1]);
         assert!(result.found);
 
         // Select all rows with value 1 at level 1
-        let result = index.xs(IndexValue::from(1), 1, false).unwrap();
+        let result = index
+            .xs(IndexValue::from(1), 1, false)
+            .expect("operation should succeed");
         assert_eq!(result.indices, vec![0, 2]);
         assert!(result.found);
     }
@@ -771,13 +805,13 @@ mod tests {
             ],
         ];
 
-        let index = AdvancedMultiIndex::new(tuples, None).unwrap();
+        let index = AdvancedMultiIndex::new(tuples, None).expect("operation should succeed");
 
         // Exact match on multiple levels
         let criteria =
             SelectionCriteria::Exact(vec![(0, IndexValue::from("A")), (1, IndexValue::from(1))]);
 
-        let result = index.select(criteria).unwrap();
+        let result = index.select(criteria).expect("operation should succeed");
         assert_eq!(result, vec![0]);
     }
 
@@ -790,11 +824,11 @@ mod tests {
             vec![IndexValue::from("B"), IndexValue::from(7)],
         ];
 
-        let index = AdvancedMultiIndex::new(tuples, None).unwrap();
+        let index = AdvancedMultiIndex::new(tuples, None).expect("operation should succeed");
 
         // Range selection on level 1 (values 2-6)
         let criteria = SelectionCriteria::Range(1, IndexValue::from(2), IndexValue::from(6));
-        let result = index.select(criteria).unwrap();
+        let result = index.select(criteria).expect("operation should succeed");
         assert_eq!(result, vec![1, 2]); // Values 5 and 3
     }
 
@@ -807,10 +841,10 @@ mod tests {
             vec![IndexValue::from("B"), IndexValue::from(2)],
         ];
 
-        let index = AdvancedMultiIndex::new(tuples, None).unwrap();
+        let index = AdvancedMultiIndex::new(tuples, None).expect("operation should succeed");
 
         let criteria = SelectionCriteria::Boolean(vec![true, false, true, false]);
-        let result = index.select(criteria).unwrap();
+        let result = index.select(criteria).expect("operation should succeed");
         assert_eq!(result, vec![0, 2]);
     }
 
@@ -839,16 +873,18 @@ mod tests {
             ],
         ];
 
-        let index = AdvancedMultiIndex::new(tuples, None).unwrap();
+        let index = AdvancedMultiIndex::new(tuples, None).expect("operation should succeed");
 
         // Get unique keys for first two levels
-        let keys = index.get_group_keys(&[0, 1]).unwrap();
+        let keys = index
+            .get_group_keys(&[0, 1])
+            .expect("operation should succeed");
         assert_eq!(keys.len(), 4); // All combinations are unique
 
         // Get indices for specific group
         let indices = index
             .get_group_indices(&[0], &[IndexValue::from("A")])
-            .unwrap();
+            .expect("operation should succeed");
         assert_eq!(indices, vec![0, 1]);
     }
 
@@ -873,17 +909,19 @@ mod tests {
             Some("third".to_string()),
         ]);
 
-        let index = AdvancedMultiIndex::new(tuples, names).unwrap();
+        let index = AdvancedMultiIndex::new(tuples, names).expect("operation should succeed");
 
         // Reorder levels: [2, 0, 1]
-        let reordered = index.reorder_levels(&[2, 0, 1]).unwrap();
+        let reordered = index
+            .reorder_levels(&[2, 0, 1])
+            .expect("operation should succeed");
 
         assert_eq!(reordered.level_names()[0], Some("third".to_string()));
         assert_eq!(reordered.level_names()[1], Some("first".to_string()));
         assert_eq!(reordered.level_names()[2], Some("second".to_string()));
 
         // Check that data was reordered correctly
-        let first_tuple = reordered.get_tuple(0).unwrap();
+        let first_tuple = reordered.get_tuple(0).expect("operation should succeed");
         assert_eq!(first_tuple[0], IndexValue::from("X")); // Originally at level 2
         assert_eq!(first_tuple[1], IndexValue::from("A")); // Originally at level 0
         assert_eq!(first_tuple[2], IndexValue::from(1)); // Originally at level 1

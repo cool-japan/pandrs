@@ -96,7 +96,7 @@ pub fn describe(data: &[f64]) -> Result<StatisticalSummary> {
     }
 
     let mut sorted_data = data.to_vec();
-    sorted_data.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    sorted_data.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
 
     let count = data.len();
     let mean = data.iter().sum::<f64>() / count as f64;
@@ -316,7 +316,7 @@ fn detect_outliers(data: &[f64], mean: f64, std: f64, q1: f64, q3: f64) -> Resul
     let median = percentile(
         &{
             let mut sorted = data.to_vec();
-            sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
             sorted
         },
         50.0,
@@ -325,7 +325,7 @@ fn detect_outliers(data: &[f64], mean: f64, std: f64, q1: f64, q3: f64) -> Resul
     let mad = {
         let deviations: Vec<f64> = data.iter().map(|&x| (x - median).abs()).collect();
         let mut sorted_deviations = deviations;
-        sorted_deviations.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        sorted_deviations.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
         percentile(&sorted_deviations, 50.0)?
     };
 
@@ -451,7 +451,7 @@ fn calculate_ranks(data: &[f64]) -> Vec<f64> {
         data.iter().enumerate().map(|(i, &val)| (i, val)).collect();
 
     // Sort by value
-    indexed_data.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+    indexed_data.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
 
     let mut ranks = vec![0.0; n];
 
@@ -612,7 +612,7 @@ mod tests {
     #[test]
     fn test_describe() {
         let data = vec![1.0, 2.0, 3.0, 4.0, 5.0];
-        let summary = describe(&data).unwrap();
+        let summary = describe(&data).expect("operation should succeed");
 
         assert_eq!(summary.count, 5);
         assert_eq!(summary.mean, 3.0);
@@ -626,9 +626,18 @@ mod tests {
     fn test_percentile() {
         let data = vec![1.0, 2.0, 3.0, 4.0, 5.0];
 
-        assert_eq!(percentile(&data, 0.0).unwrap(), 1.0);
-        assert_eq!(percentile(&data, 50.0).unwrap(), 3.0);
-        assert_eq!(percentile(&data, 100.0).unwrap(), 5.0);
+        assert_eq!(
+            percentile(&data, 0.0).expect("operation should succeed"),
+            1.0
+        );
+        assert_eq!(
+            percentile(&data, 50.0).expect("operation should succeed"),
+            3.0
+        );
+        assert_eq!(
+            percentile(&data, 100.0).expect("operation should succeed"),
+            5.0
+        );
     }
 
     #[test]
@@ -636,7 +645,7 @@ mod tests {
         let x = vec![1.0, 2.0, 3.0, 4.0, 5.0];
         let y = vec![2.0, 4.0, 6.0, 8.0, 10.0];
 
-        let corr = pearson_correlation(&x, &y).unwrap();
+        let corr = pearson_correlation(&x, &y).expect("operation should succeed");
         assert!((corr - 1.0).abs() < 1e-10); // Perfect correlation
     }
 
@@ -648,7 +657,7 @@ mod tests {
             vec![1.0, 3.0, 2.0],
         ];
 
-        let matrix = correlation_matrix(&data).unwrap();
+        let matrix = correlation_matrix(&data).expect("operation should succeed");
 
         // Diagonal should be 1.0
         assert!((matrix[0][0] - 1.0).abs() < 1e-10);
@@ -662,7 +671,7 @@ mod tests {
     #[test]
     fn test_outlier_detection() {
         let data = vec![1.0, 2.0, 3.0, 4.0, 5.0, 100.0]; // 100 is an outlier
-        let summary = describe(&data).unwrap();
+        let summary = describe(&data).expect("operation should succeed");
 
         assert!(!summary.outliers.iqr_outliers.is_empty());
         assert!(summary.outliers.iqr_outliers.contains(&100.0));
@@ -686,7 +695,7 @@ mod tests {
         let x = vec![1.0, 2.0, 3.0, 4.0, 5.0];
         let y = vec![1.0, 4.0, 9.0, 16.0, 25.0]; // Monotonic but not linear
 
-        let spearman = spearman_correlation(&x, &y).unwrap();
+        let spearman = spearman_correlation(&x, &y).expect("operation should succeed");
         assert!((spearman - 1.0).abs() < 1e-10); // Perfect rank correlation
     }
 }

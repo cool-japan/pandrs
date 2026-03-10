@@ -161,6 +161,22 @@ pub enum Error {
     #[error("Other error: {0}")]
     Other(String),
 
+    /// Lock poisoned error - occurs when a thread panics while holding a lock
+    #[error("Lock poisoned: {context}")]
+    LockPoisoned { context: String },
+
+    /// Type mismatch error
+    #[error("Type mismatch: {0}")]
+    TypeMismatch(String),
+
+    /// Parse error
+    #[error("Parse error: failed to parse '{value}' as {target_type}: {error_msg}")]
+    ParseError {
+        value: String,
+        target_type: String,
+        error_msg: String,
+    },
+
     /// Enhanced error with context
     #[error("Enhanced error: {message}")]
     Enhanced {
@@ -174,6 +190,95 @@ pub type PandRSError = Error;
 
 /// Result type alias
 pub type Result<T> = std::result::Result<T, Error>;
+
+impl Error {
+    /// Create a lock poisoned error
+    ///
+    /// # Arguments
+    /// * `context` - Context string describing where the lock poison occurred
+    ///
+    /// # Returns
+    /// * `Error::LockPoisoned` - The lock poisoned error
+    pub fn lock_poisoned(context: impl Into<String>) -> Self {
+        Error::LockPoisoned {
+            context: context.into(),
+        }
+    }
+
+    /// Create an index out of bounds error
+    ///
+    /// # Arguments
+    /// * `index` - The index that was out of bounds
+    /// * `size` - The size of the collection
+    ///
+    /// # Returns
+    /// * `Error::IndexOutOfBounds` - The index out of bounds error
+    pub fn index_out_of_bounds(index: usize, size: usize) -> Self {
+        Error::IndexOutOfBounds { index, size }
+    }
+
+    /// Create a parse error
+    ///
+    /// # Arguments
+    /// * `value` - The string value that failed to parse
+    /// * `target_type` - The target type we tried to parse into
+    /// * `err` - The underlying error
+    ///
+    /// # Returns
+    /// * `Error::ParseError` - The parse error
+    pub fn parse_error<T: std::fmt::Display>(value: &str, target_type: &str, err: T) -> Self {
+        Error::ParseError {
+            value: value.to_string(),
+            target_type: target_type.to_string(),
+            error_msg: err.to_string(),
+        }
+    }
+}
+
+/// Extension trait for Option to provide ergonomic error conversion
+pub trait OptionExt<T> {
+    /// Convert None to an index out of bounds error
+    ///
+    /// # Arguments
+    /// * `index` - The index that was out of bounds
+    /// * `size` - The size of the collection
+    ///
+    /// # Returns
+    /// * `Result<T>` - Ok if Some, Err with index error if None
+    fn ok_or_index_error(self, index: usize, size: usize) -> Result<T>;
+
+    /// Convert None to a column not found error
+    ///
+    /// # Arguments
+    /// * `column` - The column name that was not found
+    ///
+    /// # Returns
+    /// * `Result<T>` - Ok if Some, Err with column error if None
+    fn ok_or_column_error(self, column: impl Into<String>) -> Result<T>;
+
+    /// Convert None to an empty data error
+    ///
+    /// # Arguments
+    /// * `context` - Context string for the error
+    ///
+    /// # Returns
+    /// * `Result<T>` - Ok if Some, Err with empty data error if None
+    fn ok_or_empty_error(self, context: impl Into<String>) -> Result<T>;
+}
+
+impl<T> OptionExt<T> for Option<T> {
+    fn ok_or_index_error(self, index: usize, size: usize) -> Result<T> {
+        self.ok_or_else(|| Error::index_out_of_bounds(index, size))
+    }
+
+    fn ok_or_column_error(self, column: impl Into<String>) -> Result<T> {
+        self.ok_or_else(|| Error::ColumnNotFound(column.into()))
+    }
+
+    fn ok_or_empty_error(self, context: impl Into<String>) -> Result<T> {
+        self.ok_or_else(|| Error::EmptyData(context.into()))
+    }
+}
 
 // Conversions from standard errors (From implementations are automatically implemented by #[derive(Error)])
 impl From<csv::Error> for Error {
@@ -235,6 +340,28 @@ impl ErrorRecovery for Error {
                     format!("Invalid input: {}", msg),
                     "Check input data format and types".to_string(),
                     "Refer to documentation for expected input format".to_string(),
+                ]
+            }
+            Error::LockPoisoned { context } => {
+                vec![
+                    format!("Lock poisoned: {}", context),
+                    "A thread panicked while holding this lock".to_string(),
+                    "Consider restarting the operation or reinitializing the data structure"
+                        .to_string(),
+                ]
+            }
+            Error::ParseError {
+                value,
+                target_type,
+                error_msg,
+            } => {
+                vec![
+                    format!(
+                        "Failed to parse '{}' as {}: {}",
+                        value, target_type, error_msg
+                    ),
+                    "Check the input format matches the expected type".to_string(),
+                    "Verify the data source provides valid values".to_string(),
                 ]
             }
             Error::Enhanced { context, .. } => context.suggested_fixes.clone(),

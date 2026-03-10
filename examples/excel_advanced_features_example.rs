@@ -362,7 +362,7 @@ fn large_file_optimization_example(large_df: &DataFrame) -> Result<()> {
 
     // Memory-efficient processing simulation
     let chunk_size = 5000;
-    let num_chunks = large_df.row_count().div_ceil(chunk_size);
+    let num_chunks = (large_df.row_count() + chunk_size - 1) / chunk_size;
 
     println!("  Processing in chunks:");
     println!("    • Chunk size: {} rows", chunk_size);

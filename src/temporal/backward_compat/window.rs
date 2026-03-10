@@ -802,7 +802,7 @@ impl<'a, T: Temporal> Window<'a, T> {
                     }
                     NA::NA => {
                         // Maintain the previous value for NA
-                        result_values.push(result_values.last().unwrap().clone());
+                        result_values.push(result_values.last().expect("operation should succeed").clone());
                     }
                 }
             }

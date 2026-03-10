@@ -1,12 +1,19 @@
 # PandRS
 
 [![Crate](https://img.shields.io/crates/v/pandrs.svg)](https://crates.io/crates/pandrs)
-[![License: MIT OR Apache-2.0](https://img.shields.io/badge/License-MIT%20OR%20Apache--2.0-blue.svg)](https://opensource.org/licenses/MIT)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 [![Documentation](https://docs.rs/pandrs/badge.svg)](https://docs.rs/pandrs)
+![Tests](https://img.shields.io/badge/tests-1819%20passing-brightgreen.svg)
 
 A high-performance DataFrame library for Rust, providing pandas-like API with advanced features including SIMD optimization, parallel processing, and distributed computing capabilities.
 
-> **🚀 Version 0.1.0 - Production Ready**: PandRS is ready for production use with comprehensive quality improvements. With 1334+ tests, zero clippy warnings, enhanced documentation, and optimized performance, PandRS delivers a robust pandas-like experience for Rust developers. Published to crates.io December 2025.
+> **Version 0.2.0 - March 2026**: PandRS is under active development with ongoing quality improvements. With **1819 tests passing**, enhanced documentation, and optimized performance, PandRS delivers a robust pandas-like experience for Rust developers.
+
+## Code Quality Highlights
+
+**Comprehensive Testing**: 1819 tests passing (nextest) + 157 doc tests with extensive coverage
+**Active Development**: Ongoing improvements to error handling and code quality (632 Rust files, 204,203 lines of code)
+**Production-Ready Error Handling**: Established error handling patterns with descriptive messages
 
 ## Overview
 
@@ -131,13 +138,88 @@ let grouped = df.groupby(vec!["department"])?.agg(HashMap::from([
 - Azure Blob Storage
 - HTTP/HTTPS endpoints
 
+### Security Features
+
+Enterprise-grade security features for data protection and access control:
+
+#### Authentication & Authorization
+- **JWT (JSON Web Tokens)**: Stateless authentication with token validation
+- **OAuth 2.0**: Industry-standard authorization framework
+- **API Key Management**: Secure API key generation and validation
+- **Session Management**: User session tracking and lifecycle management
+
+#### Access Control
+- **Role-Based Access Control (RBAC)**: Fine-grained permission management
+- **Multi-tenancy Support**: Isolated data access per tenant
+- **Resource-level Permissions**: Control access to specific datasets and operations
+
+#### Security Monitoring
+- **Audit Logging**: Comprehensive tracking of data access and modifications
+- **Security Events**: Real-time monitoring of authentication and authorization events
+- **Compliance Support**: Features designed to meet security compliance requirements
+
+See `examples/security_jwt_oauth_example.rs` and `examples/security_rbac_example.rs` for implementation details.
+
+### Real-Time Analytics
+
+Built-in analytics engine for monitoring and performance tracking:
+
+#### Metrics Collection
+- **Counters**: Track cumulative values and event counts
+- **Gauges**: Monitor current values and resource levels
+- **Histograms**: Measure distribution of values over time
+- **Timers**: Track operation durations and performance
+
+#### Operation Tracking
+- **DataFrame Operations**: Monitor query execution and data transformations
+- **Resource Monitoring**: Track memory usage, CPU utilization, and I/O operations
+- **Performance Profiling**: Identify bottlenecks and optimization opportunities
+
+#### Alert Management
+- **Threshold-based Alerts**: Trigger notifications when metrics exceed limits
+- **Custom Alert Rules**: Define complex alerting conditions
+- **Alert History**: Track and analyze past alerts
+
+#### Visualization
+- **Real-time Dashboards**: Monitor system health and performance metrics
+- **Metric Aggregation**: Combine and analyze metrics across dimensions
+- **Export Capabilities**: Export metrics to external monitoring systems
+
+See `examples/analytics_dashboard_example.rs` for comprehensive usage examples.
+
+### Machine Learning
+
+Advanced machine learning capabilities integrated with DataFrame operations:
+
+#### Supervised Learning
+- **Decision Trees**: Classification and regression with interpretable models
+- **Random Forests**: Ensemble methods for improved accuracy
+- **Gradient Boosting**: High-performance boosting algorithms
+- **Neural Networks**: Deep learning with configurable architectures
+
+#### Time Series Forecasting
+- **ARIMA Models**: AutoRegressive Integrated Moving Average
+- **Exponential Smoothing**: Trend and seasonality modeling
+- **Prophet Integration**: Facebook's forecasting library support
+- **Feature Engineering**: Automatic lag features and date components
+
+#### Model Pipeline
+- **Feature Preprocessing**: Scaling, normalization, and encoding
+- **Model Training**: Unified API for training various algorithms
+- **Cross-validation**: K-fold and time series cross-validation
+- **Hyperparameter Tuning**: Grid search and random search optimization
+
+See `examples/ml_neural_network_example.rs`, `examples/ml_decision_tree_example.rs`,
+`examples/ml_random_forest_example.rs`, `examples/ml_gradient_boosting_example.rs`,
+and `examples/time_series_forecasting_example.rs` for detailed examples.
+
 ## Installation
 
 Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-pandrs = "0.1.0"
+pandrs = "0.2.0"
 ```
 
 ### Feature Flags
@@ -146,12 +228,11 @@ Enable additional functionality with feature flags:
 
 ```toml
 [dependencies]
-pandrs = { version = "0.1.0", features = ["stable"] }
+pandrs = { version = "0.2.0", features = ["optimized"] }
 ```
 
 Available features:
 - **Core features:**
-  - `stable`: Recommended stable feature set
   - `optimized`: Performance optimizations and SIMD
   - `backward_compat`: Backward compatibility support
 - **Data formats:**
@@ -163,13 +244,11 @@ Available features:
   - `visualization`: Plotting capabilities
   - `streaming`: Real-time data processing
   - `serving`: Model serving and deployment
+  - `scirs2`: SciRS2 scientific computing integration
 - **Experimental:**
   - `cuda`: GPU acceleration (requires CUDA toolkit)
   - `wasm`: WebAssembly compilation support
   - `jit`: Just-in-time compilation
-- **Feature bundles:**
-  - `all-safe`: All stable features (recommended)
-  - `test-safe`: Features safe for testing
 
 ## Performance Benchmarks
 
@@ -193,6 +272,46 @@ Performance comparison with pandas (Python) and Polars (Rust):
 - [Migration from Pandas](https://github.com/cool-japan/pandrs/wiki/Migration-Guide)
 
 ## Examples
+
+The `examples/` directory contains comprehensive examples demonstrating all major features:
+
+### Data Manipulation & Analysis
+- **Basic Operations**: `groupby_example.rs`, `transform_example.rs`, `pivot_example.rs`
+- **Time Series**: `time_series_example.rs`, `time_series_forecasting_example.rs`, `datetime_accessor_example.rs`
+- **Window Operations**: `window_operations_example.rs`, `comprehensive_window_example.rs`, `dataframe_window_example.rs`
+- **Multi-Index**: `multi_index_example.rs`, `hierarchical_groupby_example.rs`, `nested_group_operations_example.rs`
+- **Categorical Data**: `categorical_example.rs`, `categorical_na_example.rs`
+
+### Machine Learning
+- **Neural Networks**: `ml_neural_network_example.rs`
+- **Decision Trees**: `ml_decision_tree_example.rs`
+- **Random Forests**: `ml_random_forest_example.rs`
+- **Gradient Boosting**: `ml_gradient_boosting_example.rs`
+- **ML Pipelines**: `optimized_ml_pipeline_example.rs`, `optimized_ml_feature_engineering_example.rs`
+- **Specialized ML**: `optimized_ml_clustering_example.rs`, `optimized_ml_anomaly_detection_example.rs`, `optimized_ml_dimension_reduction_example.rs`
+
+### Security & Authentication
+- **JWT & OAuth 2.0**: `security_jwt_oauth_example.rs`
+- **Role-Based Access Control**: `security_rbac_example.rs`
+
+### Real-Time Analytics
+- **Analytics Dashboard**: `analytics_dashboard_example.rs`
+
+### I/O & Data Formats
+- **CSV**: Examples integrated into basic operations
+- **Parquet**: `parquet_example.rs`, `parquet_advanced_example.rs`, `parquet_advanced_features_example.rs`
+- **Excel**: `excel_multisheet_example.rs`, `excel_advanced_features_example.rs`
+- **SQL/Databases**: `sql_advanced_example.rs`, `database_integration_example.rs`
+
+### Performance & Optimization
+- **SIMD & Parallel**: `parallel_example.rs`, `optimized_dataframe_example.rs`, `optimized_large_dataset_example.rs`
+- **GPU Acceleration**: `gpu_dataframe_example.rs`, `gpu_ml_example.rs`, `gpu_benchmark_example.rs`
+- **Distributed Computing**: `distributed_example.rs`, `distributed_window_example.rs`, `distributed_fault_tolerance_example.rs`
+- **JIT Compilation**: `jit_parallel_example.rs`, `jit_window_operations_example.rs`
+- **Streaming**: `streaming_example.rs`
+
+### Visualization
+- **Plotters Integration**: `visualization_plotters_example.rs`, `plotters_visualization_example.rs`, `enhanced_visualization_example.rs`
 
 ### Basic Data Analysis
 
@@ -298,14 +417,24 @@ cargo clippy -- -D warnings
 cargo fmt -- --check
 ```
 
+## Sponsorship
+
+PandRS is developed and maintained by **COOLJAPAN OU (Team Kitasan)**.
+
+If you find PandRS useful, please consider sponsoring the project to support continued development of the Pure Rust ecosystem.
+
+[![Sponsor](https://img.shields.io/badge/Sponsor-%E2%9D%A4-red?logo=github)](https://github.com/sponsors/cool-japan)
+
+**[https://github.com/sponsors/cool-japan](https://github.com/sponsors/cool-japan)**
+
+Your sponsorship helps us:
+- Maintain and improve the COOLJAPAN ecosystem
+- Keep the entire ecosystem (OxiBLAS, OxiFFT, SciRS2, etc.) 100% Pure Rust
+- Provide long-term support and security updates
+
 ## License
 
-Licensed under either of:
-
-- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or <http://www.apache.org/licenses/LICENSE-2.0>)
-- MIT license ([LICENSE-MIT](LICENSE-MIT) or <http://opensource.org/licenses/MIT>)
-
-at your option.
+Licensed under the Apache License, Version 2.0 ([LICENSE](LICENSE) or <http://www.apache.org/licenses/LICENSE-2.0>).
 
 ## Acknowledgments
 
@@ -323,4 +452,4 @@ PandRS is inspired by the excellent pandas library and incorporates ideas from:
 
 ---
 
-PandRS is a Cool Japan project, bringing high-performance data analysis to the Rust ecosystem.
+PandRS is a COOLJAPAN project, bringing high-performance data analysis to the Rust ecosystem.

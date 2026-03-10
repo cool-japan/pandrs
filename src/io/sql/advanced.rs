@@ -33,7 +33,7 @@ impl AsyncDatabasePool {
     ///
     /// async fn example(pool: &AsyncDatabasePool) {
     ///     let params = vec![SqlValue::Integer(25)];
-    ///     let df = pool.query_async("SELECT * FROM users WHERE age > ?", Some(params)).await.unwrap();
+    ///     let df = pool.query_async("SELECT * FROM users WHERE age > ?", Some(params)).await.expect("operation should succeed");
     /// }
     /// ```
     #[cfg(feature = "sql")]
@@ -82,7 +82,7 @@ impl AsyncDatabasePool {
     ///
     /// async fn example(pool: &AsyncDatabasePool, df: &DataFrame) {
     ///     let options = SqlWriteOptions::default();
-    ///     let rows_inserted = pool.bulk_insert_async("users", df, options).await.unwrap();
+    ///     let rows_inserted = pool.bulk_insert_async("users", df, options).await.expect("operation should succeed");
     /// }
     /// ```
     #[cfg(feature = "sql")]
@@ -151,7 +151,7 @@ impl AsyncDatabasePool {
     ///     let df = pool.query_with_params(
     ///         "SELECT * FROM users WHERE name = ? AND age > ?",
     ///         params
-    ///     ).await.unwrap();
+    ///     ).await.expect("operation should succeed");
     /// }
     /// ```
     #[cfg(feature = "sql")]
@@ -206,7 +206,7 @@ impl AsyncDatabasePool {
     ///         "SELECT COUNT(*) FROM orders".to_string(),
     ///         "SELECT COUNT(*) FROM products".to_string(),
     ///     ];
-    ///     let results = pool.parallel_queries(queries).await.unwrap();
+    ///     let results = pool.parallel_queries(queries).await.expect("operation should succeed");
     /// }
     /// ```
     #[cfg(feature = "sql")]
@@ -238,7 +238,7 @@ impl AsyncDatabasePool {
     /// use pandrs::io::sql::AsyncDatabasePool;
     ///
     /// async fn example(pool: &AsyncDatabasePool) {
-    ///     let chunks = pool.stream_query("SELECT * FROM large_table", 1000).await.unwrap();
+    ///     let chunks = pool.stream_query("SELECT * FROM large_table", 1000).await.expect("operation should succeed");
     ///     for (i, chunk) in chunks.iter().enumerate() {
     ///         println!("Chunk {}: {} rows", i, chunk.row_count());
     ///     }
@@ -300,7 +300,7 @@ impl TransactionManager {
     ///         DatabaseOperation::Query("SELECT COUNT(*) FROM orders".to_string()),
     ///         DatabaseOperation::Execute("UPDATE orders SET status = 'processed'".to_string()),
     ///     ];
-    ///     let results = tx_manager.execute_transaction(ops).await.unwrap();
+    ///     let results = tx_manager.execute_transaction(ops).await.expect("operation should succeed");
     /// }
     /// ```
     #[cfg(feature = "sql")]
@@ -363,7 +363,7 @@ impl TransactionManager {
     ///         vec![DatabaseOperation::Execute("INSERT INTO users (name) VALUES ('Alice')".to_string())],
     ///         vec![DatabaseOperation::Execute("INSERT INTO orders (user_id) VALUES (1)".to_string())],
     ///     ];
-    ///     let results = tx_manager.execute_nested_transaction(operation_groups).await.unwrap();
+    ///     let results = tx_manager.execute_nested_transaction(operation_groups).await.expect("operation should succeed");
     /// }
     /// ```
     #[cfg(feature = "sql")]
@@ -456,7 +456,7 @@ impl TransactionManager {
     /// use pandrs::io::sql::{TransactionManager, IsolationLevel};
     ///
     /// async fn example(tx_manager: &mut TransactionManager) {
-    ///     tx_manager.set_isolation_level(IsolationLevel::Serializable).await.unwrap();
+    ///     tx_manager.set_isolation_level(IsolationLevel::Serializable).await.expect("operation should succeed");
     /// }
     /// ```
     #[cfg(feature = "sql")]
@@ -497,7 +497,7 @@ impl TransactionManager {
     ///         "SELECT * FROM users WHERE active = true".to_string(),
     ///         "SELECT COUNT(*) FROM orders WHERE created_at > NOW() - INTERVAL '1 day'".to_string(),
     ///     ];
-    ///     let results = tx_manager.execute_readonly_transaction(queries).await.unwrap();
+    ///     let results = tx_manager.execute_readonly_transaction(queries).await.expect("operation should succeed");
     /// }
     /// ```
     #[cfg(feature = "sql")]

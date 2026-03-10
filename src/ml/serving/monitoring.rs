@@ -796,10 +796,14 @@ mod tests {
     fn test_metrics_collector() {
         let collector = DefaultMetricsCollector;
 
-        let system_metrics = collector.collect_system_metrics().unwrap();
+        let system_metrics = collector
+            .collect_system_metrics()
+            .expect("operation should succeed");
         assert!(system_metrics.cpu_usage >= 0.0 && system_metrics.cpu_usage <= 1.0);
 
-        let model_metrics = collector.collect_model_metrics("test_model").unwrap();
+        let model_metrics = collector
+            .collect_model_metrics("test_model")
+            .expect("operation should succeed");
         assert!(model_metrics.model_memory_usage > 0);
     }
 
@@ -813,7 +817,9 @@ mod tests {
         monitor.collection_interval = Duration::from_secs(0);
 
         // Collect metrics
-        monitor.collect_metrics(&deployment_metrics).unwrap();
+        monitor
+            .collect_metrics(&deployment_metrics)
+            .expect("operation should succeed");
 
         assert_eq!(monitor.metrics_history.len(), 1);
 

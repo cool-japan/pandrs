@@ -7,7 +7,7 @@
 use std::collections::{BTreeMap, HashMap};
 use std::fmt;
 
-use crate::core::error::{Error, Result};
+use crate::core::error::{Error, OptionExt, Result};
 use crate::dataframe::base::DataFrame;
 use crate::dataframe::hierarchical_groupby::{HierarchicalAgg, HierarchicalKey};
 use crate::series::base::Series;
@@ -633,12 +633,17 @@ pub mod utils {
         }
 
         if dataframes.len() == 1 {
-            return Ok(dataframes.into_iter().next().unwrap());
+            return dataframes.into_iter().next().ok_or_else(|| {
+                Error::InsufficientData("dataframes vec should have one element".to_string())
+            });
         }
 
         // For now, return the first DataFrame
         // In a full implementation, this would merge the DataFrames properly
-        Ok(dataframes.into_iter().next().unwrap())
+        dataframes
+            .into_iter()
+            .next()
+            .ok_or_else(|| Error::InsufficientData("dataframes should not be empty".to_string()))
     }
 }
 
@@ -673,11 +678,14 @@ mod tests {
         let mut builder = MultiIndexDataFrameBuilder::new(vec!["region".to_string()]);
 
         let column_spec = utils::simple_multi_index_column(vec!["sales", "mean"], "f64");
-        let data = Series::new(vec!["100.0".to_string()], Some("sales.mean".to_string())).unwrap();
+        let data = Series::new(vec!["100.0".to_string()], Some("sales.mean".to_string()))
+            .expect("operation should succeed");
 
-        builder.add_column(column_spec, data).unwrap();
+        builder
+            .add_column(column_spec, data)
+            .expect("operation should succeed");
 
-        let multi_df = builder.build().unwrap();
+        let multi_df = builder.build().expect("operation should succeed");
         assert_eq!(multi_df.column_index().len(), 1);
         assert_eq!(multi_df.index_hierarchy(), &["region"]);
     }

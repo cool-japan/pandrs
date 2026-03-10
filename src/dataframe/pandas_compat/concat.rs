@@ -144,8 +144,7 @@ fn concat_columns(dfs: &[&DataFrame]) -> Result<DataFrame> {
 
     for df in dfs {
         for col_name in df.column_names() {
-            let final_name = if seen_columns.contains_key(&col_name) {
-                let count = seen_columns.get_mut(&col_name).unwrap();
+            let final_name = if let Some(count) = seen_columns.get_mut(&col_name) {
                 *count += 1;
                 format!("{}_{}", col_name, count)
             } else {
@@ -186,33 +185,37 @@ mod tests {
         let mut df1 = DataFrame::new();
         df1.add_column(
             "a".to_string(),
-            Series::new(vec![1.0, 2.0], Some("a".to_string())).unwrap(),
+            Series::new(vec![1.0, 2.0], Some("a".to_string())).expect("test should succeed"),
         )
-        .unwrap();
+        .expect("test should succeed");
         df1.add_column(
             "b".to_string(),
-            Series::new(vec![10.0, 20.0], Some("b".to_string())).unwrap(),
+            Series::new(vec![10.0, 20.0], Some("b".to_string())).expect("test should succeed"),
         )
-        .unwrap();
+        .expect("test should succeed");
 
         let mut df2 = DataFrame::new();
         df2.add_column(
             "a".to_string(),
-            Series::new(vec![3.0, 4.0], Some("a".to_string())).unwrap(),
+            Series::new(vec![3.0, 4.0], Some("a".to_string())).expect("test should succeed"),
         )
-        .unwrap();
+        .expect("test should succeed");
         df2.add_column(
             "b".to_string(),
-            Series::new(vec![30.0, 40.0], Some("b".to_string())).unwrap(),
+            Series::new(vec![30.0, 40.0], Some("b".to_string())).expect("test should succeed"),
         )
-        .unwrap();
+        .expect("test should succeed");
 
-        let result = concat(&[&df1, &df2], ConcatAxis::Rows, true).unwrap();
+        let result = concat(&[&df1, &df2], ConcatAxis::Rows, true).expect("test should succeed");
 
         assert_eq!(result.row_count(), 4);
-        let a_values = result.get_column_numeric_values("a").unwrap();
+        let a_values = result
+            .get_column_numeric_values("a")
+            .expect("test should succeed");
         assert_eq!(a_values, vec![1.0, 2.0, 3.0, 4.0]);
-        let b_values = result.get_column_numeric_values("b").unwrap();
+        let b_values = result
+            .get_column_numeric_values("b")
+            .expect("test should succeed");
         assert_eq!(b_values, vec![10.0, 20.0, 30.0, 40.0]);
     }
 
@@ -221,30 +224,34 @@ mod tests {
         let mut df1 = DataFrame::new();
         df1.add_column(
             "a".to_string(),
-            Series::new(vec![1.0, 2.0], Some("a".to_string())).unwrap(),
+            Series::new(vec![1.0, 2.0], Some("a".to_string())).expect("test should succeed"),
         )
-        .unwrap();
+        .expect("test should succeed");
 
         let mut df2 = DataFrame::new();
         df2.add_column(
             "b".to_string(),
-            Series::new(vec![30.0, 40.0], Some("b".to_string())).unwrap(),
+            Series::new(vec![30.0, 40.0], Some("b".to_string())).expect("test should succeed"),
         )
-        .unwrap();
+        .expect("test should succeed");
 
-        let result = concat(&[&df1, &df2], ConcatAxis::Rows, true).unwrap();
+        let result = concat(&[&df1, &df2], ConcatAxis::Rows, true).expect("test should succeed");
 
         assert_eq!(result.row_count(), 4);
 
         // Column 'a' should have values from df1, then NaN for df2
-        let a_values = result.get_column_numeric_values("a").unwrap();
+        let a_values = result
+            .get_column_numeric_values("a")
+            .expect("test should succeed");
         assert_eq!(a_values[0], 1.0);
         assert_eq!(a_values[1], 2.0);
         assert!(a_values[2].is_nan());
         assert!(a_values[3].is_nan());
 
         // Column 'b' should have NaN for df1, then values from df2
-        let b_values = result.get_column_numeric_values("b").unwrap();
+        let b_values = result
+            .get_column_numeric_values("b")
+            .expect("test should succeed");
         assert!(b_values[0].is_nan());
         assert!(b_values[1].is_nan());
         assert_eq!(b_values[2], 30.0);
@@ -260,9 +267,9 @@ mod tests {
                 vec!["Alice".to_string(), "Bob".to_string()],
                 Some("name".to_string()),
             )
-            .unwrap(),
+            .expect("test should succeed"),
         )
-        .unwrap();
+        .expect("test should succeed");
 
         let mut df2 = DataFrame::new();
         df2.add_column(
@@ -271,14 +278,16 @@ mod tests {
                 vec!["Charlie".to_string(), "David".to_string()],
                 Some("name".to_string()),
             )
-            .unwrap(),
+            .expect("test should succeed"),
         )
-        .unwrap();
+        .expect("test should succeed");
 
-        let result = concat(&[&df1, &df2], ConcatAxis::Rows, true).unwrap();
+        let result = concat(&[&df1, &df2], ConcatAxis::Rows, true).expect("test should succeed");
 
         assert_eq!(result.row_count(), 4);
-        let names = result.get_column_string_values("name").unwrap();
+        let names = result
+            .get_column_string_values("name")
+            .expect("test should succeed");
         assert_eq!(names, vec!["Alice", "Bob", "Charlie", "David"]);
     }
 
@@ -287,26 +296,30 @@ mod tests {
         let mut df1 = DataFrame::new();
         df1.add_column(
             "a".to_string(),
-            Series::new(vec![1.0, 2.0], Some("a".to_string())).unwrap(),
+            Series::new(vec![1.0, 2.0], Some("a".to_string())).expect("test should succeed"),
         )
-        .unwrap();
+        .expect("test should succeed");
 
         let mut df2 = DataFrame::new();
         df2.add_column(
             "b".to_string(),
-            Series::new(vec![10.0, 20.0], Some("b".to_string())).unwrap(),
+            Series::new(vec![10.0, 20.0], Some("b".to_string())).expect("test should succeed"),
         )
-        .unwrap();
+        .expect("test should succeed");
 
-        let result = concat(&[&df1, &df2], ConcatAxis::Columns, true).unwrap();
+        let result = concat(&[&df1, &df2], ConcatAxis::Columns, true).expect("test should succeed");
 
         assert_eq!(result.row_count(), 2);
         assert!(result.contains_column("a"));
         assert!(result.contains_column("b"));
 
-        let a_values = result.get_column_numeric_values("a").unwrap();
+        let a_values = result
+            .get_column_numeric_values("a")
+            .expect("test should succeed");
         assert_eq!(a_values, vec![1.0, 2.0]);
-        let b_values = result.get_column_numeric_values("b").unwrap();
+        let b_values = result
+            .get_column_numeric_values("b")
+            .expect("test should succeed");
         assert_eq!(b_values, vec![10.0, 20.0]);
     }
 
@@ -315,27 +328,31 @@ mod tests {
         let mut df1 = DataFrame::new();
         df1.add_column(
             "value".to_string(),
-            Series::new(vec![1.0, 2.0], Some("value".to_string())).unwrap(),
+            Series::new(vec![1.0, 2.0], Some("value".to_string())).expect("test should succeed"),
         )
-        .unwrap();
+        .expect("test should succeed");
 
         let mut df2 = DataFrame::new();
         df2.add_column(
             "value".to_string(),
-            Series::new(vec![10.0, 20.0], Some("value".to_string())).unwrap(),
+            Series::new(vec![10.0, 20.0], Some("value".to_string())).expect("test should succeed"),
         )
-        .unwrap();
+        .expect("test should succeed");
 
-        let result = concat(&[&df1, &df2], ConcatAxis::Columns, true).unwrap();
+        let result = concat(&[&df1, &df2], ConcatAxis::Columns, true).expect("test should succeed");
 
         assert_eq!(result.row_count(), 2);
         // Should have renamed duplicate column
         assert!(result.contains_column("value"));
         assert!(result.contains_column("value_1"));
 
-        let v1 = result.get_column_numeric_values("value").unwrap();
+        let v1 = result
+            .get_column_numeric_values("value")
+            .expect("test should succeed");
         assert_eq!(v1, vec![1.0, 2.0]);
-        let v2 = result.get_column_numeric_values("value_1").unwrap();
+        let v2 = result
+            .get_column_numeric_values("value_1")
+            .expect("test should succeed");
         assert_eq!(v2, vec![10.0, 20.0]);
     }
 
@@ -344,16 +361,17 @@ mod tests {
         let mut df1 = DataFrame::new();
         df1.add_column(
             "a".to_string(),
-            Series::new(vec![1.0, 2.0], Some("a".to_string())).unwrap(),
+            Series::new(vec![1.0, 2.0], Some("a".to_string())).expect("test should succeed"),
         )
-        .unwrap();
+        .expect("test should succeed");
 
         let mut df2 = DataFrame::new();
         df2.add_column(
             "b".to_string(),
-            Series::new(vec![10.0, 20.0, 30.0], Some("b".to_string())).unwrap(),
+            Series::new(vec![10.0, 20.0, 30.0], Some("b".to_string()))
+                .expect("test should succeed"),
         )
-        .unwrap();
+        .expect("test should succeed");
 
         let result = concat(&[&df1, &df2], ConcatAxis::Columns, true);
         assert!(result.is_err());
@@ -361,7 +379,7 @@ mod tests {
 
     #[test]
     fn test_concat_empty_input() {
-        let result = concat(&[], ConcatAxis::Rows, true).unwrap();
+        let result = concat(&[], ConcatAxis::Rows, true).expect("test should succeed");
         assert_eq!(result.row_count(), 0);
     }
 
@@ -370,13 +388,15 @@ mod tests {
         let mut df = DataFrame::new();
         df.add_column(
             "a".to_string(),
-            Series::new(vec![1.0, 2.0], Some("a".to_string())).unwrap(),
+            Series::new(vec![1.0, 2.0], Some("a".to_string())).expect("test should succeed"),
         )
-        .unwrap();
+        .expect("test should succeed");
 
-        let result = concat(&[&df], ConcatAxis::Rows, true).unwrap();
+        let result = concat(&[&df], ConcatAxis::Rows, true).expect("test should succeed");
         assert_eq!(result.row_count(), 2);
-        let values = result.get_column_numeric_values("a").unwrap();
+        let values = result
+            .get_column_numeric_values("a")
+            .expect("test should succeed");
         assert_eq!(values, vec![1.0, 2.0]);
     }
 
@@ -385,27 +405,30 @@ mod tests {
         let mut df1 = DataFrame::new();
         df1.add_column(
             "a".to_string(),
-            Series::new(vec![1.0], Some("a".to_string())).unwrap(),
+            Series::new(vec![1.0], Some("a".to_string())).expect("test should succeed"),
         )
-        .unwrap();
+        .expect("test should succeed");
 
         let mut df2 = DataFrame::new();
         df2.add_column(
             "a".to_string(),
-            Series::new(vec![2.0], Some("a".to_string())).unwrap(),
+            Series::new(vec![2.0], Some("a".to_string())).expect("test should succeed"),
         )
-        .unwrap();
+        .expect("test should succeed");
 
         let mut df3 = DataFrame::new();
         df3.add_column(
             "a".to_string(),
-            Series::new(vec![3.0], Some("a".to_string())).unwrap(),
+            Series::new(vec![3.0], Some("a".to_string())).expect("test should succeed"),
         )
-        .unwrap();
+        .expect("test should succeed");
 
-        let result = concat(&[&df1, &df2, &df3], ConcatAxis::Rows, true).unwrap();
+        let result =
+            concat(&[&df1, &df2, &df3], ConcatAxis::Rows, true).expect("test should succeed");
         assert_eq!(result.row_count(), 3);
-        let values = result.get_column_numeric_values("a").unwrap();
+        let values = result
+            .get_column_numeric_values("a")
+            .expect("test should succeed");
         assert_eq!(values, vec![1.0, 2.0, 3.0]);
     }
 }

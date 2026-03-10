@@ -140,7 +140,9 @@ impl Forecaster for SimpleMovingAverageForecaster {
         let margin = z_score * residual_std;
 
         // Create forecast dates
-        let last_date = *index.end().unwrap();
+        let last_date = *index
+            .end()
+            .ok_or_else(|| Error::InvalidInput("Time series index has no end date".to_string()))?;
         let frequency = index.frequency.clone().unwrap_or(Frequency::Daily);
         let duration = frequency.to_duration();
 
@@ -322,7 +324,9 @@ impl Forecaster for LinearTrendForecaster {
             .ok_or_else(|| Error::InvalidOperation("Model not fitted".to_string()))?;
 
         // Create forecast dates
-        let last_date = *index.end().unwrap();
+        let last_date = *index
+            .end()
+            .ok_or_else(|| Error::InvalidInput("Time series index has no end date".to_string()))?;
         let frequency = index.frequency.clone().unwrap_or(Frequency::Daily);
         let duration = frequency.to_duration();
 
@@ -537,7 +541,9 @@ impl Forecaster for ExponentialSmoothingForecaster {
             (Some(beta), Some(gamma), Some(seasonal_periods)) => {
                 // Triple exponential smoothing
                 let trend = self.trend.unwrap_or(0.0);
-                let seasonal = self.seasonal.as_ref().unwrap();
+                let seasonal = self.seasonal.as_ref().ok_or_else(|| {
+                    Error::InvalidOperation("Seasonal component not available".into())
+                })?;
 
                 for h in 1..=periods {
                     let seasonal_idx = (h - 1) % seasonal_periods;
@@ -549,7 +555,9 @@ impl Forecaster for ExponentialSmoothingForecaster {
         }
 
         // Create forecast dates
-        let last_date = *index.end().unwrap();
+        let last_date = *index
+            .end()
+            .ok_or_else(|| Error::InvalidInput("Time series index has no end date".to_string()))?;
         let frequency = index.frequency.clone().unwrap_or(Frequency::Daily);
         let duration = frequency.to_duration();
 
@@ -661,7 +669,11 @@ impl ExponentialSmoothingForecaster {
     }
 
     fn fit_double(&mut self, values: &[f64]) -> Result<()> {
-        let beta = self.beta.unwrap();
+        let beta = self.beta.ok_or_else(|| {
+            Error::InvalidInput(
+                "Beta parameter not set for double exponential smoothing".to_string(),
+            )
+        })?;
 
         let mut level = values[0];
         let mut trend = if values.len() > 1 {
@@ -695,9 +707,21 @@ impl ExponentialSmoothingForecaster {
     }
 
     fn fit_triple(&mut self, values: &[f64]) -> Result<()> {
-        let beta = self.beta.unwrap();
-        let gamma = self.gamma.unwrap();
-        let seasonal_periods = self.seasonal_periods.unwrap();
+        let beta = self.beta.ok_or_else(|| {
+            Error::InvalidInput(
+                "Beta parameter not set for triple exponential smoothing".to_string(),
+            )
+        })?;
+        let gamma = self.gamma.ok_or_else(|| {
+            Error::InvalidInput(
+                "Gamma parameter not set for triple exponential smoothing".to_string(),
+            )
+        })?;
+        let seasonal_periods = self.seasonal_periods.ok_or_else(|| {
+            Error::InvalidInput(
+                "Seasonal periods not set for triple exponential smoothing".to_string(),
+            )
+        })?;
 
         if values.len() < seasonal_periods {
             return Err(Error::InvalidInput(
@@ -936,7 +960,9 @@ impl Forecaster for ArimaForecaster {
         }
 
         // Create forecast dates
-        let last_date = *index.end().unwrap();
+        let last_date = *index
+            .end()
+            .ok_or_else(|| Error::InvalidInput("Time series index has no end date".to_string()))?;
         let frequency = index.frequency.clone().unwrap_or(Frequency::Daily);
         let duration = frequency.to_duration();
 
@@ -1115,12 +1141,18 @@ mod tests {
         let mut builder = TimeSeriesBuilder::new();
 
         for i in 0..50 {
-            let timestamp = Utc.timestamp_opt(1640995200 + i * 86400, 0).unwrap();
+            let timestamp = Utc
+                .timestamp_opt(1640995200 + i * 86400, 0)
+                .single()
+                .expect("operation should succeed");
             let value = 10.0 + i as f64 * 0.5 + (i as f64 * 0.1).sin(); // Trend + small seasonality
             builder = builder.add_point(timestamp, value);
         }
 
-        builder.frequency(Frequency::Daily).build().unwrap()
+        builder
+            .frequency(Frequency::Daily)
+            .build()
+            .expect("operation should succeed")
     }
 
     #[test]
@@ -1128,8 +1160,10 @@ mod tests {
         let ts = create_test_series_with_trend();
         let mut forecaster = SimpleMovingAverageForecaster::new(5);
 
-        forecaster.fit(&ts).unwrap();
-        let result = forecaster.forecast(10, 0.95).unwrap();
+        forecaster.fit(&ts).expect("operation should succeed");
+        let result = forecaster
+            .forecast(10, 0.95)
+            .expect("operation should succeed");
 
         assert_eq!(result.forecast.len(), 10);
         assert_eq!(result.method, "Simple Moving Average");
@@ -1141,15 +1175,25 @@ mod tests {
         let ts = create_test_series_with_trend();
         let mut forecaster = LinearTrendForecaster::new();
 
-        forecaster.fit(&ts).unwrap();
-        let result = forecaster.forecast(10, 0.95).unwrap();
+        forecaster.fit(&ts).expect("operation should succeed");
+        let result = forecaster
+            .forecast(10, 0.95)
+            .expect("operation should succeed");
 
         assert_eq!(result.forecast.len(), 10);
         assert_eq!(result.method, "Linear Trend");
 
         // Check that forecast shows increasing trend
-        let first_forecast = result.forecast.values.get_f64(0).unwrap();
-        let last_forecast = result.forecast.values.get_f64(9).unwrap();
+        let first_forecast = result
+            .forecast
+            .values
+            .get_f64(0)
+            .expect("operation should succeed");
+        let last_forecast = result
+            .forecast
+            .values
+            .get_f64(9)
+            .expect("operation should succeed");
         assert!(
             last_forecast > first_forecast,
             "Should show increasing trend"
@@ -1161,8 +1205,10 @@ mod tests {
         let ts = create_test_series_with_trend();
         let mut forecaster = ExponentialSmoothingForecaster::simple(0.3);
 
-        forecaster.fit(&ts).unwrap();
-        let result = forecaster.forecast(5, 0.95).unwrap();
+        forecaster.fit(&ts).expect("operation should succeed");
+        let result = forecaster
+            .forecast(5, 0.95)
+            .expect("operation should succeed");
 
         assert_eq!(result.forecast.len(), 5);
         assert!(result.method.contains("Simple Exponential Smoothing"));
@@ -1173,8 +1219,10 @@ mod tests {
         let ts = create_test_series_with_trend();
         let mut forecaster = ExponentialSmoothingForecaster::double(0.3, 0.1);
 
-        forecaster.fit(&ts).unwrap();
-        let result = forecaster.forecast(5, 0.95).unwrap();
+        forecaster.fit(&ts).expect("operation should succeed");
+        let result = forecaster
+            .forecast(5, 0.95)
+            .expect("operation should succeed");
 
         assert_eq!(result.forecast.len(), 5);
         assert!(result.method.contains("Double Exponential Smoothing"));
@@ -1185,8 +1233,10 @@ mod tests {
         let ts = create_test_series_with_trend();
         let mut forecaster = ArimaForecaster::new(1, 1, 1);
 
-        forecaster.fit(&ts).unwrap();
-        let result = forecaster.forecast(5, 0.95).unwrap();
+        forecaster.fit(&ts).expect("operation should succeed");
+        let result = forecaster
+            .forecast(5, 0.95)
+            .expect("operation should succeed");
 
         assert_eq!(result.forecast.len(), 5);
         assert_eq!(result.method, "ARIMA(1,1,1)");
@@ -1197,15 +1247,17 @@ mod tests {
         let ts = create_test_series_with_trend();
         let mut forecaster = LinearTrendForecaster::new();
 
-        forecaster.fit(&ts).unwrap();
-        let metrics = forecaster.fit_metrics(&ts).unwrap();
+        forecaster.fit(&ts).expect("operation should succeed");
+        let metrics = forecaster
+            .fit_metrics(&ts)
+            .expect("operation should succeed");
 
         assert!(metrics.mae.is_some());
         assert!(metrics.mse.is_some());
         assert!(metrics.rmse.is_some());
-        assert!(metrics.mae.unwrap() >= 0.0);
-        assert!(metrics.mse.unwrap() >= 0.0);
-        assert!(metrics.rmse.unwrap() >= 0.0);
+        assert!(metrics.mae.expect("operation should succeed") >= 0.0);
+        assert!(metrics.mse.expect("operation should succeed") >= 0.0);
+        assert!(metrics.rmse.expect("operation should succeed") >= 0.0);
     }
 
     #[test]
@@ -1213,14 +1265,28 @@ mod tests {
         let ts = create_test_series_with_trend();
         let mut forecaster = LinearTrendForecaster::new();
 
-        forecaster.fit(&ts).unwrap();
-        let result = forecaster.forecast(5, 0.95).unwrap();
+        forecaster.fit(&ts).expect("operation should succeed");
+        let result = forecaster
+            .forecast(5, 0.95)
+            .expect("operation should succeed");
 
         // Check that confidence intervals make sense
         for i in 0..result.forecast.len() {
-            let forecast = result.forecast.values.get_f64(i).unwrap();
-            let lower = result.lower_ci.values.get_f64(i).unwrap();
-            let upper = result.upper_ci.values.get_f64(i).unwrap();
+            let forecast = result
+                .forecast
+                .values
+                .get_f64(i)
+                .expect("operation should succeed");
+            let lower = result
+                .lower_ci
+                .values
+                .get_f64(i)
+                .expect("operation should succeed");
+            let upper = result
+                .upper_ci
+                .values
+                .get_f64(i)
+                .expect("operation should succeed");
 
             assert!(lower < forecast, "Lower CI should be less than forecast");
             assert!(upper > forecast, "Upper CI should be greater than forecast");

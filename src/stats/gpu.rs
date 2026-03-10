@@ -389,13 +389,13 @@ fn ensure_gpu_available() -> Result<()> {
 /// use ndarray::Array2;
 ///
 /// // Initialize GPU
-/// init_gpu().unwrap();
+/// init_gpu().expect("operation should succeed");
 ///
 /// // Create input data matrix (features) and target vector
-/// let x = Array2::from_shape_vec((5, 1), vec![1.0, 2.0, 3.0, 4.0, 5.0]).unwrap();
+/// let x = Array2::from_shape_vec((5, 1), vec![1.0, 2.0, 3.0, 4.0, 5.0]).expect("operation should succeed");
 /// let y = vec![2.0, 4.0, 5.0, 4.0, 6.0];
 ///
-/// let result = gpu::linear_regression(&x, &y).unwrap();
+/// let result = gpu::linear_regression(&x, &y).expect("operation should succeed");
 /// println!("Intercept: {}", result.intercept);
 /// println!("Coefficient: {}", result.coefficients[0]);
 /// println!("R-squared: {}", result.r_squared);
@@ -518,7 +518,7 @@ pub fn linear_regression(
 /// use ndarray::Array2;
 ///
 /// // Initialize GPU
-/// init_gpu().unwrap();
+/// init_gpu().expect("operation should succeed");
 ///
 /// // Create input data matrix (features) and target vector
 /// let x = Array2::from_shape_vec((5, 3), vec![
@@ -527,10 +527,10 @@ pub fn linear_regression(
 ///     3.0, 1.0, 0.0,
 ///     4.0, 2.0, 1.0,
 ///     5.0, 0.0, 2.0
-/// ]).unwrap();
+/// ]).expect("operation should succeed");
 /// let y = vec![2.0, 3.0, 4.0, 5.0, 6.0];
 ///
-/// let importance = gpu::feature_importance(&x, &y).unwrap();
+/// let importance = gpu::feature_importance(&x, &y).expect("operation should succeed");
 /// println!("Feature importance: {:?}", importance);
 /// ```
 pub fn feature_importance(x: &Array2<f64>, y: &[f64]) -> Result<HashMap<usize, f64>> {
@@ -602,7 +602,7 @@ pub fn feature_importance(x: &Array2<f64>, y: &[f64]) -> Result<HashMap<usize, f
 /// use ndarray::Array2;
 ///
 /// // Initialize GPU
-/// init_gpu().unwrap();
+/// init_gpu().expect("operation should succeed");
 ///
 /// // Create input data matrix
 /// let data = Array2::from_shape_vec((8, 2), vec![
@@ -614,11 +614,11 @@ pub fn feature_importance(x: &Array2<f64>, y: &[f64]) -> Result<HashMap<usize, f
 ///     9.0, 7.5,
 ///     2.0, 1.5,
 ///     7.5, 8.5
-/// ]).unwrap();
+/// ]).expect("operation should succeed");
 ///
 /// let k = 2;
 /// let max_iter = 100;
-/// let (centroids, labels, inertia) = gpu::kmeans(&data, k, max_iter).unwrap();
+/// let (centroids, labels, inertia) = gpu::kmeans(&data, k, max_iter).expect("operation should succeed");
 /// println!("Cluster labels: {:?}", labels);
 /// ```
 pub fn kmeans(

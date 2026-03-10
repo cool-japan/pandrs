@@ -278,7 +278,9 @@ impl SchemaValidator {
             }
 
             // Check that aggregation function is valid for column type
-            let col = schema.column(&agg.column).unwrap();
+            let col = schema
+                .column(&agg.column)
+                .expect("operation should succeed");
 
             match agg.function.as_str() {
                 "min" | "max" | "sum" | "avg" => {

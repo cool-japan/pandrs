@@ -1,3 +1,4 @@
+#![allow(clippy::result_large_err)]
 //! Advanced ML capabilities integration tests
 //!
 //! This module provides comprehensive tests for the advanced machine learning

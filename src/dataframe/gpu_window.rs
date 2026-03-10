@@ -24,6 +24,7 @@ use crate::dataframe::jit_window::{
     JitDataFrameWindowExt, JitWindowContext, JitWindowStats, WindowFunctionKey, WindowOpType,
 };
 use crate::gpu::{get_gpu_manager, GpuConfig, GpuError, GpuManager};
+use crate::lock_safe;
 use crate::series::Series;
 
 /// GPU-specific window operation statistics
@@ -223,7 +224,7 @@ impl GpuWindowContext {
         if let Some(free_memory) = device_status.free_memory {
             if total_memory_required > free_memory / 2 {
                 // Use only half of available memory
-                let mut stats = self.gpu_stats.lock().unwrap();
+                let mut stats = lock_safe!(self.gpu_stats, "gpu window stats lock")?;
                 stats.record_cpu_fallback();
                 return Err(Error::InvalidOperation(
                     "Insufficient GPU memory for operation".to_string(),
@@ -244,7 +245,7 @@ impl GpuWindowContext {
             }
             _ => {
                 // Fallback to JIT implementation for unsupported operations
-                let mut stats = self.gpu_stats.lock().unwrap();
+                let mut stats = lock_safe!(self.gpu_stats, "gpu window stats lock")?;
                 stats.record_cpu_fallback();
                 return Err(Error::InvalidOperation(format!(
                     "GPU kernel not implemented for {:?}",
@@ -258,7 +259,7 @@ impl GpuWindowContext {
                 let execution_time = start_time.elapsed().as_nanos() as u64;
 
                 // Record successful GPU execution
-                let mut stats = self.gpu_stats.lock().unwrap();
+                let mut stats = lock_safe!(self.gpu_stats, "gpu window stats lock")?;
                 stats.record_gpu_execution(execution_time, 2.5); // Estimate 2.5x speedup
                 stats.record_memory_allocation(total_memory_required as u64, true);
 
@@ -266,7 +267,7 @@ impl GpuWindowContext {
             }
             Err(e) => {
                 // Record fallback
-                let mut stats = self.gpu_stats.lock().unwrap();
+                let mut stats = lock_safe!(self.gpu_stats, "gpu window stats lock")?;
                 stats.record_cpu_fallback();
                 Err(e)
             }
@@ -300,7 +301,7 @@ impl GpuWindowContext {
             // Record memory allocation and transfer
             let transfer_start = Instant::now();
             let data_bytes = data.len() * std::mem::size_of::<f64>();
-            let mut stats = self.gpu_stats.lock().unwrap();
+            let mut stats = lock_safe!(self.gpu_stats, "gpu window stats lock")?;
             stats.record_data_transfer(
                 transfer_start.elapsed().as_nanos() as u64,
                 data_bytes as u64 * 2,
@@ -531,17 +532,18 @@ impl GpuWindowContext {
     }
 
     /// Get combined JIT and GPU statistics
-    pub fn combined_stats(&self) -> (JitWindowStats, GpuWindowStats) {
-        let jit_stats = self.jit_context.stats();
-        let gpu_stats = self.gpu_stats.lock().unwrap().clone();
-        (jit_stats, gpu_stats)
+    pub fn combined_stats(&self) -> Result<(JitWindowStats, GpuWindowStats)> {
+        let jit_stats = self.jit_context.stats()?;
+        let gpu_stats = lock_safe!(self.gpu_stats, "gpu window stats lock")?.clone();
+        Ok((jit_stats, gpu_stats))
     }
 
     /// Clear all caches (JIT and GPU memory)
-    pub fn clear_caches(&self) {
+    pub fn clear_caches(&self) -> Result<()> {
         self.jit_context.clear_cache();
-        let mut cache = self.memory_cache.lock().unwrap();
+        let mut cache = lock_safe!(self.memory_cache, "gpu window memory cache lock")?;
         cache.clear();
+        Ok(())
     }
 
     /// Enable or disable GPU acceleration
@@ -555,9 +557,9 @@ impl GpuWindowContext {
     }
 
     /// Get GPU usage statistics summary
-    pub fn gpu_summary(&self) -> String {
-        let stats = self.gpu_stats.lock().unwrap();
-        format!(
+    pub fn gpu_summary(&self) -> Result<String> {
+        let stats = lock_safe!(self.gpu_stats, "gpu window stats lock")?;
+        Ok(format!(
             "GPU Window Operations Summary:\n\
              • GPU Executions: {}\n\
              • CPU Fallbacks: {}\n\
@@ -573,7 +575,7 @@ impl GpuWindowContext {
             stats.allocation_success_rate() * 100.0,
             stats.total_gpu_memory_allocated as f64 / (1024.0 * 1024.0),
             stats.transfer_efficiency * 1e9 / (1024.0 * 1024.0 * 1024.0)
-        )
+        ))
     }
 }
 

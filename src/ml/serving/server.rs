@@ -18,6 +18,7 @@ use crate::ml::serving::{
     BatchPredictionRequest, BatchPredictionResponse, ModelServer, ModelServing, PredictionRequest,
     PredictionResponse, ServerConfig,
 };
+use crate::{lock_safe, read_lock_safe, write_lock_safe};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, RwLock};
@@ -219,22 +220,23 @@ impl RateLimiter {
     }
 
     /// Check if request is allowed
-    pub fn check_rate_limit(&self, client_id: &str) -> bool {
-        let mut counts = self.request_counts.write().unwrap();
+    pub fn check_rate_limit(&self, client_id: &str) -> Result<bool> {
+        let mut counts =
+            write_lock_safe!(self.request_counts, "rate limiter request counts write")?;
         let counter = counts
             .entry(client_id.to_string())
             .or_insert_with(RequestCounter::new);
 
-        counter.add_request(self.window_minutes, self.max_requests_per_minute)
+        Ok(counter.add_request(self.window_minutes, self.max_requests_per_minute))
     }
 
     /// Get current request count for client
-    pub fn get_request_count(&self, client_id: &str) -> usize {
-        let counts = self.request_counts.read().unwrap();
-        counts
+    pub fn get_request_count(&self, client_id: &str) -> Result<usize> {
+        let counts = read_lock_safe!(self.request_counts, "rate limiter request counts read")?;
+        Ok(counts
             .get(client_id)
             .map(|counter| counter.requests.len())
-            .unwrap_or(0)
+            .unwrap_or(0))
     }
 }
 
@@ -305,7 +307,7 @@ impl HttpModelServer {
         let metadata = self.model_server.get_model(&name)?.get_metadata().clone();
         let monitor = ModelMonitor::new(metadata);
 
-        self.monitors.lock().unwrap().insert(name, monitor);
+        lock_safe!(self.monitors, "model server monitors lock")?.insert(name, monitor);
 
         Ok(())
     }
@@ -326,15 +328,15 @@ impl HttpModelServer {
     fn check_rate_limit(&self, context: &RequestContext) -> bool {
         if let Some(rate_limiter) = &self.rate_limiter {
             let client_id = context.client_ip.as_deref().unwrap_or("unknown");
-            rate_limiter.check_rate_limit(client_id)
+            rate_limiter.check_rate_limit(client_id).unwrap_or(false)
         } else {
             true
         }
     }
 
     /// Record request statistics
-    fn record_request(&self, endpoint: &str, success: bool, response_time_ms: u64) {
-        let mut stats = self.request_stats.lock().unwrap();
+    fn record_request(&self, endpoint: &str, success: bool, response_time_ms: u64) -> Result<()> {
+        let mut stats = lock_safe!(self.request_stats, "model server request stats lock")?;
         stats.total_requests += 1;
 
         if success {
@@ -353,6 +355,7 @@ impl HttpModelServer {
             * (stats.total_requests - 1) as f64
             + response_time_ms as f64)
             / stats.total_requests as f64;
+        Ok(())
     }
 
     /// Handle prediction request
@@ -367,13 +370,13 @@ impl HttpModelServer {
 
         // Authentication
         if !self.authenticate(&context) {
-            self.record_request(endpoint, false, start_time.elapsed().as_millis() as u64);
+            let _ = self.record_request(endpoint, false, start_time.elapsed().as_millis() as u64);
             return HttpResponse::unauthorized(context.request_id);
         }
 
         // Rate limiting
         if !self.check_rate_limit(&context) {
-            self.record_request(endpoint, false, start_time.elapsed().as_millis() as u64);
+            let _ = self.record_request(endpoint, false, start_time.elapsed().as_millis() as u64);
             return HttpResponse::too_many_requests(context.request_id);
         }
 
@@ -384,7 +387,7 @@ impl HttpModelServer {
 
         if !RequestValidator::validate_request_size(request_size, self.config.max_request_size) {
             let error_msg = format!("Request too large: {} bytes", request_size);
-            self.record_request(endpoint, false, start_time.elapsed().as_millis() as u64);
+            let _ = self.record_request(endpoint, false, start_time.elapsed().as_millis() as u64);
             return HttpResponse::bad_request(error_msg, context.request_id);
         }
 
@@ -397,10 +400,16 @@ impl HttpModelServer {
         );
 
         let response_time = start_time.elapsed().as_millis() as u64;
-        self.record_request(endpoint, response.success, response_time);
+        let _ = self.record_request(endpoint, response.success, response_time);
 
         if response.success {
-            HttpResponse::ok(response.data.unwrap(), context.request_id)
+            match response.data {
+                Some(data) => HttpResponse::ok(data, context.request_id),
+                None => HttpResponse::internal_server_error(
+                    "Success response missing data".to_string(),
+                    context.request_id,
+                ),
+            }
         } else {
             HttpResponse::internal_server_error(
                 response
@@ -423,13 +432,13 @@ impl HttpModelServer {
 
         // Authentication
         if !self.authenticate(&context) {
-            self.record_request(endpoint, false, start_time.elapsed().as_millis() as u64);
+            let _ = self.record_request(endpoint, false, start_time.elapsed().as_millis() as u64);
             return HttpResponse::unauthorized(context.request_id);
         }
 
         // Rate limiting
         if !self.check_rate_limit(&context) {
-            self.record_request(endpoint, false, start_time.elapsed().as_millis() as u64);
+            let _ = self.record_request(endpoint, false, start_time.elapsed().as_millis() as u64);
             return HttpResponse::too_many_requests(context.request_id);
         }
 
@@ -442,10 +451,16 @@ impl HttpModelServer {
         );
 
         let response_time = start_time.elapsed().as_millis() as u64;
-        self.record_request(endpoint, response.success, response_time);
+        let _ = self.record_request(endpoint, response.success, response_time);
 
         if response.success {
-            HttpResponse::ok(response.data.unwrap(), context.request_id)
+            match response.data {
+                Some(data) => HttpResponse::ok(data, context.request_id),
+                None => HttpResponse::internal_server_error(
+                    "Success response missing data".to_string(),
+                    context.request_id,
+                ),
+            }
         } else {
             HttpResponse::internal_server_error(
                 response
@@ -467,7 +482,7 @@ impl HttpModelServer {
 
         // Authentication
         if !self.authenticate(&context) {
-            self.record_request(endpoint, false, start_time.elapsed().as_millis() as u64);
+            let _ = self.record_request(endpoint, false, start_time.elapsed().as_millis() as u64);
             return HttpResponse::unauthorized(context.request_id);
         }
 
@@ -478,10 +493,16 @@ impl HttpModelServer {
         );
 
         let response_time = start_time.elapsed().as_millis() as u64;
-        self.record_request(endpoint, response.success, response_time);
+        let _ = self.record_request(endpoint, response.success, response_time);
 
         if response.success {
-            HttpResponse::ok(response.data.unwrap(), context.request_id)
+            match response.data {
+                Some(data) => HttpResponse::ok(data, context.request_id),
+                None => HttpResponse::internal_server_error(
+                    "Success response missing data".to_string(),
+                    context.request_id,
+                ),
+            }
         } else {
             HttpResponse::not_found(
                 response
@@ -510,7 +531,15 @@ impl HttpModelServer {
             ) {
                 resp if resp.success => {
                     // Convert single model health to server health format
-                    let health_status = resp.data.unwrap();
+                    let health_status = match resp.data {
+                        Some(data) => data,
+                        None => {
+                            return HttpResponse::internal_server_error(
+                                "Health check success but missing data".to_string(),
+                                context.request_id,
+                            )
+                        }
+                    };
                     let mut model_statuses = HashMap::new();
                     model_statuses.insert(model_name.to_string(), health_status.clone());
 
@@ -540,10 +569,16 @@ impl HttpModelServer {
         };
 
         let response_time = start_time.elapsed().as_millis() as u64;
-        self.record_request(endpoint, response.success, response_time);
+        let _ = self.record_request(endpoint, response.success, response_time);
 
         if response.success {
-            HttpResponse::ok(response.data.unwrap(), context.request_id)
+            match response.data {
+                Some(data) => HttpResponse::ok(data, context.request_id),
+                None => HttpResponse::internal_server_error(
+                    "Success response missing data".to_string(),
+                    context.request_id,
+                ),
+            }
         } else {
             HttpResponse::internal_server_error(
                 response
@@ -561,7 +596,7 @@ impl HttpModelServer {
 
         // Authentication
         if !self.authenticate(&context) {
-            self.record_request(endpoint, false, start_time.elapsed().as_millis() as u64);
+            let _ = self.record_request(endpoint, false, start_time.elapsed().as_millis() as u64);
             return HttpResponse::unauthorized(context.request_id);
         }
 
@@ -569,16 +604,27 @@ impl HttpModelServer {
             ModelInfoEndpoint::list_models(&self.model_server, Some(context.request_id.clone()));
 
         let response_time = start_time.elapsed().as_millis() as u64;
-        self.record_request(endpoint, response.success, response_time);
+        let _ = self.record_request(endpoint, response.success, response_time);
 
-        HttpResponse::ok(response.data.unwrap(), context.request_id)
+        match response.data {
+            Some(data) => HttpResponse::ok(data, context.request_id),
+            None => HttpResponse::internal_server_error(
+                response
+                    .error
+                    .unwrap_or_else(|| "List models failed".to_string()),
+                context.request_id,
+            ),
+        }
     }
 
     /// Get server statistics
-    pub fn get_server_stats(&self) -> ServerStats {
-        let stats = self.request_stats.lock().unwrap();
+    pub fn get_server_stats(&self) -> Result<ServerStats> {
+        let stats = lock_safe!(
+            self.request_stats,
+            "model server request stats lock for stats query"
+        )?;
 
-        ServerStats {
+        Ok(ServerStats {
             total_requests: stats.total_requests,
             successful_requests: stats.successful_requests,
             failed_requests: stats.failed_requests,
@@ -591,7 +637,7 @@ impl HttpModelServer {
             requests_by_endpoint: stats.requests_by_endpoint.clone(),
             uptime_seconds: 0, // Would track actual uptime in real implementation
             active_models: self.model_server.list_models().len(),
-        }
+        })
     }
 
     /// Get API routes documentation
@@ -668,14 +714,20 @@ mod tests {
 
         // Should allow first 5 requests
         for _ in 0..5 {
-            assert!(rate_limiter.check_rate_limit("client1"));
+            assert!(rate_limiter
+                .check_rate_limit("client1")
+                .expect("operation should succeed"));
         }
 
         // Should deny 6th request
-        assert!(!rate_limiter.check_rate_limit("client1"));
+        assert!(!rate_limiter
+            .check_rate_limit("client1")
+            .expect("operation should succeed"));
 
         // Different client should be allowed
-        assert!(rate_limiter.check_rate_limit("client2"));
+        assert!(rate_limiter
+            .check_rate_limit("client2")
+            .expect("operation should succeed"));
     }
 
     #[test]
@@ -683,7 +735,7 @@ mod tests {
         let config = create_test_config();
         let server = HttpModelServer::new(config);
 
-        let stats = server.get_server_stats();
+        let stats = server.get_server_stats().expect("operation should succeed");
         assert_eq!(stats.total_requests, 0);
         assert_eq!(stats.active_models, 0);
 

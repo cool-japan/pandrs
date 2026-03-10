@@ -697,7 +697,10 @@ mod tests {
         let registry = InMemoryModelRegistry::new();
 
         // Test that registry starts empty
-        assert!(registry.list_models().unwrap().is_empty());
+        assert!(registry
+            .list_models()
+            .expect("operation should succeed")
+            .is_empty());
 
         // Test model existence
         assert!(!registry.exists("test_model", "1.0.0"));
@@ -705,8 +708,9 @@ mod tests {
 
     #[test]
     fn test_filesystem_registry_creation() {
-        let temp_dir = TempDir::new().unwrap();
-        let registry = FileSystemModelRegistry::new(temp_dir.path()).unwrap();
+        let temp_dir = TempDir::new().expect("operation should succeed");
+        let registry =
+            FileSystemModelRegistry::new(temp_dir.path()).expect("operation should succeed");
 
         // Test that registry directory is created
         assert!(temp_dir.path().exists());

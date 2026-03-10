@@ -1,3 +1,4 @@
+#![allow(clippy::result_large_err)]
 //! Example demonstrating fault tolerance in distributed processing
 //!
 //! Note: This example requires the fault_tolerance module which is currently disabled.

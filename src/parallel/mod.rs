@@ -20,7 +20,8 @@ where
     {
         let new_values: Vec<R> = self.values().par_iter().map(|v| f(v)).collect();
 
-        Series::new(new_values, self.name().cloned()).unwrap()
+        Series::new(new_values, self.name().cloned())
+            .expect("parallel map produces valid series from valid input")
     }
 
     /// Filter elements in parallel based on a condition function
@@ -30,7 +31,8 @@ where
     {
         let filtered_values: Vec<T> = self.values().par_iter().filter(|v| f(v)).cloned().collect();
 
-        Series::new(filtered_values, self.name().cloned()).unwrap()
+        Series::new(filtered_values, self.name().cloned())
+            .expect("parallel filter produces valid series from valid input")
     }
 }
 
@@ -54,7 +56,8 @@ where
             })
             .collect();
 
-        NASeries::new(new_values, self.name().cloned()).unwrap()
+        NASeries::new(new_values, self.name().cloned())
+            .expect("parallel map produces valid NA series from valid input")
     }
 
     /// Filter elements in parallel based on a condition function (excluding NA)
@@ -72,7 +75,8 @@ where
             .cloned()
             .collect();
 
-        NASeries::new(filtered_values, self.name().cloned()).unwrap()
+        NASeries::new(filtered_values, self.name().cloned())
+            .expect("parallel filter produces valid NA series from valid input")
     }
 }
 

@@ -465,7 +465,7 @@ impl TimeSeriesStats {
 
         // Sorted values for quantiles
         let mut sorted = values.to_vec();
-        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
 
         let min = sorted[0];
         let max = sorted[count - 1];
@@ -1189,7 +1189,7 @@ impl ShapiroWilkTest {
 
         // Simplified SW test
         let mut sorted = values.to_vec();
-        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
 
         let n = sorted.len();
         let mean = sorted.iter().sum::<f64>() / n as f64;
@@ -1219,7 +1219,7 @@ impl AndersonDarlingTest {
     /// Compute Anderson-Darling test (simplified)
     pub fn compute(values: &[f64]) -> Result<Self> {
         let mut sorted = values.to_vec();
-        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
 
         let n = sorted.len() as f64;
         let mean = sorted.iter().sum::<f64>() / n;
@@ -1344,7 +1344,7 @@ impl ModifiedZScoreTest {
 
         // Calculate median
         let mut sorted = values.to_vec();
-        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
         let median = if sorted.len() % 2 == 0 {
             (sorted[sorted.len() / 2 - 1] + sorted[sorted.len() / 2]) / 2.0
         } else {
@@ -1354,7 +1354,7 @@ impl ModifiedZScoreTest {
         // Calculate MAD (Median Absolute Deviation)
         let deviations: Vec<f64> = values.iter().map(|&x| (x - median).abs()).collect();
         let mut sorted_deviations = deviations.clone();
-        sorted_deviations.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        sorted_deviations.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
         let mad = if sorted_deviations.len() % 2 == 0 {
             (sorted_deviations[sorted_deviations.len() / 2 - 1]
                 + sorted_deviations[sorted_deviations.len() / 2])
@@ -1410,7 +1410,7 @@ impl IQROutlierTest {
         }
 
         let mut sorted = values.to_vec();
-        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
 
         let n = sorted.len();
         let q1_idx = n / 4;
@@ -1546,7 +1546,7 @@ impl RunsTest {
         // Convert to binary sequence (above/below median)
         let median = {
             let mut sorted = values.to_vec();
-            sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
             if sorted.len() % 2 == 0 {
                 (sorted[sorted.len() / 2 - 1] + sorted[sorted.len() / 2]) / 2.0
             } else {
@@ -1612,18 +1612,24 @@ mod tests {
         let mut builder = TimeSeriesBuilder::new();
 
         for i in 0..100 {
-            let timestamp = Utc.timestamp_opt(1640995200 + i * 86400, 0).unwrap();
+            let timestamp = Utc
+                .timestamp_opt(1640995200 + i * 86400, 0)
+                .single()
+                .expect("operation should succeed");
             let value = 10.0 + i as f64 * 0.1 + (i as f64 % 7.0 - 3.0) * 0.5;
             builder = builder.add_point(timestamp, value);
         }
 
-        builder.frequency(Frequency::Daily).build().unwrap()
+        builder
+            .frequency(Frequency::Daily)
+            .build()
+            .expect("operation should succeed")
     }
 
     #[test]
     fn test_time_series_stats_computation() {
         let ts = create_test_series();
-        let stats = TimeSeriesStats::compute(&ts).unwrap();
+        let stats = TimeSeriesStats::compute(&ts).expect("operation should succeed");
 
         assert!(stats.descriptive.count > 0);
         assert!(stats.descriptive.mean > 0.0);
@@ -1634,7 +1640,7 @@ mod tests {
     #[test]
     fn test_adf_test() {
         let values: Vec<f64> = (0..50).map(|i| i as f64 + (i as f64 * 0.1).sin()).collect();
-        let result = AugmentedDickeyFullerTest::compute(&values).unwrap();
+        let result = AugmentedDickeyFullerTest::compute(&values).expect("operation should succeed");
 
         assert!(result.statistic != 0.0);
         assert!(result.p_value >= 0.0 && result.p_value <= 1.0);
@@ -1644,7 +1650,8 @@ mod tests {
     #[test]
     fn test_kpss_test() {
         let values: Vec<f64> = (0..50).map(|i| (i as f64 * 0.1).sin()).collect();
-        let result = KwiatkowskiPhillipsSchmidtShinTest::compute(&values, "constant").unwrap();
+        let result = KwiatkowskiPhillipsSchmidtShinTest::compute(&values, "constant")
+            .expect("operation should succeed");
 
         assert!(result.statistic >= 0.0);
         assert!(result.p_value >= 0.0 && result.p_value <= 1.0);
@@ -1654,7 +1661,7 @@ mod tests {
     #[test]
     fn test_ljung_box_test() {
         let values: Vec<f64> = (0..50).map(|i| (i as f64 * 0.1).sin()).collect();
-        let result = LjungBoxTest::compute(&values, 10).unwrap();
+        let result = LjungBoxTest::compute(&values, 10).expect("operation should succeed");
 
         assert!(result.statistic >= 0.0);
         assert!(result.p_value >= 0.0 && result.p_value <= 1.0);
@@ -1664,7 +1671,7 @@ mod tests {
     #[test]
     fn test_jarque_bera_test() {
         let values: Vec<f64> = (0..100).map(|i| (i as f64 * 0.1).sin()).collect();
-        let result = JarqueBeraTest::compute(&values).unwrap();
+        let result = JarqueBeraTest::compute(&values).expect("operation should succeed");
 
         assert!(result.statistic >= 0.0);
         assert!(result.p_value >= 0.0 && result.p_value <= 1.0);
@@ -1677,7 +1684,7 @@ mod tests {
         let mut values: Vec<f64> = (0..20).map(|i| i as f64).collect();
         values.push(100.0); // Add outlier
 
-        let result = GrubbsTest::compute(&values).unwrap();
+        let result = GrubbsTest::compute(&values).expect("operation should succeed");
 
         assert!(result.statistic > 0.0);
         assert!(result.has_outlier);
@@ -1689,7 +1696,7 @@ mod tests {
         let mut values: Vec<f64> = (0..20).map(|i| i as f64).collect();
         values.push(100.0); // Add outlier
 
-        let result = ModifiedZScoreTest::compute(&values, 3.5).unwrap();
+        let result = ModifiedZScoreTest::compute(&values, 3.5).expect("operation should succeed");
 
         assert_eq!(result.modified_z_scores.len(), values.len());
         assert!(result.has_outliers);
@@ -1701,7 +1708,7 @@ mod tests {
         let mut values: Vec<f64> = (0..20).map(|i| i as f64).collect();
         values.push(100.0); // Add outlier
 
-        let result = IQROutlierTest::compute(&values).unwrap();
+        let result = IQROutlierTest::compute(&values).expect("operation should succeed");
 
         assert!(result.q3 > result.q1);
         assert!(result.iqr > 0.0);

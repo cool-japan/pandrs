@@ -5,9 +5,10 @@
 
 use pandrs::dataframe::base::DataFrame;
 use pandrs::dataframe::groupby::AggFunc;
-use pandrs::dataframe::hierarchical_groupby::{
-    utils as hierarchical_utils, HierarchicalAggBuilder, HierarchicalGroupByExt,
+use pandrs::dataframe::hierarchical_agg_builder::{
+    utils as hierarchical_utils, HierarchicalAggBuilder,
 };
+use pandrs::dataframe::hierarchical_groupby::HierarchicalGroupByExt;
 use pandrs::error::Result;
 use pandrs::series::base::Series;
 

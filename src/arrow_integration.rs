@@ -300,7 +300,10 @@ impl ArrowConverter {
 
         match array.data_type() {
             DataType::Int64 => {
-                let arr = array.as_any().downcast_ref::<Int64Array>().unwrap();
+                let arr = array
+                    .as_any()
+                    .downcast_ref::<Int64Array>()
+                    .ok_or_else(|| Error::TypeMismatch("expected Int64Array".into()))?;
                 let sum = compute::sum(arr)
                     .ok_or_else(|| Error::Computation("Sum computation failed".to_string()))?;
 
@@ -312,7 +315,10 @@ impl ArrowConverter {
                 Ok(result_df)
             }
             DataType::Float64 => {
-                let arr = array.as_any().downcast_ref::<Float64Array>().unwrap();
+                let arr = array
+                    .as_any()
+                    .downcast_ref::<Float64Array>()
+                    .ok_or_else(|| Error::TypeMismatch("expected Float64Array".into()))?;
                 let sum = compute::sum(arr)
                     .ok_or_else(|| Error::Computation("Sum computation failed".to_string()))?;
 
@@ -448,8 +454,8 @@ pub mod flight {
 
             // Return a dummy DataFrame for now
             let mut df = DataFrame::new();
-            let series =
-                Series::new(vec!["remote_data".to_string()], Some("data".to_string())).unwrap();
+            let series = Series::new(vec!["remote_data".to_string()], Some("data".to_string()))
+                .expect("operation should succeed");
             df.add_column("data".to_string(), series)?;
             Ok(df)
         }
@@ -469,34 +475,38 @@ mod tests {
             vec!["1".to_string(), "2".to_string(), "3".to_string()],
             Some("numbers".to_string()),
         )
-        .unwrap();
+        .expect("operation should succeed");
         let series2 = Series::new(
             vec!["a".to_string(), "b".to_string(), "c".to_string()],
             Some("letters".to_string()),
         )
-        .unwrap();
+        .expect("operation should succeed");
 
         let mut df = DataFrame::new();
-        df.add_column("numbers".to_string(), series1).unwrap();
-        df.add_column("letters".to_string(), series2).unwrap();
+        df.add_column("numbers".to_string(), series1)
+            .expect("operation should succeed");
+        df.add_column("letters".to_string(), series2)
+            .expect("operation should succeed");
 
         // Test conversion to Arrow
-        let record_batch = df.to_arrow().unwrap();
+        let record_batch = df.to_arrow().expect("operation should succeed");
         assert_eq!(record_batch.num_columns(), 2);
         assert_eq!(record_batch.num_rows(), 3);
 
         // Test conversion back from Arrow
-        let df2 = DataFrame::from_arrow(&record_batch).unwrap();
+        let df2 = DataFrame::from_arrow(&record_batch).expect("operation should succeed");
         assert_eq!(df2.column_names(), df.column_names());
     }
 
     #[test]
     fn test_arrow_integration_trait() {
         // Test that the trait is implemented
-        let series = Series::new(vec!["test".to_string()], Some("col".to_string())).unwrap();
+        let series = Series::new(vec!["test".to_string()], Some("col".to_string()))
+            .expect("operation should succeed");
 
         let mut df = DataFrame::new();
-        df.add_column("col".to_string(), series).unwrap();
+        df.add_column("col".to_string(), series)
+            .expect("operation should succeed");
 
         // The trait methods should be available
         #[cfg(feature = "distributed")]

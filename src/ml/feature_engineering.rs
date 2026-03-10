@@ -156,7 +156,9 @@ impl FeatureScaler for StandardScaler {
         let mean = self
             .mean
             .ok_or_else(|| Error::InvalidOperation("Scaler not fitted".into()))?;
-        let std = self.std.unwrap();
+        let std = self
+            .std
+            .ok_or_else(|| Error::InvalidOperation("Scaler not fitted".into()))?;
 
         Ok(data.iter().map(|&x| (x - mean) / std).collect())
     }
@@ -165,7 +167,9 @@ impl FeatureScaler for StandardScaler {
         let mean = self
             .mean
             .ok_or_else(|| Error::InvalidOperation("Scaler not fitted".into()))?;
-        let std = self.std.unwrap();
+        let std = self
+            .std
+            .ok_or_else(|| Error::InvalidOperation("Scaler not fitted".into()))?;
 
         Ok(data.iter().map(|&x| x * std + mean).collect())
     }
@@ -216,7 +220,9 @@ impl FeatureScaler for MinMaxScaler {
         let min = self
             .min
             .ok_or_else(|| Error::InvalidOperation("Scaler not fitted".into()))?;
-        let max = self.max.unwrap();
+        let max = self
+            .max
+            .ok_or_else(|| Error::InvalidOperation("Scaler not fitted".into()))?;
         let (feature_min, feature_max) = self.feature_range;
 
         let range = max - min;
@@ -236,7 +242,9 @@ impl FeatureScaler for MinMaxScaler {
         let min = self
             .min
             .ok_or_else(|| Error::InvalidOperation("Scaler not fitted".into()))?;
-        let max = self.max.unwrap();
+        let max = self
+            .max
+            .ok_or_else(|| Error::InvalidOperation("Scaler not fitted".into()))?;
         let (feature_min, feature_max) = self.feature_range;
 
         let range = max - min;
@@ -373,9 +381,11 @@ impl AutoFeatureEngineer {
         }
 
         // Perform feature selection
-        if self.perform_selection && y.is_some() {
-            let selected_indices = self.select_features(&engineered_df, y.unwrap())?;
-            self.selected_features_ = Some(selected_indices);
+        if self.perform_selection {
+            if let Some(y_data) = y {
+                let selected_indices = self.select_features(&engineered_df, y_data)?;
+                self.selected_features_ = Some(selected_indices);
+            }
         }
 
         // Fit scalers
@@ -402,7 +412,12 @@ impl AutoFeatureEngineer {
         );
         println!(
             "Generated {} features",
-            self.generated_features_.as_ref().unwrap().len()
+            self.generated_features_
+                .as_ref()
+                .ok_or_else(|| Error::InvalidOperation(
+                    "Model not fitted. Call fit() first.".into()
+                ))?
+                .len()
         );
 
         Ok(())
@@ -672,7 +687,7 @@ impl AutoFeatureEngineer {
             AggregationFunction::Mean => Ok(values.iter().sum::<f64>() / values.len() as f64),
             AggregationFunction::Median => {
                 let mut sorted = values.to_vec();
-                sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+                sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
                 let mid = sorted.len() / 2;
                 Ok(if sorted.len() % 2 == 0 {
                     (sorted[mid - 1] + sorted[mid]) / 2.0
@@ -739,7 +754,7 @@ impl AutoFeatureEngineer {
             AggregationFunction::Count => Ok(values.len() as f64),
             AggregationFunction::Quantile(q) => {
                 let mut sorted = values.to_vec();
-                sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+                sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
                 let idx = ((*q) * (sorted.len() - 1) as f64).round() as usize;
                 Ok(sorted[idx.min(sorted.len() - 1)])
             }
@@ -852,25 +867,30 @@ mod tests {
         let mut x = DataFrame::new();
         x.add_column(
             "feature1".to_string(),
-            Series::new(vec![1.0, 2.0, 3.0, 4.0, 5.0], Some("feature1".to_string())).unwrap(),
+            Series::new(vec![1.0, 2.0, 3.0, 4.0, 5.0], Some("feature1".to_string()))
+                .expect("operation should succeed"),
         )
-        .unwrap();
+        .expect("operation should succeed");
         x.add_column(
             "feature2".to_string(),
-            Series::new(vec![2.0, 4.0, 6.0, 8.0, 10.0], Some("feature2".to_string())).unwrap(),
+            Series::new(vec![2.0, 4.0, 6.0, 8.0, 10.0], Some("feature2".to_string()))
+                .expect("operation should succeed"),
         )
-        .unwrap();
+        .expect("operation should succeed");
 
         let mut y = DataFrame::new();
         y.add_column(
             "target".to_string(),
-            Series::new(vec![3.0, 6.0, 9.0, 12.0, 15.0], Some("target".to_string())).unwrap(),
+            Series::new(vec![3.0, 6.0, 9.0, 12.0, 15.0], Some("target".to_string()))
+                .expect("operation should succeed"),
         )
-        .unwrap();
+        .expect("operation should succeed");
 
         // Fit and transform
-        engineer.fit(&x, Some(&y)).unwrap();
-        let transformed = engineer.transform(&x).unwrap();
+        engineer
+            .fit(&x, Some(&y))
+            .expect("operation should succeed");
+        let transformed = engineer.transform(&x).expect("operation should succeed");
 
         // Should have more features than original
         assert!(transformed.column_names().len() > x.column_names().len());
@@ -881,8 +901,8 @@ mod tests {
         let mut scaler = StandardScaler::new();
         let data = vec![1.0, 2.0, 3.0, 4.0, 5.0];
 
-        scaler.fit(&data).unwrap();
-        let transformed = scaler.transform(&data).unwrap();
+        scaler.fit(&data).expect("operation should succeed");
+        let transformed = scaler.transform(&data).expect("operation should succeed");
 
         // Check that mean is approximately zero
         let mean = transformed.iter().sum::<f64>() / transformed.len() as f64;
@@ -900,8 +920,8 @@ mod tests {
         let mut scaler = MinMaxScaler::new();
         let data = vec![1.0, 2.0, 3.0, 4.0, 5.0];
 
-        scaler.fit(&data).unwrap();
-        let transformed = scaler.transform(&data).unwrap();
+        scaler.fit(&data).expect("operation should succeed");
+        let transformed = scaler.transform(&data).expect("operation should succeed");
 
         // Check range
         let min = transformed.iter().copied().fold(f64::INFINITY, f64::min);
@@ -921,22 +941,22 @@ mod tests {
 
         let mean = engineer
             .calculate_aggregation(&values, &AggregationFunction::Mean)
-            .unwrap();
+            .expect("operation should succeed");
         assert!((mean - 3.0).abs() < 1e-10);
 
         let sum = engineer
             .calculate_aggregation(&values, &AggregationFunction::Sum)
-            .unwrap();
+            .expect("operation should succeed");
         assert!((sum - 15.0).abs() < 1e-10);
 
         let min = engineer
             .calculate_aggregation(&values, &AggregationFunction::Min)
-            .unwrap();
+            .expect("operation should succeed");
         assert!((min - 1.0).abs() < 1e-10);
 
         let max = engineer
             .calculate_aggregation(&values, &AggregationFunction::Max)
-            .unwrap();
+            .expect("operation should succeed");
         assert!((max - 5.0).abs() < 1e-10);
     }
 }

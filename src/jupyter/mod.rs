@@ -15,6 +15,7 @@ use std::sync::RwLock;
 use crate::core::error::{Error, Result};
 use crate::dataframe::base::DataFrame;
 use crate::series::base::Series;
+use crate::{read_lock_safe, write_lock_safe};
 
 /// Jupyter display configuration
 #[derive(Debug, Clone)]
@@ -1001,12 +1002,17 @@ lazy_static! {
 
 /// Get the current Jupyter configuration
 pub fn get_jupyter_config() -> JupyterConfig {
-    JUPYTER_CONFIG.read().unwrap().clone().unwrap_or_default()
+    read_lock_safe!(JUPYTER_CONFIG, "jupyter config read")
+        .ok()
+        .and_then(|c| c.clone())
+        .unwrap_or_default()
 }
 
 /// Set the Jupyter configuration
 pub fn set_jupyter_config(config: JupyterConfig) {
-    *JUPYTER_CONFIG.write().unwrap() = Some(config);
+    if let Ok(mut cfg) = write_lock_safe!(JUPYTER_CONFIG, "jupyter config write") {
+        *cfg = Some(config);
+    }
 }
 
 /// Initialize Jupyter integration with default settings
@@ -1085,10 +1091,12 @@ mod tests {
         data.insert("col1".to_string(), vec!["1".to_string(), "2".to_string()]);
         data.insert("col2".to_string(), vec!["a".to_string(), "b".to_string()]);
 
-        let df = DataFrame::from_map(data, None).unwrap();
+        let df = DataFrame::from_map(data, None).expect("operation should succeed");
         let config = JupyterConfig::default();
 
-        let html = df.to_jupyter_html(&config).unwrap();
+        let html = df
+            .to_jupyter_html(&config)
+            .expect("operation should succeed");
         assert!(html.contains("pandrs-table"));
         assert!(html.contains("col1"));
         assert!(html.contains("col2"));

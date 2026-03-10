@@ -687,14 +687,14 @@ mod tests {
 
     #[test]
     fn test_version_parsing() {
-        let version = Version::parse("0.1.0").unwrap();
+        let version = Version::parse("0.1.0").expect("operation should succeed");
         assert_eq!(version.major, 0);
         assert_eq!(version.minor, 1);
         assert_eq!(version.patch, 0);
         assert_eq!(version.pre_release, None);
 
         // Test pre-release version parsing
-        let pre_version = Version::parse("1.0.0-beta.1").unwrap();
+        let pre_version = Version::parse("1.0.0-beta.1").expect("operation should succeed");
         assert_eq!(pre_version.major, 1);
         assert_eq!(pre_version.minor, 0);
         assert_eq!(pre_version.patch, 0);
@@ -733,7 +733,7 @@ mod tests {
             .add_step(step)
             .risk_level(MigrationRiskLevel::Medium)
             .build()
-            .unwrap();
+            .expect("operation should succeed");
 
         assert_eq!(plan.from_version, from_version);
         assert_eq!(plan.to_version, to_version);

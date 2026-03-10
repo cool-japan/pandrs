@@ -11,6 +11,10 @@
 // Core module for essential components
 pub mod core;
 
+// Arrow Flight RPC support for distributed data transfer
+#[cfg(feature = "distributed")]
+pub mod flight;
+
 // Execution module for execution-related functionality
 #[cfg(feature = "distributed")]
 pub mod execution;

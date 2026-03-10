@@ -1,3 +1,5 @@
+#![allow(clippy::result_large_err)]
+
 use pandrs::column::{
     BooleanColumn, Column, ColumnTrait, Float64Column, Int64Column, StringColumn,
 };

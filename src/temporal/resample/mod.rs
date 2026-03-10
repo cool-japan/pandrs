@@ -117,7 +117,10 @@ impl<'a, T: Temporal> Resample<'a, T> {
 
                 // Calculate the representative time for this period
                 let period_start_seconds = start_seconds + period * freq_seconds;
-                let period_time = chrono::Utc.timestamp_opt(period_start_seconds, 0).unwrap();
+                let period_time = chrono::Utc
+                    .timestamp_opt(period_start_seconds, 0)
+                    .single()
+                    .expect("timestamp should be unambiguous");
 
                 // Convert to the appropriate type
                 let period_timestamp = T::from_str(&period_time.to_rfc3339())?;

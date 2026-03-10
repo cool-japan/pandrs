@@ -5,7 +5,7 @@ use std::path::Path;
 
 use crate::column::ColumnType;
 use crate::core::data_value::{self, DataValue as DValue}; // Import as a different name to avoid trait conflict
-use crate::core::error::{Error, Result};
+use crate::core::error::{Error, OptionExt, Result};
 
 // Re-export from legacy module for now
 #[deprecated(
@@ -49,7 +49,47 @@ impl Clone for Box<dyn ColumnAny + Send + Sync> {
     }
 }
 
-/// DataFrame struct: Column-oriented 2D data structure
+/// DataFrame: A two-dimensional, size-mutable, heterogeneous tabular data structure.
+///
+/// DataFrame is the primary data structure in PandRS for working with labeled, tabular data.
+/// It can be thought of as a dictionary-like container for Series objects, where each Series
+/// represents a column with a specific data type.
+///
+/// # Features
+///
+/// - **Heterogeneous data**: Each column can have a different data type
+/// - **Size-mutable**: Rows and columns can be added or removed
+/// - **Labeled axes**: Both rows and columns have labels for easy access
+/// - **Arithmetic operations**: Supports element-wise and broadcasting operations
+/// - **Alignment**: Automatic data alignment in operations
+/// - **Missing data handling**: Robust support for NA values
+///
+/// # Examples
+///
+/// ```rust
+/// use pandrs::{DataFrame, Series};
+///
+/// // Create a new DataFrame
+/// let mut df = DataFrame::new();
+///
+/// // Add columns
+/// df.add_column("name".to_string(),
+///     Series::new(vec!["Alice", "Bob", "Charlie"], Some("name".to_string())).expect("Failed"))
+///     .expect("Failed to add column");
+///
+/// df.add_column("age".to_string(),
+///     Series::new(vec![25i64, 30, 35], Some("age".to_string())).expect("Failed"))
+///     .expect("Failed to add column");
+///
+/// // Access data
+/// assert_eq!(df.row_count(), 3);
+/// assert_eq!(df.column_count(), 2);
+/// ```
+///
+/// # Performance
+///
+/// DataFrame uses columnar storage for memory efficiency and cache-friendly access patterns.
+/// Operations on columns are typically faster than row-wise operations.
 #[derive(Debug, Clone)]
 pub struct DataFrame {
     // Actual fields for storage
@@ -59,7 +99,17 @@ pub struct DataFrame {
 }
 
 impl DataFrame {
-    /// Create a new empty DataFrame
+    /// Creates a new empty DataFrame.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use pandrs::DataFrame;
+    ///
+    /// let df = DataFrame::new();
+    /// assert_eq!(df.row_count(), 0);
+    /// assert_eq!(df.column_count(), 0);
+    /// ```
     pub fn new() -> Self {
         Self {
             columns: HashMap::new(),
@@ -68,36 +118,132 @@ impl DataFrame {
         }
     }
 
-    /// Create a new DataFrame with a simple index
+    /// Creates a new DataFrame with a specified index.
+    ///
+    /// # Arguments
+    ///
+    /// * `index` - The index to use for row labels
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use pandrs::{DataFrame, Index};
+    ///
+    /// let index = Index::new(vec!["row1".to_string(), "row2".to_string()]).expect("index");
+    /// let df = DataFrame::with_index(index);
+    /// assert_eq!(df.row_count(), 2);
+    /// ```
     pub fn with_index(index: crate::index::Index<String>) -> Self {
         let mut df = Self::new();
         df.row_count = index.len();
         df
     }
 
-    /// Create a new DataFrame with a multi index
+    /// Creates a new DataFrame with a multi-level index.
+    ///
+    /// Useful for hierarchical indexing with multiple levels of row labels.
+    ///
+    /// # Arguments
+    ///
+    /// * `multi_index` - The multi-level index to use
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use pandrs::{DataFrame, MultiIndex};
+    ///
+    /// let multi_idx = MultiIndex::new(
+    ///     vec![vec!["A".to_string(), "B".to_string()],
+    ///          vec!["x".to_string(), "y".to_string()]],
+    ///     vec![vec![0, 0, 1], vec![0, 1, 0]],
+    ///     Some(vec![Some("level1".to_string()), Some("level2".to_string())])
+    /// ).expect("multi_index");
+    /// let df = DataFrame::with_multi_index(multi_idx);
+    /// ```
     pub fn with_multi_index(multi_index: crate::index::MultiIndex<String>) -> Self {
         let mut df = Self::new();
         df.row_count = multi_index.len();
         df
     }
 
-    /// Check if the DataFrame contains a column with the given name
+    /// Checks if the DataFrame contains a column with the given name.
+    ///
+    /// # Arguments
+    ///
+    /// * `column_name` - The name of the column to check
+    ///
+    /// # Returns
+    ///
+    /// `true` if the column exists, `false` otherwise
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use pandrs::{DataFrame, Series};
+    ///
+    /// let mut df = DataFrame::new();
+    /// df.add_column("age".to_string(),
+    ///     Series::new(vec![25i64], None).expect("Failed")).expect("Failed");
+    ///
+    /// assert!(df.contains_column("age"));
+    /// assert!(!df.contains_column("name"));
+    /// ```
     pub fn contains_column(&self, column_name: &str) -> bool {
         self.columns.contains_key(column_name)
     }
 
-    /// Get the number of rows in the DataFrame
+    /// Returns the number of rows in the DataFrame.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use pandrs::{DataFrame, Series};
+    ///
+    /// let mut df = DataFrame::new();
+    /// df.add_column("values".to_string(),
+    ///     Series::new(vec![1, 2, 3], None).expect("Failed")).expect("Failed");
+    ///
+    /// assert_eq!(df.row_count(), 3);
+    /// ```
     pub fn row_count(&self) -> usize {
         self.row_count
     }
 
-    /// Get the number of rows (alias for compatibility)
+    /// Returns the number of rows (alias for `row_count`).
+    ///
+    /// This method provides pandas-like API compatibility.
     pub fn nrows(&self) -> usize {
         self.row_count
     }
 
-    /// Get a string value from the DataFrame
+    /// Retrieves a string value from the DataFrame at the specified column and row.
+    ///
+    /// # Arguments
+    ///
+    /// * `column_name` - The name of the column
+    /// * `row_idx` - The row index (0-based)
+    ///
+    /// # Returns
+    ///
+    /// A reference to the string value
+    ///
+    /// # Errors
+    ///
+    /// - `Error::ColumnNotFound` if the column doesn't exist
+    /// - `Error::InvalidValue` if the row index is out of bounds or the column is not a string type
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use pandrs::{DataFrame, Series};
+    ///
+    /// let mut df = DataFrame::new();
+    /// df.add_column("name".to_string(),
+    ///     Series::new(vec!["Alice".to_string(), "Bob".to_string()], None).expect("Failed")).expect("Failed");
+    ///
+    /// let name = df.get_string_value("name", 0).expect("Failed to get value");
+    /// assert_eq!(name, "Alice");
+    /// ```
     pub fn get_string_value(&self, column_name: &str, row_idx: usize) -> Result<&str> {
         // Check if column exists
         let col = self
@@ -133,7 +279,41 @@ impl DataFrame {
         }
     }
 
-    /// Add a column to the DataFrame
+    /// Adds a new column to the DataFrame.
+    ///
+    /// # Arguments
+    ///
+    /// * `column_name` - The name for the new column
+    /// * `series` - The Series containing the column data
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` if successful
+    ///
+    /// # Errors
+    ///
+    /// - `Error::DuplicateColumnName` if a column with this name already exists
+    /// - `Error::InconsistentRowCount` if the series length doesn't match the DataFrame's row count
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use pandrs::{DataFrame, Series};
+    ///
+    /// let mut df = DataFrame::new();
+    ///
+    /// // Add first column
+    /// df.add_column("numbers".to_string(),
+    ///     Series::new(vec![1, 2, 3], None).expect("Failed"))
+    ///     .expect("Failed to add column");
+    ///
+    /// // Add second column (must have same length)
+    /// df.add_column("doubled".to_string(),
+    ///     Series::new(vec![2, 4, 6], None).expect("Failed"))
+    ///     .expect("Failed to add column");
+    ///
+    /// assert_eq!(df.column_count(), 2);
+    /// ```
     pub fn add_column<T: 'static + Debug + Clone + Send + Sync>(
         &mut self,
         column_name: String,
@@ -165,12 +345,60 @@ impl DataFrame {
         Ok(())
     }
 
-    /// Get column names in the DataFrame
+    /// Returns a list of all column names in the DataFrame.
+    ///
+    /// The order of names matches the order columns were added.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use pandrs::{DataFrame, Series};
+    ///
+    /// let mut df = DataFrame::new();
+    /// df.add_column("age".to_string(),
+    ///     Series::new(vec![25i64], None).expect("Failed")).expect("Failed");
+    /// df.add_column("name".to_string(),
+    ///     Series::new(vec!["Alice"], None).expect("Failed")).expect("Failed");
+    ///
+    /// let names = df.column_names();
+    /// assert_eq!(names, vec!["age".to_string(), "name".to_string()]);
+    /// ```
     pub fn column_names(&self) -> Vec<String> {
         self.column_order.clone()
     }
 
-    /// Rename columns in the DataFrame using a mapping
+    /// Renames columns in the DataFrame using a mapping.
+    ///
+    /// # Arguments
+    ///
+    /// * `column_map` - A HashMap mapping old column names to new column names
+    ///
+    /// # Returns
+    ///
+    /// `Ok(())` if successful
+    ///
+    /// # Errors
+    ///
+    /// - `Error::ColumnNotFound` if any old column name doesn't exist
+    /// - `Error::DuplicateColumnName` if new names conflict
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use pandrs::{DataFrame, Series};
+    /// use std::collections::HashMap;
+    ///
+    /// let mut df = DataFrame::new();
+    /// df.add_column("old_name".to_string(),
+    ///     Series::new(vec![1, 2, 3], None).expect("Failed")).expect("Failed");
+    ///
+    /// let mut rename_map = HashMap::new();
+    /// rename_map.insert("old_name".to_string(), "new_name".to_string());
+    ///
+    /// df.rename_columns(&rename_map).expect("Failed to rename");
+    /// assert!(df.contains_column("new_name"));
+    /// assert!(!df.contains_column("old_name"));
+    /// ```
     pub fn rename_columns(&mut self, column_map: &HashMap<String, String>) -> Result<()> {
         // First, validate that all old column names exist
         for old_name in column_map.keys() {
@@ -210,7 +438,32 @@ impl DataFrame {
         Ok(())
     }
 
-    /// Set all column names in the DataFrame
+    /// Sets all column names in the DataFrame.
+    ///
+    /// Replaces all column names with the provided list. The number of names
+    /// must match the number of columns.
+    ///
+    /// # Arguments
+    ///
+    /// * `names` - A vector of new column names
+    ///
+    /// # Errors
+    ///
+    /// - `Error::InconsistentRowCount` if the length doesn't match column count
+    /// - `Error::DuplicateColumnName` if any names are duplicated
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use pandrs::{DataFrame, Series};
+    ///
+    /// let mut df = DataFrame::new();
+    /// df.add_column("col1".to_string(), Series::new(vec![1, 2], None).expect("Failed")).expect("Failed");
+    /// df.add_column("col2".to_string(), Series::new(vec![3, 4], None).expect("Failed")).expect("Failed");
+    ///
+    /// df.set_column_names(vec!["A".to_string(), "B".to_string()]).expect("Failed");
+    /// assert_eq!(df.column_names(), vec!["A".to_string(), "B".to_string()]);
+    /// ```
     pub fn set_column_names(&mut self, names: Vec<String>) -> Result<()> {
         // Check that the number of names matches the number of columns
         if names.len() != self.column_order.len() {
@@ -238,7 +491,40 @@ impl DataFrame {
         self.rename_columns(&column_map)
     }
 
-    /// Get a column from the DataFrame with generic type
+    /// Gets a typed reference to a column in the DataFrame.
+    ///
+    /// Returns a reference to the Series with the specified type. The type must
+    /// match the actual column type or an error is returned.
+    ///
+    /// # Arguments
+    ///
+    /// * `column_name` - The name of the column to retrieve
+    ///
+    /// # Type Parameters
+    ///
+    /// * `T` - The expected type of the column elements
+    ///
+    /// # Returns
+    ///
+    /// A reference to the Series of type T
+    ///
+    /// # Errors
+    ///
+    /// - `Error::ColumnNotFound` if the column doesn't exist
+    /// - `Error::InvalidValue` if the column type doesn't match T
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use pandrs::{DataFrame, Series};
+    ///
+    /// let mut df = DataFrame::new();
+    /// df.add_column("numbers".to_string(),
+    ///     Series::new(vec![1i64, 2, 3], None).expect("Failed")).expect("Failed");
+    ///
+    /// let col = df.get_column::<i64>("numbers").expect("Failed");
+    /// assert_eq!(col.len(), 3);
+    /// ```
     pub fn get_column<T: 'static + Debug + Clone + Send + Sync>(
         &self,
         column_name: &str,
@@ -258,13 +544,44 @@ impl DataFrame {
         }
     }
 
-    /// Get string values from a column
+    /// Gets all values from a column as strings.
+    ///
+    /// Converts column values to strings regardless of the underlying type.
+    /// Works with numeric, boolean, and string columns.
+    ///
+    /// # Arguments
+    ///
+    /// * `column_name` - The name of the column
+    ///
+    /// # Returns
+    ///
+    /// A vector of string representations of the column values
+    ///
+    /// # Errors
+    ///
+    /// - `Error::ColumnNotFound` if the column doesn't exist
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use pandrs::{DataFrame, Series};
+    ///
+    /// let mut df = DataFrame::new();
+    /// df.add_column("ages".to_string(),
+    ///     Series::new(vec![25i64, 30, 35], None).expect("Failed")).expect("Failed");
+    ///
+    /// let strings = df.get_column_string_values("ages").expect("Failed");
+    /// assert_eq!(strings, vec!["25", "30", "35"]);
+    /// ```
     pub fn get_column_string_values(&self, column_name: &str) -> Result<Vec<String>> {
         if !self.contains_column(column_name) {
             return Err(Error::ColumnNotFound(column_name.to_string()));
         }
 
-        let column = self.columns.get(column_name).unwrap();
+        let column = self
+            .columns
+            .get(column_name)
+            .ok_or_column_error(column_name)?;
 
         // Try to downcast to different Series types and convert to strings
         if let Some(string_series) = column
@@ -323,12 +640,60 @@ impl DataFrame {
         }
     }
 
-    /// Get a column by index (compatibility method)
+    /// Gets the name of a column by its index position.
+    ///
+    /// # Arguments
+    ///
+    /// * `idx` - The column index (0-based)
+    ///
+    /// # Returns
+    ///
+    /// `Some(&String)` if the index is valid, `None` otherwise
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use pandrs::{DataFrame, Series};
+    ///
+    /// let mut df = DataFrame::new();
+    /// df.add_column("first".to_string(), Series::new(vec![1], None).expect("Failed")).expect("Failed");
+    /// df.add_column("second".to_string(), Series::new(vec![2], None).expect("Failed")).expect("Failed");
+    ///
+    /// assert_eq!(df.column_name(0), Some(&"first".to_string()));
+    /// assert_eq!(df.column_name(1), Some(&"second".to_string()));
+    /// assert_eq!(df.column_name(2), None);
+    /// ```
     pub fn column_name(&self, idx: usize) -> Option<&String> {
         self.column_order.get(idx)
     }
 
-    /// Concat rows from another DataFrame
+    /// Concatenates rows from another DataFrame.
+    ///
+    /// Combines rows from this DataFrame with rows from another DataFrame.
+    /// The DataFrames must have compatible schemas (matching column names and types).
+    ///
+    /// # Arguments
+    ///
+    /// * `_other` - The DataFrame to concatenate
+    ///
+    /// # Returns
+    ///
+    /// A new DataFrame containing rows from both DataFrames
+    ///
+    /// # Examples
+    ///
+    /// ```rust,no_run
+    /// use pandrs::{DataFrame, Series};
+    ///
+    /// let mut df1 = DataFrame::new();
+    /// df1.add_column("x".to_string(), Series::new(vec![1, 2], None).expect("Failed")).expect("Failed");
+    ///
+    /// let mut df2 = DataFrame::new();
+    /// df2.add_column("x".to_string(), Series::new(vec![3, 4], None).expect("Failed")).expect("Failed");
+    ///
+    /// let combined = df1.concat_rows(&df2).expect("Failed");
+    /// // combined now has 4 rows
+    /// ```
     pub fn concat_rows(&self, _other: &DataFrame) -> Result<DataFrame> {
         // Implement concatenation properly when needed
         Ok(Self::new())
@@ -389,7 +754,15 @@ impl DataFrame {
                 } else {
                     String::new()
                 };
-                columns_data.get_mut(header).unwrap().push(value);
+                // Safe: header was inserted into columns_data during initialization
+                if let Some(col_vec) = columns_data.get_mut(header) {
+                    col_vec.push(value);
+                } else {
+                    return Err(Error::InvalidValue(format!(
+                        "Column '{}' not found in columns_data",
+                        header
+                    )));
+                }
             }
         }
 
@@ -404,17 +777,63 @@ impl DataFrame {
         Ok(df)
     }
 
-    /// Get the number of columns in the DataFrame
+    /// Returns the number of columns in the DataFrame.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use pandrs::{DataFrame, Series};
+    ///
+    /// let mut df = DataFrame::new();
+    /// df.add_column("a".to_string(), Series::new(vec![1], None).expect("Failed")).expect("Failed");
+    /// df.add_column("b".to_string(), Series::new(vec![2], None).expect("Failed")).expect("Failed");
+    ///
+    /// assert_eq!(df.column_count(), 2);
+    /// ```
     pub fn column_count(&self) -> usize {
         self.columns.len()
     }
 
-    /// Get the number of columns (alias for compatibility)
+    /// Returns the number of columns (alias for `column_count`).
+    ///
+    /// This method provides pandas-like API compatibility.
     pub fn ncols(&self) -> usize {
         self.column_count()
     }
 
-    /// Create a new DataFrame with only the specified columns
+    /// Creates a new DataFrame containing only the specified columns.
+    ///
+    /// Selects a subset of columns from the DataFrame by name, preserving
+    /// the order specified in the input.
+    ///
+    /// # Arguments
+    ///
+    /// * `columns` - A slice of column names to select
+    ///
+    /// # Returns
+    ///
+    /// A new DataFrame containing only the specified columns
+    ///
+    /// # Errors
+    ///
+    /// - `Error::ColumnNotFound` if any specified column doesn't exist
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use pandrs::{DataFrame, Series};
+    ///
+    /// let mut df = DataFrame::new();
+    /// df.add_column("a".to_string(), Series::new(vec![1, 2], None).expect("Failed")).expect("Failed");
+    /// df.add_column("b".to_string(), Series::new(vec![3, 4], None).expect("Failed")).expect("Failed");
+    /// df.add_column("c".to_string(), Series::new(vec![5, 6], None).expect("Failed")).expect("Failed");
+    ///
+    /// let selected = df.select_columns(&["a", "c"]).expect("Failed");
+    /// assert_eq!(selected.column_count(), 2);
+    /// assert!(selected.contains_column("a"));
+    /// assert!(selected.contains_column("c"));
+    /// assert!(!selected.contains_column("b"));
+    /// ```
     pub fn select_columns(&self, columns: &[&str]) -> Result<Self> {
         let mut result = Self::new();
 

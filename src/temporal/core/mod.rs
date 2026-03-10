@@ -152,7 +152,8 @@ impl Temporal for NaiveDate {
 
     fn to_utc(&self) -> DateTime<Utc> {
         // Add default time (00:00:00) to the date and treat as UTC
-        let naive_dt = self.and_time(NaiveTime::from_hms_opt(0, 0, 0).unwrap());
+        let naive_dt =
+            self.and_time(NaiveTime::from_hms_opt(0, 0, 0).expect("00:00:00 is always valid"));
         DateTime::<Utc>::from_naive_utc_and_offset(naive_dt, Utc)
     }
 

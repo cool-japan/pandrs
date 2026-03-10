@@ -177,7 +177,7 @@ impl RuleBasedPredictionModel {
         let mut confidence_scores = Vec::new();
         
         if !features.recent_accesses.is_empty() {
-            let last_access = features.recent_accesses.last().unwrap();
+            let last_access = features.recent_accesses.last().expect("operation should succeed");
             
             // Rule 1: Sequential pattern detection
             if features.sequential_ratio > 0.7 {
@@ -341,7 +341,7 @@ impl PageFaultPredictor {
         // Calculate distance-based accuracy
         let min_distance = predicted.iter()
             .map(|pred| distance_between_ranges(pred, actual))
-            .min_by(|a, b| a.partial_cmp(b).unwrap())
+            .min_by(|a, b| a.partial_cmp(b).expect("operation should succeed"))
             .unwrap_or(f64::MAX);
         
         // Convert distance to accuracy (closer = higher accuracy)
@@ -1013,7 +1013,7 @@ mod tests {
         let prediction = model.predict(&features);
         assert!(prediction.is_some());
         
-        let result = prediction.unwrap();
+        let result = prediction.expect("operation should succeed");
         assert!(!result.predicted_offsets.is_empty());
     }
 
@@ -1044,7 +1044,7 @@ mod tests {
             ..Default::default()
         };
         
-        let handle = strategy.create_storage(&storage_config).unwrap();
+        let handle = strategy.create_storage(&storage_config).expect("operation should succeed");
         assert_eq!(handle.mapping.size, 10 * 1024 * 1024);
     }
 

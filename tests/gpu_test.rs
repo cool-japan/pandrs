@@ -1,3 +1,4 @@
+#![allow(clippy::result_large_err)]
 //! Tests for GPU acceleration functionality
 //!
 //! To run these tests:

@@ -3,6 +3,7 @@ use crate::storage::traits::{
     AccessPattern, DataChunk, Efficiency, PerformanceProfile, Speed, StorageConfig, StorageEngine,
     StorageStatistics,
 };
+use crate::{read_lock_safe, write_lock_safe};
 use std::collections::HashMap;
 use std::ops::Range;
 use std::sync::{Arc, RwLock};
@@ -164,9 +165,9 @@ impl ColumnStore {
 
         // Store the column and metadata
         {
-            let mut columns = self.columns.write().unwrap();
-            let mut metadata_map = self.metadata.write().unwrap();
-            let mut stats = self.stats.write().unwrap();
+            let mut columns = write_lock_safe!(self.columns, "column store columns write")?;
+            let mut metadata_map = write_lock_safe!(self.metadata, "column store metadata write")?;
+            let mut stats = write_lock_safe!(self.stats, "column store stats write")?;
 
             let size_bytes = metadata.size_bytes; // Extract before moving
             columns.insert(name.clone(), compressed_data);
@@ -180,7 +181,7 @@ impl ColumnStore {
 
         // Update row count
         {
-            let mut row_count = self.row_count.write().unwrap();
+            let mut row_count = write_lock_safe!(self.row_count, "column store row count write")?;
             if *row_count == 0 {
                 *row_count = data.len();
             } else if *row_count != data.len() {
@@ -195,8 +196,8 @@ impl ColumnStore {
 
     /// Get a column from the store
     pub fn get_column(&self, name: &str) -> Result<Vec<u8>> {
-        let columns = self.columns.read().unwrap();
-        let mut stats = self.stats.write().unwrap();
+        let columns = read_lock_safe!(self.columns, "column store columns read")?;
+        let mut stats = write_lock_safe!(self.stats, "column store stats write")?;
 
         stats.read_operations += 1;
 
@@ -208,7 +209,7 @@ impl ColumnStore {
 
     /// Get column metadata
     pub fn get_metadata(&self, name: &str) -> Result<ColumnMetadata> {
-        let metadata = self.metadata.read().unwrap();
+        let metadata = read_lock_safe!(self.metadata, "column store metadata read")?;
         match metadata.get(name) {
             Some(meta) => Ok(meta.clone()),
             None => Err(Error::ColumnNotFound(name.to_string())),
@@ -216,27 +217,30 @@ impl ColumnStore {
     }
 
     /// List all column names
-    pub fn column_names(&self) -> Vec<String> {
-        let columns = self.columns.read().unwrap();
-        columns.keys().cloned().collect()
+    pub fn column_names(&self) -> Result<Vec<String>> {
+        let columns = read_lock_safe!(self.columns, "column store columns read")?;
+        Ok(columns.keys().cloned().collect())
     }
 
     /// Get the number of rows
-    pub fn row_count(&self) -> usize {
-        *self.row_count.read().unwrap()
+    pub fn row_count(&self) -> Result<usize> {
+        Ok(*read_lock_safe!(
+            self.row_count,
+            "column store row count read"
+        )?)
     }
 
     /// Get storage statistics
-    pub fn stats(&self) -> StorageStats {
-        let stats = self.stats.read().unwrap();
-        (*stats).clone()
+    pub fn stats(&self) -> Result<StorageStats> {
+        let stats = read_lock_safe!(self.stats, "column store stats read")?;
+        Ok((*stats).clone())
     }
 
     /// Remove a column from the store
     pub fn remove_column(&self, name: &str) -> Result<()> {
-        let mut columns = self.columns.write().unwrap();
-        let mut metadata_map = self.metadata.write().unwrap();
-        let mut stats = self.stats.write().unwrap();
+        let mut columns = write_lock_safe!(self.columns, "column store columns write")?;
+        let mut metadata_map = write_lock_safe!(self.metadata, "column store metadata write")?;
+        let mut stats = write_lock_safe!(self.stats, "column store stats write")?;
 
         if let Some(compressed_data) = columns.remove(name) {
             metadata_map.remove(name);
@@ -250,7 +254,7 @@ impl ColumnStore {
 
     /// Optimize storage by recompressing all columns
     pub fn optimize(&self) -> Result<()> {
-        let column_names: Vec<String> = self.column_names();
+        let column_names: Vec<String> = self.column_names()?;
 
         for name in column_names {
             let data = self.get_column(&name)?;
@@ -269,10 +273,10 @@ impl ColumnStore {
     }
 
     /// Calculate compression ratio
-    pub fn compression_ratio(&self) -> f64 {
-        let columns = self.columns.read().unwrap();
+    pub fn compression_ratio(&self) -> Result<f64> {
+        let columns = read_lock_safe!(self.columns, "column store columns read")?;
         if columns.is_empty() {
-            return 1.0;
+            return Ok(1.0);
         }
 
         let compressed_size: usize = columns.values().map(|data| data.size_bytes()).sum();
@@ -280,9 +284,9 @@ impl ColumnStore {
         let uncompressed_size: usize = columns.values().map(|data| data.decompress().len()).sum();
 
         if compressed_size == 0 {
-            1.0
+            Ok(1.0)
         } else {
-            uncompressed_size as f64 / compressed_size as f64
+            Ok(uncompressed_size as f64 / compressed_size as f64)
         }
     }
 
@@ -437,7 +441,7 @@ impl StorageEngine for ColumnStore {
 
     fn read_chunk(&self, handle: &Self::Handle, range: Range<usize>) -> Result<DataChunk> {
         // For column store, we'll concatenate all column data within the range
-        let columns = handle.store.columns.read().unwrap();
+        let columns = read_lock_safe!(handle.store.columns, "storage engine columns read")?;
         let mut chunk_data = Vec::new();
         let mut total_rows = 0;
 
@@ -507,7 +511,7 @@ impl StorageEngine for ColumnStore {
     }
 
     fn storage_stats(&self, handle: &Self::Handle) -> Result<StorageStatistics> {
-        let stats = handle.store.stats();
+        let stats = handle.store.stats()?;
         Ok(StorageStatistics {
             total_size: stats.total_size_bytes,
             chunk_count: stats.total_columns,

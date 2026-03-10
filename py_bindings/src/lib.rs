@@ -294,10 +294,10 @@ struct PySeries {
 #[pymethods]
 impl PySeries {
     #[new]
-    fn new(name: String, data: Vec<String>) -> Self {
-        PySeries {
-            inner: Series::new(data, Some(name)).unwrap(),
-        }
+    fn new(name: String, data: Vec<String>) -> PyResult<Self> {
+        let inner = Series::new(data, Some(name))
+            .map_err(|e| PyValueError::new_err(format!("Failed to create Series: {}", e)))?;
+        Ok(PySeries { inner })
     }
     
     fn __str__(&self) -> PyResult<String> {
@@ -357,17 +357,17 @@ struct PyNASeries {
 #[pymethods]
 impl PyNASeries {
     #[new]
-    fn new(name: String, data: Vec<Option<String>>) -> Self {
+    fn new(name: String, data: Vec<Option<String>>) -> PyResult<Self> {
         let processed_data: Vec<String> = data.iter()
             .map(|opt| match opt {
                 Some(s) => s.clone(),
                 None => NA::<String>::NA.to_string(),
             })
             .collect();
-        
-        PyNASeries {
-            inner: NASeries::<String>::from_strings(processed_data, Some(name)).unwrap(),
-        }
+
+        let inner = NASeries::<String>::from_strings(processed_data, Some(name))
+            .map_err(|e| PyValueError::new_err(format!("Failed to create NASeries: {}", e)))?;
+        Ok(PyNASeries { inner })
     }
     
     fn __str__(&self) -> PyResult<String> {

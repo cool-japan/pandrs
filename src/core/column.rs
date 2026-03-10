@@ -4,12 +4,30 @@ use std::sync::Arc;
 
 use crate::core::error::{Error, Result};
 
-/// Enum to identify column types
+/// Enum to identify column types.
+///
+/// Represents the data type of a column in PandRS. Each variant corresponds
+/// to a specific underlying data representation optimized for that type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ColumnType {
+    /// 64-bit signed integer column type.
+    ///
+    /// Stores integers in the range -2^63 to 2^63-1.
     Int64,
+
+    /// 64-bit floating point column type.
+    ///
+    /// Stores double-precision floating point numbers (IEEE 754).
     Float64,
+
+    /// String column type.
+    ///
+    /// Stores variable-length UTF-8 strings with optional string pooling for memory efficiency.
     String,
+
+    /// Boolean column type.
+    ///
+    /// Stores true/false values using bit-packed representation for space efficiency.
     Boolean,
 }
 

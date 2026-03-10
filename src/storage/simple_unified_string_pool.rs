@@ -395,7 +395,7 @@ mod tests {
     #[test]
     fn test_simple_string_pool_creation() {
         let pool = SimpleUnifiedStringPool::new();
-        let stats = pool.stats().unwrap();
+        let stats = pool.stats().expect("operation should succeed");
 
         assert_eq!(stats.total_strings, 0);
         assert_eq!(stats.unique_strings, 0);
@@ -406,20 +406,20 @@ mod tests {
     fn test_string_addition_and_retrieval() {
         let pool = SimpleUnifiedStringPool::new();
 
-        let id1 = pool.add_string("hello").unwrap();
-        let id2 = pool.add_string("world").unwrap();
-        let id3 = pool.add_string("hello").unwrap(); // Duplicate
+        let id1 = pool.add_string("hello").expect("operation should succeed");
+        let id2 = pool.add_string("world").expect("operation should succeed");
+        let id3 = pool.add_string("hello").expect("operation should succeed"); // Duplicate
 
         assert_ne!(id1, id2);
         assert_eq!(id1, id3); // Should be deduplicated
 
-        let view1 = pool.get_string(id1).unwrap();
-        let view2 = pool.get_string(id2).unwrap();
+        let view1 = pool.get_string(id1).expect("operation should succeed");
+        let view2 = pool.get_string(id2).expect("operation should succeed");
 
-        assert_eq!(view1.as_str().unwrap(), "hello");
-        assert_eq!(view2.as_str().unwrap(), "world");
+        assert_eq!(view1.as_str().expect("operation should succeed"), "hello");
+        assert_eq!(view2.as_str().expect("operation should succeed"), "world");
 
-        let stats = pool.stats().unwrap();
+        let stats = pool.stats().expect("operation should succeed");
         assert_eq!(stats.total_strings, 3); // Total additions including duplicates
         assert_eq!(stats.unique_strings, 2); // Only unique strings counted
     }
@@ -435,30 +435,50 @@ mod tests {
             "apple".to_string(), // Duplicate
         ];
 
-        let ids = pool.add_strings(&strings).unwrap();
+        let ids = pool
+            .add_strings(&strings)
+            .expect("operation should succeed");
         assert_eq!(ids.len(), 4);
         assert_eq!(ids[0], ids[3]); // Duplicates should have same ID
 
-        let views = pool.get_strings(&ids).unwrap();
+        let views = pool.get_strings(&ids).expect("operation should succeed");
         assert_eq!(views.len(), 4);
-        assert_eq!(views[0].as_str().unwrap(), "apple");
-        assert_eq!(views[1].as_str().unwrap(), "banana");
-        assert_eq!(views[2].as_str().unwrap(), "cherry");
-        assert_eq!(views[3].as_str().unwrap(), "apple");
+        assert_eq!(
+            views[0].as_str().expect("operation should succeed"),
+            "apple"
+        );
+        assert_eq!(
+            views[1].as_str().expect("operation should succeed"),
+            "banana"
+        );
+        assert_eq!(
+            views[2].as_str().expect("operation should succeed"),
+            "cherry"
+        );
+        assert_eq!(
+            views[3].as_str().expect("operation should succeed"),
+            "apple"
+        );
     }
 
     #[test]
     fn test_zero_copy_access() {
         let pool = SimpleUnifiedStringPool::new();
 
-        let id = pool.add_string("hello world").unwrap();
-        let view = pool.get_string(id).unwrap();
+        let id = pool
+            .add_string("hello world")
+            .expect("operation should succeed");
+        let view = pool.get_string(id).expect("operation should succeed");
 
         // Test with_str_ref for zero-copy access
-        let result = view.with_str_ref(|s| s.to_uppercase()).unwrap();
+        let result = view
+            .with_str_ref(|s| s.to_uppercase())
+            .expect("operation should succeed");
         assert_eq!(result, "HELLO WORLD");
 
-        let starts_with_hello = view.with_str_ref(|s| s.starts_with("hello")).unwrap();
+        let starts_with_hello = view
+            .with_str_ref(|s| s.starts_with("hello"))
+            .expect("operation should succeed");
         assert!(starts_with_hello);
     }
 
@@ -466,25 +486,33 @@ mod tests {
     fn test_substring() {
         let pool = SimpleUnifiedStringPool::new();
 
-        let id = pool.add_string("hello world").unwrap();
-        let view = pool.get_string(id).unwrap();
+        let id = pool
+            .add_string("hello world")
+            .expect("operation should succeed");
+        let view = pool.get_string(id).expect("operation should succeed");
 
-        let substring = view.substring(0, 5).unwrap();
-        assert_eq!(substring.as_str().unwrap(), "hello");
+        let substring = view.substring(0, 5).expect("operation should succeed");
+        assert_eq!(
+            substring.as_str().expect("operation should succeed"),
+            "hello"
+        );
 
-        let substring2 = view.substring(6, 11).unwrap();
-        assert_eq!(substring2.as_str().unwrap(), "world");
+        let substring2 = view.substring(6, 11).expect("operation should succeed");
+        assert_eq!(
+            substring2.as_str().expect("operation should succeed"),
+            "world"
+        );
     }
 
     #[test]
     fn test_pool_statistics() {
         let pool = SimpleUnifiedStringPool::new();
 
-        pool.add_string("test").unwrap();
-        pool.add_string("data").unwrap();
-        pool.add_string("test").unwrap(); // Duplicate
+        pool.add_string("test").expect("operation should succeed");
+        pool.add_string("data").expect("operation should succeed");
+        pool.add_string("test").expect("operation should succeed"); // Duplicate
 
-        let stats = pool.stats().unwrap();
+        let stats = pool.stats().expect("operation should succeed");
         assert_eq!(stats.total_strings, 3); // 3 total additions (including 1 duplicate)
         assert_eq!(stats.unique_strings, 2); // 2 unique strings
         assert!(stats.total_bytes > 0);

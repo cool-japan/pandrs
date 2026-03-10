@@ -482,7 +482,7 @@ mod tests {
         let col1 = Float64Column::new(vec![1.0, 2.0, 3.0, 4.0]);
         let col2 = Float64Column::new(vec![1.0, 1.0, 1.0, 1.0]);
 
-        let result = col1.simd_add(&col2).unwrap();
+        let result = col1.simd_add(&col2).expect("operation should succeed");
 
         assert_eq!(result.data(), vec![2.0, 3.0, 4.0, 5.0]);
     }
@@ -491,7 +491,9 @@ mod tests {
     fn test_simd_float64_scalar_multiply() {
         let col = Float64Column::new(vec![1.0, 2.0, 3.0, 4.0]);
 
-        let result = col.simd_multiply_scalar(2.0).unwrap();
+        let result = col
+            .simd_multiply_scalar(2.0)
+            .expect("operation should succeed");
 
         assert_eq!(result.data(), vec![2.0, 4.0, 6.0, 8.0]);
     }
@@ -500,7 +502,7 @@ mod tests {
     fn test_simd_float64_abs() {
         let col = Float64Column::new(vec![-1.0, 2.0, -3.0, 4.0]);
 
-        let result = col.simd_abs().unwrap();
+        let result = col.simd_abs().expect("operation should succeed");
 
         assert_eq!(result.data(), vec![1.0, 2.0, 3.0, 4.0]);
     }
@@ -510,7 +512,9 @@ mod tests {
         let col1 = Float64Column::new(vec![1.0, 2.0, 3.0, 4.0]);
         let col2 = Float64Column::new(vec![1.0, 1.0, 4.0, 4.0]);
 
-        let result = col1.simd_compare(&col2, ComparisonOp::GreaterThan).unwrap();
+        let result = col1
+            .simd_compare(&col2, ComparisonOp::GreaterThan)
+            .expect("operation should succeed");
 
         assert_eq!(result, vec![false, true, false, false]);
     }
@@ -520,7 +524,7 @@ mod tests {
         let col1 = Int64Column::new(vec![1, 2, 3, 4]);
         let col2 = Int64Column::new(vec![1, 1, 1, 1]);
 
-        let result = col1.simd_add(&col2).unwrap();
+        let result = col1.simd_add(&col2).expect("operation should succeed");
 
         assert_eq!(result.data(), vec![2, 3, 4, 5]);
     }
@@ -529,7 +533,7 @@ mod tests {
     fn test_simd_int64_to_float64() {
         let col = Int64Column::new(vec![1, 2, 3, 4]);
 
-        let result = col.to_float64_simd().unwrap();
+        let result = col.to_float64_simd().expect("operation should succeed");
 
         assert_eq!(result.data(), vec![1.0, 2.0, 3.0, 4.0]);
     }
@@ -541,7 +545,8 @@ mod tests {
         let col1 = Column::Float64(Float64Column::new(vec![1.0, 2.0, 3.0]));
         let col2 = Column::Int64(Int64Column::new(vec![1, 2, 3]));
 
-        let result = SIMDColumnArithmetic::add_columns(&col1, &col2).unwrap();
+        let result =
+            SIMDColumnArithmetic::add_columns(&col1, &col2).expect("operation should succeed");
 
         if let Column::Float64(float_result) = result {
             assert_eq!(float_result.data(), vec![2.0, 4.0, 6.0]);

@@ -51,10 +51,14 @@ pub fn read_csv<P: AsRef<Path>>(path: P, has_header: bool) -> Result<DataFrame> 
         let record = result.map_err(PandRSError::Csv)?;
         for (i, header) in headers.iter().enumerate() {
             if i < record.len() {
-                columns.get_mut(header).unwrap().push(record[i].to_string());
+                if let Some(col) = columns.get_mut(header) {
+                    col.push(record[i].to_string());
+                }
             } else {
                 // If the row is shorter, add an empty string
-                columns.get_mut(header).unwrap().push(String::new());
+                if let Some(col) = columns.get_mut(header) {
+                    col.push(String::new());
+                }
             }
         }
     }

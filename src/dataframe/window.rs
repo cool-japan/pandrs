@@ -169,7 +169,7 @@ impl DataFrameWindowExt for DataFrame {
 }
 
 impl DataFrame {
-    /// Legacy helper method to get a column as Series<f64>
+    /// Legacy helper method to get a column as `Series<f64>`
     fn get_column_as_f64_legacy(&self, column_name: &str) -> Result<Series<f64>> {
         // Try to get the column as a string series first, then parse to f64
         if let Ok(string_series) = self.get_column::<String>(column_name) {

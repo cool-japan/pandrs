@@ -1,3 +1,4 @@
+#![allow(clippy::result_large_err)]
 //! Integration tests for temporary file utilities
 
 mod common;

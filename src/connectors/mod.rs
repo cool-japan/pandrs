@@ -5,6 +5,7 @@
 
 pub mod cloud;
 pub mod database;
+pub mod local;
 
 // Re-export commonly used types
 pub use database::{
@@ -20,6 +21,8 @@ pub use cloud::{
     CloudObject, CloudProvider, FileFormat, GCSConnector, ObjectMetadata, S3Connector,
 };
 
+pub use local::LocalConnector;
+
 use crate::core::error::{Error, Result};
 use crate::dataframe::DataFrame;
 
@@ -31,6 +34,7 @@ pub enum DataConnector {
     S3(cloud::S3Connector),
     GCS(cloud::GCSConnector),
     Azure(cloud::AzureConnector),
+    Local(local::LocalConnector),
 }
 
 impl DataConnector {
@@ -60,6 +64,11 @@ impl DataConnector {
         Self::Azure(cloud::AzureConnector::new())
     }
 
+    /// Create local filesystem connector (useful for testing and development)
+    pub fn local(base_path: impl Into<std::path::PathBuf>) -> Self {
+        Self::Local(local::LocalConnector::new(base_path))
+    }
+
     /// Create connector from connection string
     pub fn from_connection_string(connection_string: &str) -> Result<Self> {
         if connection_string.starts_with("s3://") {
@@ -68,6 +77,9 @@ impl DataConnector {
             Ok(Self::gcs())
         } else if connection_string.starts_with("azure://") {
             Ok(Self::azure())
+        } else if connection_string.starts_with("local://") {
+            let base = connection_string.trim_start_matches("local://");
+            Ok(Self::local(base))
         } else if connection_string.starts_with("sqlite:") {
             Ok(Self::sqlite())
         } else if connection_string.starts_with("postgresql://")
@@ -135,6 +147,7 @@ impl DataSource {
             DataConnector::S3(cloud) => cloud.read_dataframe(bucket, key, format).await,
             DataConnector::GCS(cloud) => cloud.read_dataframe(bucket, key, format).await,
             DataConnector::Azure(cloud) => cloud.read_dataframe(bucket, key, format).await,
+            DataConnector::Local(cloud) => cloud.read_dataframe(bucket, key, format).await,
             _ => Err(Error::InvalidOperation(
                 "Cloud storage operations not supported for database connectors".to_string(),
             )),
@@ -175,6 +188,7 @@ impl DataSource {
             DataConnector::S3(cloud) => cloud.write_dataframe(df, bucket, key, format).await,
             DataConnector::GCS(cloud) => cloud.write_dataframe(df, bucket, key, format).await,
             DataConnector::Azure(cloud) => cloud.write_dataframe(df, bucket, key, format).await,
+            DataConnector::Local(cloud) => cloud.write_dataframe(df, bucket, key, format).await,
             _ => Err(Error::InvalidOperation(
                 "Cloud storage operations not supported for database connectors".to_string(),
             )),
@@ -192,6 +206,7 @@ impl DataFrame {
         if connection_string.starts_with("s3://")
             || connection_string.starts_with("gs://")
             || connection_string.starts_with("azure://")
+            || connection_string.starts_with("local://")
         {
             // Extract bucket and key from path
             let parts: Vec<&str> = query_or_path.split('/').collect();
@@ -218,6 +233,7 @@ impl DataFrame {
         if connection_string.starts_with("s3://")
             || connection_string.starts_with("gs://")
             || connection_string.starts_with("azure://")
+            || connection_string.starts_with("local://")
         {
             // Extract bucket and key from path
             let parts: Vec<&str> = table_or_path.split('/').collect();
@@ -246,27 +262,39 @@ mod tests {
         // Test cloud storage URLs
         let s3_connector = DataConnector::from_connection_string("s3://bucket/path");
         assert!(s3_connector.is_ok());
-        assert!(matches!(s3_connector.unwrap(), DataConnector::S3(_)));
+        assert!(matches!(
+            s3_connector.expect("operation should succeed"),
+            DataConnector::S3(_)
+        ));
 
         let gcs_connector = DataConnector::from_connection_string("gs://bucket/path");
         assert!(gcs_connector.is_ok());
-        assert!(matches!(gcs_connector.unwrap(), DataConnector::GCS(_)));
+        assert!(matches!(
+            gcs_connector.expect("operation should succeed"),
+            DataConnector::GCS(_)
+        ));
 
         // Test database URLs
         let sqlite_connector = DataConnector::from_connection_string("sqlite::memory:");
         assert!(sqlite_connector.is_ok());
         assert!(matches!(
-            sqlite_connector.unwrap(),
+            sqlite_connector.expect("operation should succeed"),
             DataConnector::SQLite(_)
+        ));
+
+        // Test local filesystem URL
+        let local_connector = DataConnector::from_connection_string("local:///tmp/test");
+        assert!(local_connector.is_ok());
+        assert!(matches!(
+            local_connector.expect("operation should succeed"),
+            DataConnector::Local(_)
         ));
     }
 
     #[test]
     fn test_data_source_creation() {
         let connector = DataConnector::s3();
-        let source = DataSource::new(connector);
-
+        let _source = DataSource::new(connector);
         // DataSource should be created successfully
-        // (We can't test async methods in a simple unit test)
     }
 }

@@ -270,7 +270,7 @@ fn generate_entry_id() -> String {
 
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
+        .expect("operation should succeed")
         .as_nanos();
 
     format!("{:016x}", timestamp)
@@ -881,7 +881,7 @@ mod tests {
             ctx.set("rows_before", "1000");
         });
 
-        let entry = logger.entries().back().unwrap();
+        let entry = logger.entries().back().expect("operation should succeed");
         assert_eq!(
             entry.context.get("condition"),
             Some(&"value > 10".to_string())
@@ -932,7 +932,7 @@ mod tests {
 
         logger.log_operation("select", "df", "Selected");
 
-        let stats = logger.stats().unwrap();
+        let stats = logger.stats().expect("operation should succeed");
         assert_eq!(stats.total_entries, 1);
     }
 
@@ -943,6 +943,6 @@ mod tests {
 
         let json = logger.export_json();
         assert!(json.is_ok());
-        assert!(json.unwrap().contains("select"));
+        assert!(json.expect("operation should succeed").contains("select"));
     }
 }

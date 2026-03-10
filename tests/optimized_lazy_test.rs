@@ -1,3 +1,4 @@
+#![allow(clippy::result_large_err)]
 use pandrs::{
     AggregateOp, BooleanColumn, Column, Float64Column, Int64Column, LazyFrame, OptimizedDataFrame,
     StringColumn,

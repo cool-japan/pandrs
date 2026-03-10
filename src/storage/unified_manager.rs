@@ -795,7 +795,9 @@ mod tests {
             1024,
         );
 
-        let metrics = monitor.get_strategy_metrics(StorageType::InMemory).unwrap();
+        let metrics = monitor
+            .get_strategy_metrics(StorageType::InMemory)
+            .expect("operation should succeed");
         assert_eq!(metrics.operation_counts[&OperationType::Read], 1);
         assert_eq!(metrics.bytes_processed[&OperationType::Read], 1024);
     }

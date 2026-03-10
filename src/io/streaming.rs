@@ -902,19 +902,35 @@ mod tests {
         assert!(source.has_more());
         assert_eq!(source.estimated_size(), Some(10));
 
-        let batch1 = source.next_batch().await.unwrap().unwrap();
+        let batch1 = source
+            .next_batch()
+            .await
+            .expect("operation should succeed")
+            .expect("operation should succeed");
         assert_eq!(batch1, vec![1, 2, 3]);
 
-        let batch2 = source.next_batch().await.unwrap().unwrap();
+        let batch2 = source
+            .next_batch()
+            .await
+            .expect("operation should succeed")
+            .expect("operation should succeed");
         assert_eq!(batch2, vec![4, 5, 6]);
 
-        let batch3 = source.next_batch().await.unwrap().unwrap();
+        let batch3 = source
+            .next_batch()
+            .await
+            .expect("operation should succeed")
+            .expect("operation should succeed");
         assert_eq!(batch3, vec![7, 8, 9]);
 
-        let batch4 = source.next_batch().await.unwrap().unwrap();
+        let batch4 = source
+            .next_batch()
+            .await
+            .expect("operation should succeed")
+            .expect("operation should succeed");
         assert_eq!(batch4, vec![10]);
 
-        let batch5 = source.next_batch().await.unwrap();
+        let batch5 = source.next_batch().await.expect("operation should succeed");
         assert!(batch5.is_none());
         assert!(!source.has_more());
     }
@@ -923,14 +939,18 @@ mod tests {
     async fn test_memory_stream_sink() {
         let mut sink = MemoryStreamSink::new();
 
-        sink.write_batch(vec![1, 2, 3]).await.unwrap();
-        sink.write_batch(vec![4, 5, 6]).await.unwrap();
-        sink.flush().await.unwrap();
+        sink.write_batch(vec![1, 2, 3])
+            .await
+            .expect("operation should succeed");
+        sink.write_batch(vec![4, 5, 6])
+            .await
+            .expect("operation should succeed");
+        sink.flush().await.expect("operation should succeed");
 
-        let data = sink.get_data().unwrap();
+        let data = sink.get_data().expect("operation should succeed");
         assert_eq!(data, vec![1, 2, 3, 4, 5, 6]);
 
-        sink.close().await.unwrap();
+        sink.close().await.expect("operation should succeed");
     }
 
     #[tokio::test]
@@ -942,9 +962,12 @@ mod tests {
         let source = MemoryStreamSource::new(source_data, 3);
         let sink = MemoryStreamSink::new();
 
-        pipeline.execute(source, sink).await.unwrap();
+        pipeline
+            .execute(source, sink)
+            .await
+            .expect("operation should succeed");
 
-        let stats = pipeline.stats().unwrap();
+        let stats = pipeline.stats().expect("operation should succeed");
         assert!(stats.items_read > 0);
         assert!(stats.items_processed > 0);
     }

@@ -558,8 +558,12 @@ mod tests {
         let serializer = JsonModelSerializer;
 
         // Test serialize/deserialize
-        let serialized = serializer.serialize(&model).unwrap();
-        let deserialized = serializer.deserialize(&serialized).unwrap();
+        let serialized = serializer
+            .serialize(&model)
+            .expect("operation should succeed");
+        let deserialized = serializer
+            .deserialize(&serialized)
+            .expect("operation should succeed");
 
         assert_eq!(model.metadata.name, deserialized.metadata.name);
         assert_eq!(model.metadata.version, deserialized.metadata.version);
@@ -571,8 +575,12 @@ mod tests {
         let serializer = YamlModelSerializer;
 
         // Test serialize/deserialize
-        let serialized = serializer.serialize(&model).unwrap();
-        let deserialized = serializer.deserialize(&serialized).unwrap();
+        let serialized = serializer
+            .serialize(&model)
+            .expect("operation should succeed");
+        let deserialized = serializer
+            .deserialize(&serialized)
+            .expect("operation should succeed");
 
         assert_eq!(model.metadata.name, deserialized.metadata.name);
         assert_eq!(model.metadata.version, deserialized.metadata.version);
@@ -584,12 +592,16 @@ mod tests {
         let serializer = JsonModelSerializer;
 
         // Create temporary file
-        let temp_file = NamedTempFile::new().unwrap();
+        let temp_file = NamedTempFile::new().expect("operation should succeed");
         let temp_path = temp_file.path();
 
         // Save and load
-        serializer.save(&model, temp_path).unwrap();
-        let loaded_model = serializer.load(temp_path).unwrap();
+        serializer
+            .save(&model, temp_path)
+            .expect("operation should succeed");
+        let loaded_model = serializer
+            .load(temp_path)
+            .expect("operation should succeed");
 
         assert_eq!(model.metadata.name, loaded_model.get_metadata().name);
         assert_eq!(model.metadata.version, loaded_model.get_metadata().version);

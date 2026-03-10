@@ -369,13 +369,13 @@ mod tests {
         let float_data = vec![1.0, 2.0, 3.0, 4.0, 5.0];
         let float_column = Float64Column::new(float_data.clone());
         df.add_column("float_col".to_string(), Column::Float64(float_column))
-            .unwrap();
+            .expect("operation should succeed");
 
         // Add Int64 column
         let int_data = vec![10, 20, 30, 40, 50];
         let int_column = Int64Column::new(int_data.clone());
         df.add_column("int_col".to_string(), Column::Int64(int_column))
-            .unwrap();
+            .expect("operation should succeed");
 
         df
     }
@@ -385,11 +385,13 @@ mod tests {
         let df = create_test_dataframe();
 
         // Test float column sum
-        let result = df.sum_direct("float_col").unwrap();
+        let result = df
+            .sum_direct("float_col")
+            .expect("operation should succeed");
         assert_eq!(result, 15.0);
 
         // Test int column sum
-        let result = df.sum_direct("int_col").unwrap();
+        let result = df.sum_direct("int_col").expect("operation should succeed");
         assert_eq!(result, 150.0);
     }
 
@@ -398,11 +400,13 @@ mod tests {
         let df = create_test_dataframe();
 
         // Test float column mean
-        let result = df.mean_direct("float_col").unwrap();
+        let result = df
+            .mean_direct("float_col")
+            .expect("operation should succeed");
         assert_eq!(result, 3.0);
 
         // Test int column mean
-        let result = df.mean_direct("int_col").unwrap();
+        let result = df.mean_direct("int_col").expect("operation should succeed");
         assert_eq!(result, 30.0);
     }
 
@@ -411,11 +415,13 @@ mod tests {
         let df = create_test_dataframe();
 
         // Test float column max
-        let result = df.max_direct("float_col").unwrap();
+        let result = df
+            .max_direct("float_col")
+            .expect("operation should succeed");
         assert_eq!(result, 5.0);
 
         // Test int column max
-        let result = df.max_direct("int_col").unwrap();
+        let result = df.max_direct("int_col").expect("operation should succeed");
         assert_eq!(result, 50.0);
     }
 
@@ -424,11 +430,13 @@ mod tests {
         let df = create_test_dataframe();
 
         // Test float column min
-        let result = df.min_direct("float_col").unwrap();
+        let result = df
+            .min_direct("float_col")
+            .expect("operation should succeed");
         assert_eq!(result, 1.0);
 
         // Test int column min
-        let result = df.min_direct("int_col").unwrap();
+        let result = df.min_direct("int_col").expect("operation should succeed");
         assert_eq!(result, 10.0);
     }
 
@@ -437,11 +445,15 @@ mod tests {
         let df = create_test_dataframe();
 
         // Test float column count
-        let result = df.count_direct("float_col").unwrap();
+        let result = df
+            .count_direct("float_col")
+            .expect("operation should succeed");
         assert_eq!(result, 5);
 
         // Test int column count
-        let result = df.count_direct("int_col").unwrap();
+        let result = df
+            .count_direct("int_col")
+            .expect("operation should succeed");
         assert_eq!(result, 5);
     }
 
@@ -460,11 +472,11 @@ mod tests {
         let df = create_test_dataframe();
 
         // Test float column sum
-        let result = df.sum_simd("float_col").unwrap();
+        let result = df.sum_simd("float_col").expect("operation should succeed");
         assert_eq!(result, 15.0);
 
         // Test int column sum
-        let result = df.sum_simd("int_col").unwrap();
+        let result = df.sum_simd("int_col").expect("operation should succeed");
         assert_eq!(result, 150.0);
     }
 
@@ -473,11 +485,11 @@ mod tests {
         let df = create_test_dataframe();
 
         // Test float column mean
-        let result = df.mean_simd("float_col").unwrap();
+        let result = df.mean_simd("float_col").expect("operation should succeed");
         assert_eq!(result, 3.0);
 
         // Test int column mean
-        let result = df.mean_simd("int_col").unwrap();
+        let result = df.mean_simd("int_col").expect("operation should succeed");
         assert_eq!(result, 30.0);
     }
 
@@ -486,11 +498,11 @@ mod tests {
         let df = create_test_dataframe();
 
         // Test float column max
-        let result = df.max_simd("float_col").unwrap();
+        let result = df.max_simd("float_col").expect("operation should succeed");
         assert_eq!(result, 5.0);
 
         // Test int column max
-        let result = df.max_simd("int_col").unwrap();
+        let result = df.max_simd("int_col").expect("operation should succeed");
         assert_eq!(result, 50.0);
     }
 
@@ -499,11 +511,11 @@ mod tests {
         let df = create_test_dataframe();
 
         // Test float column min
-        let result = df.min_simd("float_col").unwrap();
+        let result = df.min_simd("float_col").expect("operation should succeed");
         assert_eq!(result, 1.0);
 
         // Test int column min
-        let result = df.min_simd("int_col").unwrap();
+        let result = df.min_simd("int_col").expect("operation should succeed");
         assert_eq!(result, 10.0);
     }
 
@@ -513,37 +525,41 @@ mod tests {
 
         // Verify SIMD and direct methods produce identical results
         assert_eq!(
-            df.sum_direct("float_col").unwrap(),
-            df.sum_simd("float_col").unwrap()
+            df.sum_direct("float_col")
+                .expect("operation should succeed"),
+            df.sum_simd("float_col").expect("operation should succeed")
         );
         assert_eq!(
-            df.mean_direct("float_col").unwrap(),
-            df.mean_simd("float_col").unwrap()
+            df.mean_direct("float_col")
+                .expect("operation should succeed"),
+            df.mean_simd("float_col").expect("operation should succeed")
         );
         assert_eq!(
-            df.max_direct("float_col").unwrap(),
-            df.max_simd("float_col").unwrap()
+            df.max_direct("float_col")
+                .expect("operation should succeed"),
+            df.max_simd("float_col").expect("operation should succeed")
         );
         assert_eq!(
-            df.min_direct("float_col").unwrap(),
-            df.min_simd("float_col").unwrap()
+            df.min_direct("float_col")
+                .expect("operation should succeed"),
+            df.min_simd("float_col").expect("operation should succeed")
         );
 
         assert_eq!(
-            df.sum_direct("int_col").unwrap(),
-            df.sum_simd("int_col").unwrap()
+            df.sum_direct("int_col").expect("operation should succeed"),
+            df.sum_simd("int_col").expect("operation should succeed")
         );
         assert_eq!(
-            df.mean_direct("int_col").unwrap(),
-            df.mean_simd("int_col").unwrap()
+            df.mean_direct("int_col").expect("operation should succeed"),
+            df.mean_simd("int_col").expect("operation should succeed")
         );
         assert_eq!(
-            df.max_direct("int_col").unwrap(),
-            df.max_simd("int_col").unwrap()
+            df.max_direct("int_col").expect("operation should succeed"),
+            df.max_simd("int_col").expect("operation should succeed")
         );
         assert_eq!(
-            df.min_direct("int_col").unwrap(),
-            df.min_simd("int_col").unwrap()
+            df.min_direct("int_col").expect("operation should succeed"),
+            df.min_simd("int_col").expect("operation should succeed")
         );
     }
 
@@ -560,35 +576,45 @@ mod tests {
         let int_column = Int64Column::new(large_int_data.clone());
 
         df.add_column("large_float".to_string(), Column::Float64(float_column))
-            .unwrap();
+            .expect("operation should succeed");
         df.add_column("large_int".to_string(), Column::Int64(int_column))
-            .unwrap();
+            .expect("operation should succeed");
 
         // Test that SIMD methods work correctly on large datasets
-        let sum_result = df.sum_simd("large_float").unwrap();
+        let sum_result = df
+            .sum_simd("large_float")
+            .expect("operation should succeed");
         let expected_sum: f64 = large_float_data.iter().sum();
         assert!((sum_result - expected_sum).abs() < 1e-10);
 
-        let mean_result = df.mean_simd("large_float").unwrap();
+        let mean_result = df
+            .mean_simd("large_float")
+            .expect("operation should succeed");
         let expected_mean = expected_sum / large_float_data.len() as f64;
         assert!((mean_result - expected_mean).abs() < 1e-10);
 
         // Verify consistency between direct and SIMD methods on large dataset
         assert_eq!(
-            df.sum_direct("large_float").unwrap(),
-            df.sum_simd("large_float").unwrap()
+            df.sum_direct("large_float")
+                .expect("operation should succeed"),
+            df.sum_simd("large_float")
+                .expect("operation should succeed")
         );
         assert_eq!(
-            df.mean_direct("large_float").unwrap(),
-            df.mean_simd("large_float").unwrap()
+            df.mean_direct("large_float")
+                .expect("operation should succeed"),
+            df.mean_simd("large_float")
+                .expect("operation should succeed")
         );
         assert_eq!(
-            df.max_direct("large_int").unwrap(),
-            df.max_simd("large_int").unwrap()
+            df.max_direct("large_int")
+                .expect("operation should succeed"),
+            df.max_simd("large_int").expect("operation should succeed")
         );
         assert_eq!(
-            df.min_direct("large_int").unwrap(),
-            df.min_simd("large_int").unwrap()
+            df.min_direct("large_int")
+                .expect("operation should succeed"),
+            df.min_simd("large_int").expect("operation should succeed")
         );
     }
 }

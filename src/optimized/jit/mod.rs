@@ -149,12 +149,12 @@ pub fn initialize_jit_system(config: JITConfig) -> crate::core::error::Result<()
 }
 
 /// Get global JIT system statistics
-pub fn get_jit_system_stats() -> JitSystemStats {
-    let cache_stats = cache::get_global_cache().get_stats();
+pub fn get_jit_system_stats() -> crate::core::error::Result<JitSystemStats> {
+    let cache_stats = cache::get_global_cache().get_stats()?;
     let monitor = performance_monitor::get_global_monitor();
-    let system_metrics = monitor.get_system_metrics();
+    let system_metrics = monitor.get_system_metrics()?;
 
-    JitSystemStats {
+    Ok(JitSystemStats {
         cache_hit_rate: cache_stats.hit_rate,
         cache_utilization: cache_stats.utilization_percent(),
         active_functions: system_metrics.active_functions,
@@ -163,7 +163,7 @@ pub fn get_jit_system_stats() -> JitSystemStats {
         failed_compilations: system_metrics.failed_compilations,
         avg_compilation_time_ns: system_metrics.avg_compilation_time_ns,
         uptime: system_metrics.uptime,
-    }
+    })
 }
 
 /// JIT system statistics

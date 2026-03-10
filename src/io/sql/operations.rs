@@ -113,7 +113,7 @@ pub enum InsertMethod {
 /// ```no_run
 /// use pandrs::io::sql::read_sql;
 ///
-/// let df = read_sql("SELECT name, age FROM users WHERE age > 30", "users.db").unwrap();
+/// let df = read_sql("SELECT name, age FROM users WHERE age > 30", "users.db").expect("operation should succeed");
 /// ```
 pub fn read_sql<P: AsRef<Path>>(query: &str, db_path: P) -> Result<DataFrame> {
     // Connect to database
@@ -187,7 +187,7 @@ pub fn read_sql<P: AsRef<Path>>(query: &str, db_path: P) -> Result<DataFrame> {
 /// ```no_run
 /// use pandrs::io::sql::execute_sql;
 ///
-/// let affected_rows = execute_sql("UPDATE users SET status = 'active' WHERE last_login > '2023-01-01'", "users.db").unwrap();
+/// let affected_rows = execute_sql("UPDATE users SET status = 'active' WHERE last_login > '2023-01-01'", "users.db").expect("operation should succeed");
 /// println!("Affected rows: {}", affected_rows);
 /// ```
 pub fn execute_sql<P: AsRef<Path>>(sql: &str, db_path: P) -> Result<usize> {
@@ -392,13 +392,13 @@ pub fn write_to_sql<P: AsRef<Path>>(
 /// ```no_run
 /// use pandrs::io::sql::{read_sql_advanced, SqlConnection, SqlReadOptions};
 ///
-/// let conn = SqlConnection::from_url("sqlite:data.db").unwrap();
+/// let conn = SqlConnection::from_url("sqlite:data.db").expect("operation should succeed");
 /// let options = SqlReadOptions {
 ///     chunksize: Some(1000),
 ///     parse_dates: Some(vec!["created_at".to_string()]),
 ///     ..Default::default()
 /// };
-/// let df = read_sql_advanced("SELECT * FROM users", &conn, options).unwrap();
+/// let df = read_sql_advanced("SELECT * FROM users", &conn, options).expect("operation should succeed");
 /// ```
 pub fn read_sql_advanced(
     sql: &str,
@@ -435,12 +435,12 @@ pub fn read_sql_advanced(
 /// ```no_run
 /// use pandrs::io::sql::{read_sql_table, SqlConnection, SqlReadOptions};
 ///
-/// let conn = SqlConnection::from_url("sqlite:data.db").unwrap();
+/// let conn = SqlConnection::from_url("sqlite:data.db").expect("operation should succeed");
 /// let options = SqlReadOptions {
 ///     index_col: Some(vec!["id".to_string()]),
 ///     ..Default::default()
 /// };
-/// let df = read_sql_table("users", &conn, options).unwrap();
+/// let df = read_sql_table("users", &conn, options).expect("operation should succeed");
 /// ```
 pub fn read_sql_table(
     table_name: &str,
@@ -473,14 +473,14 @@ pub fn read_sql_table(
 /// // Create sample dataframe
 /// let df = OptimizedDataFrame::new();
 ///
-/// let conn = SqlConnection::from_url("sqlite:data.db").unwrap();
+/// let conn = SqlConnection::from_url("sqlite:data.db").expect("operation should succeed");
 /// let options = SqlWriteOptions {
 ///     if_exists: WriteMode::Replace,
 ///     chunksize: Some(5000),
 ///     index: false,
 ///     ..Default::default()
 /// };
-/// let rows_written = write_sql_advanced(&df, "users", &conn, options).unwrap();
+/// let rows_written = write_sql_advanced(&df, "users", &conn, options).expect("operation should succeed");
 /// ```
 pub fn write_sql_advanced(
     df: &OptimizedDataFrame,

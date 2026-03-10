@@ -23,6 +23,9 @@ pub mod text;
 // ASCII visualization (no external dependencies)
 pub mod ascii;
 
+// SVG/HTML visualization (pure Rust, no external dependencies)
+pub mod svg;
+
 // Backward compatibility layer
 mod backward_compat;
 
@@ -41,6 +44,16 @@ pub use self::ascii::{
     DataFrameVizExt, Histogram, HistogramConfig, LinePlot, LinePlotConfig, ScatterPlot,
     ScatterPlotConfig, Sparkline, SparklineStyle,
 };
+
+// Re-export SVG visualization types (with renamed aliases to avoid name conflicts)
+pub use self::svg::charts::{
+    BarChart as SvgBarChart, BarOrientation as SvgBarOrientation, HeatMap as SvgHeatMap,
+    LegendPosition, LineChart, LineSeries, Margins as SvgMargins, MarkerShape, PieChart,
+    ScatterPlot as SvgScatterPlot, SvgChartConfig, SvgHistogram,
+};
+pub use self::svg::colors::{Color, ColorGradient, ColorScheme};
+pub use self::svg::dataframe_ext::{SvgPlotType, SvgVisualize};
+pub use self::svg::engine::{DrawStyle, PathBuilder, SvgCanvas, SvgDefs, SvgGroup, Transform};
 
 // For backward compatibility, re-export the backward-compatible functionality
 #[allow(deprecated)]

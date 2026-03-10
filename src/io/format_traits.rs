@@ -813,12 +813,18 @@ mod tests {
         let path = Path::new("test.mock");
         let detected = registry.detect_format(path);
         assert!(detected.is_some());
-        assert_eq!(detected.unwrap().format_name(), "mock");
+        assert_eq!(
+            detected.expect("operation should succeed").format_name(),
+            "mock"
+        );
 
         let data = b"MOCK format data";
         let detected = registry.detect_format_from_data(data);
         assert!(detected.is_some());
-        assert_eq!(detected.unwrap().format_name(), "mock");
+        assert_eq!(
+            detected.expect("operation should succeed").format_name(),
+            "mock"
+        );
 
         let invalid_data = b"Not mock data";
         let detected = registry.detect_format_from_data(invalid_data);

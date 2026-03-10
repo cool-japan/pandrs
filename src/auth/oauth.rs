@@ -960,7 +960,7 @@ mod tests {
     #[test]
     fn test_token_response_parsing() {
         let json = r#"{"access_token":"abc123","token_type":"Bearer","expires_in":3600,"refresh_token":"xyz789"}"#;
-        let response = TokenResponse::from_json(json).unwrap();
+        let response = TokenResponse::from_json(json).expect("operation should succeed");
 
         assert_eq!(response.access_token, "abc123");
         assert_eq!(response.token_type, "Bearer");
@@ -990,7 +990,7 @@ mod tests {
         // Get token
         let response = client
             .client_credentials_grant("test_client", "test_secret", Some(vec!["read".to_string()]))
-            .unwrap();
+            .expect("operation should succeed");
 
         assert!(!response.access_token.is_empty());
         assert!(response.access_token.starts_with("at_"));
@@ -1027,7 +1027,7 @@ mod tests {
                 None,
                 None,
             )
-            .unwrap();
+            .expect("operation should succeed");
 
         // Exchange code for tokens
         let response = client
@@ -1038,7 +1038,7 @@ mod tests {
                 "https://app.example.com/callback",
                 None,
             )
-            .unwrap();
+            .expect("operation should succeed");
 
         assert!(!response.access_token.is_empty());
         assert!(response.refresh_token.is_some());
@@ -1061,7 +1061,7 @@ mod tests {
 
         let response = client
             .client_credentials_grant("test_client", "test_secret", None)
-            .unwrap();
+            .expect("operation should succeed");
 
         // Token should be active
         assert!(client.introspect_token(&response.access_token).active);

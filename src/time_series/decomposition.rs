@@ -571,7 +571,10 @@ mod tests {
         let mut builder = TimeSeriesBuilder::new();
 
         for i in 0..100 {
-            let timestamp = Utc.timestamp_opt(1640995200 + i * 86400, 0).unwrap(); // Daily data
+            let timestamp = Utc
+                .timestamp_opt(1640995200 + i * 86400, 0)
+                .single()
+                .expect("operation should succeed"); // Daily data
             let trend = i as f64 * 0.1; // Linear trend
             let seasonal = (2.0 * std::f64::consts::PI * i as f64 / 7.0).sin() * 2.0; // Weekly seasonality
             let noise = 0.1 * (i as f64 % 3.0 - 1.0); // Small noise
@@ -580,7 +583,10 @@ mod tests {
             builder = builder.add_point(timestamp, value);
         }
 
-        builder.frequency(Frequency::Daily).build().unwrap()
+        builder
+            .frequency(Frequency::Daily)
+            .build()
+            .expect("operation should succeed")
     }
 
     #[test]
@@ -588,7 +594,7 @@ mod tests {
         let ts = create_test_seasonal_series();
         let decomposer = SeasonalDecomposition::new(DecompositionMethod::Additive).with_period(7);
 
-        let result = decomposer.decompose(&ts).unwrap();
+        let result = decomposer.decompose(&ts).expect("operation should succeed");
 
         assert_eq!(result.period, 7);
         assert_eq!(result.trend.len(), ts.len());
@@ -628,7 +634,7 @@ mod tests {
         let decomposer =
             SeasonalDecomposition::new(DecompositionMethod::Multiplicative).with_period(7);
 
-        let result = decomposer.decompose(&ts).unwrap();
+        let result = decomposer.decompose(&ts).expect("operation should succeed");
         assert_eq!(result.method, DecompositionMethod::Multiplicative);
     }
 
@@ -637,13 +643,16 @@ mod tests {
         let ts = create_test_seasonal_series();
         let decomposer = SeasonalDecomposition::new(DecompositionMethod::Additive).with_period(7);
 
-        let result = decomposer.decompose(&ts).unwrap();
-        let reconstructed = result.reconstruct().unwrap();
+        let result = decomposer.decompose(&ts).expect("operation should succeed");
+        let reconstructed = result.reconstruct().expect("operation should succeed");
 
         // Check that reconstruction is close to original
         for i in 0..ts.len() {
-            let original = ts.values.get_f64(i).unwrap();
-            let reconstructed_val = reconstructed.values.get_f64(i).unwrap();
+            let original = ts.values.get_f64(i).expect("operation should succeed");
+            let reconstructed_val = reconstructed
+                .values
+                .get_f64(i)
+                .expect("operation should succeed");
             let diff = (original - reconstructed_val).abs();
             assert!(
                 diff < 1e-10,
@@ -657,7 +666,7 @@ mod tests {
         let ts = create_test_seasonal_series();
         let decomposer = SeasonalDecomposition::new(DecompositionMethod::Additive);
 
-        let result = decomposer.decompose(&ts).unwrap();
+        let result = decomposer.decompose(&ts).expect("operation should succeed");
 
         // Should detect weekly seasonality (period = 7)
         assert_eq!(result.period, 7);
@@ -668,7 +677,7 @@ mod tests {
         let ts = create_test_seasonal_series();
         let decomposer = SeasonalDecomposition::new(DecompositionMethod::Additive).with_period(7);
 
-        let result = decomposer.decompose(&ts).unwrap();
+        let result = decomposer.decompose(&ts).expect("operation should succeed");
         let quality = result.quality_score();
 
         assert!(

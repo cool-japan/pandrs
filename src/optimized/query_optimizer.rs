@@ -887,7 +887,7 @@ mod tests {
             .build();
 
         let mut optimizer = QueryOptimizer::new(OptimizationLevel::Aggressive);
-        let optimized = optimizer.optimize(plan).unwrap();
+        let optimized = optimizer.optimize(plan).expect("operation should succeed");
 
         // Filter should be moved before select
         assert!(matches!(
@@ -920,7 +920,7 @@ mod tests {
             .build();
 
         let mut optimizer = QueryOptimizer::new(OptimizationLevel::Standard);
-        let optimized = optimizer.optimize(plan).unwrap();
+        let optimized = optimizer.optimize(plan).expect("operation should succeed");
 
         // Two selects should be fused into one
         assert!(optimized.operations.len() < 2);
@@ -954,7 +954,7 @@ mod tests {
             .build();
 
         let mut optimizer = QueryOptimizer::new(OptimizationLevel::Aggressive);
-        let _ = optimizer.optimize(plan).unwrap();
+        let _ = optimizer.optimize(plan).expect("operation should succeed");
 
         let stats = optimizer.stats();
         assert!(stats.predicates_pushed > 0);
@@ -976,7 +976,7 @@ mod tests {
             .build();
 
         let mut optimizer = QueryOptimizer::new(OptimizationLevel::Aggressive);
-        let optimized = optimizer.optimize(plan).unwrap();
+        let optimized = optimizer.optimize(plan).expect("operation should succeed");
 
         // More selective filter (b) should come first
         if let OptimizableOp::Filter { column, .. } = &optimized.operations[0] {

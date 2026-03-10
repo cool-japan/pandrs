@@ -196,9 +196,9 @@ impl DateTimeAccessor {
     /// ```
     /// use pandrs::Series;
     /// use chrono::{NaiveDate, Timelike};
-    /// let data = vec![NaiveDate::from_ymd_opt(2023, 12, 25).unwrap().and_hms_opt(14, 30, 45).unwrap()];
-    /// let series = Series::new(data, None).unwrap();
-    /// let rounded = series.dt().unwrap().round("H").unwrap();
+    /// let data = vec![NaiveDate::from_ymd_opt(2023, 12, 25).expect("operation should succeed").and_hms_opt(14, 30, 45).expect("operation should succeed")];
+    /// let series = Series::new(data, None).expect("operation should succeed");
+    /// let rounded = series.dt().expect("operation should succeed").round("H").expect("operation should succeed");
     /// assert_eq!(rounded.values()[0].hour(), 14);
     /// assert_eq!(rounded.values()[0].minute(), 0);
     /// ```
@@ -256,9 +256,9 @@ impl DateTimeAccessor {
     /// ```
     /// use pandrs::Series;
     /// use chrono::NaiveDate;
-    /// let data = vec![NaiveDate::from_ymd_opt(2023, 12, 25).unwrap().and_hms_opt(0, 0, 0).unwrap()];
-    /// let series = Series::new(data, None).unwrap();
-    /// let weeks = series.dt().unwrap().week().unwrap();
+    /// let data = vec![NaiveDate::from_ymd_opt(2023, 12, 25).expect("operation should succeed").and_hms_opt(0, 0, 0).expect("operation should succeed")];
+    /// let series = Series::new(data, None).expect("operation should succeed");
+    /// let weeks = series.dt().expect("operation should succeed").week().expect("operation should succeed");
     /// assert!(weeks.values()[0] >= 1 && weeks.values()[0] <= 53);
     /// ```
     pub fn week(&self) -> Result<Series<u32>, PandrsError> {
@@ -280,11 +280,11 @@ impl DateTimeAccessor {
     /// use pandrs::Series;
     /// use chrono::NaiveDate;
     /// let data = vec![
-    ///     NaiveDate::from_ymd_opt(2023, 2, 15).unwrap().and_hms_opt(0, 0, 0).unwrap(), // Feb 2023
-    ///     NaiveDate::from_ymd_opt(2024, 2, 15).unwrap().and_hms_opt(0, 0, 0).unwrap(), // Feb 2024 (leap year)
+    ///     NaiveDate::from_ymd_opt(2023, 2, 15).expect("operation should succeed").and_hms_opt(0, 0, 0).expect("operation should succeed"), // Feb 2023
+    ///     NaiveDate::from_ymd_opt(2024, 2, 15).expect("operation should succeed").and_hms_opt(0, 0, 0).expect("operation should succeed"), // Feb 2024 (leap year)
     /// ];
-    /// let series = Series::new(data, None).unwrap();
-    /// let days_in_month = series.dt().unwrap().days_in_month().unwrap();
+    /// let series = Series::new(data, None).expect("operation should succeed");
+    /// let days_in_month = series.dt().expect("operation should succeed").days_in_month().expect("operation should succeed");
     /// assert_eq!(days_in_month.values(), &[28, 29]); // 2023 vs 2024 leap year
     /// ```
     pub fn days_in_month(&self) -> Result<Series<u32>, PandrsError> {
@@ -331,11 +331,11 @@ impl DateTimeAccessor {
     /// use pandrs::Series;
     /// use chrono::NaiveDate;
     /// let data = vec![
-    ///     NaiveDate::from_ymd_opt(2023, 1, 1).unwrap().and_hms_opt(0, 0, 0).unwrap(),
-    ///     NaiveDate::from_ymd_opt(2024, 1, 1).unwrap().and_hms_opt(0, 0, 0).unwrap(),
+    ///     NaiveDate::from_ymd_opt(2023, 1, 1).expect("operation should succeed").and_hms_opt(0, 0, 0).expect("operation should succeed"),
+    ///     NaiveDate::from_ymd_opt(2024, 1, 1).expect("operation should succeed").and_hms_opt(0, 0, 0).expect("operation should succeed"),
     /// ];
-    /// let series = Series::new(data, None).unwrap();
-    /// let is_leap = series.dt().unwrap().is_leap_year().unwrap();
+    /// let series = Series::new(data, None).expect("operation should succeed");
+    /// let is_leap = series.dt().expect("operation should succeed").is_leap_year().expect("operation should succeed");
     /// assert_eq!(is_leap.values(), &[false, true]);
     /// ```
     pub fn is_leap_year(&self) -> Result<Series<bool>, PandrsError> {
@@ -357,11 +357,11 @@ impl DateTimeAccessor {
     /// use pandrs::Series;
     /// use chrono::NaiveDate;
     /// let data = vec![
-    ///     NaiveDate::from_ymd_opt(2023, 12, 25).unwrap().and_hms_opt(0, 0, 0).unwrap(), // Monday
-    ///     NaiveDate::from_ymd_opt(2023, 12, 23).unwrap().and_hms_opt(0, 0, 0).unwrap(), // Saturday
+    ///     NaiveDate::from_ymd_opt(2023, 12, 25).expect("operation should succeed").and_hms_opt(0, 0, 0).expect("operation should succeed"), // Monday
+    ///     NaiveDate::from_ymd_opt(2023, 12, 23).expect("operation should succeed").and_hms_opt(0, 0, 0).expect("operation should succeed"), // Saturday
     /// ];
-    /// let series = Series::new(data, None).unwrap();
-    /// let is_bday = series.dt().unwrap().is_business_day().unwrap();
+    /// let series = Series::new(data, None).expect("operation should succeed");
+    /// let is_bday = series.dt().expect("operation should succeed").is_business_day().expect("operation should succeed");
     /// assert_eq!(is_bday.values(), &[true, false]);
     /// ```
     pub fn is_business_day(&self) -> Result<Series<bool>, PandrsError> {
@@ -388,9 +388,9 @@ impl DateTimeAccessor {
     /// ```
     /// use pandrs::Series;
     /// use chrono::{NaiveDate, Datelike};
-    /// let data = vec![NaiveDate::from_ymd_opt(2023, 12, 25).unwrap().and_hms_opt(14, 30, 45).unwrap()];
-    /// let series = Series::new(data, None).unwrap();
-    /// let plus_months = series.dt().unwrap().add_months(3).unwrap();
+    /// let data = vec![NaiveDate::from_ymd_opt(2023, 12, 25).expect("operation should succeed").and_hms_opt(14, 30, 45).expect("operation should succeed")];
+    /// let series = Series::new(data, None).expect("operation should succeed");
+    /// let plus_months = series.dt().expect("operation should succeed").add_months(3).expect("operation should succeed");
     /// assert_eq!(plus_months.values()[0].month(), 3);
     /// assert_eq!(plus_months.values()[0].year(), 2024);
     /// ```
@@ -460,9 +460,9 @@ impl DateTimeAccessor {
     /// ```
     /// use pandrs::Series;
     /// use chrono::{NaiveDate, Datelike};
-    /// let data = vec![NaiveDate::from_ymd_opt(2023, 12, 25).unwrap().and_hms_opt(14, 30, 45).unwrap()];
-    /// let series = Series::new(data, None).unwrap();
-    /// let plus_years = series.dt().unwrap().add_years(2).unwrap();
+    /// let data = vec![NaiveDate::from_ymd_opt(2023, 12, 25).expect("operation should succeed").and_hms_opt(14, 30, 45).expect("operation should succeed")];
+    /// let series = Series::new(data, None).expect("operation should succeed");
+    /// let plus_years = series.dt().expect("operation should succeed").add_years(2).expect("operation should succeed");
     /// assert_eq!(plus_years.values()[0].year(), 2025);
     /// ```
     pub fn add_years(&self, years: i32) -> Result<Series<NaiveDateTime>, PandrsError> {
@@ -507,12 +507,12 @@ impl DateTimeAccessor {
     /// use pandrs::Series;
     /// use chrono::NaiveDate;
     /// let data = vec![
-    ///     NaiveDate::from_ymd_opt(2023, 12, 25).unwrap().and_hms_opt(0, 0, 0).unwrap(), // Monday
-    ///     NaiveDate::from_ymd_opt(2023, 12, 18).unwrap().and_hms_opt(0, 0, 0).unwrap(), // Monday
+    ///     NaiveDate::from_ymd_opt(2023, 12, 25).expect("operation should succeed").and_hms_opt(0, 0, 0).expect("operation should succeed"), // Monday
+    ///     NaiveDate::from_ymd_opt(2023, 12, 18).expect("operation should succeed").and_hms_opt(0, 0, 0).expect("operation should succeed"), // Monday
     /// ];
-    /// let series = Series::new(data, None).unwrap();
-    /// let end_date = NaiveDate::from_ymd_opt(2023, 12, 29).unwrap().and_hms_opt(0, 0, 0).unwrap(); // Friday
-    /// let bday_count = series.dt().unwrap().business_day_count(end_date).unwrap();
+    /// let series = Series::new(data, None).expect("operation should succeed");
+    /// let end_date = NaiveDate::from_ymd_opt(2023, 12, 29).expect("operation should succeed").and_hms_opt(0, 0, 0).expect("operation should succeed"); // Friday
+    /// let bday_count = series.dt().expect("operation should succeed").business_day_count(end_date).expect("operation should succeed");
     /// // Should count business days only
     /// ```
     pub fn business_day_count(&self, end_date: NaiveDateTime) -> Result<Series<i64>, PandrsError> {
@@ -660,10 +660,11 @@ pub mod datetime_constructors {
                     // Try date only
                     if let Ok(date) = NaiveDate::parse_from_str(s, "%Y-%m-%d") {
                         return Ok(date.and_hms_opt(0, 0, 0).unwrap_or_else(|| {
+                            // Fallback to Unix epoch if time conversion fails (should never happen)
                             NaiveDate::from_ymd_opt(1970, 1, 1)
-                                .unwrap()
+                                .expect("Unix epoch date is always valid")
                                 .and_hms_opt(0, 0, 0)
-                                .unwrap()
+                                .expect("Midnight time is always valid")
                         }));
                     }
                     Err(PandrsError::InvalidValue(format!(
@@ -686,8 +687,13 @@ pub mod datetime_constructors {
         freq: &str,
     ) -> Result<Series<NaiveDateTime>, PandrsError> {
         let mut dates = Vec::new();
-        let mut current = start.and_hms_opt(0, 0, 0).unwrap();
-        let end_dt = end.and_hms_opt(23, 59, 59).unwrap();
+        // SAFETY: Valid dates always convert to datetime with valid time
+        let mut current = start
+            .and_hms_opt(0, 0, 0)
+            .expect("Valid date should convert to datetime with time 00:00:00");
+        let end_dt = end
+            .and_hms_opt(23, 59, 59)
+            .expect("Valid date should convert to datetime with time 23:59:59");
 
         let duration = match freq {
             "D" | "day" => chrono::Duration::days(1),
@@ -720,46 +726,50 @@ mod tests {
     #[test]
     fn test_datetime_extraction() {
         let dt1 = NaiveDate::from_ymd_opt(2023, 12, 25)
-            .unwrap()
+            .expect("operation should succeed")
             .and_hms_opt(14, 30, 45)
-            .unwrap();
+            .expect("operation should succeed");
         let dt2 = NaiveDate::from_ymd_opt(2024, 6, 15)
-            .unwrap()
+            .expect("operation should succeed")
             .and_hms_opt(9, 15, 30)
-            .unwrap();
+            .expect("operation should succeed");
 
         let data = vec![dt1, dt2];
-        let series = Series::new(data, Some("test_dates".to_string())).unwrap();
-        let dt_accessor = DateTimeAccessor::new(series).unwrap();
+        let series =
+            Series::new(data, Some("test_dates".to_string())).expect("operation should succeed");
+        let dt_accessor = DateTimeAccessor::new(series).expect("operation should succeed");
 
         // Test year extraction
-        let years = dt_accessor.year().unwrap();
+        let years = dt_accessor.year().expect("operation should succeed");
         assert_eq!(years.values(), &[2023, 2024]);
 
         // Test month extraction
-        let months = dt_accessor.month().unwrap();
+        let months = dt_accessor.month().expect("operation should succeed");
         assert_eq!(months.values(), &[12, 6]);
 
         // Test day extraction
-        let days = dt_accessor.day().unwrap();
+        let days = dt_accessor.day().expect("operation should succeed");
         assert_eq!(days.values(), &[25, 15]);
 
         // Test hour extraction
-        let hours = dt_accessor.hour().unwrap();
+        let hours = dt_accessor.hour().expect("operation should succeed");
         assert_eq!(hours.values(), &[14, 9]);
     }
 
     #[test]
     fn test_datetime_formatting() {
         let dt = NaiveDate::from_ymd_opt(2023, 12, 25)
-            .unwrap()
+            .expect("operation should succeed")
             .and_hms_opt(14, 30, 45)
-            .unwrap();
+            .expect("operation should succeed");
         let data = vec![dt];
-        let series = Series::new(data, Some("test_dates".to_string())).unwrap();
-        let dt_accessor = DateTimeAccessor::new(series).unwrap();
+        let series =
+            Series::new(data, Some("test_dates".to_string())).expect("operation should succeed");
+        let dt_accessor = DateTimeAccessor::new(series).expect("operation should succeed");
 
-        let formatted = dt_accessor.strftime("%Y-%m-%d %H:%M:%S").unwrap();
+        let formatted = dt_accessor
+            .strftime("%Y-%m-%d %H:%M:%S")
+            .expect("operation should succeed");
         assert_eq!(formatted.values(), &["2023-12-25 14:30:45".to_string()]);
     }
 
@@ -767,88 +777,97 @@ mod tests {
     fn test_weekend_detection() {
         // 2023-12-23 is Saturday, 2023-12-24 is Sunday, 2023-12-25 is Monday
         let dt1 = NaiveDate::from_ymd_opt(2023, 12, 23)
-            .unwrap()
+            .expect("operation should succeed")
             .and_hms_opt(10, 0, 0)
-            .unwrap();
+            .expect("operation should succeed");
         let dt2 = NaiveDate::from_ymd_opt(2023, 12, 24)
-            .unwrap()
+            .expect("operation should succeed")
             .and_hms_opt(10, 0, 0)
-            .unwrap();
+            .expect("operation should succeed");
         let dt3 = NaiveDate::from_ymd_opt(2023, 12, 25)
-            .unwrap()
+            .expect("operation should succeed")
             .and_hms_opt(10, 0, 0)
-            .unwrap();
+            .expect("operation should succeed");
 
         let data = vec![dt1, dt2, dt3];
-        let series = Series::new(data, Some("test_dates".to_string())).unwrap();
-        let dt_accessor = DateTimeAccessor::new(series).unwrap();
+        let series =
+            Series::new(data, Some("test_dates".to_string())).expect("operation should succeed");
+        let dt_accessor = DateTimeAccessor::new(series).expect("operation should succeed");
 
-        let is_weekend = dt_accessor.is_weekend().unwrap();
+        let is_weekend = dt_accessor.is_weekend().expect("operation should succeed");
         assert_eq!(is_weekend.values(), &[true, true, false]);
     }
 
     #[test]
     fn test_date_arithmetic() {
         let dt = NaiveDate::from_ymd_opt(2023, 12, 25)
-            .unwrap()
+            .expect("operation should succeed")
             .and_hms_opt(14, 30, 45)
-            .unwrap();
+            .expect("operation should succeed");
         let data = vec![dt];
-        let series = Series::new(data, Some("test_dates".to_string())).unwrap();
-        let dt_accessor = DateTimeAccessor::new(series).unwrap();
+        let series =
+            Series::new(data, Some("test_dates".to_string())).expect("operation should succeed");
+        let dt_accessor = DateTimeAccessor::new(series).expect("operation should succeed");
 
         // Add 5 days
-        let plus_days = dt_accessor.add_days(5).unwrap();
+        let plus_days = dt_accessor.add_days(5).expect("operation should succeed");
         let expected = NaiveDate::from_ymd_opt(2023, 12, 30)
-            .unwrap()
+            .expect("operation should succeed")
             .and_hms_opt(14, 30, 45)
-            .unwrap();
+            .expect("operation should succeed");
         assert_eq!(plus_days.values(), &[expected]);
 
         // Add 3 hours
-        let plus_hours = dt_accessor.add_hours(3).unwrap();
+        let plus_hours = dt_accessor.add_hours(3).expect("operation should succeed");
         let expected = NaiveDate::from_ymd_opt(2023, 12, 25)
-            .unwrap()
+            .expect("operation should succeed")
             .and_hms_opt(17, 30, 45)
-            .unwrap();
+            .expect("operation should succeed");
         assert_eq!(plus_hours.values(), &[expected]);
     }
 
     #[test]
     fn test_enhanced_datetime_features() {
         let dt1 = NaiveDate::from_ymd_opt(2023, 2, 15)
-            .unwrap()
+            .expect("operation should succeed")
             .and_hms_opt(14, 30, 45)
-            .unwrap(); // Feb 2023
+            .expect("operation should succeed"); // Feb 2023
         let dt2 = NaiveDate::from_ymd_opt(2024, 2, 15)
-            .unwrap()
+            .expect("operation should succeed")
             .and_hms_opt(9, 15, 30)
-            .unwrap(); // Feb 2024 (leap year)
+            .expect("operation should succeed"); // Feb 2024 (leap year)
         let dt3 = NaiveDate::from_ymd_opt(2023, 12, 23)
-            .unwrap()
+            .expect("operation should succeed")
             .and_hms_opt(10, 0, 0)
-            .unwrap(); // Saturday
+            .expect("operation should succeed"); // Saturday
 
         let data = vec![dt1, dt2, dt3];
-        let series = Series::new(data, Some("test_dates".to_string())).unwrap();
-        let dt_accessor = DateTimeAccessor::new(series).unwrap();
+        let series =
+            Series::new(data, Some("test_dates".to_string())).expect("operation should succeed");
+        let dt_accessor = DateTimeAccessor::new(series).expect("operation should succeed");
 
         // Test week extraction
-        let weeks = dt_accessor.week().unwrap();
+        let weeks = dt_accessor.week().expect("operation should succeed");
         assert!(weeks.values()[0] >= 1 && weeks.values()[0] <= 53);
 
         // Test days in month (leap year detection)
-        let days_in_month = dt_accessor.days_in_month().unwrap();
+        let days_in_month = dt_accessor
+            .days_in_month()
+            .expect("operation should succeed");
         assert_eq!(days_in_month.values()[0], 28); // Feb 2023
         assert_eq!(days_in_month.values()[1], 29); // Feb 2024 (leap year)
         assert_eq!(days_in_month.values()[2], 31); // Dec 2023
 
         // Test leap year detection
-        let is_leap = dt_accessor.is_leap_year().unwrap();
+        let is_leap = dt_accessor
+            .is_leap_year()
+            .expect("operation should succeed");
         assert_eq!(is_leap.values(), &[false, true, false]);
 
         // Test business day detection
-        let is_bday = dt_accessor.is_business_day().unwrap();
+        let is_bday = dt_accessor
+            .is_business_day()
+            .expect("operation should succeed");
         assert_eq!(is_bday.values()[0], true); // Wednesday
         assert_eq!(is_bday.values()[1], true); // Thursday
         assert_eq!(is_bday.values()[2], false); // Saturday
@@ -857,21 +876,22 @@ mod tests {
     #[test]
     fn test_advanced_date_arithmetic() {
         let dt = NaiveDate::from_ymd_opt(2023, 1, 31)
-            .unwrap()
+            .expect("operation should succeed")
             .and_hms_opt(14, 30, 45)
-            .unwrap();
+            .expect("operation should succeed");
         let data = vec![dt];
-        let series = Series::new(data, Some("test_dates".to_string())).unwrap();
-        let dt_accessor = DateTimeAccessor::new(series).unwrap();
+        let series =
+            Series::new(data, Some("test_dates".to_string())).expect("operation should succeed");
+        let dt_accessor = DateTimeAccessor::new(series).expect("operation should succeed");
 
         // Add months with day overflow handling
-        let plus_months = dt_accessor.add_months(1).unwrap();
+        let plus_months = dt_accessor.add_months(1).expect("operation should succeed");
         // Jan 31 + 1 month = Feb 28 (day overflow handled)
         assert_eq!(plus_months.values()[0].month(), 2);
         assert_eq!(plus_months.values()[0].day(), 28);
 
         // Add years
-        let plus_years = dt_accessor.add_years(2).unwrap();
+        let plus_years = dt_accessor.add_years(2).expect("operation should succeed");
         assert_eq!(plus_years.values()[0].year(), 2025);
         assert_eq!(plus_years.values()[0].month(), 1);
         assert_eq!(plus_years.values()[0].day(), 31);
@@ -880,19 +900,22 @@ mod tests {
     #[test]
     fn test_enhanced_rounding() {
         let dt = NaiveDate::from_ymd_opt(2023, 12, 25)
-            .unwrap()
+            .expect("operation should succeed")
             .and_hms_opt(14, 37, 23)
-            .unwrap();
+            .expect("operation should succeed");
         let data = vec![dt];
-        let series = Series::new(data, Some("test_dates".to_string())).unwrap();
-        let dt_accessor = DateTimeAccessor::new(series).unwrap();
+        let series =
+            Series::new(data, Some("test_dates".to_string())).expect("operation should succeed");
+        let dt_accessor = DateTimeAccessor::new(series).expect("operation should succeed");
 
         // Test 15-minute rounding
-        let rounded_15min = dt_accessor.round("15min").unwrap();
+        let rounded_15min = dt_accessor
+            .round("15min")
+            .expect("operation should succeed");
         assert_eq!(rounded_15min.values()[0].minute(), 30); // 37 minutes rounds down to 30
 
         // Test second rounding
-        let rounded_sec = dt_accessor.round("S").unwrap();
+        let rounded_sec = dt_accessor.round("S").expect("operation should succeed");
         assert_eq!(rounded_sec.values()[0].second(), 23);
         assert_eq!(rounded_sec.values()[0].nanosecond(), 0);
     }
@@ -901,18 +924,21 @@ mod tests {
     fn test_business_day_count() {
         // Test business day counting
         let start_dt = NaiveDate::from_ymd_opt(2023, 12, 25)
-            .unwrap()
+            .expect("operation should succeed")
             .and_hms_opt(0, 0, 0)
-            .unwrap(); // Monday
+            .expect("operation should succeed"); // Monday
         let data = vec![start_dt];
-        let series = Series::new(data, Some("test_dates".to_string())).unwrap();
-        let dt_accessor = DateTimeAccessor::new(series).unwrap();
+        let series =
+            Series::new(data, Some("test_dates".to_string())).expect("operation should succeed");
+        let dt_accessor = DateTimeAccessor::new(series).expect("operation should succeed");
 
         let end_dt = NaiveDate::from_ymd_opt(2023, 12, 29)
-            .unwrap()
+            .expect("operation should succeed")
             .and_hms_opt(0, 0, 0)
-            .unwrap(); // Friday
-        let bday_count = dt_accessor.business_day_count(end_dt).unwrap();
+            .expect("operation should succeed"); // Friday
+        let bday_count = dt_accessor
+            .business_day_count(end_dt)
+            .expect("operation should succeed");
 
         // Monday to Friday inclusive = 5 business days
         assert_eq!(bday_count.values()[0], 5);
@@ -922,15 +948,16 @@ mod tests {
     fn test_leap_year_edge_cases() {
         // Test leap year Feb 29 handling when adding years
         let leap_day = NaiveDate::from_ymd_opt(2024, 2, 29)
-            .unwrap()
+            .expect("operation should succeed")
             .and_hms_opt(12, 0, 0)
-            .unwrap();
+            .expect("operation should succeed");
         let data = vec![leap_day];
-        let series = Series::new(data, Some("test_dates".to_string())).unwrap();
-        let dt_accessor = DateTimeAccessor::new(series).unwrap();
+        let series =
+            Series::new(data, Some("test_dates".to_string())).expect("operation should succeed");
+        let dt_accessor = DateTimeAccessor::new(series).expect("operation should succeed");
 
         // Adding 1 year to Feb 29, 2024 should give Feb 28, 2025
-        let plus_year = dt_accessor.add_years(1).unwrap();
+        let plus_year = dt_accessor.add_years(1).expect("operation should succeed");
         assert_eq!(plus_year.values()[0].year(), 2025);
         assert_eq!(plus_year.values()[0].month(), 2);
         assert_eq!(plus_year.values()[0].day(), 28);

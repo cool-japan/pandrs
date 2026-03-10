@@ -417,7 +417,7 @@ impl DatabaseConnector for PostgreSQLConnector {
         Ok("tx_postgresql_".to_string()
             + &std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
+                .expect("operation should succeed")
                 .as_secs()
                 .to_string())
     }
@@ -543,7 +543,7 @@ impl DatabaseConnector for SQLiteConnector {
         Ok("tx_sqlite_".to_string()
             + &std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
+                .expect("operation should succeed")
                 .as_secs()
                 .to_string())
     }

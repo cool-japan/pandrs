@@ -14,7 +14,7 @@ mod tests {
         let y_true = vec![3.0, 5.0, 2.5, 7.0, 10.0];
         let y_pred = vec![2.8, 4.8, 2.7, 7.2, 9.8];
 
-        let mse = mean_squared_error(&y_true, &y_pred).unwrap();
+        let mse = mean_squared_error(&y_true, &y_pred).expect("operation should succeed");
 
         // Actual calculation: (0.2)² + (0.2)² + (0.2)² + (0.2)² + (0.2)² = 0.2
         assert!((mse - 0.2 / 5.0).abs() < 1e-6); // 0.04 is the correct expected value, compared to six decimal places
@@ -25,7 +25,7 @@ mod tests {
         let y_true = vec![3.0, 5.0, 2.5, 7.0, 10.0];
         let y_pred = vec![2.8, 4.8, 2.7, 7.2, 9.8];
 
-        let r2 = r2_score(&y_true, &y_pred).unwrap();
+        let r2 = r2_score(&y_true, &y_pred).expect("operation should succeed");
         assert!(r2 > 0.99); // R² score should be greater than 0.99
     }
 

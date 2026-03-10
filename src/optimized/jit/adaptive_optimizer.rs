@@ -12,6 +12,7 @@ use crate::optimized::jit::{
         FunctionPerformanceMetrics, JitPerformanceMonitor, OptimizationSuggestion, OptimizationType,
     },
 };
+use crate::{read_lock_safe, write_lock_safe};
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
@@ -364,7 +365,10 @@ impl AdaptiveOptimizer {
     /// Run optimization cycle
     pub fn optimize(&self) -> Result<OptimizationReport> {
         let now = Instant::now();
-        let last_opt = *self.last_optimization.read().unwrap();
+        let last_opt = *read_lock_safe!(
+            self.last_optimization,
+            "adaptive optimizer last optimization read"
+        )?;
 
         // Check cooldown
         if now.duration_since(last_opt).as_secs() < self.learning_params.optimization_cooldown_secs
@@ -375,7 +379,7 @@ impl AdaptiveOptimizer {
         let mut report = OptimizationReport::default();
 
         // Get functions that need optimization
-        let functions_needing_optimization = self.monitor.get_functions_needing_optimization();
+        let functions_needing_optimization = self.monitor.get_functions_needing_optimization()?;
 
         for (function_id, _suggestions) in functions_needing_optimization {
             if let Some(optimization_result) = self.optimize_function(&function_id)? {
@@ -390,7 +394,10 @@ impl AdaptiveOptimizer {
         let config_optimizations = self.optimize_global_config()?;
         report.config_changes.extend(config_optimizations);
 
-        *self.last_optimization.write().unwrap() = now;
+        *write_lock_safe!(
+            self.last_optimization,
+            "adaptive optimizer last optimization write"
+        )? = now;
 
         Ok(report)
     }
@@ -407,12 +414,12 @@ impl AdaptiveOptimizer {
         let baseline = self
             .performance_baselines
             .read()
-            .unwrap()
+            .expect("operation should succeed")
             .get(function_id)
             .cloned();
 
         // Get current configuration
-        let config = self.config.read().unwrap().clone();
+        let config = read_lock_safe!(self.config, "adaptive optimizer config read")?.clone();
 
         // Analyze with all strategies
         let mut all_suggestions = Vec::new();
@@ -446,11 +453,11 @@ impl AdaptiveOptimizer {
                 }
 
                 // Apply the optimization
-                let mut config = self.config.write().unwrap();
+                let mut config = write_lock_safe!(self.config, "adaptive optimizer config write")?;
                 match self.apply_optimization_by_type(suggestion, &mut config, strategy_name) {
                     Ok(_) => {
                         // Record the optimization event
-                        self.record_optimization_event(OptimizationEvent {
+                        let _ = self.record_optimization_event(OptimizationEvent {
                             function_id: function_id.clone(),
                             optimization_type: suggestion.suggestion_type,
                             timestamp: Instant::now(),
@@ -504,7 +511,7 @@ impl AdaptiveOptimizer {
     ) -> usize {
         self.optimization_history
             .read()
-            .unwrap()
+            .expect("operation should succeed")
             .iter()
             .filter(|event| {
                 event.function_id == *function_id && event.optimization_type == optimization_type
@@ -513,20 +520,27 @@ impl AdaptiveOptimizer {
     }
 
     /// Record an optimization event
-    fn record_optimization_event(&self, event: OptimizationEvent) {
-        let mut history = self.optimization_history.write().unwrap();
+    fn record_optimization_event(&self, event: OptimizationEvent) -> Result<()> {
+        let mut history = write_lock_safe!(
+            self.optimization_history,
+            "adaptive optimizer optimization history write"
+        )?;
         history.push(event);
 
         // Keep only recent history
         if history.len() > 1000 {
             history.drain(0..100);
         }
+        Ok(())
     }
 
     /// Update performance baselines for all functions
     fn update_performance_baselines(&self) -> Result<()> {
-        let top_functions = self.monitor.get_top_performing_functions(100);
-        let mut baselines = self.performance_baselines.write().unwrap();
+        let top_functions = self.monitor.get_top_performing_functions(100)?;
+        let mut baselines = write_lock_safe!(
+            self.performance_baselines,
+            "adaptive optimizer performance baselines write"
+        )?;
 
         for metrics in top_functions {
             if metrics.execution_count >= self.learning_params.performance_window_size as u64 {
@@ -561,7 +575,7 @@ impl AdaptiveOptimizer {
 
     /// Optimize global configuration
     fn optimize_global_config(&self) -> Result<Vec<String>> {
-        let suggestions = self.monitor.suggest_config_optimizations();
+        let suggestions = self.monitor.suggest_config_optimizations()?;
         let mut applied_changes = Vec::new();
 
         // Apply high-confidence suggestions
@@ -576,9 +590,15 @@ impl AdaptiveOptimizer {
     }
 
     /// Get optimization statistics
-    pub fn get_optimization_stats(&self) -> OptimizationStats {
-        let history = self.optimization_history.read().unwrap();
-        let baselines = self.performance_baselines.read().unwrap();
+    pub fn get_optimization_stats(&self) -> Result<OptimizationStats> {
+        let history = read_lock_safe!(
+            self.optimization_history,
+            "adaptive optimizer optimization history read"
+        )?;
+        let baselines = read_lock_safe!(
+            self.performance_baselines,
+            "adaptive optimizer performance baselines read"
+        )?;
 
         let total_optimizations = history.len();
         let successful_optimizations = history
@@ -600,14 +620,17 @@ impl AdaptiveOptimizer {
             .sum::<f64>()
             / successful_optimizations.max(1) as f64;
 
-        OptimizationStats {
+        Ok(OptimizationStats {
             total_optimizations,
             successful_optimizations,
             success_rate: successful_optimizations as f64 / total_optimizations.max(1) as f64,
             average_improvement: avg_improvement,
             active_baselines: baselines.len(),
-            last_optimization: *self.last_optimization.read().unwrap(),
-        }
+            last_optimization: *read_lock_safe!(
+                self.last_optimization,
+                "adaptive optimizer last optimization read"
+            )?,
+        })
     }
 
     /// Learn from recent performance data
@@ -615,7 +638,10 @@ impl AdaptiveOptimizer {
         let mut report = LearningReport::default();
 
         // Analyze recent optimization events
-        let history = self.optimization_history.read().unwrap();
+        let history = read_lock_safe!(
+            self.optimization_history,
+            "adaptive optimizer optimization history read"
+        )?;
         let recent_events: Vec<_> = history.iter()
             .filter(|event| event.timestamp.elapsed().as_secs() < 3600) // Last hour
             .collect();

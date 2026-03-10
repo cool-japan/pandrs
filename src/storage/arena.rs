@@ -709,8 +709,8 @@ mod tests {
     fn test_sync_arena() {
         let arena = SyncArena::new();
 
-        let a = arena.alloc(42i32).unwrap();
-        let b = arena.alloc(3.14f64).unwrap();
+        let a = arena.alloc(42i32).expect("operation should succeed");
+        let b = arena.alloc(3.14f64).expect("operation should succeed");
 
         assert_eq!(*a, 42);
         assert_eq!(*b, 3.14);
@@ -737,7 +737,7 @@ mod tests {
         }
 
         for handle in handles {
-            handle.join().unwrap();
+            handle.join().expect("operation should succeed");
         }
 
         let stats = arena.stats();

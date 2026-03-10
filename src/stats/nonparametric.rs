@@ -38,7 +38,7 @@ pub fn mann_whitney_u_test(
     }
 
     // Sort by value
-    combined.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+    combined.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
 
     // Assign ranks, handling ties
     let ranks = assign_ranks(&combined.iter().map(|(val, _)| *val).collect::<Vec<_>>());
@@ -228,7 +228,7 @@ pub fn kruskal_wallis_test(groups: &[&[f64]]) -> Result<TestResult> {
     }
 
     // Sort by value
-    combined.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+    combined.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
 
     // Assign ranks
     let values: Vec<f64> = combined.iter().map(|(val, _)| *val).collect();
@@ -387,14 +387,14 @@ pub fn ks_two_sample_test(
     // Sort both samples
     let mut sorted1 = sample1.to_vec();
     let mut sorted2 = sample2.to_vec();
-    sorted1.sort_by(|a, b| a.partial_cmp(b).unwrap());
-    sorted2.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    sorted1.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    sorted2.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
 
     // Find all unique values
     let mut all_values = Vec::new();
     all_values.extend_from_slice(&sorted1);
     all_values.extend_from_slice(&sorted2);
-    all_values.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    all_values.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
     all_values.dedup_by(|a, b| (*a - *b).abs() < 1e-10);
 
     // Calculate empirical CDFs at each unique value
@@ -535,7 +535,7 @@ fn assign_ranks(data: &[f64]) -> Vec<f64> {
         data.iter().enumerate().map(|(i, &val)| (i, val)).collect();
 
     // Sort by value
-    indexed_data.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+    indexed_data.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
 
     let mut ranks = vec![0.0; n];
 
@@ -605,7 +605,7 @@ where
     }
 
     // Sort bootstrap statistics
-    bootstrap_stats.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    bootstrap_stats.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
 
     // Calculate percentiles for confidence interval
     let alpha = 1.0 - confidence_level;
@@ -722,8 +722,8 @@ mod tests {
         let group1 = vec![1.0, 2.0, 3.0, 4.0, 5.0];
         let group2 = vec![6.0, 7.0, 8.0, 9.0, 10.0];
 
-        let result =
-            mann_whitney_u_test(&group1, &group2, AlternativeHypothesis::TwoSided).unwrap();
+        let result = mann_whitney_u_test(&group1, &group2, AlternativeHypothesis::TwoSided)
+            .expect("operation should succeed");
 
         assert_eq!(result.test_name, "Mann-Whitney U test");
         assert!(result.reject_null); // Groups are clearly different
@@ -735,8 +735,8 @@ mod tests {
         let before = vec![1.0, 2.0, 3.0, 4.0, 5.0];
         let after = vec![2.0, 3.0, 4.0, 5.0, 6.0]; // All increased by 1
 
-        let result =
-            wilcoxon_signed_rank_test(&before, &after, AlternativeHypothesis::TwoSided).unwrap();
+        let result = wilcoxon_signed_rank_test(&before, &after, AlternativeHypothesis::TwoSided)
+            .expect("operation should succeed");
 
         assert_eq!(result.test_name, "Wilcoxon signed-rank test");
         assert!(result.effect_size.is_some());
@@ -749,7 +749,7 @@ mod tests {
         let group3 = vec![7.0, 8.0, 9.0];
         let groups = vec![group1.as_slice(), group2.as_slice(), group3.as_slice()];
 
-        let result = kruskal_wallis_test(&groups).unwrap();
+        let result = kruskal_wallis_test(&groups).expect("operation should succeed");
 
         assert_eq!(result.test_name, "Kruskal-Wallis test");
         assert!(result.degrees_of_freedom.is_some());
@@ -772,7 +772,7 @@ mod tests {
     #[test]
     fn test_runs_test() {
         let sequence = vec![true, false, true, false, true, false];
-        let result = runs_test(&sequence).unwrap();
+        let result = runs_test(&sequence).expect("operation should succeed");
 
         assert_eq!(result.test_name, "Runs test for randomness");
         assert!(result.additional_info.contains_key("n_runs"));
@@ -783,8 +783,8 @@ mod tests {
         let sample1 = vec![1.0, 2.0, 3.0, 4.0, 5.0];
         let sample2 = vec![6.0, 7.0, 8.0, 9.0, 10.0];
 
-        let result =
-            ks_two_sample_test(&sample1, &sample2, AlternativeHypothesis::TwoSided).unwrap();
+        let result = ks_two_sample_test(&sample1, &sample2, AlternativeHypothesis::TwoSided)
+            .expect("operation should succeed");
 
         assert_eq!(result.test_name, "Kolmogorov-Smirnov two-sample test");
         assert!(result.statistic > 0.0);
@@ -801,7 +801,7 @@ mod tests {
             0.95,
             1000,
         )
-        .unwrap();
+        .expect("operation should succeed");
 
         let actual_mean = data.iter().sum::<f64>() / data.len() as f64;
         assert!(lower < actual_mean && actual_mean < upper);

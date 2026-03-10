@@ -11,6 +11,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::{Arc, RwLock};
 
+use crate::{read_lock_safe, write_lock_safe};
+
 /// Configuration for the lineage tracker
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LineageConfig {
@@ -394,28 +396,34 @@ impl SharedLineageTracker {
     }
 
     /// Registers a version
-    pub fn register_version(&self, version: DataVersion) -> VersionId {
-        self.inner.write().unwrap().register_version(version)
+    pub fn register_version(&self, version: DataVersion) -> crate::error::Result<VersionId> {
+        Ok(write_lock_safe!(self.inner, "version tracker inner write")?.register_version(version))
     }
 
     /// Gets a version by ID
     pub fn get_version(&self, id: &VersionId) -> Option<DataVersion> {
-        self.inner.read().unwrap().get_version(id).cloned()
+        read_lock_safe!(self.inner, "version tracker inner read")
+            .ok()?
+            .get_version(id)
+            .cloned()
     }
 
     /// Records an operation
-    pub fn record_operation(&self, operation: Operation) {
-        self.inner.write().unwrap().record_operation(operation)
+    pub fn record_operation(&self, operation: Operation) -> crate::error::Result<()> {
+        write_lock_safe!(self.inner, "version tracker inner write")?.record_operation(operation);
+        Ok(())
     }
 
     /// Sets a reference
     pub fn set_ref(&self, name: &str, version_id: VersionId) -> Result<(), VersioningError> {
-        self.inner.write().unwrap().set_ref(name, version_id)
+        write_lock_safe!(self.inner, "version tracker inner write")
+            .map_err(|_| VersioningError::StorageError("failed to acquire lock".to_string()))?
+            .set_ref(name, version_id)
     }
 
     /// Gets stats
-    pub fn stats(&self) -> TrackerStats {
-        self.inner.read().unwrap().stats()
+    pub fn stats(&self) -> crate::error::Result<TrackerStats> {
+        Ok(read_lock_safe!(self.inner, "version tracker inner read")?.stats())
     }
 }
 
@@ -457,11 +465,13 @@ mod tests {
         let version = DataVersion::new(create_test_schema(&["a", "b"]));
         let id = tracker.register_version(version);
 
-        tracker.set_ref("latest", id.clone()).unwrap();
+        tracker
+            .set_ref("latest", id.clone())
+            .expect("operation should succeed");
 
         let ref_version = tracker.get_version_by_ref("latest");
         assert!(ref_version.is_some());
-        assert_eq!(ref_version.unwrap().id, id);
+        assert_eq!(ref_version.expect("operation should succeed").id, id);
     }
 
     #[test]
@@ -522,7 +532,7 @@ mod tests {
         let v1 = tracker.register_version(DataVersion::new(create_test_schema(&["a", "b"])));
         let v2 = tracker.register_version(DataVersion::new(create_test_schema(&["a", "c"])));
 
-        let diff = tracker.diff(&v1, &v2).unwrap();
+        let diff = tracker.diff(&v1, &v2).expect("operation should succeed");
 
         assert!(diff.columns_added.contains(&"c".to_string()));
         assert!(diff.columns_removed.contains(&"b".to_string()));
@@ -553,7 +563,9 @@ mod tests {
         let tracker = SharedLineageTracker::new();
 
         let version = DataVersion::new(create_test_schema(&["a", "b"]));
-        let id = tracker.register_version(version);
+        let id = tracker
+            .register_version(version)
+            .expect("operation should succeed");
 
         assert!(tracker.get_version(&id).is_some());
     }

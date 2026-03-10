@@ -469,7 +469,8 @@ impl FeatureEngineeringStage {
                     }
                     BinningStrategy::EqualFrequency => {
                         let mut sorted_values = values.clone();
-                        sorted_values.sort_by(|a, b| a.partial_cmp(b).unwrap());
+                        sorted_values
+                            .sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
                         let step = sorted_values.len() / bins as usize;
                         (0..=bins)
                             .map(|i| {

@@ -882,21 +882,24 @@ mod tests {
             vec![0.0, 0.0, 1.0, 1.0, 0.1, 0.1, 0.9, 0.9],
             Some("x1".to_string()),
         )
-        .unwrap();
+        .expect("operation should succeed");
         let x2 = Series::new(
             vec![0.0, 1.0, 0.0, 1.0, 0.1, 0.9, 0.1, 0.9],
             Some("x2".to_string()),
         )
-        .unwrap();
+        .expect("operation should succeed");
         let y = Series::new(
             vec![0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0],
             Some("y".to_string()),
         )
-        .unwrap();
+        .expect("operation should succeed");
 
-        df.add_column("x1".to_string(), x1).unwrap();
-        df.add_column("x2".to_string(), x2).unwrap();
-        df.add_column("y".to_string(), y).unwrap();
+        df.add_column("x1".to_string(), x1)
+            .expect("operation should succeed");
+        df.add_column("x2".to_string(), x2)
+            .expect("operation should succeed");
+        df.add_column("y".to_string(), y)
+            .expect("operation should succeed");
 
         df
     }
@@ -907,15 +910,17 @@ mod tests {
             vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0],
             Some("x1".to_string()),
         )
-        .unwrap();
+        .expect("operation should succeed");
         let y = Series::new(
             vec![2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0, 20.0],
             Some("y".to_string()),
         )
-        .unwrap();
+        .expect("operation should succeed");
 
-        df.add_column("x1".to_string(), x1).unwrap();
-        df.add_column("y".to_string(), y).unwrap();
+        df.add_column("x1".to_string(), x1)
+            .expect("operation should succeed");
+        df.add_column("y".to_string(), y)
+            .expect("operation should succeed");
 
         df
     }
@@ -926,21 +931,24 @@ mod tests {
             vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0],
             Some("x1".to_string()),
         )
-        .unwrap();
+        .expect("operation should succeed");
         let x2 = Series::new(
             vec![1.0, 1.0, 1.0, 1.0, 1.0, 2.0, 2.0, 2.0, 2.0, 2.0],
             Some("x2".to_string()),
         )
-        .unwrap();
+        .expect("operation should succeed");
         let y = Series::new(
             vec![0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0],
             Some("y".to_string()),
         )
-        .unwrap();
+        .expect("operation should succeed");
 
-        df.add_column("x1".to_string(), x1).unwrap();
-        df.add_column("x2".to_string(), x2).unwrap();
-        df.add_column("y".to_string(), y).unwrap();
+        df.add_column("x1".to_string(), x1)
+            .expect("operation should succeed");
+        df.add_column("x2".to_string(), x2)
+            .expect("operation should succeed");
+        df.add_column("y".to_string(), y)
+            .expect("operation should succeed");
 
         df
     }
@@ -983,9 +991,9 @@ mod tests {
             .build();
 
         let mut mlp = MLPRegressor::new(config);
-        mlp.fit(&data, "y").unwrap();
+        mlp.fit(&data, "y").expect("operation should succeed");
 
-        let predictions = mlp.predict(&data).unwrap();
+        let predictions = mlp.predict(&data).expect("operation should succeed");
         assert_eq!(predictions.len(), 10);
 
         // Just verify the model produces reasonable predictions
@@ -1005,13 +1013,15 @@ mod tests {
             .build();
 
         let mut mlp = MLPClassifier::new(config);
-        mlp.fit(&data, "y").unwrap();
+        mlp.fit(&data, "y").expect("operation should succeed");
 
-        let predictions = mlp.predict(&data).unwrap();
+        let predictions = mlp.predict(&data).expect("operation should succeed");
         assert_eq!(predictions.len(), 10);
 
-        let metrics = mlp.evaluate(&data, "y").unwrap();
-        let accuracy = metrics.get_metric("accuracy").unwrap();
+        let metrics = mlp.evaluate(&data, "y").expect("operation should succeed");
+        let accuracy = metrics
+            .get_metric("accuracy")
+            .expect("operation should succeed");
         assert!(*accuracy >= 0.5, "Accuracy should be at least 50%");
     }
 
@@ -1027,9 +1037,9 @@ mod tests {
             .build();
 
         let mut mlp = MLPClassifier::new(config);
-        mlp.fit(&data, "y").unwrap();
+        mlp.fit(&data, "y").expect("operation should succeed");
 
-        let predictions = mlp.predict(&data).unwrap();
+        let predictions = mlp.predict(&data).expect("operation should succeed");
 
         // Check that MLP can learn XOR pattern (needs hidden layer)
         let accuracy = predictions
@@ -1057,12 +1067,15 @@ mod tests {
             .build();
 
         let mut mlp = MLPRegressor::new(config);
-        mlp.fit(&data, "y").unwrap();
+        mlp.fit(&data, "y").expect("operation should succeed");
 
         let history = mlp.training_loss_history();
         assert_eq!(history.len(), 50);
 
         // Loss should generally decrease (not necessarily monotonically)
-        assert!(history.last().unwrap() <= history.first().unwrap());
+        assert!(
+            history.last().expect("operation should succeed")
+                <= history.first().expect("operation should succeed")
+        );
     }
 }

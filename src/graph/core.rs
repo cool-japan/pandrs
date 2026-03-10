@@ -282,28 +282,44 @@ where
         // Update adjacency lists
         self.adjacency
             .get_mut(&source)
-            .unwrap()
+            .expect("operation should succeed")
             .push((target, edge_id));
 
         if self.graph_type == GraphType::Directed {
             self.reverse_adjacency
                 .get_mut(&target)
-                .unwrap()
+                .expect("operation should succeed")
                 .push((source, edge_id));
 
             // Update node edge lists
-            self.nodes.get_mut(&source).unwrap().outgoing.push(edge_id);
-            self.nodes.get_mut(&target).unwrap().incoming.push(edge_id);
+            self.nodes
+                .get_mut(&source)
+                .expect("operation should succeed")
+                .outgoing
+                .push(edge_id);
+            self.nodes
+                .get_mut(&target)
+                .expect("operation should succeed")
+                .incoming
+                .push(edge_id);
         } else {
             // For undirected graphs, add the reverse edge in adjacency
             self.adjacency
                 .get_mut(&target)
-                .unwrap()
+                .expect("operation should succeed")
                 .push((source, edge_id));
 
             // Update node edge lists (both directions)
-            self.nodes.get_mut(&source).unwrap().outgoing.push(edge_id);
-            self.nodes.get_mut(&target).unwrap().outgoing.push(edge_id);
+            self.nodes
+                .get_mut(&source)
+                .expect("operation should succeed")
+                .outgoing
+                .push(edge_id);
+            self.nodes
+                .get_mut(&target)
+                .expect("operation should succeed")
+                .outgoing
+                .push(edge_id);
         }
 
         Ok(edge_id)
@@ -635,8 +651,14 @@ mod tests {
         let b = graph.add_node("B");
 
         assert_eq!(graph.node_count(), 2);
-        assert_eq!(graph.get_node(a).unwrap().data, "A");
-        assert_eq!(graph.get_node(b).unwrap().data, "B");
+        assert_eq!(
+            graph.get_node(a).expect("operation should succeed").data,
+            "A"
+        );
+        assert_eq!(
+            graph.get_node(b).expect("operation should succeed").data,
+            "B"
+        );
     }
 
     #[test]
@@ -646,8 +668,12 @@ mod tests {
         let b = graph.add_node("B");
         let c = graph.add_node("C");
 
-        graph.add_edge(a, b, Some(1.0)).unwrap();
-        graph.add_edge(b, c, Some(2.0)).unwrap();
+        graph
+            .add_edge(a, b, Some(1.0))
+            .expect("operation should succeed");
+        graph
+            .add_edge(b, c, Some(2.0))
+            .expect("operation should succeed");
 
         assert_eq!(graph.edge_count(), 2);
         assert!(graph.has_edge(a, b));
@@ -662,7 +688,9 @@ mod tests {
         let a = graph.add_node("A");
         let b = graph.add_node("B");
 
-        graph.add_edge(a, b, Some(1.0)).unwrap();
+        graph
+            .add_edge(a, b, Some(1.0))
+            .expect("operation should succeed");
 
         assert!(graph.has_edge(a, b));
         assert!(!graph.has_edge(b, a)); // Directed, so reverse doesn't exist
@@ -675,10 +703,14 @@ mod tests {
         let b = graph.add_node("B");
         let c = graph.add_node("C");
 
-        graph.add_edge(a, b, None).unwrap();
-        graph.add_edge(a, c, None).unwrap();
+        graph
+            .add_edge(a, b, None)
+            .expect("operation should succeed");
+        graph
+            .add_edge(a, c, None)
+            .expect("operation should succeed");
 
-        let neighbors = graph.neighbors(a).unwrap();
+        let neighbors = graph.neighbors(a).expect("operation should succeed");
         assert_eq!(neighbors.len(), 2);
         assert!(neighbors.contains(&b));
         assert!(neighbors.contains(&c));
@@ -705,12 +737,16 @@ mod tests {
         let b = graph.add_node("B");
         let c = graph.add_node("C");
 
-        graph.add_edge(a, b, None).unwrap();
-        graph.add_edge(b, c, None).unwrap();
+        graph
+            .add_edge(a, b, None)
+            .expect("operation should succeed");
+        graph
+            .add_edge(b, c, None)
+            .expect("operation should succeed");
 
         assert_eq!(graph.edge_count(), 2);
 
-        graph.remove_node(b).unwrap();
+        graph.remove_node(b).expect("operation should succeed");
 
         assert_eq!(graph.node_count(), 2);
         assert_eq!(graph.edge_count(), 0); // All edges connected to B are removed
@@ -724,9 +760,15 @@ mod tests {
         let c = graph.add_node("C");
         let d = graph.add_node("D");
 
-        graph.add_edge(a, b, None).unwrap();
-        graph.add_edge(b, c, None).unwrap();
-        graph.add_edge(c, d, None).unwrap();
+        graph
+            .add_edge(a, b, None)
+            .expect("operation should succeed");
+        graph
+            .add_edge(b, c, None)
+            .expect("operation should succeed");
+        graph
+            .add_edge(c, d, None)
+            .expect("operation should succeed");
 
         let subgraph = graph.subgraph(&[a, b, c]);
         assert_eq!(subgraph.node_count(), 3);

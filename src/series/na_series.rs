@@ -257,11 +257,12 @@ where
             return NA::NA;
         }
 
+        // SAFETY: We've already checked that values is not empty above
         let min = values
             .iter()
             .min_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
             .cloned()
-            .unwrap();
+            .expect("min() should succeed on non-empty vector");
 
         NA::Value(min)
     }
@@ -281,11 +282,12 @@ where
             return NA::NA;
         }
 
+        // SAFETY: We've already checked that values is not empty above
         let max = values
             .iter()
             .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
             .cloned()
-            .unwrap();
+            .expect("max() should succeed on non-empty vector");
 
         NA::Value(max)
     }

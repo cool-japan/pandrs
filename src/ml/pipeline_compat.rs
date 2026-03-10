@@ -52,7 +52,9 @@ impl Transformer for StandardScaler {
             // If this column should be scaled
             if should_scale && column_view.as_float64().is_some() {
                 // Get the column data
-                let float_values = column_view.as_float64().unwrap();
+                let float_values = column_view.as_float64().ok_or_else(|| {
+                    Error::TypeMismatch("column type check failed for Float64".into())
+                })?;
 
                 // Extract values
                 let mut values: Vec<f64> = Vec::new();
@@ -197,7 +199,9 @@ impl Transformer for StandardScaler {
             // If this column should be scaled
             if should_scale && column_view.as_float64().is_some() {
                 // Get the column data
-                let float_values = column_view.as_float64().unwrap();
+                let float_values = column_view.as_float64().ok_or_else(|| {
+                    Error::TypeMismatch("column type check failed for Float64".into())
+                })?;
 
                 // Extract values
                 let mut values: Vec<f64> = Vec::new();
@@ -348,7 +352,9 @@ impl Transformer for MinMaxScaler {
             // If this column should be scaled
             if should_scale && column_view.as_float64().is_some() {
                 // Get the column data
-                let float_values = column_view.as_float64().unwrap();
+                let float_values = column_view.as_float64().ok_or_else(|| {
+                    Error::TypeMismatch("column type check failed for Float64".into())
+                })?;
 
                 // Extract values
                 let mut values: Vec<f64> = Vec::new();
@@ -464,14 +470,20 @@ impl Transformer for MinMaxScaler {
                 }
 
                 // Calculate min and max
-                let min_val = *values
+                let min_val = values
                     .iter()
-                    .min_by(|a, b| a.partial_cmp(b).unwrap())
-                    .unwrap();
-                let max_val = *values
+                    .min_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+                    .copied()
+                    .ok_or_else(|| {
+                        Error::InvalidOperation("Cannot compute min of empty values".into())
+                    })?;
+                let max_val = values
                     .iter()
-                    .max_by(|a, b| a.partial_cmp(b).unwrap())
-                    .unwrap();
+                    .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+                    .copied()
+                    .ok_or_else(|| {
+                        Error::InvalidOperation("Cannot compute max of empty values".into())
+                    })?;
 
                 min_values.insert(col_name.clone(), min_val);
                 max_values.insert(col_name.clone(), max_val);
@@ -504,7 +516,9 @@ impl Transformer for MinMaxScaler {
             // If this column should be scaled
             if should_scale && column_view.as_float64().is_some() {
                 // Get the column data
-                let float_values = column_view.as_float64().unwrap();
+                let float_values = column_view.as_float64().ok_or_else(|| {
+                    Error::TypeMismatch("column type check failed for Float64".into())
+                })?;
 
                 // Extract values
                 let mut values: Vec<f64> = Vec::new();
@@ -618,14 +632,20 @@ impl Transformer for MinMaxScaler {
                 }
 
                 // Calculate min and max
-                let min_val = *values
+                let min_val = values
                     .iter()
-                    .min_by(|a, b| a.partial_cmp(b).unwrap())
-                    .unwrap();
-                let max_val = *values
+                    .min_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+                    .copied()
+                    .ok_or_else(|| {
+                        Error::InvalidOperation("Cannot compute min of empty values".into())
+                    })?;
+                let max_val = values
                     .iter()
-                    .max_by(|a, b| a.partial_cmp(b).unwrap())
-                    .unwrap();
+                    .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+                    .copied()
+                    .ok_or_else(|| {
+                        Error::InvalidOperation("Cannot compute max of empty values".into())
+                    })?;
 
                 min_values.insert(col_name.clone(), min_val);
                 max_values.insert(col_name.clone(), max_val);

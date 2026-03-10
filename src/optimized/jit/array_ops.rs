@@ -167,7 +167,7 @@ pub fn last() -> impl JitCompilable<Vec<f64>, f64> {
         if values.is_empty() {
             f64::NAN
         } else {
-            *values.last().unwrap()
+            *values.last().expect("operation should succeed")
         }
     })
 }

@@ -55,9 +55,11 @@ pub(crate) fn sample_impl(df: &DataFrame, fraction: f64, replace: bool) -> Resul
 
             if !sampled_values.is_empty() {
                 // Create a new Series and add it to the DataFrame
-                let series =
-                    crate::series::Series::new(sampled_values, Some(col_name.clone())).unwrap();
-                result.add_column(col_name.to_string(), series).unwrap();
+                let series = crate::series::Series::new(sampled_values, Some(col_name.clone()))
+                    .expect("operation should succeed");
+                result
+                    .add_column(col_name.to_string(), series)
+                    .expect("operation should succeed");
             }
         }
     }
@@ -187,9 +189,11 @@ pub fn stratified_sample_impl(
 
             if !sampled_values.is_empty() {
                 // Create a new Series and add it to the DataFrame
-                let series =
-                    crate::series::Series::new(sampled_values, Some(col_name.clone())).unwrap();
-                result.add_column(col_name.to_string(), series).unwrap();
+                let series = crate::series::Series::new(sampled_values, Some(col_name.clone()))
+                    .expect("operation should succeed");
+                result
+                    .add_column(col_name.to_string(), series)
+                    .expect("operation should succeed");
             }
         }
     }
@@ -210,23 +214,24 @@ mod tests {
             vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
             Some("data".to_string()),
         )
-        .unwrap();
-        df.add_column("data".to_string(), data).unwrap();
+        .expect("operation should succeed");
+        df.add_column("data".to_string(), data)
+            .expect("operation should succeed");
 
         // 50% sampling (without replacement)
-        let sample = sample_impl(&df, 0.5, false).unwrap();
+        let sample = sample_impl(&df, 0.5, false).expect("operation should succeed");
         // The row count might be 0 in test environments
         // Row count is always >= 0 as it's a usize
         assert!(true);
 
         // 30% sampling (with replacement)
-        let sample = sample_impl(&df, 0.3, true).unwrap();
+        let sample = sample_impl(&df, 0.3, true).expect("operation should succeed");
         // The row count might be 0 in test environments
         // Row count is always >= 0 as it's a usize
         assert!(true);
 
         // 200% sampling (with replacement)
-        let sample = sample_impl(&df, 2.0, true).unwrap();
+        let sample = sample_impl(&df, 2.0, true).expect("operation should succeed");
         // The row count might be 0 in test environments
         // Row count is always >= 0 as it's a usize
         assert!(true);
@@ -241,7 +246,7 @@ mod tests {
         let data = vec![1.0, 2.0, 3.0, 4.0, 5.0];
 
         // 10 bootstrap samples
-        let bootstrap_samples = bootstrap_impl(&data, 10).unwrap();
+        let bootstrap_samples = bootstrap_impl(&data, 10).expect("operation should succeed");
         assert_eq!(bootstrap_samples.len(), 10);
 
         // Each sample is the same length as the original data

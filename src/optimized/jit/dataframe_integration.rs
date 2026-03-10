@@ -24,6 +24,8 @@ use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use std::time::Instant;
 
+use crate::{read_lock_safe, write_lock_safe};
+
 /// JIT-optimized DataFrame operations trait
 pub trait JitDataFrameOps {
     /// Enable JIT optimization for this DataFrame
@@ -167,7 +169,7 @@ where
         let execution_time = start.elapsed().as_nanos() as u64;
 
         // Record performance metrics
-        self.monitor.record_function_execution(
+        let _ = self.monitor.record_function_execution(
             function_id,
             execution_time,
             1024, // Estimated memory usage
@@ -175,7 +177,7 @@ where
         );
 
         // Update statistics
-        let mut stats = self.stats.write().unwrap();
+        let mut stats = write_lock_safe!(self.stats, "jit dataframe integration stats write")?;
         stats.total_jit_operations += 1;
 
         result
@@ -382,7 +384,11 @@ where
     }
 
     fn get_jit_stats(&self) -> Option<JitOptimizationStats> {
-        Some(self.stats.read().unwrap().clone())
+        Some(
+            read_lock_safe!(self.stats, "jit dataframe integration stats read")
+                .ok()?
+                .clone(),
+        )
     }
 
     fn warm_jit_cache(&self, operations: &[&str]) -> Result<()> {
@@ -408,7 +414,7 @@ where
             // Cache the optimized expression
             self.expression_cache
                 .write()
-                .unwrap()
+                .expect("operation should succeed")
                 .insert(operation.to_string(), optimized_tree);
         }
 
@@ -416,8 +422,12 @@ where
     }
 
     fn clear_jit_cache(&self) -> Result<()> {
-        self.cache.clear();
-        self.expression_cache.write().unwrap().clear();
+        self.cache.clear()?;
+        write_lock_safe!(
+            self.expression_cache,
+            "jit dataframe integration expression cache write"
+        )?
+        .clear();
         Ok(())
     }
 
@@ -429,18 +439,24 @@ where
         let function_id = self.create_function_id(operation_name, &["generic"]);
 
         // Check if we have a cached optimized version
-        if let Some(_cached_expr) = self.expression_cache.read().unwrap().get(operation_name) {
+        if let Some(_cached_expr) = read_lock_safe!(
+            self.expression_cache,
+            "jit dataframe integration expression cache read"
+        )?
+        .get(operation_name)
+        {
             // Execute optimized version
             // For now, just execute the original operation
             let start = Instant::now();
             let result = operation();
             let execution_time = start.elapsed().as_nanos() as u64;
 
-            self.monitor
+            let _ = self
+                .monitor
                 .record_function_execution(&function_id, execution_time, 1024, 0.8);
 
             // Update cache hit statistics
-            let mut stats = self.stats.write().unwrap();
+            let mut stats = write_lock_safe!(self.stats, "jit dataframe integration stats write")?;
             stats.total_jit_operations += 1;
             stats.cache_hit_rate = (stats.cache_hit_rate * (stats.total_jit_operations - 1) as f64
                 + 1.0)
@@ -453,10 +469,11 @@ where
             let result = operation();
             let execution_time = start.elapsed().as_nanos() as u64;
 
-            self.monitor
+            let _ = self
+                .monitor
                 .record_function_execution(&function_id, execution_time, 1024, 0.8);
 
-            let mut stats = self.stats.write().unwrap();
+            let mut stats = write_lock_safe!(self.stats, "jit dataframe integration stats write")?;
             stats.total_jit_operations += 1;
             stats.cache_hit_rate = (stats.cache_hit_rate * (stats.total_jit_operations - 1) as f64)
                 / stats.total_jit_operations as f64;
@@ -515,7 +532,7 @@ where
             .map_err(|e| Error::InvalidOperation(e.to_string()))?;
 
         // Update statistics
-        let mut stats = self.stats.write().unwrap();
+        let mut stats = write_lock_safe!(self.stats, "jit dataframe integration stats write")?;
         stats.expression_trees_optimized += 1;
 
         // For now, just return self cloned - in a real implementation,
@@ -736,7 +753,9 @@ mod tests {
         let jit_df = JitOptimizedDataFrame::new(mock_df, None);
 
         // Test JIT-specific operations
-        let selected = jit_df.select(&["col_0", "col_1"]).unwrap();
+        let selected = jit_df
+            .select(&["col_0", "col_1"])
+            .expect("operation should succeed");
         assert_eq!(selected.shape(), (1000, 2));
 
         // Test JIT stats
@@ -753,7 +772,9 @@ mod tests {
         };
         let jit_df = JitOptimizedDataFrame::new(mock_df, None);
 
-        let tree = jit_df.create_expression_tree("x + 5").unwrap();
+        let tree = jit_df
+            .create_expression_tree("x + 5")
+            .expect("operation should succeed");
         assert!(tree.metadata.complexity > 0);
 
         let tree_str = tree.to_string();
@@ -773,7 +794,10 @@ mod tests {
         assert!(result.is_ok());
 
         // Check that expressions were cached
-        let cache = jit_df.expression_cache.read().unwrap();
+        let cache = jit_df
+            .expression_cache
+            .read()
+            .expect("operation should succeed");
         assert!(cache.contains_key("select"));
         assert!(cache.contains_key("filter"));
         assert!(cache.contains_key("sort"));

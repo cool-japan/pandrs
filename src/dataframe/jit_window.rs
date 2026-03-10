@@ -16,6 +16,7 @@ use crate::dataframe::enhanced_window::{
     DataFrameEWM, DataFrameEWMOps, DataFrameExpanding, DataFrameExpandingOps, DataFrameRolling,
     DataFrameRollingOps, DataFrameWindowExt,
 };
+use crate::lock_safe;
 use crate::optimized::jit::jit_core::{JitError, JitFunction, JitResult};
 use crate::series::Series;
 use std::collections::HashMap;
@@ -245,28 +246,28 @@ impl JitWindowContext {
     }
 
     /// Check if a function should be JIT compiled
-    pub fn should_compile(&self, key: &WindowFunctionKey) -> bool {
+    pub fn should_compile(&self, key: &WindowFunctionKey) -> Result<bool> {
         if !self.jit_enabled {
-            return false;
+            return Ok(false);
         }
 
-        let counts = self.execution_counts.lock().unwrap();
+        let counts = lock_safe!(self.execution_counts, "jit window execution counts lock")?;
         let count = counts.get(key).unwrap_or(&0);
-        *count >= self.jit_threshold
+        Ok(*count >= self.jit_threshold)
     }
 
     /// Record an execution and check for compilation
-    pub fn record_execution(&self, key: &WindowFunctionKey) -> bool {
+    pub fn record_execution(&self, key: &WindowFunctionKey) -> Result<bool> {
         if !self.jit_enabled {
-            return false;
+            return Ok(false);
         }
 
-        let mut counts = self.execution_counts.lock().unwrap();
+        let mut counts = lock_safe!(self.execution_counts, "jit window execution counts lock")?;
         let count = counts.entry(key.clone()).or_insert(0);
         *count += 1;
 
         // Check if we should compile this function
-        *count == self.jit_threshold
+        Ok(*count == self.jit_threshold)
     }
 
     /// Get or create a JIT-compiled function
@@ -277,27 +278,33 @@ impl JitWindowContext {
 
         // Update cache statistics
         {
-            let mut total = self.cache_total.lock().unwrap();
+            let mut total = lock_safe!(self.cache_total, "jit window cache total lock")?;
             *total += 1;
         }
 
         // Check if function is already compiled
         {
-            let functions = self.compiled_functions.lock().unwrap();
+            let functions = lock_safe!(
+                self.compiled_functions,
+                "jit window compiled functions lock"
+            )?;
             if let Some(function) = functions.get(key) {
-                let mut hits = self.cache_hits.lock().unwrap();
+                let mut hits = lock_safe!(self.cache_hits, "jit window cache hits lock")?;
                 *hits += 1;
                 return Ok(Some(function.clone()));
             }
         }
 
         // Compile the function if threshold is met
-        if self.should_compile(key) {
+        if self.should_compile(key)? {
             let compiled_function = self.compile_window_function(key)?;
 
             // Store in cache
             {
-                let mut functions = self.compiled_functions.lock().unwrap();
+                let mut functions = lock_safe!(
+                    self.compiled_functions,
+                    "jit window compiled functions lock"
+                )?;
                 functions.insert(key.clone(), compiled_function.clone());
             }
 
@@ -398,7 +405,7 @@ impl JitWindowContext {
 
         // Record compilation statistics
         {
-            let mut stats = self.stats.lock().unwrap();
+            let mut stats = lock_safe!(self.stats, "jit window stats lock")?;
             match &key.operation {
                 WindowOpType::RollingMean
                 | WindowOpType::RollingSum
@@ -431,37 +438,45 @@ impl JitWindowContext {
     }
 
     /// Get current statistics
-    pub fn stats(&self) -> JitWindowStats {
-        let stats = self.stats.lock().unwrap();
+    pub fn stats(&self) -> Result<JitWindowStats> {
+        let stats = lock_safe!(self.stats, "jit window stats lock")?;
         let mut result = stats.clone();
 
         // Update cache hit ratio
-        let hits = *self.cache_hits.lock().unwrap();
-        let total = *self.cache_total.lock().unwrap();
+        let hits = *lock_safe!(self.cache_hits, "jit window cache hits lock")?;
+        let total = *lock_safe!(self.cache_total, "jit window cache total lock")?;
         result.update_cache_hit_ratio(hits, total);
 
-        result
+        Ok(result)
     }
 
     /// Clear the JIT cache
-    pub fn clear_cache(&self) {
-        let mut functions = self.compiled_functions.lock().unwrap();
+    pub fn clear_cache(&self) -> Result<()> {
+        let mut functions = lock_safe!(
+            self.compiled_functions,
+            "jit window compiled functions lock"
+        )?;
         functions.clear();
 
-        let mut counts = self.execution_counts.lock().unwrap();
+        let mut counts = lock_safe!(self.execution_counts, "jit window execution counts lock")?;
         counts.clear();
 
-        let mut hits = self.cache_hits.lock().unwrap();
+        let mut hits = lock_safe!(self.cache_hits, "jit window cache hits lock")?;
         *hits = 0;
 
-        let mut total = self.cache_total.lock().unwrap();
+        let mut total = lock_safe!(self.cache_total, "jit window cache total lock")?;
         *total = 0;
+
+        Ok(())
     }
 
     /// Get the number of compiled functions in cache
-    pub fn compiled_functions_count(&self) -> usize {
-        let functions = self.compiled_functions.lock().unwrap();
-        functions.len()
+    pub fn compiled_functions_count(&self) -> Result<usize> {
+        let functions = lock_safe!(
+            self.compiled_functions,
+            "jit window compiled functions lock"
+        )?;
+        Ok(functions.len())
     }
 }
 
@@ -548,7 +563,7 @@ impl<'a> JitDataFrameRollingOps<'a> {
                 let result = fallback(&self.inner)?;
 
                 let execution_time = start.elapsed().as_nanos() as u64;
-                let mut stats = self.jit_context.stats.lock().unwrap();
+                let mut stats = lock_safe!(self.jit_context.stats, "jit context stats lock")?;
                 stats.record_jit_execution(execution_time / 2); // Simulate 2x speedup
 
                 Ok(result)
@@ -557,7 +572,7 @@ impl<'a> JitDataFrameRollingOps<'a> {
                 // Use standard implementation
                 let result = fallback(&self.inner)?;
 
-                let mut stats = self.jit_context.stats.lock().unwrap();
+                let mut stats = lock_safe!(self.jit_context.stats, "jit context stats lock")?;
                 stats.record_native_execution();
 
                 Ok(result)

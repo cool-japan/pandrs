@@ -14,11 +14,11 @@
 //! use pandrs::io::sql::{read_sql, write_to_sql, SqlConnection};
 //!
 //! // Read from database
-//! let df = read_sql("SELECT * FROM users", "database.db").unwrap();
+//! let df = read_sql("SELECT * FROM users", "database.db").expect("operation should succeed");
 //!
 //! // Write to database with connection
-//! let conn = SqlConnection::from_url("sqlite:database.db").unwrap();
-//! // write_sql_advanced(&df, "users", &conn, SqlWriteOptions::default()).unwrap();
+//! let conn = SqlConnection::from_url("sqlite:database.db").expect("operation should succeed");
+//! // write_sql_advanced(&df, "users", &conn, SqlWriteOptions::default()).expect("operation should succeed");
 //! ```
 //!
 //! # Advanced Usage
@@ -105,7 +105,13 @@ mod tests {
         assert_eq!(config.min_connections, 1);
         assert_eq!(config.connect_timeout.as_secs(), 30);
         assert!(config.idle_timeout.is_some());
-        assert_eq!(config.idle_timeout.unwrap().as_secs(), 600);
+        assert_eq!(
+            config
+                .idle_timeout
+                .expect("operation should succeed")
+                .as_secs(),
+            600
+        );
     }
 
     #[test]
@@ -136,7 +142,7 @@ mod tests {
             .order_by_desc("created_at")
             .limit(10)
             .build()
-            .unwrap();
+            .expect("operation should succeed");
 
         assert!(query.contains("SELECT name, age"));
         assert!(query.contains("FROM users"));
@@ -159,7 +165,7 @@ mod tests {
             .limit(50)
             .offset(10)
             .build()
-            .unwrap();
+            .expect("operation should succeed");
 
         assert!(query.contains("SELECT u.name, u.email, p.title"));
         assert!(query.contains("INNER JOIN profiles p ON u.id = p.user_id"));
@@ -174,14 +180,14 @@ mod tests {
     #[test]
     fn test_database_connection_from_url() {
         // Test SQLite URL
-        let conn = SqlConnection::from_url("sqlite:test.db").unwrap();
+        let conn = SqlConnection::from_url("sqlite:test.db").expect("operation should succeed");
         match conn.connection_type() {
             DatabaseConnection::Sqlite(path) => assert!(path.contains("test.db")),
             _ => panic!("Expected SQLite connection"),
         }
 
         // Test file extension detection
-        let conn = SqlConnection::from_url("data.db").unwrap();
+        let conn = SqlConnection::from_url("data.db").expect("operation should succeed");
         match conn.connection_type() {
             DatabaseConnection::Sqlite(path) => assert!(path.contains("data.db")),
             _ => panic!("Expected SQLite connection"),

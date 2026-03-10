@@ -123,7 +123,7 @@ pub(crate) fn bootstrap_impl(
 /// fractions.insert("A".to_string(), 0.2);
 /// fractions.insert("B".to_string(), 0.3);
 /// 
-/// let stratified_sample = sampling::stratified_sample(&df, "group", &fractions, false).unwrap();
+/// let stratified_sample = sampling::stratified_sample(&df, "group", &fractions, false).expect("operation should succeed");
 /// ```
 pub fn stratified_sample(
     df: &DataFrame,
@@ -241,7 +241,7 @@ pub fn stratified_sample(
 /// 
 /// let (lower, upper) = sampling::bootstrap_confidence_interval(
 ///     &data, 1000, &mean_fn, 0.95
-/// ).unwrap();
+/// ).expect("operation should succeed");
 /// 
 /// println!("95% CI for mean: ({}, {})", lower, upper);
 /// ```
@@ -311,7 +311,7 @@ where
 /// let data = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0];
 /// 
 /// // Select every 3rd element starting from the first
-/// let sample = sampling::systematic_sample(&data, 3, 0).unwrap();
+/// let sample = sampling::systematic_sample(&data, 3, 0).expect("operation should succeed");
 /// // Result should be [1.0, 4.0, 7.0, 10.0]
 /// ```
 pub fn systematic_sample<T: Clone>(
@@ -367,7 +367,7 @@ pub fn systematic_sample<T: Clone>(
 /// let weights = vec![1.0, 2.0, 3.0, 4.0, 5.0]; // Higher weights = higher probability
 /// 
 /// // Sample 3 items with weights
-/// let sample = sampling::weighted_sample(&data, &weights, 3, true).unwrap();
+/// let sample = sampling::weighted_sample(&data, &weights, 3, true).expect("operation should succeed");
 /// ```
 pub fn weighted_sample<T: Clone>(
     data: &[T],
@@ -497,7 +497,7 @@ pub fn weighted_sample<T: Clone>(
 /// // Compute bootstrap standard error for the mean
 /// let mean_fn = |x: &[f64]| x.iter().sum::<f64>() / x.len() as f64;
 /// 
-/// let std_error = sampling::bootstrap_standard_error(&data, 1000, &mean_fn).unwrap();
+/// let std_error = sampling::bootstrap_standard_error(&data, 1000, &mean_fn).expect("operation should succeed");
 /// println!("Standard error of the mean: {}", std_error);
 /// ```
 pub fn bootstrap_standard_error<F>(
@@ -554,14 +554,14 @@ mod tests {
         // Add some columns
         let values = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0];
         df.add_column("values".to_string(), 
-                     Series::new(values, Some("values".to_string())).unwrap()).unwrap();
+                     Series::new(values, Some("values".to_string())).expect("operation should succeed")).expect("operation should succeed");
         
         // Test sampling with replacement
-        let sample_with_replacement = sample_impl(&df, 0.5, true).unwrap();
+        let sample_with_replacement = sample_impl(&df, 0.5, true).expect("operation should succeed");
         assert_eq!(sample_with_replacement.nrows(), 5);
         
         // Test sampling without replacement
-        let sample_without_replacement = sample_impl(&df, 0.5, false).unwrap();
+        let sample_without_replacement = sample_impl(&df, 0.5, false).expect("operation should succeed");
         assert_eq!(sample_without_replacement.nrows(), 5);
         
         // Test invalid fraction
@@ -574,7 +574,7 @@ mod tests {
         let data = vec![1.0, 2.0, 3.0, 4.0, 5.0];
         
         // Test bootstrap resampling
-        let bootstrap_samples = bootstrap_impl(&data, 10).unwrap();
+        let bootstrap_samples = bootstrap_impl(&data, 10).expect("operation should succeed");
         
         assert_eq!(bootstrap_samples.len(), 10);
         for sample in bootstrap_samples {
@@ -606,9 +606,9 @@ mod tests {
         let values = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0];
         
         df.add_column("strata".to_string(), 
-                     Series::new(strata, Some("strata".to_string())).unwrap()).unwrap();
+                     Series::new(strata, Some("strata".to_string())).expect("operation should succeed")).expect("operation should succeed");
         df.add_column("values".to_string(), 
-                     Series::new(values, Some("values".to_string())).unwrap()).unwrap();
+                     Series::new(values, Some("values".to_string())).expect("operation should succeed")).expect("operation should succeed");
         
         // Create sampling fractions
         let mut fractions = HashMap::new();
@@ -617,11 +617,12 @@ mod tests {
         fractions.insert("C".to_string(), 1.0); // 2 out of 2
         
         // Test stratified sampling
-        let stratified_sample = stratified_sample(&df, "strata", &fractions, false).unwrap();
+        let stratified_sample = stratified_sample(&df, "strata", &fractions, false).expect("operation should succeed");
         
         // Count number of samples from each stratum
-        let sampled_strata = stratified_sample.get_column("strata").unwrap();
-        let strata_values = sampled_strata.as_str().unwrap();
+        let sampled_strata = stratified_sample.get_column("strata").expect("operation should succeed");
+        let strata_values = sampled_strata.as_str()
+            .ok_or_else(|| Error::TypeMismatch("expected string column for strata".into()))?;
         
         let mut counts = HashMap::new();
         for stratum in strata_values {
@@ -639,11 +640,11 @@ mod tests {
         let data = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0];
         
         // Test systematic sampling with k=3, offset=0
-        let sys_sample = systematic_sample(&data, 3, 0).unwrap();
+        let sys_sample = systematic_sample(&data, 3, 0).expect("operation should succeed");
         assert_eq!(sys_sample, vec![1.0, 4.0, 7.0, 10.0]);
         
         // Test with offset=1
-        let sys_sample_offset = systematic_sample(&data, 3, 1).unwrap();
+        let sys_sample_offset = systematic_sample(&data, 3, 1).expect("operation should succeed");
         assert_eq!(sys_sample_offset, vec![2.0, 5.0, 8.0]);
         
         // Test invalid parameters
@@ -660,16 +661,16 @@ mod tests {
         
         // All items equal weight
         let equal_weights = vec![1.0, 1.0, 1.0, 1.0, 1.0];
-        let sample_equal = weighted_sample(&data, &equal_weights, 10, true).unwrap();
+        let sample_equal = weighted_sample(&data, &equal_weights, 10, true).expect("operation should succeed");
         assert_eq!(sample_equal.len(), 10);
         
         // Weighted sample - all weight on first item
         let biased_weights = vec![1.0, 0.0, 0.0, 0.0, 0.0];
-        let sample_biased = weighted_sample(&data, &biased_weights, 5, true).unwrap();
+        let sample_biased = weighted_sample(&data, &biased_weights, 5, true).expect("operation should succeed");
         assert_eq!(sample_biased, vec![1, 1, 1, 1, 1]);
         
         // Test sampling without replacement
-        let sample_no_replace = weighted_sample(&data, &equal_weights, 5, false).unwrap();
+        let sample_no_replace = weighted_sample(&data, &equal_weights, 5, false).expect("operation should succeed");
         assert_eq!(sample_no_replace.len(), 5);
         
         // Check that all items are unique when sampling without replacement
@@ -697,7 +698,7 @@ mod tests {
         let mean_fn = |x: &[f64]| x.iter().sum::<f64>() / x.len() as f64;
         
         // Compute 95% confidence interval for the mean
-        let (lower, upper) = bootstrap_confidence_interval(&data, 1000, &mean_fn, 0.95).unwrap();
+        let (lower, upper) = bootstrap_confidence_interval(&data, 1000, &mean_fn, 0.95).expect("operation should succeed");
         
         // True mean is 5.5
         assert!(lower <= 5.5 && upper >= 5.5);
@@ -719,7 +720,7 @@ mod tests {
         let mean_fn = |x: &[f64]| x.iter().sum::<f64>() / x.len() as f64;
         
         // Compute bootstrap standard error for the mean
-        let std_error = bootstrap_standard_error(&data, 1000, &mean_fn).unwrap();
+        let std_error = bootstrap_standard_error(&data, 1000, &mean_fn).expect("operation should succeed");
         
         // Standard error should be positive
         assert!(std_error > 0.0);

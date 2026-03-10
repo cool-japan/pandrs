@@ -168,7 +168,7 @@ pub(crate) fn correlation_impl(x: &[f64], y: &[f64]) -> Result<f64> {
 /// use pandrs::stats::descriptive;
 ///
 /// let data = vec![1.0, 2.0, 3.0, 4.0, 5.0];
-/// let var = descriptive::variance(&data, 1).unwrap();
+/// let var = descriptive::variance(&data, 1).expect("operation should succeed");
 /// println!("Variance: {}", var);
 /// ```
 pub fn variance(data: &[f64], ddof: usize) -> Result<f64> {
@@ -206,7 +206,7 @@ pub fn variance(data: &[f64], ddof: usize) -> Result<f64> {
 /// use pandrs::stats::descriptive;
 ///
 /// let data = vec![1.0, 2.0, 3.0, 4.0, 5.0];
-/// let std_dev = descriptive::std_dev(&data, 1).unwrap();
+/// let std_dev = descriptive::std_dev(&data, 1).expect("operation should succeed");
 /// println!("Standard deviation: {}", std_dev);
 /// ```
 pub fn std_dev(data: &[f64], ddof: usize) -> Result<f64> {
@@ -231,7 +231,7 @@ pub fn std_dev(data: &[f64], ddof: usize) -> Result<f64> {
 ///     vec![2.0, 3.0, 4.0, 5.0, 6.0],
 ///     vec![5.0, 4.0, 3.0, 2.0, 1.0]
 /// ];
-/// let corr_matrix = descriptive::correlation_matrix(&data).unwrap();
+/// let corr_matrix = descriptive::correlation_matrix(&data).expect("operation should succeed");
 /// ```
 pub fn correlation_matrix(data: &[Vec<f64>]) -> Result<Vec<Vec<f64>>> {
     if data.is_empty() {
@@ -272,7 +272,7 @@ pub fn correlation_matrix(data: &[Vec<f64>]) -> Result<Vec<Vec<f64>>> {
 /// use pandrs::stats::descriptive;
 ///
 /// let data = vec![1.0, 2.0, 3.0, 4.0, 5.0];
-/// let median = descriptive::quantile(&data, 0.5).unwrap();
+/// let median = descriptive::quantile(&data, 0.5).expect("operation should succeed");
 /// println!("Median: {}", median);
 /// ```
 pub fn quantile(data: &[f64], q: f64) -> Result<f64> {
@@ -297,7 +297,7 @@ mod tests {
     #[test]
     fn test_describe_basic() {
         let data = vec![1.0, 2.0, 3.0, 4.0, 5.0];
-        let stats = describe_impl(&data).unwrap();
+        let stats = describe_impl(&data).expect("operation should succeed");
         
         assert_eq!(stats.count, 5);
         assert!((stats.mean - 3.0).abs() < 1e-10);
@@ -320,11 +320,11 @@ mod tests {
     fn test_covariance() {
         let x = vec![1.0, 2.0, 3.0, 4.0, 5.0];
         let y = vec![1.0, 2.0, 3.0, 4.0, 5.0];
-        let cov = covariance_impl(&x, &y).unwrap();
+        let cov = covariance_impl(&x, &y).expect("operation should succeed");
         assert!((cov - 2.5).abs() < 1e-10);
         
         let y_neg = vec![5.0, 4.0, 3.0, 2.0, 1.0];
-        let cov_neg = covariance_impl(&x, &y_neg).unwrap();
+        let cov_neg = covariance_impl(&x, &y_neg).expect("operation should succeed");
         assert!((cov_neg + 2.5).abs() < 1e-10);
     }
     
@@ -332,11 +332,11 @@ mod tests {
     fn test_correlation() {
         let x = vec![1.0, 2.0, 3.0, 4.0, 5.0];
         let y = vec![1.0, 2.0, 3.0, 4.0, 5.0];
-        let corr = correlation_impl(&x, &y).unwrap();
+        let corr = correlation_impl(&x, &y).expect("operation should succeed");
         assert!((corr - 1.0).abs() < 1e-10);
         
         let y_neg = vec![5.0, 4.0, 3.0, 2.0, 1.0];
-        let corr_neg = correlation_impl(&x, &y_neg).unwrap();
+        let corr_neg = correlation_impl(&x, &y_neg).expect("operation should succeed");
         assert!((corr_neg + 1.0).abs() < 1e-10);
         
         let y_uncorr = vec![3.0, 3.0, 3.0, 3.0, 3.0];
@@ -347,17 +347,17 @@ mod tests {
     #[test]
     fn test_variance() {
         let data = vec![1.0, 2.0, 3.0, 4.0, 5.0];
-        let var = variance(&data, 1).unwrap();
+        let var = variance(&data, 1).expect("operation should succeed");
         assert!((var - 2.5).abs() < 1e-10);
         
-        let pop_var = variance(&data, 0).unwrap();
+        let pop_var = variance(&data, 0).expect("operation should succeed");
         assert!((pop_var - 2.0).abs() < 1e-10);
     }
 
     #[test]
     fn test_std_dev() {
         let data = vec![1.0, 2.0, 3.0, 4.0, 5.0];
-        let std = std_dev(&data, 1).unwrap();
+        let std = std_dev(&data, 1).expect("operation should succeed");
         assert!((std - 1.5811388300841898).abs() < 1e-10);
     }
 
@@ -369,7 +369,7 @@ mod tests {
             vec![5.0, 4.0, 3.0, 2.0, 1.0]
         ];
         
-        let corr_matrix = correlation_matrix(&data).unwrap();
+        let corr_matrix = correlation_matrix(&data).expect("operation should succeed");
         assert_eq!(corr_matrix.len(), 3);
         assert_eq!(corr_matrix[0].len(), 3);
         
@@ -388,13 +388,13 @@ mod tests {
     #[test]
     fn test_quantile() {
         let data = vec![1.0, 2.0, 3.0, 4.0, 5.0];
-        let median = quantile(&data, 0.5).unwrap();
+        let median = quantile(&data, 0.5).expect("operation should succeed");
         assert!((median - 3.0).abs() < 1e-10);
         
-        let q1 = quantile(&data, 0.25).unwrap();
+        let q1 = quantile(&data, 0.25).expect("operation should succeed");
         assert!((q1 - 2.0).abs() < 1e-10);
         
-        let q3 = quantile(&data, 0.75).unwrap();
+        let q3 = quantile(&data, 0.75).expect("operation should succeed");
         assert!((q3 - 4.0).abs() < 1e-10);
     }
 }

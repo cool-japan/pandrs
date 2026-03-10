@@ -557,7 +557,7 @@ fn streaming_parquet_example(large_df: &DataFrame) -> Result<()> {
 
     let chunk_size = 10000;
     let total_rows = large_df.row_count();
-    let num_chunks = total_rows.div_ceil(chunk_size);
+    let num_chunks = (total_rows + chunk_size - 1) / chunk_size;
 
     println!("  Streaming configuration:");
     println!("    • Chunk size: {} rows", chunk_size);
@@ -630,7 +630,7 @@ fn chunked_parquet_processing_example(large_df: &DataFrame) -> Result<()> {
     println!("    • Rows per chunk: {rows_per_chunk}");
 
     let total_rows = large_df.row_count();
-    let num_chunks = total_rows.div_ceil(rows_per_chunk);
+    let num_chunks = (total_rows + rows_per_chunk - 1) / rows_per_chunk;
 
     println!("  Processing {num_chunks} chunks for {total_rows} total rows");
 
@@ -873,7 +873,7 @@ fn bulk_insert_example(df: &DataFrame) -> Result<()> {
     // Simulate bulk insert
     let total_rows = df.row_count();
     let chunk_size = write_options.chunksize.unwrap_or(1000);
-    let num_chunks = total_rows.div_ceil(chunk_size);
+    let num_chunks = (total_rows + chunk_size - 1) / chunk_size;
 
     println!("  Bulk insert progress:");
     for i in 0..num_chunks.min(3) {

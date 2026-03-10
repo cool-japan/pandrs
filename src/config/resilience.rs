@@ -5,6 +5,7 @@
 //! and improve system reliability.
 
 use crate::core::error::{Error, Result};
+use crate::lock_safe;
 use crate::utils::rand_compat::{thread_rng, GenRangeCompat};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -145,15 +146,15 @@ impl CircuitBreaker {
     }
 
     /// Check if the circuit breaker allows the call
-    pub fn can_execute(&self) -> bool {
-        let mut state = self.state.lock().unwrap();
+    pub fn can_execute(&self) -> Result<bool> {
+        let mut state = lock_safe!(self.state, "circuit breaker state lock")?;
         let now = Instant::now();
 
         match *state {
-            CircuitState::Closed => true,
+            CircuitState::Closed => Ok(true),
             CircuitState::Open => {
                 // Check if timeout has elapsed
-                let stats = self.stats.lock().unwrap();
+                let stats = lock_safe!(self.stats, "circuit breaker stats lock")?;
                 let timeout_elapsed = now.duration_since(stats.state_changed_time).as_secs()
                     >= self.config.timeout_seconds;
 
@@ -163,32 +164,39 @@ impl CircuitBreaker {
                     drop(state);
 
                     // Reset half-open call counter
-                    *self.half_open_calls.lock().unwrap() = 0;
+                    *lock_safe!(self.half_open_calls, "circuit breaker half open calls lock")? = 0;
 
                     // Update state change time
-                    self.stats.lock().unwrap().state_changed_time = now;
-                    true
+                    lock_safe!(self.stats, "circuit breaker stats lock for state change")?
+                        .state_changed_time = now;
+                    Ok(true)
                 } else {
-                    false
+                    Ok(false)
                 }
             }
             CircuitState::HalfOpen => {
-                let half_open_calls = *self.half_open_calls.lock().unwrap();
-                half_open_calls < self.config.half_open_max_calls
+                let half_open_calls = *lock_safe!(
+                    self.half_open_calls,
+                    "circuit breaker half open calls check"
+                )?;
+                Ok(half_open_calls < self.config.half_open_max_calls)
             }
         }
     }
 
     /// Record a successful operation
-    pub fn record_success(&self) {
-        let mut stats = self.stats.lock().unwrap();
+    pub fn record_success(&self) -> Result<()> {
+        let mut stats = lock_safe!(self.stats, "circuit breaker stats lock for success")?;
         stats.total_calls += 1;
         stats.successful_calls += 1;
 
-        let state = self.state.lock().unwrap();
+        let state = lock_safe!(self.state, "circuit breaker state lock for success")?;
         if *state == CircuitState::HalfOpen {
             drop(state);
-            let mut half_open_calls = self.half_open_calls.lock().unwrap();
+            let mut half_open_calls = lock_safe!(
+                self.half_open_calls,
+                "circuit breaker half open calls for success"
+            )?;
             *half_open_calls += 1;
 
             // Check if we should close the circuit
@@ -197,26 +205,29 @@ impl CircuitBreaker {
                     (*half_open_calls as f64 / self.config.half_open_max_calls as f64) * 100.0;
                 if success_rate >= self.config.success_threshold_percentage {
                     drop(half_open_calls);
-                    *self.state.lock().unwrap() = CircuitState::Closed;
+                    *lock_safe!(self.state, "circuit breaker state lock for close")? =
+                        CircuitState::Closed;
                     stats.state_changed_time = Instant::now();
 
                     // Clear failure history
-                    self.failure_times.lock().unwrap().clear();
+                    lock_safe!(self.failure_times, "circuit breaker failure times clear")?.clear();
                 }
             }
         }
+        Ok(())
     }
 
     /// Record a failed operation
-    pub fn record_failure(&self) {
+    pub fn record_failure(&self) -> Result<()> {
         let now = Instant::now();
-        let mut stats = self.stats.lock().unwrap();
+        let mut stats = lock_safe!(self.stats, "circuit breaker stats lock for failure")?;
         stats.total_calls += 1;
         stats.failed_calls += 1;
         stats.last_failure_time = Some(now);
 
         // Add failure to tracking
-        let mut failure_times = self.failure_times.lock().unwrap();
+        let mut failure_times =
+            lock_safe!(self.failure_times, "circuit breaker failure times lock")?;
         failure_times.push(now);
 
         // Remove old failures outside the window
@@ -226,7 +237,7 @@ impl CircuitBreaker {
         let failure_count = failure_times.len() as u32;
         drop(failure_times);
 
-        let state = self.state.lock().unwrap();
+        let state = lock_safe!(self.state, "circuit breaker state lock for failure")?;
 
         match *state {
             CircuitState::Closed => {
@@ -235,36 +246,43 @@ impl CircuitBreaker {
                     && failure_count >= self.config.failure_threshold
                 {
                     drop(state);
-                    *self.state.lock().unwrap() = CircuitState::Open;
+                    *lock_safe!(self.state, "circuit breaker state lock for open")? =
+                        CircuitState::Open;
                     stats.state_changed_time = now;
                 }
             }
             CircuitState::HalfOpen => {
                 // Any failure in half-open state opens the circuit
                 drop(state);
-                *self.state.lock().unwrap() = CircuitState::Open;
+                *lock_safe!(self.state, "circuit breaker state lock for open from half")? =
+                    CircuitState::Open;
                 stats.state_changed_time = now;
-                *self.half_open_calls.lock().unwrap() = 0;
+                *lock_safe!(
+                    self.half_open_calls,
+                    "circuit breaker half open calls reset"
+                )? = 0;
             }
             CircuitState::Open => {
                 // Already open, just update stats
             }
         }
+        Ok(())
     }
 
     /// Record a rejected call (when circuit is open)
-    pub fn record_rejection(&self) {
-        self.stats.lock().unwrap().rejected_calls += 1;
+    pub fn record_rejection(&self) -> Result<()> {
+        lock_safe!(self.stats, "circuit breaker stats lock for rejection")?.rejected_calls += 1;
+        Ok(())
     }
 
     /// Get current circuit breaker state
-    pub fn state(&self) -> CircuitState {
-        self.state.lock().unwrap().clone()
+    pub fn state(&self) -> Result<CircuitState> {
+        Ok(lock_safe!(self.state, "circuit breaker state lock for state query")?.clone())
     }
 
     /// Get circuit breaker statistics
-    pub fn stats(&self) -> CircuitStats {
-        self.stats.lock().unwrap().clone()
+    pub fn stats(&self) -> Result<CircuitStats> {
+        Ok(lock_safe!(self.stats, "circuit breaker stats lock for stats query")?.clone())
     }
 }
 
@@ -379,8 +397,11 @@ impl ResilienceManager {
     }
 
     /// Get or create a circuit breaker for the given service
-    pub fn get_circuit_breaker(&self, service_name: &str) -> Arc<CircuitBreaker> {
-        let mut breakers = self.circuit_breakers.lock().unwrap();
+    pub fn get_circuit_breaker(&self, service_name: &str) -> Result<Arc<CircuitBreaker>> {
+        let mut breakers = lock_safe!(
+            self.circuit_breakers,
+            "resilience manager circuit breakers lock"
+        )?;
 
         if !breakers.contains_key(service_name) {
             let breaker = Arc::new(CircuitBreaker::new(self.default_circuit_config.clone()));
@@ -388,22 +409,34 @@ impl ResilienceManager {
         }
 
         // Return the shared circuit breaker instance
-        breakers.get(service_name).unwrap().clone()
+        Ok(breakers
+            .get(service_name)
+            .ok_or_else(|| {
+                Error::InvalidOperation(format!(
+                    "Circuit breaker for {} should exist",
+                    service_name
+                ))
+            })?
+            .clone())
     }
 
     /// Get retry configuration for the given service
-    pub fn get_retry_config(&self, service_name: &str) -> RetryConfig {
-        let configs = self.retry_configs.lock().unwrap();
-        configs
+    pub fn get_retry_config(&self, service_name: &str) -> Result<RetryConfig> {
+        let configs = lock_safe!(self.retry_configs, "resilience manager retry configs lock")?;
+        Ok(configs
             .get(service_name)
             .cloned()
-            .unwrap_or_else(|| self.default_retry_config.clone())
+            .unwrap_or_else(|| self.default_retry_config.clone()))
     }
 
     /// Set custom retry configuration for a service
-    pub fn set_retry_config(&self, service_name: &str, config: RetryConfig) {
-        let mut configs = self.retry_configs.lock().unwrap();
+    pub fn set_retry_config(&self, service_name: &str, config: RetryConfig) -> Result<()> {
+        let mut configs = lock_safe!(
+            self.retry_configs,
+            "resilience manager retry configs lock for set"
+        )?;
         configs.insert(service_name.to_string(), config);
+        Ok(())
     }
 
     /// Execute an operation with both retry and circuit breaker protection
@@ -416,13 +449,13 @@ impl ResilienceManager {
         F: Fn() -> std::result::Result<T, E> + Send + Sync,
         E: std::fmt::Display + std::fmt::Debug + Send + Sync,
     {
-        let circuit_breaker = self.get_circuit_breaker(service_name);
-        let retry_config = self.get_retry_config(service_name);
+        let circuit_breaker = self.get_circuit_breaker(service_name)?;
+        let retry_config = self.get_retry_config(service_name)?;
         let retry_mechanism = RetryMechanism::new(retry_config);
 
         // Check circuit breaker before attempting operation
-        if !circuit_breaker.can_execute() {
-            circuit_breaker.record_rejection();
+        if !circuit_breaker.can_execute()? {
+            circuit_breaker.record_rejection()?;
             return Err(Error::ConnectionError(format!(
                 "Circuit breaker is open for service: {}",
                 service_name
@@ -434,21 +467,24 @@ impl ResilienceManager {
 
         // Record result in circuit breaker
         match &result {
-            Ok(_) => circuit_breaker.record_success(),
-            Err(_) => circuit_breaker.record_failure(),
+            Ok(_) => circuit_breaker.record_success()?,
+            Err(_) => circuit_breaker.record_failure()?,
         }
 
         result
     }
 
     /// Get health status for all services
-    pub fn get_health_status(&self) -> HashMap<String, ServiceHealth> {
-        let breakers = self.circuit_breakers.lock().unwrap();
+    pub fn get_health_status(&self) -> Result<HashMap<String, ServiceHealth>> {
+        let breakers = lock_safe!(
+            self.circuit_breakers,
+            "resilience manager circuit breakers lock for health"
+        )?;
         let mut health_status = HashMap::new();
 
         for (service_name, breaker) in breakers.iter() {
-            let stats = breaker.stats();
-            let state = breaker.state();
+            let stats = breaker.stats()?;
+            let state = breaker.state()?;
 
             let health = ServiceHealth {
                 service_name: service_name.clone(),
@@ -468,7 +504,7 @@ impl ResilienceManager {
             health_status.insert(service_name.clone(), health);
         }
 
-        health_status
+        Ok(health_status)
     }
 }
 
@@ -523,25 +559,37 @@ mod tests {
         let cb = CircuitBreaker::new(config);
 
         // Initially closed
-        assert_eq!(cb.state(), CircuitState::Closed);
-        assert!(cb.can_execute());
+        assert_eq!(
+            cb.state().expect("operation should succeed"),
+            CircuitState::Closed
+        );
+        assert!(cb.can_execute().expect("operation should succeed"));
 
         // Record some successes
         for _ in 0..3 {
-            cb.record_success();
+            cb.record_success().expect("operation should succeed");
         }
-        assert_eq!(cb.state(), CircuitState::Closed);
+        assert_eq!(
+            cb.state().expect("operation should succeed"),
+            CircuitState::Closed
+        );
 
         // Record failures - not enough to trip circuit yet
         for _ in 0..2 {
-            cb.record_failure();
+            cb.record_failure().expect("operation should succeed");
         }
-        assert_eq!(cb.state(), CircuitState::Closed);
+        assert_eq!(
+            cb.state().expect("operation should succeed"),
+            CircuitState::Closed
+        );
 
         // One more failure should trip the circuit
-        cb.record_failure();
-        assert_eq!(cb.state(), CircuitState::Open);
-        assert!(!cb.can_execute());
+        cb.record_failure().expect("operation should succeed");
+        assert_eq!(
+            cb.state().expect("operation should succeed"),
+            CircuitState::Open
+        );
+        assert!(!cb.can_execute().expect("operation should succeed"));
     }
 
     #[test]
@@ -566,12 +614,12 @@ mod tests {
                 continue;
             } else {
                 // Simulate success
-                *result.lock().unwrap() = "Success";
+                *result.lock().expect("operation should succeed") = "Success";
                 break;
             }
         }
 
-        assert_eq!(*result.lock().unwrap(), "Success");
+        assert_eq!(*result.lock().expect("operation should succeed"), "Success");
         // Basic retry mechanism test passed
     }
 
@@ -588,9 +636,13 @@ mod tests {
             max_attempts: 5,
             ..Default::default()
         };
-        manager.set_retry_config("test_service", config.clone());
+        manager
+            .set_retry_config("test_service", config.clone())
+            .expect("operation should succeed");
 
-        let retrieved_config = manager.get_retry_config("test_service");
+        let retrieved_config = manager
+            .get_retry_config("test_service")
+            .expect("operation should succeed");
         assert_eq!(retrieved_config.max_attempts, 5);
     }
 }

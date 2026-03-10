@@ -4,7 +4,7 @@
 //! GroupBy functionality with advanced window operations for sophisticated time series
 //! and grouped analytics operations.
 
-use crate::core::error::{Error, Result};
+use crate::core::error::{Error, OptionExt, Result};
 use crate::dataframe::base::DataFrame;
 use crate::dataframe::enhanced_window::{
     DataFrameEWM, DataFrameExpanding, DataFrameRolling,
@@ -541,7 +541,10 @@ impl<'a> GroupWiseRollingOps<'a> {
 
         // For simplicity, return the first group result
         // In a full implementation, you would concatenate all groups
-        Ok(group_results.into_iter().next().unwrap())
+        group_results
+            .into_iter()
+            .next()
+            .ok_or_else(|| Error::InsufficientData("group results should not be empty".to_string()))
     }
 }
 
@@ -698,7 +701,10 @@ impl<'a> GroupWiseExpandingOps<'a> {
         if group_results.is_empty() {
             return Ok(self.dataframe.clone());
         }
-        Ok(group_results.into_iter().next().unwrap())
+        group_results
+            .into_iter()
+            .next()
+            .ok_or_else(|| Error::InsufficientData("group results should not be empty".to_string()))
     }
 }
 
@@ -828,7 +834,10 @@ impl<'a> GroupWiseEWMOps<'a> {
         if group_results.is_empty() {
             return Ok(self.dataframe.clone());
         }
-        Ok(group_results.into_iter().next().unwrap())
+        group_results
+            .into_iter()
+            .next()
+            .ok_or_else(|| Error::InsufficientData("group results should not be empty".to_string()))
     }
 }
 
@@ -951,6 +960,9 @@ impl<'a> GroupWiseTimeRollingOps<'a> {
         if group_results.is_empty() {
             return Ok(self.dataframe.clone());
         }
-        Ok(group_results.into_iter().next().unwrap())
+        group_results
+            .into_iter()
+            .next()
+            .ok_or_else(|| Error::InsufficientData("group results should not be empty".to_string()))
     }
 }

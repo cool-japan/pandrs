@@ -361,7 +361,10 @@ impl GpuAdvancedStats {
         let decomp = GpuDecomposition::new(&gpu_manager)?;
 
         // Center the data
-        let mean = data.data.mean_axis(Axis(0)).unwrap();
+        let mean = data
+            .data
+            .mean_axis(Axis(0))
+            .expect("operation should succeed");
         let centered_data = &data.data - &mean.insert_axis(Axis(0));
 
         let centered_matrix = GpuMatrix {
@@ -384,7 +387,7 @@ impl GpuAdvancedStats {
         indices.sort_by(|&i, &j| {
             eigenvalues.data[j]
                 .partial_cmp(&eigenvalues.data[i])
-                .unwrap()
+                .expect("operation should succeed")
         });
 
         // Select top n_components
@@ -480,8 +483,8 @@ impl GpuAdvancedStats {
                     let y = data.data.column(j);
 
                     // Compute Pearson correlation
-                    let mean_x = x.mean().unwrap();
-                    let mean_y = y.mean().unwrap();
+                    let mean_x = x.mean().expect("operation should succeed");
+                    let mean_y = y.mean().expect("operation should succeed");
 
                     let numerator: f64 = x
                         .iter()
@@ -547,18 +550,20 @@ mod tests {
     #[test]
     fn test_gpu_qr_decomposition() {
         let gpu_manager = GpuManager::new();
-        let decomp = GpuDecomposition::new(&gpu_manager).unwrap();
+        let decomp = GpuDecomposition::new(&gpu_manager).expect("operation should succeed");
 
         let matrix_data =
             Array2::from_shape_vec((3, 3), vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0])
-                .unwrap();
+                .expect("operation should succeed");
 
         let matrix = GpuMatrix {
             data: matrix_data,
             on_gpu: false,
         };
 
-        let (q, r) = decomp.qr_decomposition(&matrix).unwrap();
+        let (q, r) = decomp
+            .qr_decomposition(&matrix)
+            .expect("operation should succeed");
 
         // Verify Q is orthogonal and R is upper triangular
         assert_eq!(q.data.shape(), &[3, 3]);
@@ -568,17 +573,20 @@ mod tests {
     #[test]
     fn test_matrix_inverse() {
         let gpu_manager = GpuManager::new();
-        let decomp = GpuDecomposition::new(&gpu_manager).unwrap();
+        let decomp = GpuDecomposition::new(&gpu_manager).expect("operation should succeed");
 
         // Create an invertible matrix
-        let matrix_data = Array2::from_shape_vec((2, 2), vec![1.0, 2.0, 3.0, 4.0]).unwrap();
+        let matrix_data = Array2::from_shape_vec((2, 2), vec![1.0, 2.0, 3.0, 4.0])
+            .expect("operation should succeed");
 
         let matrix = GpuMatrix {
             data: matrix_data,
             on_gpu: false,
         };
 
-        let inverse = decomp.matrix_inverse(&matrix).unwrap();
+        let inverse = decomp
+            .matrix_inverse(&matrix)
+            .expect("operation should succeed");
 
         // Verify inverse dimensions
         assert_eq!(inverse.data.shape(), &[2, 2]);
@@ -592,14 +600,15 @@ mod tests {
                 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0,
             ],
         )
-        .unwrap();
+        .expect("operation should succeed");
 
         let gpu_matrix = GpuMatrix {
             data,
             on_gpu: false,
         };
 
-        let (transformed, eigenvalues, components) = GpuAdvancedStats::pca(&gpu_matrix, 2).unwrap();
+        let (transformed, eigenvalues, components) =
+            GpuAdvancedStats::pca(&gpu_matrix, 2).expect("operation should succeed");
 
         assert_eq!(transformed.data.shape()[1], 2);
         assert_eq!(eigenvalues.data.len(), 2);

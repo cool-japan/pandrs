@@ -782,7 +782,9 @@ mod tests {
         tracker.record_read(std::time::Duration::from_millis(20), 2048);
 
         assert_eq!(tracker.bytes_read, 3072);
-        let avg_time = tracker.average_read_time().unwrap();
+        let avg_time = tracker
+            .average_read_time()
+            .expect("operation should succeed");
         assert_eq!(avg_time, std::time::Duration::from_millis(15));
     }
 

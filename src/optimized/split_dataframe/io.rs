@@ -652,7 +652,10 @@ impl OptimizedDataFrame {
         let mut column_names: Vec<String> = Vec::new();
         if header && !range.is_empty() && skip_rows < range.rows().len() {
             // Get header row
-            let header_row = range.rows().nth(skip_rows).unwrap();
+            let header_row = range
+                .rows()
+                .nth(skip_rows)
+                .expect("operation should succeed");
 
             // Convert column names to strings
             for cell in header_row {
@@ -661,7 +664,7 @@ impl OptimizedDataFrame {
         } else {
             // If no header, use column numbers as names
             if !range.is_empty() {
-                let first_row = range.rows().next().unwrap();
+                let first_row = range.rows().next().expect("operation should succeed");
                 for i in 0..first_row.len() {
                     column_names.push(format!("Column{}", i + 1));
                 }

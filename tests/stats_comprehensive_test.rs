@@ -1,3 +1,4 @@
+#![allow(clippy::result_large_err)]
 //! Comprehensive tests for the statistical computing framework
 //!
 //! This test module validates all statistical functionality including hypothesis testing,

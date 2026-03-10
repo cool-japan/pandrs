@@ -251,7 +251,10 @@ impl OptimizedDataFrame {
             return Err(Error::Index("No index is set".to_string()));
         }
 
-        let index = self.index.as_ref().unwrap();
+        let index = self
+            .index
+            .as_ref()
+            .ok_or_else(|| Error::InvalidOperation("Index not set".into()))?;
 
         // Get row numbers from index
         let mut indices = Vec::new();

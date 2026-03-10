@@ -4,6 +4,7 @@
 //! recompilation overhead and improve performance across repeated operations.
 
 use crate::core::error::{Error, Result};
+use crate::{read_lock_safe, write_lock_safe};
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::sync::{Arc, RwLock};
@@ -201,9 +202,11 @@ impl JitFunctionCache {
 
     /// Get a cached function if it exists
     pub fn get(&self, function_id: &FunctionId) -> Option<Arc<CachedFunction>> {
-        let cache = self.cache.read().unwrap();
+        let cache = read_lock_safe!(self.cache, "jit cache read").ok()?;
         if let Some(cached) = cache.get(function_id) {
-            *self.cache_hits.write().unwrap() += 1;
+            if let Ok(mut hits) = write_lock_safe!(self.cache_hits, "jit cache hits write") {
+                *hits += 1;
+            }
             // Note: In a real implementation, we would update last_accessed here
             // but that requires mutable access, so we'll track it separately
             Some(Arc::new(CachedFunction {
@@ -216,7 +219,9 @@ impl JitFunctionCache {
                 signature: cached.signature.clone(),
             }))
         } else {
-            *self.cache_misses.write().unwrap() += 1;
+            if let Ok(mut misses) = write_lock_safe!(self.cache_misses, "jit cache misses write") {
+                *misses += 1;
+            }
             None
         }
     }
@@ -238,8 +243,9 @@ impl JitFunctionCache {
             signature,
         };
 
-        let mut cache = self.cache.write().unwrap();
-        let mut current_size = self.current_cache_size_bytes.write().unwrap();
+        let mut cache = write_lock_safe!(self.cache, "jit cache write")?;
+        let mut current_size =
+            write_lock_safe!(self.current_cache_size_bytes, "jit cache size write")?;
 
         // Remove old function if it exists
         if let Some(old_function) = cache.remove(&function_id) {
@@ -253,20 +259,21 @@ impl JitFunctionCache {
     }
 
     /// Record execution of a cached function
-    pub fn record_execution(&self, function_id: &FunctionId, execution_time_ns: u64) {
-        let mut cache = self.cache.write().unwrap();
+    pub fn record_execution(&self, function_id: &FunctionId, execution_time_ns: u64) -> Result<()> {
+        let mut cache = write_lock_safe!(self.cache, "jit cache write")?;
         if let Some(cached_function) = cache.get_mut(function_id) {
             cached_function.metadata.record_execution(execution_time_ns);
         }
+        Ok(())
     }
 
     /// Get cache statistics
-    pub fn get_stats(&self) -> CacheStats {
-        let hits = *self.cache_hits.read().unwrap();
-        let misses = *self.cache_misses.read().unwrap();
-        let evictions = *self.cache_evictions.read().unwrap();
-        let cache_size = *self.current_cache_size_bytes.read().unwrap();
-        let cache_entries = self.cache.read().unwrap().len();
+    pub fn get_stats(&self) -> Result<CacheStats> {
+        let hits = *read_lock_safe!(self.cache_hits, "jit cache hits read")?;
+        let misses = *read_lock_safe!(self.cache_misses, "jit cache misses read")?;
+        let evictions = *read_lock_safe!(self.cache_evictions, "jit cache evictions read")?;
+        let cache_size = *read_lock_safe!(self.current_cache_size_bytes, "jit cache size read")?;
+        let cache_entries = read_lock_safe!(self.cache, "jit cache read")?.len();
 
         let hit_rate = if hits + misses > 0 {
             hits as f64 / (hits + misses) as f64
@@ -274,7 +281,7 @@ impl JitFunctionCache {
             0.0
         };
 
-        CacheStats {
+        Ok(CacheStats {
             hit_rate,
             hits,
             misses,
@@ -282,29 +289,31 @@ impl JitFunctionCache {
             cache_size_bytes: cache_size,
             cache_entries,
             max_cache_size_bytes: self.max_cache_size_bytes,
-        }
+        })
     }
 
     /// Clear the entire cache
-    pub fn clear(&self) {
-        let mut cache = self.cache.write().unwrap();
-        let mut current_size = self.current_cache_size_bytes.write().unwrap();
+    pub fn clear(&self) -> Result<()> {
+        let mut cache = write_lock_safe!(self.cache, "jit cache write")?;
+        let mut current_size =
+            write_lock_safe!(self.current_cache_size_bytes, "jit cache size write")?;
 
         cache.clear();
         *current_size = 0;
+        Ok(())
     }
 
     /// Evict functions if cache is full
     fn evict_if_needed(&self, new_function_size: usize) -> Result<()> {
-        let current_size = *self.current_cache_size_bytes.read().unwrap();
+        let current_size = *read_lock_safe!(self.current_cache_size_bytes, "jit cache size read")?;
 
         if current_size + new_function_size <= self.max_cache_size_bytes {
             return Ok(()); // No eviction needed
         }
 
-        let mut cache = self.cache.write().unwrap();
-        let mut size = self.current_cache_size_bytes.write().unwrap();
-        let mut evictions = self.cache_evictions.write().unwrap();
+        let mut cache = write_lock_safe!(self.cache, "jit cache write")?;
+        let mut size = write_lock_safe!(self.current_cache_size_bytes, "jit cache size write")?;
+        let mut evictions = write_lock_safe!(self.cache_evictions, "jit cache evictions write")?;
 
         // Calculate cache pressure
         let cache_pressure = (*size + new_function_size) as f64 / self.max_cache_size_bytes as f64;
@@ -313,24 +322,23 @@ impl JitFunctionCache {
         let mut to_evict = Vec::new();
         for (id, cached_function) in cache.iter() {
             if cached_function.metadata.should_evict(cache_pressure) {
-                to_evict.push((id.clone(), cached_function.metadata.function_size_bytes));
+                let benefit = cached_function.metadata.cache_benefit();
+                to_evict.push((
+                    id.clone(),
+                    cached_function.metadata.function_size_bytes,
+                    benefit,
+                ));
             }
         }
 
         // Sort by cache benefit (evict least beneficial first)
-        to_evict.sort_by(|a, b| {
-            let a_benefit = cache.get(&a.0).unwrap().metadata.cache_benefit();
-            let b_benefit = cache.get(&b.0).unwrap().metadata.cache_benefit();
-            a_benefit
-                .partial_cmp(&b_benefit)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
+        to_evict.sort_by(|a, b| a.2.partial_cmp(&b.2).unwrap_or(std::cmp::Ordering::Equal));
 
         // Evict functions until we have enough space
         let needed_space = (*size + new_function_size).saturating_sub(self.max_cache_size_bytes);
         let mut freed_space = 0;
 
-        for (function_id, function_size) in to_evict {
+        for (function_id, function_size, _benefit) in to_evict {
             if freed_space >= needed_space {
                 break;
             }
@@ -446,7 +454,7 @@ mod tests {
         // Initially, function should not be in cache
         assert!(cache.get(&function_id).is_none());
 
-        let stats = cache.get_stats();
+        let stats = cache.get_stats().expect("operation should succeed");
         assert_eq!(stats.misses, 1);
         assert_eq!(stats.hits, 0);
     }

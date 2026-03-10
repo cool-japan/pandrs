@@ -1110,7 +1110,7 @@ mod tests {
         let right = vec![1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0];
         let mut result = vec![0.0; 8];
 
-        simd_add_f64(&left, &right, &mut result).unwrap();
+        simd_add_f64(&left, &right, &mut result).expect("operation should succeed");
 
         let expected = vec![2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0];
         for i in 0..8 {
@@ -1123,7 +1123,7 @@ mod tests {
         let data = vec![1.0, 2.0, 3.0, 4.0, 5.0];
         let mut result = vec![0.0; 5];
 
-        simd_multiply_scalar_f64(&data, 2.0, &mut result).unwrap();
+        simd_multiply_scalar_f64(&data, 2.0, &mut result).expect("operation should succeed");
 
         let expected = vec![2.0, 4.0, 6.0, 8.0, 10.0];
         for i in 0..5 {
@@ -1136,7 +1136,7 @@ mod tests {
         let data = vec![-1.0, 2.0, -3.0, 4.0, -5.0];
         let mut result = vec![0.0; 5];
 
-        simd_abs_f64(&data, &mut result).unwrap();
+        simd_abs_f64(&data, &mut result).expect("operation should succeed");
 
         let expected = vec![1.0, 2.0, 3.0, 4.0, 5.0];
         for i in 0..5 {
@@ -1150,7 +1150,8 @@ mod tests {
         let right = vec![1.0, 1.0, 4.0, 4.0, 6.0];
         let mut result = vec![false; 5];
 
-        simd_compare_f64(&left, &right, ComparisonOp::GreaterThan, &mut result).unwrap();
+        simd_compare_f64(&left, &right, ComparisonOp::GreaterThan, &mut result)
+            .expect("operation should succeed");
 
         let expected = vec![false, true, false, false, false];
         assert_eq!(result, expected);
@@ -1162,7 +1163,7 @@ mod tests {
         let right = vec![1i64, 1, 1, 1, 1, 1, 1, 1];
         let mut result = vec![0i64; 8];
 
-        simd_add_i64(&left, &right, &mut result).unwrap();
+        simd_add_i64(&left, &right, &mut result).expect("operation should succeed");
 
         let expected = vec![2i64, 3, 4, 5, 6, 7, 8, 9];
         assert_eq!(result, expected);
@@ -1174,7 +1175,8 @@ mod tests {
         let right = vec![1i64, 1, 4, 4, 6];
         let mut result = vec![false; 5];
 
-        simd_compare_i64(&left, &right, ComparisonOp::Equal, &mut result).unwrap();
+        simd_compare_i64(&left, &right, ComparisonOp::Equal, &mut result)
+            .expect("operation should succeed");
 
         let expected = vec![true, false, false, true, false];
         assert_eq!(result, expected);

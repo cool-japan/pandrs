@@ -990,21 +990,24 @@ mod tests {
             vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0],
             Some("x1".to_string()),
         )
-        .unwrap();
+        .expect("operation should succeed");
         let x2 = Series::new(
             vec![1.0, 1.0, 1.0, 1.0, 1.0, 2.0, 2.0, 2.0, 2.0, 2.0],
             Some("x2".to_string()),
         )
-        .unwrap();
+        .expect("operation should succeed");
         let y = Series::new(
             vec![0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0],
             Some("y".to_string()),
         )
-        .unwrap();
+        .expect("operation should succeed");
 
-        df.add_column("x1".to_string(), x1).unwrap();
-        df.add_column("x2".to_string(), x2).unwrap();
-        df.add_column("y".to_string(), y).unwrap();
+        df.add_column("x1".to_string(), x1)
+            .expect("operation should succeed");
+        df.add_column("x2".to_string(), x2)
+            .expect("operation should succeed");
+        df.add_column("y".to_string(), y)
+            .expect("operation should succeed");
 
         df
     }
@@ -1016,15 +1019,17 @@ mod tests {
             vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0],
             Some("x1".to_string()),
         )
-        .unwrap();
+        .expect("operation should succeed");
         let y = Series::new(
             vec![2.0, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0, 20.0],
             Some("y".to_string()),
         )
-        .unwrap();
+        .expect("operation should succeed");
 
-        df.add_column("x1".to_string(), x1).unwrap();
-        df.add_column("y".to_string(), y).unwrap();
+        df.add_column("x1".to_string(), x1)
+            .expect("operation should succeed");
+        df.add_column("y".to_string(), y)
+            .expect("operation should succeed");
 
         df
     }
@@ -1034,14 +1039,16 @@ mod tests {
         let data = create_classification_data();
         let mut tree = DecisionTreeClassifier::new(DecisionTreeConfig::default());
 
-        tree.fit(&data, "y").unwrap();
+        tree.fit(&data, "y").expect("operation should succeed");
 
-        let predictions = tree.predict(&data).unwrap();
+        let predictions = tree.predict(&data).expect("operation should succeed");
         assert_eq!(predictions.len(), 10);
 
         // Check accuracy
-        let metrics = tree.evaluate(&data, "y").unwrap();
-        let accuracy = metrics.get_metric("accuracy").unwrap();
+        let metrics = tree.evaluate(&data, "y").expect("operation should succeed");
+        let accuracy = metrics
+            .get_metric("accuracy")
+            .expect("operation should succeed");
         assert!(*accuracy > 0.8);
     }
 
@@ -1050,13 +1057,13 @@ mod tests {
         let data = create_regression_data();
         let mut tree = DecisionTreeRegressor::default_config();
 
-        tree.fit(&data, "y").unwrap();
+        tree.fit(&data, "y").expect("operation should succeed");
 
-        let predictions = tree.predict(&data).unwrap();
+        let predictions = tree.predict(&data).expect("operation should succeed");
         assert_eq!(predictions.len(), 10);
 
-        let metrics = tree.evaluate(&data, "y").unwrap();
-        let r2 = metrics.get_metric("r2").unwrap();
+        let metrics = tree.evaluate(&data, "y").expect("operation should succeed");
+        let r2 = metrics.get_metric("r2").expect("operation should succeed");
         assert!(*r2 > 0.9);
     }
 
@@ -1066,7 +1073,7 @@ mod tests {
         let config = DecisionTreeConfigBuilder::new().max_depth(2).build();
 
         let mut tree = DecisionTreeClassifier::new(config);
-        tree.fit(&data, "y").unwrap();
+        tree.fit(&data, "y").expect("operation should succeed");
 
         assert!(tree.depth() <= 2);
     }
@@ -1075,9 +1082,11 @@ mod tests {
     fn test_feature_importances() {
         let data = create_classification_data();
         let mut tree = DecisionTreeClassifier::default_config();
-        tree.fit(&data, "y").unwrap();
+        tree.fit(&data, "y").expect("operation should succeed");
 
-        let importances = tree.feature_importances().unwrap();
+        let importances = tree
+            .feature_importances()
+            .expect("operation should succeed");
         assert!(!importances.is_empty());
 
         // Sum should be approximately 1
@@ -1089,9 +1098,9 @@ mod tests {
     fn test_predict_proba() {
         let data = create_classification_data();
         let mut tree = DecisionTreeClassifier::default_config();
-        tree.fit(&data, "y").unwrap();
+        tree.fit(&data, "y").expect("operation should succeed");
 
-        let probs = tree.predict_proba(&data).unwrap();
+        let probs = tree.predict_proba(&data).expect("operation should succeed");
         assert_eq!(probs.len(), 10);
 
         // Each probability vector should sum to 1

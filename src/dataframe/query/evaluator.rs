@@ -10,6 +10,7 @@ use std::time::Instant;
 use super::ast::{BinaryOp, Expr, LiteralValue, UnaryOp};
 use crate::core::error::{Error, Result};
 use crate::dataframe::base::DataFrame;
+use crate::lock_safe;
 use crate::optimized::jit::jit_core::{JitError, JitFunction, JitResult};
 
 /// Statistics for JIT compilation
@@ -151,8 +152,8 @@ impl QueryContext {
     }
 
     /// Get JIT compilation statistics
-    pub fn jit_stats(&self) -> JitQueryStats {
-        self.jit_stats.lock().unwrap().clone()
+    pub fn jit_stats(&self) -> Result<JitQueryStats> {
+        Ok(lock_safe!(self.jit_stats, "query evaluator jit stats lock")?.clone())
     }
 
     /// Enable or disable JIT compilation
@@ -166,14 +167,22 @@ impl QueryContext {
     }
 
     /// Clear JIT compilation cache
-    pub fn clear_jit_cache(&mut self) {
-        let mut cache = self.compiled_expressions.lock().unwrap();
+    pub fn clear_jit_cache(&mut self) -> Result<()> {
+        let mut cache = lock_safe!(
+            self.compiled_expressions,
+            "query evaluator compiled expressions lock"
+        )?;
         cache.clear();
+        Ok(())
     }
 
     /// Get the number of compiled expressions in cache
-    pub fn compiled_expressions_count(&self) -> usize {
-        self.compiled_expressions.lock().unwrap().len()
+    pub fn compiled_expressions_count(&self) -> Result<usize> {
+        Ok(lock_safe!(
+            self.compiled_expressions,
+            "query evaluator compiled expressions lock"
+        )?
+        .len())
     }
 
     /// Add built-in mathematical functions
@@ -353,7 +362,10 @@ impl<'a> Evaluator<'a> {
         // Check if we should use JIT compilation
         if self.context.jit_enabled {
             let should_compile = {
-                let mut cache = self.context.compiled_expressions.lock().unwrap();
+                let mut cache = lock_safe!(
+                    self.context.compiled_expressions,
+                    "query evaluator context compiled expressions lock"
+                )?;
                 if let Some(compiled_expr) = cache.get_mut(&expr_signature) {
                     compiled_expr.execution_count += 1;
                     compiled_expr.last_execution = std::time::SystemTime::now();
@@ -380,7 +392,10 @@ impl<'a> Evaluator<'a> {
             if should_compile {
                 // Try to compile the expression
                 if let Ok(jit_func) = self.compile_expression_to_jit(expr) {
-                    let mut cache = self.context.compiled_expressions.lock().unwrap();
+                    let mut cache = lock_safe!(
+                        self.context.compiled_expressions,
+                        "query evaluator context compiled expressions lock"
+                    )?;
                     if let Some(compiled_expr) = cache.get_mut(&expr_signature) {
                         compiled_expr.jit_function = Some(Arc::new(jit_func));
                     }
@@ -389,7 +404,10 @@ impl<'a> Evaluator<'a> {
 
             // Try to execute with JIT
             {
-                let cache = self.context.compiled_expressions.lock().unwrap();
+                let cache = lock_safe!(
+                    self.context.compiled_expressions,
+                    "query evaluator context compiled expressions lock"
+                )?;
                 if let Some(compiled_expr) = cache.get(&expr_signature) {
                     if let Some(jit_func) = &compiled_expr.jit_function {
                         return self.execute_jit_compiled_query(expr, jit_func);
@@ -436,8 +454,12 @@ impl<'a> Evaluator<'a> {
 
         let duration = start.elapsed();
         {
-            let mut stats = self.context.jit_stats.lock().unwrap();
-            stats.record_compilation(duration.as_nanos() as u64);
+            if let Ok(mut stats) = lock_safe!(
+                self.context.jit_stats,
+                "query evaluator context jit stats lock"
+            ) {
+                stats.record_compilation(duration.as_nanos() as u64);
+            }
         }
 
         Ok(jit_func)
@@ -613,7 +635,10 @@ impl<'a> Evaluator<'a> {
 
                 let duration = start.elapsed();
                 {
-                    let mut stats = self.context.jit_stats.lock().unwrap();
+                    let mut stats = lock_safe!(
+                        self.context.jit_stats,
+                        "query evaluator context jit stats lock"
+                    )?;
                     stats.record_jit_execution(duration.as_nanos() as u64);
                 }
 
@@ -636,7 +661,10 @@ impl<'a> Evaluator<'a> {
 
         let duration = start.elapsed();
         {
-            let mut stats = self.context.jit_stats.lock().unwrap();
+            let mut stats = lock_safe!(
+                self.context.jit_stats,
+                "query evaluator context jit stats lock"
+            )?;
             stats.record_jit_execution(duration.as_nanos() as u64);
         }
 
@@ -1057,8 +1085,12 @@ impl<'a> JitEvaluator<'a> {
 
         let duration = start.elapsed();
         {
-            let mut stats = self.context.jit_stats.lock().unwrap();
-            stats.record_compilation(duration.as_nanos() as u64);
+            if let Ok(mut stats) = lock_safe!(
+                self.context.jit_stats,
+                "query evaluator context jit stats lock"
+            ) {
+                stats.record_compilation(duration.as_nanos() as u64);
+            }
         }
 
         Ok(jit_func)
@@ -1282,7 +1314,10 @@ impl<'a> JitEvaluator<'a> {
 
         let duration = start.elapsed();
         {
-            let mut stats = self.context.jit_stats.lock().unwrap();
+            let mut stats = lock_safe!(
+                self.context.jit_stats,
+                "query evaluator context jit stats lock"
+            )?;
             stats.record_jit_execution(duration.as_nanos() as u64);
         }
 

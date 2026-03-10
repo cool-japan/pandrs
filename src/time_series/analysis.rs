@@ -245,7 +245,7 @@ impl TrendAnalysis {
             }
         }
 
-        slopes.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        slopes.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
 
         // Median slope
         let median_idx = slopes.len() / 2;
@@ -477,7 +477,7 @@ impl SeasonalityAnalysis {
         }
 
         // Sort peaks by correlation strength
-        peaks.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+        peaks.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
         // Return the strongest peak
         if let Some((peak_lag, peak_corr)) = peaks.first() {
@@ -563,7 +563,7 @@ impl SeasonalityAnalysis {
             .iter()
             .map(|(&period, &strength)| (period, strength))
             .collect();
-        periods.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+        periods.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
         // Find the fundamental period (smallest period that explains the seasonality)
         for &(candidate_period, candidate_strength) in &periods {
@@ -1094,31 +1094,43 @@ mod tests {
         let mut builder = TimeSeriesBuilder::new();
 
         for i in 0..100 {
-            let timestamp = Utc.timestamp_opt(1640995200 + i * 86400, 0).unwrap();
+            let timestamp = Utc
+                .timestamp_opt(1640995200 + i * 86400, 0)
+                .single()
+                .expect("operation should succeed");
             let value = 10.0 + i as f64 * 0.2 + (i as f64 % 10.0 - 5.0) * 0.1; // Trend with noise
             builder = builder.add_point(timestamp, value);
         }
 
-        builder.frequency(Frequency::Daily).build().unwrap()
+        builder
+            .frequency(Frequency::Daily)
+            .build()
+            .expect("operation should succeed")
     }
 
     fn create_seasonal_series() -> TimeSeries {
         let mut builder = TimeSeriesBuilder::new();
 
         for i in 0..100 {
-            let timestamp = Utc.timestamp_opt(1640995200 + i * 86400, 0).unwrap();
+            let timestamp = Utc
+                .timestamp_opt(1640995200 + i * 86400, 0)
+                .single()
+                .expect("operation should succeed");
             let seasonal = (2.0 * PI * i as f64 / 7.0).sin() * 5.0; // Weekly seasonality
             let value = 20.0 + seasonal + (i as f64 % 3.0 - 1.0) * 0.5; // Seasonality with noise
             builder = builder.add_point(timestamp, value);
         }
 
-        builder.frequency(Frequency::Daily).build().unwrap()
+        builder
+            .frequency(Frequency::Daily)
+            .build()
+            .expect("operation should succeed")
     }
 
     #[test]
     fn test_trend_analysis() {
         let ts = create_trending_series();
-        let result = TrendAnalysis::analyze(&ts).unwrap();
+        let result = TrendAnalysis::analyze(&ts).expect("operation should succeed");
 
         assert_eq!(result.direction, "increasing");
         assert!(result.slope > 0.0);
@@ -1129,7 +1141,7 @@ mod tests {
     #[test]
     fn test_seasonality_analysis() {
         let ts = create_seasonal_series();
-        let result = SeasonalityAnalysis::analyze(&ts, Some(20)).unwrap();
+        let result = SeasonalityAnalysis::analyze(&ts, Some(20)).expect("operation should succeed");
 
         assert!(result.has_seasonality);
         assert_eq!(result.dominant_period, Some(7)); // Should detect weekly pattern
@@ -1140,7 +1152,8 @@ mod tests {
     #[test]
     fn test_stationarity_adf() {
         let ts = create_trending_series();
-        let result = StationarityTest::augmented_dickey_fuller(&ts, None).unwrap();
+        let result =
+            StationarityTest::augmented_dickey_fuller(&ts, None).expect("operation should succeed");
 
         assert_eq!(result.test_type, "Augmented Dickey-Fuller");
         assert!(!result.is_stationary); // Trending series should not be stationary
@@ -1150,7 +1163,8 @@ mod tests {
     #[test]
     fn test_stationarity_kpss() {
         let ts = create_seasonal_series();
-        let result = StationarityTest::kpss_test(&ts, "constant").unwrap();
+        let result =
+            StationarityTest::kpss_test(&ts, "constant").expect("operation should succeed");
 
         assert_eq!(result.test_type, "KPSS");
         assert!(result.critical_values.contains_key("5%"));
@@ -1159,7 +1173,8 @@ mod tests {
     #[test]
     fn test_autocorrelation_analysis() {
         let ts = create_seasonal_series();
-        let result = AutocorrelationAnalysis::analyze(&ts, Some(20)).unwrap();
+        let result =
+            AutocorrelationAnalysis::analyze(&ts, Some(20)).expect("operation should succeed");
 
         assert_eq!(result.acf.len(), 21); // 0 to 20 lags
         assert_eq!(result.pacf.len(), 21);
@@ -1174,13 +1189,20 @@ mod tests {
         let mut builder = TimeSeriesBuilder::new();
 
         for i in 0..50 {
-            let timestamp = Utc.timestamp_opt(1640995200 + i * 86400, 0).unwrap();
+            let timestamp = Utc
+                .timestamp_opt(1640995200 + i * 86400, 0)
+                .single()
+                .expect("operation should succeed");
             let value = if i < 25 { 10.0 } else { 20.0 }; // Clear change at position 25
             builder = builder.add_point(timestamp, value);
         }
 
-        let ts = builder.frequency(Frequency::Daily).build().unwrap();
-        let result = ChangePointDetection::cusum_detection(&ts, Some(1.0)).unwrap();
+        let ts = builder
+            .frequency(Frequency::Daily)
+            .build()
+            .expect("operation should succeed");
+        let result = ChangePointDetection::cusum_detection(&ts, Some(1.0))
+            .expect("operation should succeed");
 
         assert_eq!(result.method, "CUSUM");
         assert!(!result.change_points.is_empty());

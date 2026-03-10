@@ -519,8 +519,8 @@ mod tests {
     
     #[test]
     fn test_unified_string_pool_creation() {
-        let pool = UnifiedStringPool::with_default_config().unwrap();
-        let stats = pool.stats().unwrap();
+        let pool = UnifiedStringPool::with_default_config().expect("operation should succeed");
+        let stats = pool.stats().expect("operation should succeed");
         
         assert_eq!(stats.total_strings, 0);
         assert_eq!(stats.unique_strings, 0);
@@ -529,28 +529,28 @@ mod tests {
     
     #[test]
     fn test_string_addition_and_retrieval() {
-        let pool = UnifiedStringPool::with_default_config().unwrap();
+        let pool = UnifiedStringPool::with_default_config().expect("operation should succeed");
         
-        let id1 = pool.add_string("hello").unwrap();
-        let id2 = pool.add_string("world").unwrap();
-        let id3 = pool.add_string("hello").unwrap(); // Duplicate
+        let id1 = pool.add_string("hello").expect("operation should succeed");
+        let id2 = pool.add_string("world").expect("operation should succeed");
+        let id3 = pool.add_string("hello").expect("operation should succeed"); // Duplicate
         
         assert_ne!(id1, id2);
         assert_eq!(id1, id3); // Should be deduplicated
         
-        let view1 = pool.get_string(id1).unwrap();
-        let view2 = pool.get_string(id2).unwrap();
+        let view1 = pool.get_string(id1).expect("operation should succeed");
+        let view2 = pool.get_string(id2).expect("operation should succeed");
         
-        assert_eq!(view1.as_str().unwrap(), "hello");
-        assert_eq!(view2.as_str().unwrap(), "world");
+        assert_eq!(view1.as_str().expect("operation should succeed"), "hello");
+        assert_eq!(view2.as_str().expect("operation should succeed"), "world");
         
-        let stats = pool.stats().unwrap();
+        let stats = pool.stats().expect("operation should succeed");
         assert_eq!(stats.total_strings, 2); // Only unique strings counted
     }
     
     #[test]
     fn test_multiple_string_operations() {
-        let pool = UnifiedStringPool::with_default_config().unwrap();
+        let pool = UnifiedStringPool::with_default_config().expect("operation should succeed");
         
         let strings = vec![
             "apple".to_string(),
@@ -559,41 +559,41 @@ mod tests {
             "apple".to_string(), // Duplicate
         ];
         
-        let ids = pool.add_strings(&strings).unwrap();
+        let ids = pool.add_strings(&strings).expect("operation should succeed");
         assert_eq!(ids.len(), 4);
         assert_eq!(ids[0], ids[3]); // Duplicates should have same ID
         
-        let views = pool.get_strings(&ids).unwrap();
+        let views = pool.get_strings(&ids).expect("operation should succeed");
         assert_eq!(views.len(), 4);
-        assert_eq!(views[0].as_str().unwrap(), "apple");
-        assert_eq!(views[1].as_str().unwrap(), "banana");
-        assert_eq!(views[2].as_str().unwrap(), "cherry");
-        assert_eq!(views[3].as_str().unwrap(), "apple");
+        assert_eq!(views[0].as_str().expect("operation should succeed"), "apple");
+        assert_eq!(views[1].as_str().expect("operation should succeed"), "banana");
+        assert_eq!(views[2].as_str().expect("operation should succeed"), "cherry");
+        assert_eq!(views[3].as_str().expect("operation should succeed"), "apple");
     }
     
     #[test]
     fn test_zero_copy_substring() {
-        let pool = UnifiedStringPool::with_default_config().unwrap();
+        let pool = UnifiedStringPool::with_default_config().expect("operation should succeed");
         
-        let id = pool.add_string("hello world").unwrap();
-        let view = pool.get_string(id).unwrap();
+        let id = pool.add_string("hello world").expect("operation should succeed");
+        let view = pool.get_string(id).expect("operation should succeed");
         
-        let substring = view.substring(0..5).unwrap();
-        assert_eq!(substring.as_str().unwrap(), "hello");
+        let substring = view.substring(0..5).expect("operation should succeed");
+        assert_eq!(substring.as_str().expect("operation should succeed"), "hello");
         
-        let substring2 = view.substring(6..11).unwrap();
-        assert_eq!(substring2.as_str().unwrap(), "world");
+        let substring2 = view.substring(6..11).expect("operation should succeed");
+        assert_eq!(substring2.as_str().expect("operation should succeed"), "world");
     }
     
     #[test]
     fn test_pool_statistics() {
-        let pool = UnifiedStringPool::with_default_config().unwrap();
+        let pool = UnifiedStringPool::with_default_config().expect("operation should succeed");
         
-        pool.add_string("test").unwrap();
-        pool.add_string("data").unwrap();
-        pool.add_string("test").unwrap(); // Duplicate
+        pool.add_string("test").expect("operation should succeed");
+        pool.add_string("data").expect("operation should succeed");
+        pool.add_string("test").expect("operation should succeed"); // Duplicate
         
-        let stats = pool.stats().unwrap();
+        let stats = pool.stats().expect("operation should succeed");
         assert_eq!(stats.total_strings, 2); // 2 unique strings
         assert_eq!(stats.unique_strings, 2);
         assert!(stats.total_bytes > 0);
@@ -605,15 +605,15 @@ mod tests {
         let mut config = UnifiedStringPoolConfig::default();
         config.initial_buffer_size = 16; // Very small buffer to force expansion
         
-        let pool = UnifiedStringPool::new(config).unwrap();
+        let pool = UnifiedStringPool::new(config).expect("operation should succeed");
         
         // Add strings that will exceed initial buffer size
         for i in 0..10 {
             let s = format!("this is a longer string {}", i);
-            pool.add_string(&s).unwrap();
+            pool.add_string(&s).expect("operation should succeed");
         }
         
-        let stats = pool.stats().unwrap();
+        let stats = pool.stats().expect("operation should succeed");
         assert!(stats.buffer_capacity > 16); // Buffer should have expanded
         assert_eq!(stats.total_strings, 10);
     }

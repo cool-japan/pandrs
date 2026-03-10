@@ -1,3 +1,4 @@
+#![allow(clippy::result_large_err)]
 use pandrs::optimized::OptimizedDataFrame;
 use pandrs::{DataFrame, Series};
 use std::collections::HashMap;

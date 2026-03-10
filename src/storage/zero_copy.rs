@@ -753,7 +753,7 @@ mod tests {
 
     #[test]
     fn test_cache_topology_detection() {
-        let topology = CacheTopology::detect().unwrap();
+        let topology = CacheTopology::detect().expect("operation should succeed");
         assert!(topology.l1_cache_size > 0);
         assert!(topology.l2_cache_size > 0);
         assert!(topology.l3_cache_size > 0);
@@ -770,22 +770,22 @@ mod tests {
 
     #[test]
     fn test_zero_copy_manager() {
-        let manager = ZeroCopyManager::new().unwrap();
+        let manager = ZeroCopyManager::new().expect("operation should succeed");
         let data = vec![1i32, 2, 3, 4, 5];
-        let view = manager.create_view(data).unwrap();
+        let view = manager.create_view(data).expect("operation should succeed");
 
         assert_eq!(view.len(), 5);
         assert_eq!(view.as_slice(), &[1, 2, 3, 4, 5]);
 
-        let stats = manager.stats().unwrap();
+        let stats = manager.stats().expect("operation should succeed");
         assert_eq!(stats.views_created, 1);
     }
 
     #[test]
     fn test_cache_aware_operations() {
-        let manager = ZeroCopyManager::new().unwrap();
+        let manager = ZeroCopyManager::new().expect("operation should succeed");
         let data = (0..1000).collect::<Vec<i32>>();
-        let view = manager.create_view(data).unwrap();
+        let view = manager.create_view(data).expect("operation should succeed");
 
         // Test linear scan
         let evens = view.linear_scan(|&x| x % 2 == 0);
@@ -798,11 +798,11 @@ mod tests {
 
     #[test]
     fn test_subview_creation() {
-        let manager = ZeroCopyManager::new().unwrap();
+        let manager = ZeroCopyManager::new().expect("operation should succeed");
         let data = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-        let view = manager.create_view(data).unwrap();
+        let view = manager.create_view(data).expect("operation should succeed");
 
-        let subview = view.subview(2..7).unwrap();
+        let subview = view.subview(2..7).expect("operation should succeed");
         assert_eq!(subview.len(), 5);
         assert_eq!(subview.as_slice(), &[3, 4, 5, 6, 7]);
     }

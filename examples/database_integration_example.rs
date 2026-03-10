@@ -578,7 +578,7 @@ fn bulk_insert_example(df: &DataFrame) -> Result<()> {
 
     println!("  Insert strategies comparison:");
     for (strategy, batch_size, description) in &insert_strategies {
-        let num_batches = total_rows.div_ceil(*batch_size);
+        let num_batches = (total_rows + *batch_size - 1) / *batch_size;
         let estimated_time = match *strategy {
             "Single INSERT" => total_rows * 2,   // 2ms per row
             "Batch INSERT" => num_batches * 50,  // 50ms per batch
@@ -614,7 +614,7 @@ fn bulk_insert_example(df: &DataFrame) -> Result<()> {
 
     // Bulk insert process simulation
     let chunk_size = write_options.chunksize.unwrap();
-    let num_chunks = total_rows.div_ceil(chunk_size);
+    let num_chunks = (total_rows + chunk_size - 1) / chunk_size;
 
     println!("  Bulk insert process:");
     println!("    1. Preparing data for bulk insert...");

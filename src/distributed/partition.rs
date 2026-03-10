@@ -588,7 +588,7 @@ impl Partitioner {
                 // Create empty batch with same schema
                 let empty_arrays: Vec<ArrayRef> = batch.columns()
                     .iter()
-                    .map(|col| arrow::compute::filter(col, &arrow::array::BooleanArray::from(vec![])).unwrap())
+                    .map(|col| arrow::compute::filter(col, &arrow::array::BooleanArray::from(vec![])).expect("operation should succeed"))
                     .collect();
                 let empty_batch = RecordBatch::try_new(batch.schema(), empty_arrays)
                     .map_err(|e| crate::error::Error::InvalidValue(format!("Failed to create empty batch: {}", e)))?;

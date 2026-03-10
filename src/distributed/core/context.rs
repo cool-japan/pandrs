@@ -27,6 +27,8 @@ use crate::distributed::schema_validator::SchemaValidator;
 #[cfg(feature = "distributed")]
 use crate::distributed::ToDistributed;
 use crate::error::{Error, Result};
+#[cfg(feature = "distributed")]
+use crate::lock_safe;
 
 /// A context for managing distributed processing operations
 #[cfg(feature = "distributed")]
@@ -96,7 +98,9 @@ impl DistributedContext {
         let dist_df_with_context = DistributedDataFrame::new(
             self.config.clone(),
             self.engine.clone(),
-            self.context.lock().unwrap().as_ref().clone(),
+            lock_safe!(self.context, "distributed context lock")?
+                .as_ref()
+                .clone(),
             name.to_string(),
         );
 
@@ -108,7 +112,7 @@ impl DistributedContext {
 
     /// Registers a CSV file with the context under the given name
     pub fn register_csv(&mut self, name: &str, path: &str) -> Result<()> {
-        let mut context = self.context.lock().unwrap();
+        let mut context = lock_safe!(self.context, "distributed context lock")?;
         context.register_csv(name, path)?;
 
         Ok(())
@@ -116,7 +120,7 @@ impl DistributedContext {
 
     /// Registers a Parquet file with the context under the given name
     pub fn register_parquet(&mut self, name: &str, path: &str) -> Result<()> {
-        let mut context = self.context.lock().unwrap();
+        let mut context = lock_safe!(self.context, "distributed context lock")?;
         context.register_parquet(name, path)?;
 
         Ok(())
@@ -135,7 +139,7 @@ impl DistributedContext {
     /// Executes a SQL query
     pub fn sql(&mut self, query: &str) -> Result<DistributedDataFrame> {
         let result = {
-            let mut context = self.context.lock().unwrap();
+            let mut context = lock_safe!(self.context, "distributed context lock")?;
             context.sql(query)?
         };
 
@@ -145,7 +149,9 @@ impl DistributedContext {
         let df = DistributedDataFrame::with_result(
             self.config.clone(),
             self.engine.clone(),
-            self.context.lock().unwrap().as_ref().clone(),
+            lock_safe!(self.context, "distributed context lock")?
+                .as_ref()
+                .clone(),
             id.clone(),
             result,
         );
@@ -173,7 +179,7 @@ impl DistributedContext {
 
     /// Gets the execution metrics
     pub fn metrics(&self) -> Result<ExecutionMetrics> {
-        let context = self.context.lock().unwrap();
+        let context = lock_safe!(self.context, "distributed context lock")?;
         context.metrics()
     }
 

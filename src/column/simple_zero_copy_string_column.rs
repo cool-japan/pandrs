@@ -403,28 +403,53 @@ mod tests {
     fn test_simple_zero_copy_string_column_creation() {
         let data = vec!["hello".to_string(), "world".to_string(), "test".to_string()];
 
-        let column = SimpleZeroCopyStringColumn::new(data.clone()).unwrap();
+        let column =
+            SimpleZeroCopyStringColumn::new(data.clone()).expect("operation should succeed");
         assert_eq!(column.len(), 3);
         assert!(!column.is_empty());
         assert_eq!(column.column_type(), ColumnType::String);
 
         // Test data retrieval
-        assert_eq!(column.get(0).unwrap().unwrap(), "hello");
-        assert_eq!(column.get(1).unwrap().unwrap(), "world");
-        assert_eq!(column.get(2).unwrap().unwrap(), "test");
+        assert_eq!(
+            column
+                .get(0)
+                .expect("operation should succeed")
+                .expect("operation should succeed"),
+            "hello"
+        );
+        assert_eq!(
+            column
+                .get(1)
+                .expect("operation should succeed")
+                .expect("operation should succeed"),
+            "world"
+        );
+        assert_eq!(
+            column
+                .get(2)
+                .expect("operation should succeed")
+                .expect("operation should succeed"),
+            "test"
+        );
     }
 
     #[test]
     fn test_zero_copy_views() {
         let data = vec!["hello".to_string(), "world".to_string()];
 
-        let column = SimpleZeroCopyStringColumn::new(data).unwrap();
+        let column = SimpleZeroCopyStringColumn::new(data).expect("operation should succeed");
 
-        let view1 = column.get_view(0).unwrap().unwrap();
-        let view2 = column.get_view(1).unwrap().unwrap();
+        let view1 = column
+            .get_view(0)
+            .expect("operation should succeed")
+            .expect("operation should succeed");
+        let view2 = column
+            .get_view(1)
+            .expect("operation should succeed")
+            .expect("operation should succeed");
 
-        assert_eq!(view1.as_str().unwrap(), "hello");
-        assert_eq!(view2.as_str().unwrap(), "world");
+        assert_eq!(view1.as_str().expect("operation should succeed"), "hello");
+        assert_eq!(view2.as_str().expect("operation should succeed"), "world");
         assert_eq!(view1.len(), 5);
         assert_eq!(view2.len(), 5);
     }
@@ -439,8 +464,8 @@ mod tests {
             "world".to_string(), // Another duplicate
         ];
 
-        let column = SimpleZeroCopyStringColumn::new(data).unwrap();
-        let stats = column.pool_stats().unwrap();
+        let column = SimpleZeroCopyStringColumn::new(data).expect("operation should succeed");
+        let stats = column.pool_stats().expect("operation should succeed");
 
         // Should have deduplication: we have 5 total strings but only 3 unique
         assert_eq!(stats.total_strings, 5); // 5 total string addition calls
@@ -459,30 +484,72 @@ mod tests {
         );
 
         // Verify correctness
-        assert_eq!(column.get(0).unwrap().unwrap(), "hello");
-        assert_eq!(column.get(1).unwrap().unwrap(), "world");
-        assert_eq!(column.get(2).unwrap().unwrap(), "hello");
-        assert_eq!(column.get(3).unwrap().unwrap(), "test");
-        assert_eq!(column.get(4).unwrap().unwrap(), "world");
+        assert_eq!(
+            column
+                .get(0)
+                .expect("operation should succeed")
+                .expect("operation should succeed"),
+            "hello"
+        );
+        assert_eq!(
+            column
+                .get(1)
+                .expect("operation should succeed")
+                .expect("operation should succeed"),
+            "world"
+        );
+        assert_eq!(
+            column
+                .get(2)
+                .expect("operation should succeed")
+                .expect("operation should succeed"),
+            "hello"
+        );
+        assert_eq!(
+            column
+                .get(3)
+                .expect("operation should succeed")
+                .expect("operation should succeed"),
+            "test"
+        );
+        assert_eq!(
+            column
+                .get(4)
+                .expect("operation should succeed")
+                .expect("operation should succeed"),
+            "world"
+        );
     }
 
     #[test]
     fn test_zero_copy_operations() {
         let data = vec!["hello".to_string(), "world".to_string(), "test".to_string()];
 
-        let column = SimpleZeroCopyStringColumn::new(data).unwrap();
+        let column = SimpleZeroCopyStringColumn::new(data).expect("operation should succeed");
 
         // Test contains
-        assert!(column.contains("hello").unwrap());
-        assert!(column.contains("world").unwrap());
-        assert!(!column.contains("missing").unwrap());
+        assert!(column.contains("hello").expect("operation should succeed"));
+        assert!(column.contains("world").expect("operation should succeed"));
+        assert!(!column
+            .contains("missing")
+            .expect("operation should succeed"));
 
         // Test count occurrences
-        assert_eq!(column.count_occurrences("hello").unwrap(), 1);
-        assert_eq!(column.count_occurrences("missing").unwrap(), 0);
+        assert_eq!(
+            column
+                .count_occurrences("hello")
+                .expect("operation should succeed"),
+            1
+        );
+        assert_eq!(
+            column
+                .count_occurrences("missing")
+                .expect("operation should succeed"),
+            0
+        );
 
         // Test string lengths
-        let lengths = column.string_lengths().unwrap();
+        let lengths = column.string_lengths().expect("operation should succeed");
         assert_eq!(lengths, vec![Some(5), Some(5), Some(4)]);
     }
 
@@ -495,14 +562,18 @@ mod tests {
             "apricot".to_string(),
         ];
 
-        let column = SimpleZeroCopyStringColumn::new(data).unwrap();
+        let column = SimpleZeroCopyStringColumn::new(data).expect("operation should succeed");
 
         // Filter strings starting with 'a'
-        let indices = column.filter_views(|s| s.starts_with('a')).unwrap();
+        let indices = column
+            .filter_views(|s| s.starts_with('a'))
+            .expect("operation should succeed");
         assert_eq!(indices, vec![0, 3]); // "apple" and "apricot"
 
         // Filter by length
-        let long_indices = column.filter_views(|s| s.len() > 5).unwrap();
+        let long_indices = column
+            .filter_views(|s| s.len() > 5)
+            .expect("operation should succeed");
         assert_eq!(long_indices, vec![1, 2, 3]); // "banana", "cherry", "apricot"
     }
 
@@ -510,19 +581,59 @@ mod tests {
     fn test_zero_copy_transformations() {
         let data = vec!["Hello".to_string(), "WORLD".to_string(), "Test".to_string()];
 
-        let column = SimpleZeroCopyStringColumn::new(data).unwrap();
+        let column = SimpleZeroCopyStringColumn::new(data).expect("operation should succeed");
 
         // Test lowercase conversion
-        let lowercase = column.to_lowercase_optimized().unwrap();
-        assert_eq!(lowercase.get(0).unwrap().unwrap(), "hello");
-        assert_eq!(lowercase.get(1).unwrap().unwrap(), "world");
-        assert_eq!(lowercase.get(2).unwrap().unwrap(), "test");
+        let lowercase = column
+            .to_lowercase_optimized()
+            .expect("operation should succeed");
+        assert_eq!(
+            lowercase
+                .get(0)
+                .expect("operation should succeed")
+                .expect("operation should succeed"),
+            "hello"
+        );
+        assert_eq!(
+            lowercase
+                .get(1)
+                .expect("operation should succeed")
+                .expect("operation should succeed"),
+            "world"
+        );
+        assert_eq!(
+            lowercase
+                .get(2)
+                .expect("operation should succeed")
+                .expect("operation should succeed"),
+            "test"
+        );
 
         // Test uppercase conversion
-        let uppercase = column.to_uppercase_optimized().unwrap();
-        assert_eq!(uppercase.get(0).unwrap().unwrap(), "HELLO");
-        assert_eq!(uppercase.get(1).unwrap().unwrap(), "WORLD");
-        assert_eq!(uppercase.get(2).unwrap().unwrap(), "TEST");
+        let uppercase = column
+            .to_uppercase_optimized()
+            .expect("operation should succeed");
+        assert_eq!(
+            uppercase
+                .get(0)
+                .expect("operation should succeed")
+                .expect("operation should succeed"),
+            "HELLO"
+        );
+        assert_eq!(
+            uppercase
+                .get(1)
+                .expect("operation should succeed")
+                .expect("operation should succeed"),
+            "WORLD"
+        );
+        assert_eq!(
+            uppercase
+                .get(2)
+                .expect("operation should succeed")
+                .expect("operation should succeed"),
+            "TEST"
+        );
     }
 
     #[test]
@@ -532,20 +643,44 @@ mod tests {
         let data1 = vec!["shared".to_string(), "pool".to_string()];
         let data2 = vec!["test".to_string(), "shared".to_string()]; // "shared" is repeated
 
-        let column1 =
-            SimpleZeroCopyStringColumn::with_shared_pool(data1, Arc::clone(&pool)).unwrap();
-        let column2 =
-            SimpleZeroCopyStringColumn::with_shared_pool(data2, Arc::clone(&pool)).unwrap();
+        let column1 = SimpleZeroCopyStringColumn::with_shared_pool(data1, Arc::clone(&pool))
+            .expect("operation should succeed");
+        let column2 = SimpleZeroCopyStringColumn::with_shared_pool(data2, Arc::clone(&pool))
+            .expect("operation should succeed");
 
         // Both columns should share the same pool
-        let stats = pool.stats().unwrap();
+        let stats = pool.stats().expect("operation should succeed");
         assert_eq!(stats.unique_strings, 3); // "shared", "pool", "test"
 
         // Verify data integrity
-        assert_eq!(column1.get(0).unwrap().unwrap(), "shared");
-        assert_eq!(column1.get(1).unwrap().unwrap(), "pool");
-        assert_eq!(column2.get(0).unwrap().unwrap(), "test");
-        assert_eq!(column2.get(1).unwrap().unwrap(), "shared");
+        assert_eq!(
+            column1
+                .get(0)
+                .expect("operation should succeed")
+                .expect("operation should succeed"),
+            "shared"
+        );
+        assert_eq!(
+            column1
+                .get(1)
+                .expect("operation should succeed")
+                .expect("operation should succeed"),
+            "pool"
+        );
+        assert_eq!(
+            column2
+                .get(0)
+                .expect("operation should succeed")
+                .expect("operation should succeed"),
+            "test"
+        );
+        assert_eq!(
+            column2
+                .get(1)
+                .expect("operation should succeed")
+                .expect("operation should succeed"),
+            "shared"
+        );
     }
 
     #[test]
@@ -553,13 +688,27 @@ mod tests {
         let data1 = vec!["hello".to_string(), "world".to_string()];
         let data2 = vec!["there".to_string(), "test".to_string()];
 
-        let column1 = SimpleZeroCopyStringColumn::new(data1).unwrap();
-        let column2 = SimpleZeroCopyStringColumn::new(data2).unwrap();
+        let column1 = SimpleZeroCopyStringColumn::new(data1).expect("operation should succeed");
+        let column2 = SimpleZeroCopyStringColumn::new(data2).expect("operation should succeed");
 
-        let concatenated = column1.concat_with(&column2, " ").unwrap();
+        let concatenated = column1
+            .concat_with(&column2, " ")
+            .expect("operation should succeed");
 
-        assert_eq!(concatenated.get(0).unwrap().unwrap(), "hello there");
-        assert_eq!(concatenated.get(1).unwrap().unwrap(), "world test");
+        assert_eq!(
+            concatenated
+                .get(0)
+                .expect("operation should succeed")
+                .expect("operation should succeed"),
+            "hello there"
+        );
+        assert_eq!(
+            concatenated
+                .get(1)
+                .expect("operation should succeed")
+                .expect("operation should succeed"),
+            "world test"
+        );
     }
 
     #[test]
@@ -567,10 +716,23 @@ mod tests {
         let data = vec!["hello".to_string(), "world".to_string(), "test".to_string()];
         let nulls = vec![false, true, false]; // world is null
 
-        let column = SimpleZeroCopyStringColumn::with_nulls(data, nulls).unwrap();
+        let column =
+            SimpleZeroCopyStringColumn::with_nulls(data, nulls).expect("operation should succeed");
 
-        assert_eq!(column.get(0).unwrap().unwrap(), "hello");
-        assert!(column.get(1).unwrap().is_none()); // null
-        assert_eq!(column.get(2).unwrap().unwrap(), "test");
+        assert_eq!(
+            column
+                .get(0)
+                .expect("operation should succeed")
+                .expect("operation should succeed"),
+            "hello"
+        );
+        assert!(column.get(1).expect("operation should succeed").is_none()); // null
+        assert_eq!(
+            column
+                .get(2)
+                .expect("operation should succeed")
+                .expect("operation should succeed"),
+            "test"
+        );
     }
 }

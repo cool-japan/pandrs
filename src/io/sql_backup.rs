@@ -17,7 +17,7 @@
 //! use pandrs::io::sql::read_sql;
 //! 
 //! // Simple query
-//! let df = read_sql("SELECT * FROM users WHERE age > 25", "database.db").unwrap();
+//! let df = read_sql("SELECT * FROM users WHERE age > 25", "database.db").expect("operation should succeed");
 //! println!("Found {} users", df.row_count());
 //! ```
 //! 
@@ -28,7 +28,7 @@
 //! use pandrs::optimized::OptimizedDataFrame;
 //! 
 //! // Assuming you have an OptimizedDataFrame `df`
-//! // write_to_sql(&df, "users", "database.db", "replace").unwrap();
+//! // write_to_sql(&df, "users", "database.db", "replace").expect("operation should succeed");
 //! ```
 //! 
 //! ## Advanced Usage with Connection Management
@@ -36,14 +36,14 @@
 //! ```no_run
 //! use pandrs::io::sql::{SqlConnection, read_sql_advanced, SqlReadOptions};
 //! 
-//! let conn = SqlConnection::from_url("sqlite:data.db").unwrap();
+//! let conn = SqlConnection::from_url("sqlite:data.db").expect("operation should succeed");
 //! let options = SqlReadOptions {
 //!     chunksize: Some(1000),
 //!     parse_dates: Some(vec!["created_at".to_string()]),
 //!     ..Default::default()
 //! };
 //! 
-//! let df = read_sql_advanced("SELECT * FROM users", &conn, options).unwrap();
+//! let df = read_sql_advanced("SELECT * FROM users", &conn, options).expect("operation should succeed");
 //! ```
 //! 
 //! ## Async Operations (requires `sql` feature)
@@ -66,15 +66,15 @@
 //! ```no_run
 //! use pandrs::io::sql::{SqlConnection, get_table_schema, list_tables};
 //! 
-//! let conn = SqlConnection::from_url("sqlite:data.db").unwrap();
+//! let conn = SqlConnection::from_url("sqlite:data.db").expect("operation should succeed");
 //! 
 //! // List all tables
-//! let tables = list_tables(&conn, None).unwrap();
+//! let tables = list_tables(&conn, None).expect("operation should succeed");
 //! for table in tables {
 //!     println!("Found table: {}", table);
 //!     
 //!     // Get schema for each table
-//!     let schema = get_table_schema(&table, &conn, None).unwrap();
+//!     let schema = get_table_schema(&table, &conn, None).expect("operation should succeed");
 //!     println!("  {} columns, {} primary keys", 
 //!              schema.columns.len(), schema.primary_keys.len());
 //! }
@@ -122,14 +122,14 @@ mod integration_tests {
     #[test]
     fn test_connection_creation() {
         // Test SQLite connection creation
-        let conn = SqlConnection::from_url("sqlite:test.db").unwrap();
+        let conn = SqlConnection::from_url("sqlite:test.db").expect("operation should succeed");
         match conn.connection_type() {
             DatabaseConnection::Sqlite(_) => (), // Expected
             _ => panic!("Expected SQLite connection"),
         }
 
         // Test file extension detection
-        let conn2 = SqlConnection::from_url("data.db").unwrap();
+        let conn2 = SqlConnection::from_url("data.db").expect("operation should succeed");
         match conn2.connection_type() {
             DatabaseConnection::Sqlite(_) => (), // Expected
             _ => panic!("Expected SQLite connection"),
@@ -142,8 +142,8 @@ mod integration_tests {
         // This test would require setting up a real database
         // For now, just test that the functions exist and can be called
         
-        let temp_file = NamedTempFile::new().unwrap();
-        let db_path = temp_file.path().to_str().unwrap();
+        let temp_file = NamedTempFile::new().expect("operation should succeed");
+        let db_path = temp_file.path().to_str().expect("operation should succeed");
         
         // Test that execute_sql function exists
         let result = execute_sql("CREATE TABLE test (id INTEGER, name TEXT)", db_path);
@@ -162,7 +162,7 @@ mod integration_tests {
             .order_by_desc("created_at")
             .limit(100)
             .build()
-            .unwrap();
+            .expect("operation should succeed");
         
         assert!(query.contains("SELECT id, name"));
         assert!(query.contains("FROM users"));

@@ -1,0 +1,54 @@
+name: Performance Profile
+
+on:
+  pull_request:
+    branches: ["master", "main"]
+    paths:
+      - 'src/**/*.rs'
+      - 'benches/**'
+
+jobs:
+  profile:
+    name: Generate Performance Profile
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust + flamegraph
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config libfreetype6-dev libfontconfig1-dev \
+            linux-perf linux-tools-generic || true
+
+      - name: Install flamegraph
+        run: cargo install flamegraph 2>/dev/null || true
+
+      - name: Build release
+        run: cargo build --release --features optimized
+
+      - name: Run profiling benchmarks (release mode, no flamegraph in CI)
+        run: |
+          cargo bench --bench profiling_benchmark -- --output-format bencher 2>&1 | tee /tmp/profile_output.txt || true
+          echo "## Profiling Benchmark Output" > /tmp/profile_report.md
+          echo '```' >> /tmp/profile_report.md
+          cat /tmp/profile_output.txt >> /tmp/profile_report.md
+          echo '```' >> /tmp/profile_report.md
+
+      - name: Upload profiling output
+        uses: actions/upload-artifact@v4
+        with:
+          name: profiling-report
+          path: /tmp/profile_report.md
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-binary
+          path: target/release/pandrs*
+          if-no-files-found: ignore

@@ -600,13 +600,11 @@ impl RequestValidator {
     /// Generate request ID (fallback when serving feature is disabled)
     #[cfg(not(feature = "serving"))]
     pub fn generate_request_id() -> String {
-        format!(
-            "req_{}",
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_millis()
-        )
+        let millis = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or(0);
+        format!("req_{}", millis)
     }
 
     /// Validate API key (if authentication is enabled)
@@ -809,7 +807,7 @@ mod tests {
         let predict_route = routes
             .iter()
             .find(|route| route.path.contains("predict") && !route.path.contains("batch"))
-            .unwrap();
+            .expect("operation should succeed");
 
         assert_eq!(predict_route.method, "POST");
         assert!(predict_route.body_required);

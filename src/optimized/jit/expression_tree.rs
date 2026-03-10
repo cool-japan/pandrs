@@ -1008,7 +1008,7 @@ mod tests {
         };
 
         let tree = ExpressionTree::new(expr);
-        let optimized = tree.optimize().unwrap();
+        let optimized = tree.optimize().expect("operation should succeed");
 
         // Should have folded to a constant 5.0
         if let ExpressionNode::Constant(value) = optimized.root {
@@ -1035,7 +1035,7 @@ mod tests {
         };
 
         let tree = ExpressionTree::new(expr);
-        let optimized = tree.optimize().unwrap();
+        let optimized = tree.optimize().expect("operation should succeed");
 
         // Should have simplified to just x
         if let ExpressionNode::Variable { name, .. } = optimized.root {

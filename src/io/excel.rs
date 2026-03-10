@@ -140,6 +140,7 @@ pub struct ExcelSheetInfo {
 }
 
 use crate::column::{BooleanColumn, Column, Float64Column, Int64Column, StringColumn};
+use crate::core::error::OptionExt;
 use crate::dataframe::DataFrame;
 use crate::error::{Error, Result};
 use crate::index::Index;
@@ -167,19 +168,19 @@ use crate::series::Series;
 /// use pandrs::io::read_excel;
 ///
 /// // Read first sheet with default settings
-/// let df = read_excel("data.xlsx", None, true, 0, None).unwrap();
+/// let df = read_excel("data.xlsx", None, true, 0, None).expect("operation should succeed");
 ///
 /// // Read a specific sheet
-/// let df = read_excel("data.xlsx", Some("Sheet2"), true, 0, None).unwrap();
+/// let df = read_excel("data.xlsx", Some("Sheet2"), true, 0, None).expect("operation should succeed");
 ///
 /// // Read without header
-/// let df = read_excel("data.xlsx", None, false, 0, None).unwrap();
+/// let df = read_excel("data.xlsx", None, false, 0, None).expect("operation should succeed");
 ///
 /// // Read starting from the 3rd row
-/// let df = read_excel("data.xlsx", None, true, 2, None).unwrap();
+/// let df = read_excel("data.xlsx", None, true, 2, None).expect("operation should succeed");
 ///
 /// // Read only specific columns (by column name)
-/// let df = read_excel("data.xlsx", None, true, 0, Some(&["name", "age"])).unwrap();
+/// let df = read_excel("data.xlsx", None, true, 0, Some(&["name", "age"])).expect("operation should succeed");
 /// ```
 #[cfg(feature = "excel")]
 pub fn read_excel<P: AsRef<Path>>(
@@ -212,7 +213,12 @@ pub fn read_excel<P: AsRef<Path>>(
     let mut column_names: Vec<String> = Vec::new();
     if header && !range.is_empty() && skip_rows < range.rows().len() {
         // Get header row
-        let header_row = range.rows().nth(skip_rows).unwrap();
+        let header_row = range.rows().nth(skip_rows).ok_or_else(|| {
+            Error::InvalidInput(format!(
+                "Excel range does not have row at index {}",
+                skip_rows
+            ))
+        })?;
 
         // Convert column names to strings
         for cell in header_row {
@@ -221,7 +227,9 @@ pub fn read_excel<P: AsRef<Path>>(
     } else {
         // If no header, use column numbers as column names
         if !range.is_empty() {
-            let first_row = range.rows().next().unwrap();
+            let first_row = range.rows().next().ok_or_else(|| {
+                Error::InvalidInput("Excel range should have at least one row".to_string())
+            })?;
             for i in 0..first_row.len() {
                 column_names.push(format!("Column{}", i + 1));
             }
@@ -473,7 +481,7 @@ pub fn write_excel<P: AsRef<Path>>(
 /// ```no_run
 /// use pandrs::io::list_sheet_names;
 ///
-/// let sheets = list_sheet_names("data.xlsx").unwrap();
+/// let sheets = list_sheet_names("data.xlsx").expect("operation should succeed");
 /// println!("Available sheets: {:?}", sheets);
 /// ```
 #[cfg(feature = "excel")]
@@ -499,7 +507,7 @@ pub fn list_sheet_names<P: AsRef<Path>>(path: P) -> Result<Vec<String>> {
 /// ```no_run
 /// use pandrs::io::get_workbook_info;
 ///
-/// let info = get_workbook_info("data.xlsx").unwrap();
+/// let info = get_workbook_info("data.xlsx").expect("operation should succeed");
 /// println!("Workbook has {} sheets", info.sheet_count);
 /// println!("Sheets: {:?}", info.sheet_names);
 /// ```
@@ -541,7 +549,7 @@ pub fn get_workbook_info<P: AsRef<Path>>(path: P) -> Result<ExcelWorkbookInfo> {
 /// ```no_run
 /// use pandrs::io::get_sheet_info;
 ///
-/// let info = get_sheet_info("data.xlsx", "Sheet1").unwrap();
+/// let info = get_sheet_info("data.xlsx", "Sheet1").expect("operation should succeed");
 /// println!("Sheet has {} rows and {} columns", info.rows, info.columns);
 /// ```
 #[cfg(feature = "excel")]
@@ -588,7 +596,7 @@ pub fn get_sheet_info<P: AsRef<Path>>(path: P, sheet_name: &str) -> Result<Excel
 /// use pandrs::io::read_excel_sheets;
 ///
 /// // Read all sheets
-/// let sheets = read_excel_sheets("data.xlsx", None, true, 0, None).unwrap();
+/// let sheets = read_excel_sheets("data.xlsx", None, true, 0, None).expect("operation should succeed");
 /// for (name, df) in sheets {
 ///     println!("Sheet {}: {} rows", name, df.row_count());
 /// }
@@ -600,7 +608,7 @@ pub fn get_sheet_info<P: AsRef<Path>>(path: P, sheet_name: &str) -> Result<Excel
 ///     true,
 ///     0,
 ///     None
-/// ).unwrap();
+/// ).expect("operation should succeed");
 /// ```
 #[cfg(feature = "excel")]
 pub fn read_excel_sheets<P: AsRef<Path>>(
@@ -667,7 +675,7 @@ pub fn read_excel_sheets<P: AsRef<Path>>(
 /// ```no_run
 /// use pandrs::io::read_excel_with_info;
 ///
-/// let (df, info) = read_excel_with_info("data.xlsx", None, true, 0, None).unwrap();
+/// let (df, info) = read_excel_with_info("data.xlsx", None, true, 0, None).expect("operation should succeed");
 /// println!("Read {} rows from workbook with {} sheets", df.row_count(), info.sheet_count);
 /// ```
 #[cfg(feature = "excel")]
@@ -710,7 +718,7 @@ pub fn read_excel_with_info<P: AsRef<Path>>(
 /// sheets.insert("Data".to_string(), &df1);
 /// sheets.insert("Summary".to_string(), &df2);
 ///
-/// write_excel_sheets(&sheets, "output.xlsx", false).unwrap();
+/// write_excel_sheets(&sheets, "output.xlsx", false).expect("operation should succeed");
 /// ```
 #[cfg(feature = "excel")]
 pub fn write_excel_sheets<P: AsRef<Path>>(
@@ -817,7 +825,7 @@ pub fn write_excel_sheets<P: AsRef<Path>>(
 ///     read_named_ranges: true,
 ///     ..Default::default()
 /// };
-/// let (df, cells, ranges) = read_excel_enhanced("data.xlsx", None, options).unwrap();
+/// let (df, cells, ranges) = read_excel_enhanced("data.xlsx", None, options).expect("operation should succeed");
 /// ```
 #[cfg(feature = "excel")]
 pub fn read_excel_enhanced<P: AsRef<Path>>(
@@ -875,7 +883,12 @@ fn create_dataframe_from_range(
     let mut column_names: Vec<String> = Vec::new();
     if header && !range.is_empty() && skip_rows < range.rows().len() {
         // Get header row
-        let header_row = range.rows().nth(skip_rows).unwrap();
+        let header_row = range.rows().nth(skip_rows).ok_or_else(|| {
+            Error::InvalidInput(format!(
+                "Excel range does not have row at index {}",
+                skip_rows
+            ))
+        })?;
 
         // Convert column names to strings
         for cell in header_row {
@@ -884,7 +897,9 @@ fn create_dataframe_from_range(
     } else {
         // If no header, use column numbers as column names
         if !range.is_empty() {
-            let first_row = range.rows().next().unwrap();
+            let first_row = range.rows().next().ok_or_else(|| {
+                Error::InvalidInput("Excel range should have at least one row".to_string())
+            })?;
             for i in 0..first_row.len() {
                 column_names.push(format!("Column{}", i + 1));
             }
@@ -1088,7 +1103,7 @@ fn extract_named_ranges(
 ///     write_named_ranges: true,
 ///     ..Default::default()
 /// };
-/// write_excel_enhanced(&df, "output.xlsx", None, &cells, &ranges, options).unwrap();
+/// write_excel_enhanced(&df, "output.xlsx", None, &cells, &ranges, options).expect("operation should succeed");
 /// ```
 #[cfg(feature = "excel")]
 pub fn write_excel_enhanced<P: AsRef<Path>>(
@@ -1136,8 +1151,12 @@ pub fn write_excel_enhanced<P: AsRef<Path>>(
                     // Check if we have enhanced cell information
                     let cell_value = if !cells.is_empty() && row_idx < cells.len() {
                         let cell = &cells[row_idx];
-                        if options.preserve_formulas && cell.formula.is_some() {
-                            cell.formula.as_ref().unwrap().clone()
+                        if options.preserve_formulas {
+                            if let Some(formula) = &cell.formula {
+                                formula.clone()
+                            } else {
+                                cell.value.clone()
+                            }
                         } else {
                             cell.value.clone()
                         }
@@ -1198,7 +1217,7 @@ pub fn write_excel_enhanced<P: AsRef<Path>>(
 /// ```no_run
 /// use pandrs::io::optimize_excel_file;
 ///
-/// optimize_excel_file("large_data.xlsx", "optimized_data.xlsx", 6).unwrap();
+/// optimize_excel_file("large_data.xlsx", "optimized_data.xlsx", 6).expect("operation should succeed");
 /// ```
 #[cfg(feature = "excel")]
 pub fn optimize_excel_file<P1: AsRef<Path>, P2: AsRef<Path>>(
@@ -1266,7 +1285,7 @@ pub struct ExcelFileAnalysis {
 /// ```no_run
 /// use pandrs::io::analyze_excel_file;
 ///
-/// let analysis = analyze_excel_file("data.xlsx").unwrap();
+/// let analysis = analyze_excel_file("data.xlsx").expect("operation should succeed");
 /// println!("File has {} formulas and {} formatted cells",
 ///          analysis.formula_count, analysis.formatted_cell_count);
 /// ```

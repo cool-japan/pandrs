@@ -707,7 +707,7 @@ pub fn shapiro_wilk_test(data: &[f64]) -> Result<TestResult> {
 
     // Sort the data
     let mut sorted_data = data.to_vec();
-    sorted_data.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    sorted_data.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
 
     // Calculate sample mean and standard deviation
     let mean = data.iter().sum::<f64>() / n as f64;
@@ -801,7 +801,7 @@ pub fn adjust_p_values(p_values: &[f64], method: MultipleComparisonCorrection) -
         MultipleComparisonCorrection::HolmBonferroni => {
             let mut indexed_p: Vec<(usize, f64)> =
                 p_values.iter().enumerate().map(|(i, &p)| (i, p)).collect();
-            indexed_p.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+            indexed_p.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
 
             let mut adjusted = vec![0.0; n];
             let mut max_adj = 0.0;
@@ -820,7 +820,7 @@ pub fn adjust_p_values(p_values: &[f64], method: MultipleComparisonCorrection) -
         MultipleComparisonCorrection::BenjaminiHochberg => {
             let mut indexed_p: Vec<(usize, f64)> =
                 p_values.iter().enumerate().map(|(i, &p)| (i, p)).collect();
-            indexed_p.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap()); // Descending order
+            indexed_p.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal)); // Descending order
 
             let mut adjusted = vec![0.0; n];
             let mut min_adj = 1.0;
@@ -841,7 +841,7 @@ pub fn adjust_p_values(p_values: &[f64], method: MultipleComparisonCorrection) -
 
             let mut indexed_p: Vec<(usize, f64)> =
                 p_values.iter().enumerate().map(|(i, &p)| (i, p)).collect();
-            indexed_p.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+            indexed_p.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
             let mut adjusted = vec![0.0; n];
             let mut min_adj = 1.0;
@@ -865,7 +865,8 @@ mod tests {
     #[test]
     fn test_one_sample_ttest() {
         let data = vec![1.0, 2.0, 3.0, 4.0, 5.0];
-        let result = one_sample_ttest(&data, 3.0, AlternativeHypothesis::TwoSided).unwrap();
+        let result = one_sample_ttest(&data, 3.0, AlternativeHypothesis::TwoSided)
+            .expect("operation should succeed");
 
         assert_eq!(result.test_name, "One-sample t-test");
         assert!(result.p_value > 0.05); // Should not reject null hypothesis
@@ -877,8 +878,8 @@ mod tests {
         let group1 = vec![1.0, 2.0, 3.0, 4.0, 5.0];
         let group2 = vec![3.0, 4.0, 5.0, 6.0, 7.0];
 
-        let result =
-            independent_ttest(&group1, &group2, AlternativeHypothesis::TwoSided, true).unwrap();
+        let result = independent_ttest(&group1, &group2, AlternativeHypothesis::TwoSided, true)
+            .expect("operation should succeed");
 
         assert!(result.test_name.contains("t-test"));
         assert!(result.effect_size.is_some());
@@ -890,7 +891,8 @@ mod tests {
         let x = vec![1.0, 2.0, 3.0, 4.0, 5.0];
         let y = vec![2.0, 4.0, 6.0, 8.0, 10.0]; // Perfect correlation
 
-        let result = correlation_test(&x, &y, AlternativeHypothesis::TwoSided).unwrap();
+        let result = correlation_test(&x, &y, AlternativeHypothesis::TwoSided)
+            .expect("operation should succeed");
 
         assert_eq!(result.test_name, "Pearson correlation test");
         assert!((result.additional_info["correlation"] - 1.0).abs() < 1e-10);
@@ -901,7 +903,7 @@ mod tests {
     fn test_chi_square_independence() {
         let observed = vec![vec![10.0, 15.0, 25.0], vec![20.0, 10.0, 15.0]];
 
-        let result = chi_square_independence(&observed).unwrap();
+        let result = chi_square_independence(&observed).expect("operation should succeed");
 
         assert_eq!(result.test_name, "Chi-square test of independence");
         assert!(result.degrees_of_freedom.is_some());
@@ -911,8 +913,8 @@ mod tests {
     #[test]
     fn test_multiple_comparison_bonferroni() {
         let p_values = vec![0.01, 0.02, 0.03, 0.04, 0.05];
-        let adjusted =
-            adjust_p_values(&p_values, MultipleComparisonCorrection::Bonferroni).unwrap();
+        let adjusted = adjust_p_values(&p_values, MultipleComparisonCorrection::Bonferroni)
+            .expect("operation should succeed");
 
         // All should be multiplied by 5
         assert!((adjusted[0] - 0.05).abs() < 1e-10);

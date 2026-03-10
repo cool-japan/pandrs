@@ -507,7 +507,11 @@ impl AutoML {
         // Select best model
         let best_result = model_results
             .iter()
-            .max_by(|a, b| a.cv_score.partial_cmp(&b.cv_score).unwrap())
+            .max_by(|a, b| {
+                a.cv_score
+                    .partial_cmp(&b.cv_score)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
             .ok_or_else(|| Error::InvalidOperation("No models were successfully trained".into()))?;
 
         // Evaluate on holdout set
@@ -605,7 +609,11 @@ impl AutoML {
         }
 
         // Sort by CV score (descending)
-        model_results.sort_by(|a, b| b.cv_score.partial_cmp(&a.cv_score).unwrap());
+        model_results.sort_by(|a, b| {
+            b.cv_score
+                .partial_cmp(&a.cv_score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         Ok(model_results)
     }
@@ -817,7 +825,8 @@ impl AutoML {
             if let Some(importances) = &best_model.feature_importance {
                 report.push_str("\n**Top 10 Feature Importances**:\n");
                 let mut importance_vec: Vec<_> = importances.iter().collect();
-                importance_vec.sort_by(|a, b| b.1.partial_cmp(a.1).unwrap());
+                importance_vec
+                    .sort_by(|a, b| b.1.partial_cmp(a.1).unwrap_or(std::cmp::Ordering::Equal));
 
                 for (feature, importance) in importance_vec.iter().take(10) {
                     report.push_str(&format!("- {}: {:.4}\n", feature, importance));
@@ -863,11 +872,14 @@ mod tests {
         y_reg
             .add_column(
                 "target".to_string(),
-                Series::new(vec![1.5, 2.3, 3.7, 4.1, 5.9], Some("target".to_string())).unwrap(),
+                Series::new(vec![1.5, 2.3, 3.7, 4.1, 5.9], Some("target".to_string()))
+                    .expect("operation should succeed"),
             )
-            .unwrap();
+            .expect("operation should succeed");
 
-        let task_type = automl.detect_task_type(&y_reg).unwrap();
+        let task_type = automl
+            .detect_task_type(&y_reg)
+            .expect("operation should succeed");
         assert!(matches!(task_type, TaskType::Regression));
 
         // Test binary classification detection
@@ -875,11 +887,14 @@ mod tests {
         y_binary
             .add_column(
                 "target".to_string(),
-                Series::new(vec![0.0, 1.0, 1.0, 0.0, 1.0], Some("target".to_string())).unwrap(),
+                Series::new(vec![0.0, 1.0, 1.0, 0.0, 1.0], Some("target".to_string()))
+                    .expect("operation should succeed"),
             )
-            .unwrap();
+            .expect("operation should succeed");
 
-        let task_type = automl.detect_task_type(&y_binary).unwrap();
+        let task_type = automl
+            .detect_task_type(&y_binary)
+            .expect("operation should succeed");
         assert!(matches!(task_type, TaskType::BinaryClassification));
 
         // Test multi-class classification detection
@@ -887,11 +902,14 @@ mod tests {
         y_multi
             .add_column(
                 "target".to_string(),
-                Series::new(vec![0.0, 1.0, 2.0, 1.0, 2.0], Some("target".to_string())).unwrap(),
+                Series::new(vec![0.0, 1.0, 2.0, 1.0, 2.0], Some("target".to_string()))
+                    .expect("operation should succeed"),
             )
-            .unwrap();
+            .expect("operation should succeed");
 
-        let task_type = automl.detect_task_type(&y_multi).unwrap();
+        let task_type = automl
+            .detect_task_type(&y_multi)
+            .expect("operation should succeed");
         assert!(matches!(task_type, TaskType::MultiClassification));
     }
 

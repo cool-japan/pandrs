@@ -170,7 +170,7 @@ impl From<ParquetCompression> for Compression {
 /// use pandrs::io::read_parquet;
 ///
 /// // Read a DataFrame from a Parquet file
-/// let df = read_parquet("data.parquet").unwrap();
+/// let df = read_parquet("data.parquet").expect("operation should succeed");
 /// ```
 pub fn read_parquet(path: impl AsRef<Path>) -> Result<DataFrame> {
     // Open the file
@@ -576,7 +576,7 @@ pub fn write_parquet(
 /// ```no_run
 /// use pandrs::io::get_parquet_metadata;
 ///
-/// let metadata = get_parquet_metadata("data.parquet").unwrap();
+/// let metadata = get_parquet_metadata("data.parquet").expect("operation should succeed");
 /// println!("File has {} rows in {} row groups", metadata.num_rows, metadata.num_row_groups);
 /// ```
 pub fn get_parquet_metadata(path: impl AsRef<Path>) -> Result<ParquetMetadata> {
@@ -614,7 +614,7 @@ pub fn get_parquet_metadata(path: impl AsRef<Path>) -> Result<ParquetMetadata> {
 /// ```no_run
 /// use pandrs::io::get_row_group_info;
 ///
-/// let row_groups = get_row_group_info("data.parquet").unwrap();
+/// let row_groups = get_row_group_info("data.parquet").expect("operation should succeed");
 /// for (i, rg) in row_groups.iter().enumerate() {
 ///     println!("Row group {}: {} rows, {} bytes", i, rg.num_rows, rg.total_byte_size);
 /// }
@@ -657,7 +657,7 @@ pub fn get_row_group_info(path: impl AsRef<Path>) -> Result<Vec<RowGroupInfo>> {
 /// ```no_run
 /// use pandrs::io::get_column_statistics;
 ///
-/// let stats = get_column_statistics("data.parquet").unwrap();
+/// let stats = get_column_statistics("data.parquet").expect("operation should succeed");
 /// for stat in stats {
 ///     println!("{}: {} nulls, min={:?}, max={:?}",
 ///              stat.name, stat.null_count.unwrap_or(0), stat.min_value, stat.max_value);
@@ -745,7 +745,7 @@ pub fn get_column_statistics(path: impl AsRef<Path>) -> Result<Vec<ColumnStats>>
 ///     use_threads: true,
 ///     ..Default::default()
 /// };
-/// let df = read_parquet_advanced("data.parquet", options).unwrap();
+/// let df = read_parquet_advanced("data.parquet", options).expect("operation should succeed");
 /// ```
 pub fn read_parquet_advanced(
     path: impl AsRef<Path>,
@@ -836,7 +836,7 @@ pub fn read_parquet_advanced(
 ///     enable_dictionary: true,
 ///     ..Default::default()
 /// };
-/// write_parquet_advanced(&df, "output.parquet", options).unwrap();
+/// write_parquet_advanced(&df, "output.parquet", options).expect("operation should succeed");
 /// ```
 pub fn write_parquet_advanced(
     df: &OptimizedDataFrame,
@@ -1345,7 +1345,7 @@ impl StreamingParquetReader {
     /// ```no_run
     /// use pandrs::io::StreamingParquetReader;
     ///
-    /// let reader = StreamingParquetReader::new("large_data.parquet", 10000).unwrap();
+    /// let reader = StreamingParquetReader::new("large_data.parquet", 10000).expect("operation should succeed");
     /// ```
     pub fn new(path: impl AsRef<Path>, chunk_size: usize) -> Result<Self> {
         let file = File::open(path.as_ref())
@@ -1435,7 +1435,7 @@ impl StreamingParquetReader {
 /// evolution.column_mappings.insert("old_name".to_string(), "new_name".to_string());
 /// evolution.columns_to_add.insert("new_column".to_string(), "default_value".to_string());
 ///
-/// let df = read_parquet_with_schema_evolution("data.parquet", evolution).unwrap();
+/// let df = read_parquet_with_schema_evolution("data.parquet", evolution).expect("operation should succeed");
 /// ```
 pub fn read_parquet_with_schema_evolution(
     path: impl AsRef<Path>,
@@ -1497,7 +1497,7 @@ fn apply_schema_evolution(df: &mut DataFrame, evolution: &SchemaEvolution) -> Re
 ///     PredicateFilter::Range("age".to_string(), "18".to_string(), "65".to_string()),
 /// ];
 ///
-/// let df = read_parquet_with_predicates("data.parquet", predicates).unwrap();
+/// let df = read_parquet_with_predicates("data.parquet", predicates).expect("operation should succeed");
 /// ```
 pub fn read_parquet_with_predicates(
     path: impl AsRef<Path>,
@@ -1572,7 +1572,7 @@ fn apply_predicate_filters(df: DataFrame, predicates: &[PredicateFilter]) -> Res
 ///     ..Default::default()
 /// };
 ///
-/// let df = read_parquet_enhanced("large_data.parquet", options).unwrap();
+/// let df = read_parquet_enhanced("large_data.parquet", options).expect("operation should succeed");
 /// ```
 pub fn read_parquet_enhanced(
     path: impl AsRef<Path>,
@@ -1649,7 +1649,7 @@ fn read_parquet_streaming(path: &Path, options: &AdvancedParquetReadOptions) -> 
 /// // Create sample large dataframe
 /// let large_df = OptimizedDataFrame::new();
 ///
-/// write_parquet_streaming(&large_df, "output.parquet", 100000).unwrap();
+/// write_parquet_streaming(&large_df, "output.parquet", 100000).expect("operation should succeed");
 /// ```
 pub fn write_parquet_streaming(
     df: &OptimizedDataFrame,
@@ -1707,7 +1707,7 @@ pub struct ParquetSchemaAnalysis {
 /// ```no_run
 /// use pandrs::io::analyze_parquet_schema;
 ///
-/// let analysis = analyze_parquet_schema("data.parquet").unwrap();
+/// let analysis = analyze_parquet_schema("data.parquet").expect("operation should succeed");
 /// println!("Schema has {} columns", analysis.column_count);
 /// ```
 pub fn analyze_parquet_schema(path: impl AsRef<Path>) -> Result<ParquetSchemaAnalysis> {

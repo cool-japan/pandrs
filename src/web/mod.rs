@@ -712,7 +712,7 @@ impl WebVisualization {
         self.context
             .fill_text(&settings.title, cx, 30.0)
             .map_err(|_| to_js_error("Failed to render text"))
-            .unwrap();
+            .expect("operation should succeed");
 
         // Draw pie slices
         let mut start_angle = 0.0;
@@ -733,7 +733,7 @@ impl WebVisualization {
             self.context
                 .arc(cx, cy, radius, start_angle, start_angle + slice_angle)
                 .map_err(|_| to_js_error("Failed to draw arc"))
-                .unwrap();
+                .expect("operation should succeed");
             self.context.close_path();
 
             self.context.set_fill_style_str(&color);
@@ -760,7 +760,7 @@ impl WebVisualization {
                 self.context
                     .fill_text(&format!("{}%", percentage), label_x, label_y)
                     .map_err(|_| to_js_error("Failed to render text"))
-                    .unwrap();
+                    .expect("operation should succeed");
             }
 
             start_angle += slice_angle;
@@ -800,7 +800,7 @@ impl WebVisualization {
                 self.context
                     .fill_text(&display_cat, legend_x + 20.0, legend_y + y_offset + 12.0)
                     .map_err(|_| to_js_error("Failed to render text"))
-                    .unwrap();
+                    .expect("operation should succeed");
 
                 y_offset += 20.0;
                 i += 1;
@@ -858,7 +858,7 @@ impl WebVisualization {
         self.context
             .fill_text(&settings.title, (self.config.width as f64) / 2.0, 30.0)
             .map_err(|_| to_js_error("Failed to render text"))
-            .unwrap();
+            .expect("operation should succeed");
 
         // Calculate dimensions
         let margin = 70.0;
@@ -910,7 +910,7 @@ impl WebVisualization {
                             y + cell_height / 2.0 + 3.0,
                         )
                         .map_err(|_| to_js_error("Failed to render text"))
-                        .unwrap();
+                        .expect("operation should succeed");
                 }
             }
         }
@@ -934,7 +934,7 @@ impl WebVisualization {
             self.context
                 .fill_text(&display_name, x, y)
                 .map_err(|_| to_js_error("Failed to render text"))
-                .unwrap();
+                .expect("operation should succeed");
         }
 
         // Draw row labels (use row indices)
@@ -947,7 +947,7 @@ impl WebVisualization {
             self.context
                 .fill_text(&format!("Row {}", i + 1), x, y)
                 .map_err(|_| to_js_error("Failed to render text"))
-                .unwrap();
+                .expect("operation should succeed");
         }
 
         // Draw color scale
@@ -979,7 +979,7 @@ impl WebVisualization {
         self.context
             .fill_text(&format!("{:.1}", max_val), scale_x, scale_y - 5.0)
             .map_err(|_| to_js_error("Failed to render text"))
-            .unwrap();
+            .expect("operation should succeed");
 
         self.context
             .fill_text(
@@ -988,7 +988,7 @@ impl WebVisualization {
                 scale_y + scale_height + 15.0,
             )
             .map_err(|_| to_js_error("Failed to render text"))
-            .unwrap();
+            .expect("operation should succeed");
 
         Ok(())
     }
@@ -1035,7 +1035,9 @@ impl WebVisualization {
 
                 context_clone.set_font("12px sans-serif");
                 context_clone.set_fill_style_str("white");
-                context_clone.fill_text("Tooltip", x + 15.0, y).unwrap();
+                context_clone
+                    .fill_text("Tooltip", x + 15.0, y)
+                    .expect("operation should succeed");
             }
         }) as Box<dyn FnMut(_)>);
 

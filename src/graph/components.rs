@@ -406,7 +406,9 @@ where
             }
 
             // Remove node from current community temporarily
-            *community_degrees.get_mut(&current_community).unwrap() -= ki;
+            *community_degrees
+                .get_mut(&current_community)
+                .expect("operation should succeed") -= ki;
 
             for &target_community in &neighbor_communities {
                 if target_community == current_community {
@@ -443,7 +445,9 @@ where
                 *community_degrees.entry(best_community).or_insert(0.0) += ki;
                 improved = true;
             } else {
-                *community_degrees.get_mut(&current_community).unwrap() += ki;
+                *community_degrees
+                    .get_mut(&current_community)
+                    .expect("operation should succeed") += ki;
             }
         }
     }
@@ -672,11 +676,17 @@ mod tests {
         let e = graph.add_node("E");
 
         // Component 1: A - B - C
-        graph.add_edge(a, b, None).unwrap();
-        graph.add_edge(b, c, None).unwrap();
+        graph
+            .add_edge(a, b, None)
+            .expect("operation should succeed");
+        graph
+            .add_edge(b, c, None)
+            .expect("operation should succeed");
 
         // Component 2: D - E
-        graph.add_edge(d, e, None).unwrap();
+        graph
+            .add_edge(d, e, None)
+            .expect("operation should succeed");
 
         let result = connected_components(&graph);
 
@@ -694,10 +704,14 @@ mod tests {
         let b = graph.add_node("B");
         let c = graph.add_node("C");
 
-        graph.add_edge(a, b, None).unwrap();
+        graph
+            .add_edge(a, b, None)
+            .expect("operation should succeed");
         assert!(!is_connected(&graph)); // C is isolated
 
-        graph.add_edge(b, c, None).unwrap();
+        graph
+            .add_edge(b, c, None)
+            .expect("operation should succeed");
         assert!(is_connected(&graph));
     }
 
@@ -711,15 +725,25 @@ mod tests {
         let d = graph.add_node("D");
 
         // SCC 1: A <-> B (cycle)
-        graph.add_edge(a, b, None).unwrap();
-        graph.add_edge(b, a, None).unwrap();
+        graph
+            .add_edge(a, b, None)
+            .expect("operation should succeed");
+        graph
+            .add_edge(b, a, None)
+            .expect("operation should succeed");
 
         // SCC 2: C <-> D (cycle)
-        graph.add_edge(c, d, None).unwrap();
-        graph.add_edge(d, c, None).unwrap();
+        graph
+            .add_edge(c, d, None)
+            .expect("operation should succeed");
+        graph
+            .add_edge(d, c, None)
+            .expect("operation should succeed");
 
         // One-way connection between SCCs
-        graph.add_edge(a, c, None).unwrap();
+        graph
+            .add_edge(a, c, None)
+            .expect("operation should succeed");
 
         let result = strongly_connected_components(&graph);
 
@@ -744,17 +768,31 @@ mod tests {
         let f = graph.add_node("F");
 
         // Cluster 1: A-B-C (complete)
-        graph.add_edge(a, b, None).unwrap();
-        graph.add_edge(b, c, None).unwrap();
-        graph.add_edge(a, c, None).unwrap();
+        graph
+            .add_edge(a, b, None)
+            .expect("operation should succeed");
+        graph
+            .add_edge(b, c, None)
+            .expect("operation should succeed");
+        graph
+            .add_edge(a, c, None)
+            .expect("operation should succeed");
 
         // Cluster 2: D-E-F (complete)
-        graph.add_edge(d, e, None).unwrap();
-        graph.add_edge(e, f, None).unwrap();
-        graph.add_edge(d, f, None).unwrap();
+        graph
+            .add_edge(d, e, None)
+            .expect("operation should succeed");
+        graph
+            .add_edge(e, f, None)
+            .expect("operation should succeed");
+        graph
+            .add_edge(d, f, None)
+            .expect("operation should succeed");
 
         // Weak link between clusters
-        graph.add_edge(c, d, None).unwrap();
+        graph
+            .add_edge(c, d, None)
+            .expect("operation should succeed");
 
         let communities = label_propagation(&graph, 100);
 
@@ -772,8 +810,12 @@ mod tests {
         let d = graph.add_node("D");
 
         // Two clear communities
-        graph.add_edge(a, b, None).unwrap();
-        graph.add_edge(c, d, None).unwrap();
+        graph
+            .add_edge(a, b, None)
+            .expect("operation should succeed");
+        graph
+            .add_edge(c, d, None)
+            .expect("operation should succeed");
 
         // Perfect partition
         let mut communities = HashMap::new();
@@ -796,8 +838,12 @@ mod tests {
         let c = graph.add_node("C");
         let d = graph.add_node("D");
 
-        graph.add_edge(a, b, None).unwrap();
-        graph.add_edge(c, d, None).unwrap();
+        graph
+            .add_edge(a, b, None)
+            .expect("operation should succeed");
+        graph
+            .add_edge(c, d, None)
+            .expect("operation should succeed");
 
         let (communities, modularity) = louvain_default(&graph);
 
@@ -815,9 +861,15 @@ mod tests {
         let d = graph.add_node("D");
 
         // A - B - C - D (linear path)
-        graph.add_edge(a, b, None).unwrap();
-        graph.add_edge(b, c, None).unwrap();
-        graph.add_edge(c, d, None).unwrap();
+        graph
+            .add_edge(a, b, None)
+            .expect("operation should succeed");
+        graph
+            .add_edge(b, c, None)
+            .expect("operation should succeed");
+        graph
+            .add_edge(c, d, None)
+            .expect("operation should succeed");
 
         let bridges = find_bridges(&graph);
         // All edges in a path are bridges
@@ -836,9 +888,15 @@ mod tests {
         // A - B - C
         //     |
         //     D
-        graph.add_edge(a, b, None).unwrap();
-        graph.add_edge(b, c, None).unwrap();
-        graph.add_edge(b, d, None).unwrap();
+        graph
+            .add_edge(a, b, None)
+            .expect("operation should succeed");
+        graph
+            .add_edge(b, c, None)
+            .expect("operation should succeed");
+        graph
+            .add_edge(b, d, None)
+            .expect("operation should succeed");
 
         let ap = find_articulation_points(&graph);
         // B is an articulation point

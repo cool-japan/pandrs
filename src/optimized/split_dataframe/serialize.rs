@@ -88,7 +88,10 @@ impl OptimizedDataFrame {
                     } else {
                         String::new()
                     };
-                    string_values.get_mut(key).unwrap().push(value_str);
+                    string_values
+                        .get_mut(key)
+                        .expect("operation should succeed")
+                        .push(value_str);
                 }
             }
         }

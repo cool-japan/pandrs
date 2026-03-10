@@ -1,3 +1,4 @@
+#![allow(clippy::result_large_err)]
 // Benchmark Comparison: Comparing the traditional implementation and optimized implementation of PandRS
 // This file provides benchmarks to compare the performance of the traditional implementation and optimized implementation of PandRS.
 

@@ -474,7 +474,9 @@ impl Forecaster for SarimaForecaster {
         }
 
         // Create forecast dates
-        let last_date = *index.end().unwrap();
+        let last_date = *index
+            .end()
+            .ok_or_else(|| Error::InvalidInput("Time series index has no end date".to_string()))?;
         let frequency = index.frequency.clone().unwrap_or(Frequency::Daily);
         let duration = frequency.to_duration();
 
@@ -998,23 +1000,35 @@ mod tests {
     fn create_test_series_with_trend() -> TimeSeries {
         let mut builder = TimeSeriesBuilder::new();
         for i in 0..100 {
-            let timestamp = Utc.timestamp_opt(1640995200 + i * 86400, 0).unwrap();
+            let timestamp = Utc
+                .timestamp_opt(1640995200 + i * 86400, 0)
+                .single()
+                .expect("operation should succeed");
             let value = 10.0 + i as f64 * 0.5 + (i as f64 * 0.1).sin();
             builder = builder.add_point(timestamp, value);
         }
-        builder.frequency(Frequency::Daily).build().unwrap()
+        builder
+            .frequency(Frequency::Daily)
+            .build()
+            .expect("operation should succeed")
     }
 
     fn create_seasonal_series() -> TimeSeries {
         let mut builder = TimeSeriesBuilder::new();
         for i in 0..120 {
-            let timestamp = Utc.timestamp_opt(1640995200 + i * 86400, 0).unwrap();
+            let timestamp = Utc
+                .timestamp_opt(1640995200 + i * 86400, 0)
+                .single()
+                .expect("operation should succeed");
             // Trend + seasonality (period 7)
             let value =
                 10.0 + i as f64 * 0.1 + 5.0 * (i as f64 * 2.0 * std::f64::consts::PI / 7.0).sin();
             builder = builder.add_point(timestamp, value);
         }
-        builder.frequency(Frequency::Daily).build().unwrap()
+        builder
+            .frequency(Frequency::Daily)
+            .build()
+            .expect("operation should succeed")
     }
 
     #[test]
@@ -1022,8 +1036,8 @@ mod tests {
         let ts = create_test_series_with_trend();
         let mut model = SarimaForecaster::arima(1, 1, 1);
 
-        model.fit(&ts).unwrap();
-        let result = model.forecast(10, 0.95).unwrap();
+        model.fit(&ts).expect("operation should succeed");
+        let result = model.forecast(10, 0.95).expect("operation should succeed");
 
         assert_eq!(result.forecast.len(), 10);
         assert!(model.aic().is_some());
@@ -1035,8 +1049,8 @@ mod tests {
         let ts = create_seasonal_series();
         let mut model = SarimaForecaster::new(1, 1, 1, 1, 0, 1, 7);
 
-        model.fit(&ts).unwrap();
-        let result = model.forecast(14, 0.95).unwrap();
+        model.fit(&ts).expect("operation should succeed");
+        let result = model.forecast(14, 0.95).expect("operation should succeed");
 
         assert_eq!(result.forecast.len(), 14);
     }
@@ -1046,12 +1060,12 @@ mod tests {
         let ts = create_test_series_with_trend();
         let mut auto = AutoArima::new().max_p(2).max_d(2).max_q(2);
 
-        auto.fit(&ts).unwrap();
+        auto.fit(&ts).expect("operation should succeed");
 
         assert!(auto.best_model().is_some());
         assert!(!auto.selection_results().is_empty());
 
-        let result = auto.forecast(5, 0.95).unwrap();
+        let result = auto.forecast(5, 0.95).expect("operation should succeed");
         assert_eq!(result.forecast.len(), 5);
     }
 
@@ -1060,7 +1074,7 @@ mod tests {
         let ts = create_test_series_with_trend();
         let mut auto = AutoArima::new().max_p(2).max_d(1).max_q(2);
 
-        auto.fit(&ts).unwrap();
+        auto.fit(&ts).expect("operation should succeed");
         let summary = auto.summary();
 
         assert!(summary.contains("Auto ARIMA"));
@@ -1076,14 +1090,14 @@ mod tests {
             .max_p(2)
             .max_q(2)
             .criterion(ModelSelectionCriterion::AIC);
-        auto_aic.fit(&ts).unwrap();
+        auto_aic.fit(&ts).expect("operation should succeed");
 
         // Test with BIC
         let mut auto_bic = AutoArima::new()
             .max_p(2)
             .max_q(2)
             .criterion(ModelSelectionCriterion::BIC);
-        auto_bic.fit(&ts).unwrap();
+        auto_bic.fit(&ts).expect("operation should succeed");
 
         // Both should find models
         assert!(auto_aic.best_model().is_some());
@@ -1094,7 +1108,7 @@ mod tests {
     fn test_information_criteria() {
         let ts = create_test_series_with_trend();
         let mut model = SarimaForecaster::arima(1, 1, 1);
-        model.fit(&ts).unwrap();
+        model.fit(&ts).expect("operation should succeed");
 
         let aic = model.aic();
         let bic = model.bic(ts.len());
@@ -1105,22 +1119,38 @@ mod tests {
         assert!(aicc.is_some());
 
         // AICc should be >= AIC for any sample
-        assert!(aicc.unwrap() >= aic.unwrap());
+        assert!(aicc.expect("operation should succeed") >= aic.expect("operation should succeed"));
     }
 
     #[test]
     fn test_confidence_intervals_widen() {
         let ts = create_test_series_with_trend();
         let mut model = SarimaForecaster::arima(1, 1, 1);
-        model.fit(&ts).unwrap();
+        model.fit(&ts).expect("operation should succeed");
 
-        let result = model.forecast(10, 0.95).unwrap();
+        let result = model.forecast(10, 0.95).expect("operation should succeed");
 
         // Check that confidence intervals widen with horizon
-        let first_width =
-            result.upper_ci.values.get_f64(0).unwrap() - result.lower_ci.values.get_f64(0).unwrap();
-        let last_width =
-            result.upper_ci.values.get_f64(9).unwrap() - result.lower_ci.values.get_f64(9).unwrap();
+        let first_width = result
+            .upper_ci
+            .values
+            .get_f64(0)
+            .expect("operation should succeed")
+            - result
+                .lower_ci
+                .values
+                .get_f64(0)
+                .expect("operation should succeed");
+        let last_width = result
+            .upper_ci
+            .values
+            .get_f64(9)
+            .expect("operation should succeed")
+            - result
+                .lower_ci
+                .values
+                .get_f64(9)
+                .expect("operation should succeed");
 
         assert!(
             last_width > first_width,

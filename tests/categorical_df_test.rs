@@ -1,3 +1,5 @@
+#![allow(clippy::result_large_err)]
+
 use pandrs::series::{CategoricalOrder, StringCategorical};
 use pandrs::{DataFrame, Series};
 mod test_utils;

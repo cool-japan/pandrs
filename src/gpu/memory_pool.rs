@@ -9,6 +9,7 @@ use std::time::{Duration, Instant};
 
 use crate::error::{Error, Result};
 use crate::gpu::{GpuError, GpuManager};
+use crate::{lock_safe, read_lock_safe, write_lock_safe};
 
 #[cfg(cuda_available)]
 use cudarc::driver::{CudaContext as CudarcContext, CudaSlice, CudaStream};
@@ -183,7 +184,7 @@ impl GpuMemoryPool {
         let ptr_addr = allocation.ptr_address();
 
         if let Some(block) = self.allocated_blocks.remove(&ptr_addr) {
-            let mut block_guard = block.lock().unwrap();
+            let mut block_guard = lock_safe!(block, "memory block lock for deallocation")?;
             block_guard.is_free = true;
             block_guard.allocation_info = None;
 
@@ -238,7 +239,10 @@ impl GpuMemoryPool {
 
         for (size, blocks) in &mut self.free_blocks {
             blocks.retain(|block| {
-                let block_guard = block.lock().unwrap();
+                let block_guard = match lock_safe!(block, "memory block lock for cleanup") {
+                    Ok(guard) => guard,
+                    Err(_) => return true, // keep block if lock fails
+                };
                 if let Some(ref info) = block_guard.allocation_info {
                     let age = now.duration_since(info.last_accessed);
                     if age > max_age {
@@ -313,7 +317,7 @@ impl GpuMemoryPool {
 
     /// Use a free block for allocation
     fn use_block(&mut self, block: Arc<Mutex<MemoryBlock>>, size: usize) -> Result<GpuAllocation> {
-        let mut block_guard = block.lock().unwrap();
+        let mut block_guard = lock_safe!(block, "memory block lock for use_block")?;
         block_guard.is_free = false;
         block_guard.allocation_info = Some(AllocationInfo {
             size,
@@ -521,7 +525,7 @@ impl GlobalMemoryPoolManager {
     pub fn get_pool(&self, device_id: i32) -> Result<Arc<Mutex<GpuMemoryPool>>> {
         // Check if pool already exists
         {
-            let pools = self.pools.read().unwrap();
+            let pools = read_lock_safe!(self.pools, "memory pool manager pools read")?;
             if let Some(pool) = pools.get(&device_id) {
                 return Ok(pool.clone());
             }
@@ -532,7 +536,7 @@ impl GlobalMemoryPoolManager {
         let pool = Arc::new(Mutex::new(pool));
 
         {
-            let mut pools = self.pools.write().unwrap();
+            let mut pools = write_lock_safe!(self.pools, "memory pool manager pools write")?;
             pools.insert(device_id, pool.clone());
         }
 
@@ -540,24 +544,24 @@ impl GlobalMemoryPoolManager {
     }
 
     /// Get statistics for all pools
-    pub fn get_all_stats(&self) -> HashMap<i32, MemoryPoolStats> {
-        let pools = self.pools.read().unwrap();
+    pub fn get_all_stats(&self) -> Result<HashMap<i32, MemoryPoolStats>> {
+        let pools = read_lock_safe!(self.pools, "memory pool manager pools read for stats")?;
         let mut stats = HashMap::new();
 
         for (&device_id, pool) in pools.iter() {
-            let pool_guard = pool.lock().unwrap();
+            let pool_guard = lock_safe!(pool, "memory pool lock for stats")?;
             stats.insert(device_id, pool_guard.get_stats());
         }
 
-        stats
+        Ok(stats)
     }
 
     /// Cleanup all pools
     pub fn cleanup_all(&self) -> Result<()> {
-        let pools = self.pools.read().unwrap();
+        let pools = read_lock_safe!(self.pools, "memory pool manager pools read for cleanup")?;
 
         for pool in pools.values() {
-            let mut pool_guard = pool.lock().unwrap();
+            let mut pool_guard = lock_safe!(pool, "memory pool lock for cleanup")?;
             pool_guard.cleanup()?;
         }
 
@@ -579,14 +583,14 @@ pub fn get_memory_pool_manager() -> &'static GlobalMemoryPoolManager {
 /// Allocate GPU memory from the global pool
 pub fn gpu_alloc(device_id: i32, size: usize) -> Result<GpuAllocation> {
     let pool = get_memory_pool_manager().get_pool(device_id)?;
-    let mut pool_guard = pool.lock().unwrap();
+    let mut pool_guard = lock_safe!(pool, "global memory pool lock for allocation")?;
     pool_guard.allocate(size)
 }
 
 /// Deallocate GPU memory to the global pool
 pub fn gpu_dealloc(device_id: i32, allocation: GpuAllocation) -> Result<()> {
     let pool = get_memory_pool_manager().get_pool(device_id)?;
-    let mut pool_guard = pool.lock().unwrap();
+    let mut pool_guard = lock_safe!(pool, "global memory pool lock for deallocation")?;
     pool_guard.deallocate(allocation)
 }
 
@@ -642,18 +646,18 @@ mod tests {
             println!("Skipping test_memory_allocation - pool creation failed");
             return;
         }
-        let mut pool = pool.unwrap();
+        let mut pool = pool.expect("operation should succeed");
 
         // Allocate some memory
-        let alloc1 = pool.allocate(1024).unwrap();
+        let alloc1 = pool.allocate(1024).expect("operation should succeed");
         assert_eq!(alloc1.size(), 4096); // Aligned to min allocation size
 
-        let alloc2 = pool.allocate(2048).unwrap();
+        let alloc2 = pool.allocate(2048).expect("operation should succeed");
         assert_eq!(alloc2.size(), 4096);
 
         // Deallocate
-        pool.deallocate(alloc1).unwrap();
-        pool.deallocate(alloc2).unwrap();
+        pool.deallocate(alloc1).expect("operation should succeed");
+        pool.deallocate(alloc2).expect("operation should succeed");
 
         // Check stats
         let stats = pool.get_stats();
@@ -675,15 +679,15 @@ mod tests {
             println!("Skipping test_memory_pool_stats - pool creation failed");
             return;
         }
-        let mut pool = pool.unwrap();
+        let mut pool = pool.expect("operation should succeed");
 
-        let alloc = pool.allocate(1024).unwrap();
+        let alloc = pool.allocate(1024).expect("operation should succeed");
         let stats = pool.get_stats();
 
         assert_eq!(stats.total_allocations, 1);
         assert!(stats.avg_allocation_size > 0.0);
 
-        pool.deallocate(alloc).unwrap();
+        pool.deallocate(alloc).expect("operation should succeed");
         let stats = pool.get_stats();
         assert_eq!(stats.total_deallocations, 1);
     }
@@ -702,10 +706,10 @@ mod tests {
             println!("Skipping test_global_memory_pool - pool retrieval failed");
             return;
         }
-        let pool = pool.unwrap();
+        let pool = pool.expect("operation should succeed");
 
         // Test that we get the same pool instance
-        let pool2 = manager.get_pool(0).unwrap();
+        let pool2 = manager.get_pool(0).expect("operation should succeed");
         assert_eq!(Arc::as_ptr(&pool), Arc::as_ptr(&pool2));
     }
 }

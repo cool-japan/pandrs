@@ -511,7 +511,7 @@ fn current_timestamp() -> String {
 
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
+        .expect("operation should succeed")
         .as_secs();
 
     // Simple timestamp format (in production, use proper datetime formatting)
@@ -603,22 +603,28 @@ mod tests {
     #[test]
     fn test_credential_store_basic_operations() {
         let mut store = CredentialStore::with_defaults();
-        store.init_encryption("test_password").unwrap();
+        store
+            .init_encryption("test_password")
+            .expect("operation should succeed");
 
         let credential = CredentialBuilder::new()
             .database("user", "pass", "localhost", 5432, "mydb")
             .build()
-            .unwrap();
+            .expect("operation should succeed");
 
         // Store credential
-        store.store_credential("db1", credential).unwrap();
+        store
+            .store_credential("db1", credential)
+            .expect("operation should succeed");
 
         // Check existence
         assert!(store.has_credential("db1"));
         assert!(!store.has_credential("db2"));
 
         // Retrieve credential
-        let retrieved = store.get_credential("db1").unwrap();
+        let retrieved = store
+            .get_credential("db1")
+            .expect("operation should succeed");
         match retrieved {
             CredentialType::Database {
                 username,
@@ -637,7 +643,9 @@ mod tests {
         }
 
         // Remove credential
-        store.remove_credential("db1").unwrap();
+        store
+            .remove_credential("db1")
+            .expect("operation should succeed");
         assert!(!store.has_credential("db1"));
     }
 
@@ -647,7 +655,7 @@ mod tests {
             .database("admin", "secret123", "db.example.com", 5432, "production")
             .with_tags(vec!["production".to_string(), "primary".to_string()])
             .build()
-            .unwrap();
+            .expect("operation should succeed");
 
         match db_cred {
             CredentialType::Database {
@@ -669,7 +677,7 @@ mod tests {
         let aws_cred = CredentialBuilder::new()
             .cloud_aws("AKIATEST", "secret", Some("us-west-2"))
             .build()
-            .unwrap();
+            .expect("operation should succeed");
 
         match aws_cred {
             CredentialType::Cloud {

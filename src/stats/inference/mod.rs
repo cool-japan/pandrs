@@ -449,7 +449,7 @@ mod tests {
         let sample1 = vec![5.0, 6.0, 7.0, 8.0, 9.0];
         let sample2 = vec![6.0, 7.0, 8.0, 9.0, 10.0];
 
-        let result = ttest_impl(&sample1, &sample2, 0.05, true).unwrap();
+        let result = ttest_impl(&sample1, &sample2, 0.05, true).expect("operation should succeed");
 
         // The difference in means is 1.0, but due to large variance it should not be significant
         assert!((result.statistic + 1.0).abs() < 1.0); // t-value should be negative
@@ -462,7 +462,7 @@ mod tests {
         let sample1 = vec![1.0, 2.0, 3.0, 4.0, 5.0];
         let sample2 = vec![11.0, 12.0, 13.0, 14.0, 15.0];
 
-        let result = ttest_impl(&sample1, &sample2, 0.05, true).unwrap();
+        let result = ttest_impl(&sample1, &sample2, 0.05, true).expect("operation should succeed");
 
         // The difference in means is large, should be significant
         assert!(result.statistic < -5.0); // t-value should be a large negative value
@@ -476,8 +476,10 @@ mod tests {
         let sample1 = vec![1.0, 2.0, 3.0, 4.0, 5.0];
         let sample2 = vec![11.0, 13.0, 15.0, 17.0, 19.0];
 
-        let result_equal_var = ttest_impl(&sample1, &sample2, 0.05, true).unwrap();
-        let result_welch = ttest_impl(&sample1, &sample2, 0.05, false).unwrap();
+        let result_equal_var =
+            ttest_impl(&sample1, &sample2, 0.05, true).expect("operation should succeed");
+        let result_welch =
+            ttest_impl(&sample1, &sample2, 0.05, false).expect("operation should succeed");
 
         // Both should be significant, but degrees of freedom and exact statistics should differ
         assert!(result_equal_var.significant);
@@ -505,7 +507,7 @@ mod tests {
         groups.insert("B", b_values.as_slice());
         groups.insert("C", c_values.as_slice());
 
-        let result = anova_impl(&groups, 0.05).unwrap();
+        let result = anova_impl(&groups, 0.05).expect("operation should succeed");
 
         // The means of each group are 3, 4, and 5 respectively, with clear differences but large variance
         // F-value should be positive, with a difference of 1.0 between adjacent groups
@@ -527,7 +529,7 @@ mod tests {
         groups.insert("B", b_values.as_slice());
         groups.insert("C", c_values.as_slice());
 
-        let result = anova_impl(&groups, 0.05).unwrap();
+        let result = anova_impl(&groups, 0.05).expect("operation should succeed");
 
         // With large differences, F-value should be large
         assert!(result.f_statistic > 100.0);
@@ -540,7 +542,8 @@ mod tests {
         let sample1 = vec![1.0, 2.0, 3.0, 4.0, 5.0];
         let sample2 = vec![6.0, 7.0, 8.0, 9.0, 10.0];
 
-        let result = mann_whitney_u_impl(&sample1, &sample2, 0.05).unwrap();
+        let result =
+            mann_whitney_u_impl(&sample1, &sample2, 0.05).expect("operation should succeed");
 
         // Completely separated samples should show significant difference
         assert!(result.u_statistic == 0.0); // Minimum U value
@@ -553,7 +556,7 @@ mod tests {
         // 2x2 chi-square test (test of independence)
         let observed = vec![vec![10.0, 10.0], vec![10.0, 20.0]];
 
-        let result = chi_square_test_impl(&observed, 0.05).unwrap();
+        let result = chi_square_test_impl(&observed, 0.05).expect("operation should succeed");
 
         assert!(result.chi2_statistic > 0.0);
         assert_eq!(result.df, 1); // (2-1) * (2-1) = 1

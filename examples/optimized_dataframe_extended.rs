@@ -1,3 +1,5 @@
+#![allow(clippy::result_large_err)]
+
 use pandrs::column::{Column, ColumnTrait, StringColumn};
 use pandrs::optimized::dataframe::OptimizedDataFrame;
 use std::time::Instant;

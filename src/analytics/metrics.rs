@@ -9,6 +9,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 
+use crate::{read_lock_safe, write_lock_safe};
+
 /// A single metric with history
 #[derive(Debug)]
 pub struct Metric {
@@ -388,8 +390,12 @@ impl RateCalculator {
         let now = Instant::now();
 
         let (prev_count, elapsed) = {
-            let prev_time = self.prev_time.read().unwrap();
-            let elapsed = now.duration_since(*prev_time);
+            let prev_time =
+                match read_lock_safe!(self.prev_time, "analytics metrics prev time read") {
+                    Ok(pt) => *pt,
+                    Err(_) => return 0.0,
+                };
+            let elapsed = now.duration_since(prev_time);
             (self.prev_count.load(Ordering::Relaxed), elapsed)
         };
 
@@ -398,24 +404,33 @@ impl RateCalculator {
             let instant_rate = delta / elapsed.as_secs_f64();
 
             // EMA smoothing
-            let mut current = self.current_rate.write().unwrap();
-            *current = self.smoothing * instant_rate + (1.0 - self.smoothing) * *current;
+            if let Ok(mut current) =
+                write_lock_safe!(self.current_rate, "analytics metrics current rate write")
+            {
+                *current = self.smoothing * instant_rate + (1.0 - self.smoothing) * *current;
 
-            // Update previous values
-            self.prev_count.store(count, Ordering::Relaxed);
-            if let Ok(mut prev_time) = self.prev_time.write() {
-                *prev_time = now;
+                // Update previous values
+                self.prev_count.store(count, Ordering::Relaxed);
+                if let Ok(mut prev_time) = self.prev_time.write() {
+                    *prev_time = now;
+                }
+
+                *current
+            } else {
+                0.0
             }
-
-            *current
         } else {
-            *self.current_rate.read().unwrap()
+            read_lock_safe!(self.current_rate, "analytics metrics current rate read")
+                .map(|r| *r)
+                .unwrap_or(0.0)
         }
     }
 
     /// Get current rate
     pub fn rate(&self) -> f64 {
-        *self.current_rate.read().unwrap()
+        read_lock_safe!(self.current_rate, "analytics metrics current rate read")
+            .map(|r| *r)
+            .unwrap_or(0.0)
     }
 
     /// Reset the calculator
@@ -485,10 +500,10 @@ mod tests {
         collector.increment("requests");
         collector.set_gauge("memory", 1024.0);
 
-        let requests = collector.get("requests").unwrap();
+        let requests = collector.get("requests").expect("operation should succeed");
         assert_eq!(requests.current(), 2.0);
 
-        let memory = collector.get("memory").unwrap();
+        let memory = collector.get("memory").expect("operation should succeed");
         assert_eq!(memory.current(), 1024.0);
     }
 
@@ -503,7 +518,9 @@ mod tests {
 
         assert_eq!(result, 42);
 
-        let timer = collector.get("operation").unwrap();
+        let timer = collector
+            .get("operation")
+            .expect("operation should succeed");
         let stats = timer.stats();
         assert!(stats.mean >= 10000.0); // At least 10ms in microseconds
     }

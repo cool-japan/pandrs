@@ -107,7 +107,10 @@ impl KMeans {
             return Err(Error::InvalidValue("KMeans not fitted".into()));
         }
 
-        let centroids = self.centroids.as_ref().unwrap();
+        let centroids = self
+            .centroids
+            .as_ref()
+            .ok_or_else(|| Error::InvalidOperation("Model not fitted. Call fit() first.".into()))?;
         let feature_columns = match &self.feature_columns {
             Some(cols) => cols,
             None => return Err(Error::InvalidValue("Feature columns not specified".into())),
@@ -333,7 +336,10 @@ impl UnsupervisedModel for KMeans {
             return Err(Error::InvalidValue("KMeans not fitted".into()));
         }
 
-        let centroids = self.centroids.as_ref().unwrap();
+        let centroids = self
+            .centroids
+            .as_ref()
+            .ok_or_else(|| Error::InvalidOperation("Model not fitted. Call fit() first.".into()))?;
         let feature_columns = match &self.feature_columns {
             Some(cols) => cols,
             None => return Err(Error::InvalidValue("Feature columns not specified".into())),

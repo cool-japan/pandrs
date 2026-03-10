@@ -1,3 +1,4 @@
+#![allow(clippy::result_large_err)]
 //! Comprehensive tests for the model serving framework
 //!
 //! This test module validates all model serving functionality including serialization,
@@ -311,7 +312,7 @@ fn test_model_deployment() {
     let deployed_model = DeployedModel::new(boxed_model, config).unwrap();
 
     // Test initial state
-    let metrics = deployed_model.get_metrics();
+    let metrics = deployed_model.get_metrics().unwrap();
     assert_eq!(metrics.status, DeploymentStatus::Running);
     assert_eq!(metrics.active_instances, 1);
 
@@ -321,16 +322,16 @@ fn test_model_deployment() {
     // processing_time_ms is always >= 0 for u64 type
 
     // Test scaling decisions
-    assert!(!deployed_model.should_scale_up()); // Low utilization initially
-    assert!(!deployed_model.should_scale_down()); // At minimum instances
+    assert!(!deployed_model.should_scale_up().unwrap()); // Low utilization initially
+    assert!(!deployed_model.should_scale_down().unwrap()); // At minimum instances
 
     // Test scaling operations
     deployed_model.scale_up().unwrap();
-    let metrics = deployed_model.get_metrics();
+    let metrics = deployed_model.get_metrics().unwrap();
     assert_eq!(metrics.active_instances, 2);
 
     deployed_model.scale_down().unwrap();
-    let metrics = deployed_model.get_metrics();
+    let metrics = deployed_model.get_metrics().unwrap();
     assert_eq!(metrics.active_instances, 1);
 
     // Test health check
@@ -581,21 +582,21 @@ fn test_rate_limiter() {
     // Should allow first 3 requests
     for i in 0..3 {
         assert!(
-            rate_limiter.check_rate_limit("client1"),
+            rate_limiter.check_rate_limit("client1").unwrap(),
             "Request {} should be allowed",
             i + 1
         );
     }
 
     // Should deny 4th request
-    assert!(!rate_limiter.check_rate_limit("client1"));
+    assert!(!rate_limiter.check_rate_limit("client1").unwrap());
 
     // Different client should still be allowed
-    assert!(rate_limiter.check_rate_limit("client2"));
+    assert!(rate_limiter.check_rate_limit("client2").unwrap());
 
     // Check request counts
-    assert_eq!(rate_limiter.get_request_count("client1"), 4); // 3 allowed + 1 denied
-    assert_eq!(rate_limiter.get_request_count("client2"), 1);
+    assert_eq!(rate_limiter.get_request_count("client1").unwrap(), 4); // 3 allowed + 1 denied
+    assert_eq!(rate_limiter.get_request_count("client2").unwrap(), 1);
 }
 
 #[test]
@@ -642,7 +643,7 @@ fn test_http_model_server() {
     assert!(health_response.body.success);
 
     // Test server statistics
-    let stats = server.get_server_stats();
+    let stats = server.get_server_stats().unwrap();
     assert!(stats.total_requests > 0);
     assert_eq!(stats.active_models, 1);
 
@@ -727,7 +728,7 @@ fn test_comprehensive_workflow() {
     // processing_time_ms is always >= 0 for u64 type
 
     // 6. Test monitoring
-    let metrics = deployed_model.get_metrics();
+    let metrics = deployed_model.get_metrics().unwrap();
     assert_eq!(metrics.status, DeploymentStatus::Running);
     assert!(metrics.total_requests > 0);
 

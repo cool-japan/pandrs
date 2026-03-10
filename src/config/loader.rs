@@ -336,7 +336,7 @@ mod tests {
     #[test]
     fn test_load_from_env() {
         // Lock to prevent concurrent environment variable tests
-        let _lock = ENV_TEST_MUTEX.lock().unwrap();
+        let _lock = ENV_TEST_MUTEX.lock().expect("operation should succeed");
 
         // Save original environment variables
         let orig_db_url = env::var("PANDRS_DB_URL").ok();
@@ -356,7 +356,7 @@ mod tests {
         env::set_var("AWS_DEFAULT_REGION", "us-east-1");
         env::set_var("PANDRS_LOG_LEVEL", "debug");
 
-        let config = load_from_env().unwrap();
+        let config = load_from_env().expect("operation should succeed");
 
         assert_eq!(
             config.database.default_url,
@@ -487,7 +487,7 @@ logging:
     compress: true
 "#;
 
-        let config = load_from_yaml(yaml).unwrap();
+        let config = load_from_yaml(yaml).expect("operation should succeed");
         assert_eq!(
             config.database.default_url,
             Some("postgresql://localhost/test".to_string())
@@ -499,25 +499,25 @@ logging:
 
     #[test]
     fn test_save_and_load_file() {
-        let dir = tempdir().unwrap();
+        let dir = tempdir().expect("operation should succeed");
         let config_path = dir.path().join("test_config.yml");
 
         let original_config = create_sample_config_content();
-        save_to_file(&original_config, &config_path).unwrap();
+        save_to_file(&original_config, &config_path).expect("operation should succeed");
 
-        let loaded_config = load_from_file(&config_path).unwrap();
+        let loaded_config = load_from_file(&config_path).expect("operation should succeed");
 
         // Compare serialized versions to check equality
         assert_eq!(
-            original_config.to_yaml().unwrap(),
-            loaded_config.to_yaml().unwrap()
+            original_config.to_yaml().expect("operation should succeed"),
+            loaded_config.to_yaml().expect("operation should succeed")
         );
     }
 
     #[test]
     fn test_precedence() {
         // Lock to prevent concurrent environment variable tests
-        let _lock = ENV_TEST_MUTEX.lock().unwrap();
+        let _lock = ENV_TEST_MUTEX.lock().expect("operation should succeed");
 
         // Save original environment variables
         let orig_pool_size = env::var("PANDRS_DB_POOL_SIZE").ok();
@@ -527,7 +527,7 @@ logging:
         env::remove_var("PANDRS_DB_POOL_SIZE");
         env::remove_var("AWS_DEFAULT_REGION");
 
-        let dir = tempdir().unwrap();
+        let dir = tempdir().expect("operation should succeed");
         let config_path = dir.path().join("precedence_test.yml");
 
         // Create a config file
@@ -628,13 +628,13 @@ logging:
     max_files: 10
     compress: true
 "#;
-        std::fs::write(&config_path, yaml).unwrap();
+        std::fs::write(&config_path, yaml).expect("operation should succeed");
 
         // Set environment variable that should override file
         env::set_var("PANDRS_DB_POOL_SIZE", "50");
         env::set_var("AWS_DEFAULT_REGION", "ap-southeast-1");
 
-        let config = load_with_precedence(Some(&config_path)).unwrap();
+        let config = load_with_precedence(Some(&config_path)).expect("operation should succeed");
 
         // Environment should override file
         assert_eq!(config.database.pool.max_connections, 50);

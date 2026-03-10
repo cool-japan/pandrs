@@ -219,14 +219,14 @@ fn test_automatic_jit_compilation(df: &DataFrame) -> Result<()> {
     }
 
     // Show JIT statistics
-    let stats = context.jit_stats();
+    let stats = context.jit_stats().unwrap();
     println!("\n  JIT Statistics:");
     println!("    Compilations: {}", stats.compilations);
     println!("    JIT Executions: {}", stats.jit_executions);
     println!("    Native Executions: {}", stats.native_executions);
     println!(
         "    Compiled Expressions in Cache: {}",
-        context.compiled_expressions_count()
+        context.compiled_expressions_count().unwrap()
     );
 
     Ok(())
@@ -309,7 +309,7 @@ fn demonstrate_jit_statistics(df: &DataFrame) -> Result<()> {
     }
 
     // Show detailed statistics
-    let stats = context.jit_stats();
+    let stats = context.jit_stats().unwrap();
     println!("\n  Detailed JIT Statistics:");
     println!("    Total Compilations: {}", stats.compilations);
     println!("    JIT Executions: {}", stats.jit_executions);
@@ -321,19 +321,21 @@ fn demonstrate_jit_statistics(df: &DataFrame) -> Result<()> {
     println!("    JIT Speedup Ratio: {:.2}x", stats.jit_speedup_ratio());
     println!(
         "    Compiled Expressions in Cache: {}",
-        context.compiled_expressions_count()
+        context.compiled_expressions_count().unwrap()
     );
 
     // Cache management
     println!("\n  Cache Management:");
     println!(
         "    Cache size before clear: {}",
-        context.compiled_expressions_count()
+        context.compiled_expressions_count().unwrap()
     );
-    context.clear_jit_cache();
+    context
+        .clear_jit_cache()
+        .expect("Failed to clear JIT cache");
     println!(
         "    Cache size after clear: {}",
-        context.compiled_expressions_count()
+        context.compiled_expressions_count().unwrap()
     );
 
     Ok(())
@@ -424,7 +426,7 @@ fn test_jit_configuration(df: &DataFrame) -> Result<()> {
             let _result = df.query(expr)?;
         }
 
-        let stats = context.jit_stats();
+        let stats = context.jit_stats().unwrap();
         println!(
             "      Compilations: {}, JIT Executions: {}",
             stats.compilations, stats.jit_executions
@@ -475,7 +477,7 @@ fn demonstrate_real_world_jit(df: &DataFrame) -> Result<()> {
         }
     }
 
-    let stats = context.jit_stats();
+    let stats = context.jit_stats().unwrap();
     println!(
         "    Financial Scenario Stats: {} compilations, {:.2}x speedup",
         stats.compilations,

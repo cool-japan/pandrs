@@ -4,6 +4,7 @@ use rayon::prelude::*;
 use std::collections::HashMap;
 
 use crate::column::{Column, ColumnTrait};
+use crate::core::error::OptionExt;
 use crate::error::{Error, Result};
 use crate::optimized::jit::{
     parallel_max_f64, parallel_mean_f64_value, parallel_min_f64, parallel_sum_f64, ParallelConfig,
@@ -301,8 +302,11 @@ impl OptimizedDataFrame {
             .column_names
             .iter()
             .filter(|&name| {
-                let idx = self.column_indices.get(name).unwrap();
-                matches!(self.columns[*idx], Column::Int64(_) | Column::Float64(_))
+                if let Some(idx) = self.column_indices.get(name) {
+                    matches!(self.columns[*idx], Column::Int64(_) | Column::Float64(_))
+                } else {
+                    false
+                }
             })
             .map(|s| s.as_str())
             .collect();

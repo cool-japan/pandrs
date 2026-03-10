@@ -696,8 +696,8 @@ impl WindowedAggregator {
 
         let (_, state) = self.windows.entry(window_id).or_insert_with(|| {
             let window = TimeWindow::new(
-                DateTime::from_timestamp(0, 0).unwrap(),
-                DateTime::from_timestamp(i64::MAX / 2, 0).unwrap(),
+                DateTime::from_timestamp(0, 0).expect("operation should succeed"),
+                DateTime::from_timestamp(i64::MAX / 2, 0).expect("operation should succeed"),
             );
             (window, AggregationState::new())
         });
@@ -969,7 +969,8 @@ mod tests {
 
         // Process some records
         for i in 0..5 {
-            agg.process(&create_record(i as f64)).unwrap();
+            agg.process(&create_record(i as f64))
+                .expect("operation should succeed");
         }
 
         // Flush to get results
@@ -988,7 +989,9 @@ mod tests {
 
         // Process exactly 3 records
         for i in 1..=3 {
-            let results = agg.process(&create_record(i as f64)).unwrap();
+            let results = agg
+                .process(&create_record(i as f64))
+                .expect("operation should succeed");
             if i == 3 {
                 // Window should complete on 3rd record
                 assert!(!results.is_empty());
@@ -1007,7 +1010,8 @@ mod tests {
         // Test sum
         let mut agg = WindowedAggregator::new(config.clone(), "value", WindowAggregation::Sum);
         for i in 1..=5 {
-            agg.process(&create_record(i as f64)).unwrap();
+            agg.process(&create_record(i as f64))
+                .expect("operation should succeed");
         }
         let results = agg.flush();
         assert_eq!(results[0].values["value"], 15.0);
@@ -1015,7 +1019,8 @@ mod tests {
         // Test avg
         let mut agg = WindowedAggregator::new(config.clone(), "value", WindowAggregation::Avg);
         for i in 1..=5 {
-            agg.process(&create_record(i as f64)).unwrap();
+            agg.process(&create_record(i as f64))
+                .expect("operation should succeed");
         }
         let results = agg.flush();
         assert_eq!(results[0].values["value"], 3.0);
@@ -1023,7 +1028,8 @@ mod tests {
         // Test min
         let mut agg = WindowedAggregator::new(config.clone(), "value", WindowAggregation::Min);
         for i in 1..=5 {
-            agg.process(&create_record(i as f64)).unwrap();
+            agg.process(&create_record(i as f64))
+                .expect("operation should succeed");
         }
         let results = agg.flush();
         assert_eq!(results[0].values["value"], 1.0);
@@ -1031,7 +1037,8 @@ mod tests {
         // Test max
         let mut agg = WindowedAggregator::new(config.clone(), "value", WindowAggregation::Max);
         for i in 1..=5 {
-            agg.process(&create_record(i as f64)).unwrap();
+            agg.process(&create_record(i as f64))
+                .expect("operation should succeed");
         }
         let results = agg.flush();
         assert_eq!(results[0].values["value"], 5.0);
@@ -1053,7 +1060,7 @@ mod tests {
             fields.insert("price".to_string(), (i * 10).to_string());
             fields.insert("quantity".to_string(), i.to_string());
             let record = StreamRecord::new(fields);
-            agg.process(&record).unwrap();
+            agg.process(&record).expect("operation should succeed");
         }
 
         let results = agg.flush();
@@ -1097,7 +1104,8 @@ mod tests {
 
         // Process records - they should be in same session
         for i in 1..=3 {
-            agg.process(&create_record(i as f64)).unwrap();
+            agg.process(&create_record(i as f64))
+                .expect("operation should succeed");
         }
 
         // Simulate gap - flush should close session

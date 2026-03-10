@@ -3,6 +3,7 @@
 //! This module provides API key generation, validation, and management
 //! for service-to-service authentication and programmatic access.
 
+use crate::core::error::OptionExt;
 use crate::error::{Error, Result};
 use crate::multitenancy::{Permission, TenantId};
 use std::collections::HashMap;
@@ -313,7 +314,9 @@ impl ApiKeyManager {
         // Record usage
         key_info.record_usage();
 
-        Ok(self.keys_by_hash.get(&key_hash).unwrap())
+        self.keys_by_hash
+            .get(&key_hash)
+            .ok_or_else(|| Error::InvalidInput("API key not found after validation".to_string()))
     }
 
     /// Get key info by ID
@@ -602,7 +605,7 @@ mod tests {
                 "tenant_a",
                 vec![Permission::Read, Permission::Write],
             )
-            .unwrap();
+            .expect("operation should succeed");
 
         assert!(key.starts_with("pk_"));
         assert_eq!(key.len(), 3 + 64); // "pk_" + 32 bytes as hex
@@ -614,7 +617,7 @@ mod tests {
 
         let key = manager
             .generate_key("test-key", "user1", "tenant_a", vec![Permission::Read])
-            .unwrap();
+            .expect("operation should succeed");
 
         // Valid key
         let result = manager.validate_key(&key);
@@ -631,7 +634,7 @@ mod tests {
 
         let key = manager
             .generate_key("test-key", "user1", "tenant_a", vec![Permission::Read])
-            .unwrap();
+            .expect("operation should succeed");
 
         // Wait for expiration
         std::thread::sleep(Duration::from_millis(10));
@@ -646,13 +649,15 @@ mod tests {
 
         let key = manager
             .generate_key("test-key", "user1", "tenant_a", vec![Permission::Read])
-            .unwrap();
+            .expect("operation should succeed");
 
         // Get key ID
         let key_id = manager.list_user_keys("user1")[0].key_id.clone();
 
         // Revoke key
-        manager.revoke_key(&key_id).unwrap();
+        manager
+            .revoke_key(&key_id)
+            .expect("operation should succeed");
 
         // Validation should fail
         let result = manager.validate_key(&key);
@@ -665,10 +670,10 @@ mod tests {
 
         manager
             .generate_key("key1", "user1", "tenant_a", vec![])
-            .unwrap();
+            .expect("operation should succeed");
         manager
             .generate_key("key2", "user1", "tenant_a", vec![])
-            .unwrap();
+            .expect("operation should succeed");
 
         // Third key should fail
         let result = manager.generate_key("key3", "user1", "tenant_a", vec![]);
@@ -681,7 +686,7 @@ mod tests {
 
         let key = manager
             .generate_key("test-key", "user1", "tenant_a", vec![Permission::Read])
-            .unwrap();
+            .expect("operation should succeed");
 
         // Get key ID and update whitelist
         let key_id = manager.list_user_keys("user1")[0].key_id.clone();
@@ -704,7 +709,7 @@ mod tests {
 
         let key = manager
             .generate_key("test-key", "user1", "tenant_a", vec![Permission::Read])
-            .unwrap();
+            .expect("operation should succeed");
 
         // Set rate limit
         let key_id = manager.list_user_keys("user1")[0].key_id.clone();
@@ -727,10 +732,10 @@ mod tests {
 
         manager
             .generate_key("key1", "user1", "tenant_a", vec![])
-            .unwrap();
+            .expect("operation should succeed");
         manager
             .generate_key("key2", "user1", "tenant_a", vec![])
-            .unwrap();
+            .expect("operation should succeed");
 
         let stats = manager.get_stats();
         assert_eq!(stats.total_keys, 2);

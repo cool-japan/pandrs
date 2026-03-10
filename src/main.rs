@@ -110,7 +110,10 @@ impl<T: Debug + Clone> DataFrame<T> {
                 // Consume the value from the HashMap
                 Some(value) => {
                     // The corresponding Vec in the data HashMap should be guaranteed to exist
-                    self.data.get_mut(column_name).unwrap().push(value);
+                    self.data
+                        .get_mut(column_name)
+                        .expect("column exists in DataFrame schema")
+                        .push(value);
                 }
                 None => {
                     // If the row does not contain a column of the DataFrame
@@ -173,7 +176,7 @@ impl<T: Debug + Clone> DataFrame<T> {
                 for column_name in &self.columns {
                     filtered_data
                         .get_mut(column_name)
-                        .unwrap() // The key should exist
+                        .expect("column exists in filtered data schema")
                         .push(self.data[column_name][i].clone()); // clone is needed
                 }
                 new_row_count += 1;
@@ -227,7 +230,7 @@ impl<T: Debug + Clone> DataFrame<T> {
             for column_name in &self.columns {
                 sorted_data
                     .get_mut(column_name)
-                    .unwrap()
+                    .expect("column exists in sorted data schema")
                     .push(self.data[column_name][index].clone()); // clone is needed
             }
         }
@@ -285,9 +288,13 @@ impl<T: Debug + Clone> DataFrame<T> {
             joined_data.insert(column_name.clone(), Vec::new());
         }
 
-        // Get the data of the join column (unwrap is safe because existence is checked)
-        let left_join_col_data = self.get_column(join_column).unwrap();
-        let right_join_col_data = other.get_column(join_column).unwrap();
+        // Get the data of the join column (existence already checked above)
+        let left_join_col_data = self
+            .get_column(join_column)
+            .expect("join column exists in left DataFrame");
+        let right_join_col_data = other
+            .get_column(join_column)
+            .expect("join column exists in right DataFrame");
 
         // Create a map of row indices for the join key in the right DataFrame for performance
         let mut right_indices_map: HashMap<&T, Vec<usize>> = HashMap::new();
@@ -308,18 +315,19 @@ impl<T: Debug + Clone> DataFrame<T> {
                     for column_name in &self.columns {
                         joined_data
                             .get_mut(column_name)
-                            .unwrap()
+                            .expect("column exists in joined data schema")
                             .push(self.data[column_name][i].clone());
                     }
                     // Add the data from the right side (excluding the join column) to the joined data
                     for original_right_col in &other.columns {
                         if original_right_col != join_column {
                             // Add using the renamed column name
-                            let final_col_name =
-                                right_col_rename_map.get(original_right_col).unwrap();
+                            let final_col_name = right_col_rename_map
+                                .get(original_right_col)
+                                .expect("renamed column should exist in map");
                             joined_data
                                 .get_mut(final_col_name)
-                                .unwrap()
+                                .expect("renamed column should exist in joined data")
                                 .push(other.data[original_right_col][j].clone());
                         }
                     }
@@ -523,8 +531,10 @@ pub fn read_csv<T: Debug + Clone + FromStr + 'static>(
                     std::any::type_name::<T>()
                 ) // T: 'static
             })?;
-            // Add the value to the Vec in the data HashMap (unwrap is safe because the key should exist)
-            data.get_mut(column_name).unwrap().push(parsed_value);
+            // Add the value to the Vec in the data HashMap (column initialized above)
+            data.get_mut(column_name)
+                .expect("column exists in data schema")
+                .push(parsed_value);
         }
         row_count += 1; // Count the number of processed rows
     }
@@ -630,7 +640,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     // === CSV Reading (f64) ===
     println!("--- CSV Reading Example (f64) ---");
     let file_path = std::env::temp_dir().join("data_temp.csv");
-    let file_path_str = file_path.to_str().unwrap();
+    let file_path_str = file_path
+        .to_str()
+        .expect("temp directory path should be valid UTF-8");
     // Create dummy CSV
     {
         let mut file = File::create(&file_path)?;

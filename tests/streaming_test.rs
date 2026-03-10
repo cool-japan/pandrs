@@ -223,7 +223,7 @@ fn test_real_time_analytics() -> Result<()> {
     drop(sender);
 
     // Stop analytics
-    analytics.stop();
+    analytics.stop().expect("Failed to stop analytics");
 
     Ok(())
 }

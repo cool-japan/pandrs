@@ -6,6 +6,7 @@
 use crate::core::error::{Error, Result};
 use crate::optimized::jit::cache::{CacheStats, FunctionId};
 use crate::optimized::jit::config::{JITConfig, LoadBalancing, ParallelConfig, SIMDConfig};
+use crate::{read_lock_safe, write_lock_safe};
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant, SystemTime};
@@ -360,10 +361,13 @@ impl JitPerformanceMonitor {
         execution_time_ns: u64,
         memory_usage_bytes: usize,
         cpu_utilization: f64,
-    ) {
+    ) -> Result<()> {
         // Update function metrics in a separate scope
         {
-            let mut metrics = self.function_metrics.write().unwrap();
+            let mut metrics = write_lock_safe!(
+                self.function_metrics,
+                "performance monitor function metrics write"
+            )?;
             let function_metrics = metrics
                 .entry(function_id.clone())
                 .or_insert_with(|| FunctionPerformanceMetrics::new(function_id.clone()));
@@ -376,7 +380,8 @@ impl JitPerformanceMonitor {
         } // Write lock is released here
 
         // Update system metrics after releasing the write lock
-        self.update_system_metrics();
+        self.update_system_metrics()?;
+        Ok(())
     }
 
     /// Record compilation event
@@ -385,8 +390,11 @@ impl JitPerformanceMonitor {
         function_id: &FunctionId,
         compilation_time_ns: u64,
         success: bool,
-    ) {
-        let mut system_metrics = self.system_metrics.write().unwrap();
+    ) -> Result<()> {
+        let mut system_metrics = write_lock_safe!(
+            self.system_metrics,
+            "performance monitor system metrics write"
+        )?;
 
         system_metrics.total_compilations += 1;
         if !success {
@@ -398,6 +406,7 @@ impl JitPerformanceMonitor {
             system_metrics.avg_compilation_time_ns * (system_metrics.total_compilations - 1) as f64;
         system_metrics.avg_compilation_time_ns =
             (total_time + compilation_time_ns as f64) / system_metrics.total_compilations as f64;
+        Ok(())
     }
 
     /// Get performance metrics for a specific function
@@ -405,23 +414,35 @@ impl JitPerformanceMonitor {
         &self,
         function_id: &FunctionId,
     ) -> Option<FunctionPerformanceMetrics> {
-        self.function_metrics
-            .read()
-            .unwrap()
-            .get(function_id)
-            .cloned()
+        read_lock_safe!(
+            self.function_metrics,
+            "performance monitor function metrics read"
+        )
+        .ok()?
+        .get(function_id)
+        .cloned()
     }
 
     /// Get system-wide performance metrics
-    pub fn get_system_metrics(&self) -> SystemPerformanceMetrics {
-        let mut metrics = self.system_metrics.read().unwrap().clone();
+    pub fn get_system_metrics(&self) -> Result<SystemPerformanceMetrics> {
+        let mut metrics = read_lock_safe!(
+            self.system_metrics,
+            "performance monitor system metrics read"
+        )?
+        .clone();
         metrics.uptime = self.start_time.elapsed();
-        metrics
+        Ok(metrics)
     }
 
     /// Get top performing functions
-    pub fn get_top_performing_functions(&self, count: usize) -> Vec<FunctionPerformanceMetrics> {
-        let metrics = self.function_metrics.read().unwrap();
+    pub fn get_top_performing_functions(
+        &self,
+        count: usize,
+    ) -> Result<Vec<FunctionPerformanceMetrics>> {
+        let metrics = read_lock_safe!(
+            self.function_metrics,
+            "performance monitor function metrics read"
+        )?;
         let mut functions: Vec<_> = metrics.values().cloned().collect();
 
         functions.sort_by(|a, b| {
@@ -430,16 +451,19 @@ impl JitPerformanceMonitor {
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
 
-        functions.into_iter().take(count).collect()
+        Ok(functions.into_iter().take(count).collect())
     }
 
     /// Get functions that need optimization
     pub fn get_functions_needing_optimization(
         &self,
-    ) -> Vec<(FunctionId, Vec<OptimizationSuggestion>)> {
-        let metrics = self.function_metrics.read().unwrap();
+    ) -> Result<Vec<(FunctionId, Vec<OptimizationSuggestion>)>> {
+        let metrics = read_lock_safe!(
+            self.function_metrics,
+            "performance monitor function metrics read"
+        )?;
 
-        metrics
+        Ok(metrics
             .iter()
             .filter_map(|(id, metrics)| {
                 if !metrics.optimization_suggestions.is_empty() {
@@ -448,12 +472,12 @@ impl JitPerformanceMonitor {
                     None
                 }
             })
-            .collect()
+            .collect())
     }
 
     /// Suggest configuration optimizations based on current performance
-    pub fn suggest_config_optimizations(&self) -> Vec<ConfigOptimization> {
-        let system_metrics = self.get_system_metrics();
+    pub fn suggest_config_optimizations(&self) -> Result<Vec<ConfigOptimization>> {
+        let system_metrics = self.get_system_metrics()?;
         let mut suggestions = Vec::new();
 
         // Suggest parallel optimization if CPU utilization is low
@@ -486,15 +510,15 @@ impl JitPerformanceMonitor {
             });
         }
 
-        suggestions
+        Ok(suggestions)
     }
 
     /// Apply automatic optimizations based on performance data
     pub fn apply_automatic_optimizations(&self) -> Result<Vec<String>> {
-        let suggestions = self.suggest_config_optimizations();
+        let suggestions = self.suggest_config_optimizations()?;
         let mut applied_optimizations = Vec::new();
 
-        let mut config = self.config.write().unwrap();
+        let mut config = write_lock_safe!(self.config, "performance monitor config write")?;
 
         for suggestion in suggestions {
             match suggestion.config_type {
@@ -532,9 +556,15 @@ impl JitPerformanceMonitor {
     }
 
     /// Update system-wide metrics
-    fn update_system_metrics(&self) {
-        let function_metrics = self.function_metrics.read().unwrap();
-        let mut system_metrics = self.system_metrics.write().unwrap();
+    fn update_system_metrics(&self) -> Result<()> {
+        let function_metrics = read_lock_safe!(
+            self.function_metrics,
+            "performance monitor function metrics read"
+        )?;
+        let mut system_metrics = write_lock_safe!(
+            self.system_metrics,
+            "performance monitor system metrics write"
+        )?;
 
         // Calculate active functions and average performance
         system_metrics.active_functions = function_metrics.len();
@@ -558,12 +588,17 @@ impl JitPerformanceMonitor {
         }
 
         // Record performance history
-        let mut history = self.performance_history.write().unwrap();
+        let mut history = write_lock_safe!(
+            self.performance_history,
+            "performance monitor performance history write"
+        )?;
         history.push_back((Instant::now(), system_metrics.jit_utilization));
 
         if history.len() > 1000 {
             history.pop_front();
         }
+
+        Ok(())
     }
 }
 
@@ -627,12 +662,16 @@ mod tests {
         let monitor = JitPerformanceMonitor::new(JITConfig::default());
         let function_id = FunctionId::new("test", "f64", "f64", "test_op", 1);
 
-        monitor.record_function_execution(&function_id, 1_000_000, 1024, 0.8);
+        monitor
+            .record_function_execution(&function_id, 1_000_000, 1024, 0.8)
+            .expect("operation should succeed");
 
         let metrics = monitor.get_function_metrics(&function_id);
         assert!(metrics.is_some());
 
-        let system_metrics = monitor.get_system_metrics();
+        let system_metrics = monitor
+            .get_system_metrics()
+            .expect("operation should succeed");
         assert_eq!(system_metrics.active_functions, 1);
     }
 

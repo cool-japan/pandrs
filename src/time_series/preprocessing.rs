@@ -734,7 +734,7 @@ impl TimeSeriesPreprocessor {
             ));
         }
 
-        valid_values.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        valid_values.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
         let median = if valid_values.len() % 2 == 0 {
             (valid_values[valid_values.len() / 2 - 1] + valid_values[valid_values.len() / 2]) / 2.0
         } else {
@@ -812,7 +812,7 @@ impl TimeSeriesPreprocessor {
 
         // Calculate median
         let mut sorted = values.clone();
-        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
         let median = if sorted.len() % 2 == 0 {
             (sorted[sorted.len() / 2 - 1] + sorted[sorted.len() / 2]) / 2.0
         } else {
@@ -822,7 +822,7 @@ impl TimeSeriesPreprocessor {
         // Calculate MAD
         let deviations: Vec<f64> = values.iter().map(|&x| (x - median).abs()).collect();
         let mut sorted_deviations = deviations;
-        sorted_deviations.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        sorted_deviations.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
         let mad = if sorted_deviations.len() % 2 == 0 {
             (sorted_deviations[sorted_deviations.len() / 2 - 1]
                 + sorted_deviations[sorted_deviations.len() / 2])
@@ -858,7 +858,7 @@ impl TimeSeriesPreprocessor {
             .collect();
 
         let mut sorted = values;
-        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
 
         let n = sorted.len();
         let q1 = sorted[n / 4];
@@ -1009,7 +1009,7 @@ impl TimeSeriesPreprocessor {
 
     fn robust_normalize(&self, values: &[f64]) -> Result<Vec<f64>> {
         let mut sorted = values.to_vec();
-        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
 
         let median = if sorted.len() % 2 == 0 {
             (sorted[sorted.len() / 2 - 1] + sorted[sorted.len() / 2]) / 2.0
@@ -1019,7 +1019,7 @@ impl TimeSeriesPreprocessor {
 
         let deviations: Vec<f64> = values.iter().map(|&x| (x - median).abs()).collect();
         let mut sorted_deviations = deviations;
-        sorted_deviations.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        sorted_deviations.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
         let mad = if sorted_deviations.len() % 2 == 0 {
             (sorted_deviations[sorted_deviations.len() / 2 - 1]
                 + sorted_deviations[sorted_deviations.len() / 2])
@@ -1051,7 +1051,8 @@ impl TimeSeriesPreprocessor {
             .enumerate()
             .map(|(i, &val)| (val, i))
             .collect();
-        sorted_with_indices.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+        sorted_with_indices
+            .sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
 
         let n = values.len() as f64;
         let mut normalized = vec![0.0; values.len()];
@@ -1190,7 +1191,8 @@ mod tests {
         for i in 0..50 {
             let timestamp = Utc
                 .timestamp_opt(1640995200 + (i * 86400) as i64, 0)
-                .unwrap();
+                .single()
+                .expect("timestamp should be unambiguous");
             let value = if i == 10 || i == 30 {
                 100.0 // Outliers
             } else {
@@ -1199,7 +1201,10 @@ mod tests {
             builder = builder.add_point(timestamp, value);
         }
 
-        builder.frequency(Frequency::Daily).build().unwrap()
+        builder
+            .frequency(Frequency::Daily)
+            .build()
+            .expect("operation should succeed")
     }
 
     #[test]
@@ -1209,7 +1214,9 @@ mod tests {
             .with_missing_value_strategy(MissingValueStrategy::LinearInterpolation)
             .with_outlier_detection(OutlierDetection::None); // Disable outlier detection
 
-        let result = preprocessor.preprocess(&ts).unwrap();
+        let result = preprocessor
+            .preprocess(&ts)
+            .expect("operation should succeed");
         assert_eq!(result.processed_series.len(), ts.len());
     }
 
@@ -1219,7 +1226,9 @@ mod tests {
         let preprocessor = TimeSeriesPreprocessor::new()
             .with_outlier_detection(OutlierDetection::ModifiedZScore { threshold: 2.0 });
 
-        let result = preprocessor.preprocess(&ts).unwrap();
+        let result = preprocessor
+            .preprocess(&ts)
+            .expect("operation should succeed");
         assert!(result.outlier_info.outlier_indices.len() > 0);
         assert!(result.processed_series.len() < ts.len()); // Outliers removed
     }
@@ -1231,7 +1240,9 @@ mod tests {
             .with_normalization(Normalization::MinMax)
             .with_outlier_detection(OutlierDetection::None);
 
-        let result = preprocessor.preprocess(&ts).unwrap();
+        let result = preprocessor
+            .preprocess(&ts)
+            .expect("operation should succeed");
 
         // Check that values are normalized to [0, 1]
         let values: Vec<f64> = (0..result.processed_series.len())
@@ -1256,7 +1267,9 @@ mod tests {
             })
             .with_outlier_detection(OutlierDetection::None);
 
-        let result = preprocessor.preprocess(&ts).unwrap();
+        let result = preprocessor
+            .preprocess(&ts)
+            .expect("operation should succeed");
 
         // After differencing, the series should be shorter
         assert!(result.processed_series.len() <= ts.len());
@@ -1278,7 +1291,9 @@ mod tests {
             })
             .with_outlier_detection(OutlierDetection::None);
 
-        let result = preprocessor.preprocess(&ts).unwrap();
+        let result = preprocessor
+            .preprocess(&ts)
+            .expect("operation should succeed");
 
         assert_eq!(result.processed_series.len(), ts.len());
 
@@ -1301,7 +1316,9 @@ mod tests {
             })
             .with_normalization(Normalization::ZScore);
 
-        let result = preprocessor.preprocess(&ts).unwrap();
+        let result = preprocessor
+            .preprocess(&ts)
+            .expect("operation should succeed");
 
         // Check that multiple transformations were applied
         assert!(result.transformations.len() > 1);
@@ -1315,7 +1332,9 @@ mod tests {
     fn test_zscore_normalization() {
         let values = vec![1.0, 2.0, 3.0, 4.0, 5.0];
         let preprocessor = TimeSeriesPreprocessor::new();
-        let normalized = preprocessor.zscore_normalize(&values).unwrap();
+        let normalized = preprocessor
+            .zscore_normalize(&values)
+            .expect("operation should succeed");
 
         // Check that mean is approximately 0 and std is approximately 1
         let mean = normalized.iter().sum::<f64>() / normalized.len() as f64;
@@ -1336,25 +1355,30 @@ mod tests {
         for (i, &val) in values.iter().enumerate() {
             let timestamp = Utc
                 .timestamp_opt(1640995200 + (i * 86400) as i64, 0)
-                .unwrap();
+                .single()
+                .expect("timestamp should be unambiguous");
             builder = builder.add_point(timestamp, val);
         }
-        let ts = builder.build().unwrap();
+        let ts = builder.build().expect("operation should succeed");
 
         let preprocessor = TimeSeriesPreprocessor::new();
 
         // Test Z-score detection
-        let zscore_outliers = preprocessor.detect_outliers_zscore(&ts, 2.0).unwrap();
+        let zscore_outliers = preprocessor
+            .detect_outliers_zscore(&ts, 2.0)
+            .expect("operation should succeed");
         assert!(!zscore_outliers.is_empty());
 
         // Test Modified Z-score detection
         let modified_outliers = preprocessor
             .detect_outliers_modified_zscore(&ts, 2.0)
-            .unwrap();
+            .expect("operation should succeed");
         assert!(!modified_outliers.is_empty());
 
         // Test IQR detection
-        let iqr_outliers = preprocessor.detect_outliers_iqr(&ts, 1.5).unwrap();
+        let iqr_outliers = preprocessor
+            .detect_outliers_iqr(&ts, 1.5)
+            .expect("operation should succeed");
         assert!(!iqr_outliers.is_empty());
     }
 }

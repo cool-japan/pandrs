@@ -104,13 +104,13 @@ where
     /// ```no_run
     /// use pandrs::{Series, vis::plotters_ext::{PlotSettings, PlotKind, OutputType}};
     ///
-    /// let series = Series::new(vec![1, 2, 3, 4, 5], Some("data".to_string())).unwrap();
+    /// let series = Series::new(vec![1, 2, 3, 4, 5], Some("data".to_string())).expect("operation should succeed");
     /// let settings = PlotSettings {
     ///     title: "My Plot".to_string(),
     ///     plot_kind: PlotKind::Line,
     ///     ..PlotSettings::default()
     /// };
-    /// series.plotters_plot("my_plot.png", settings).unwrap();
+    /// series.plotters_plot("my_plot.png", settings).expect("operation should succeed");
     /// ```
     pub fn plotters_plot<P: AsRef<Path>>(&self, path: P, mut settings: PlotSettings) -> Result<()> {
         let values: Vec<f64> = self.values().iter().map(|v| (*v).into()).collect();
@@ -147,12 +147,12 @@ where
     /// ```no_run
     /// use pandrs::{Series, vis::plotters_ext::{PlotSettings, OutputType}};
     ///
-    /// let series = Series::new(vec![1, 2, 3, 4, 5, 1, 2, 3, 2, 1], Some("data".to_string())).unwrap();
+    /// let series = Series::new(vec![1, 2, 3, 4, 5, 1, 2, 3, 2, 1], Some("data".to_string())).expect("operation should succeed");
     /// let settings = PlotSettings {
     ///     title: "Histogram".to_string(),
     ///     ..PlotSettings::default()
     /// };
-    /// series.plotters_histogram("histogram.png", 5, settings).unwrap();
+    /// series.plotters_histogram("histogram.png", 5, settings).expect("operation should succeed");
     /// ```
     pub fn plotters_histogram<P: AsRef<Path>>(
         &self,
@@ -205,7 +205,7 @@ impl DataFrame {
     ///     plot_kind: PlotKind::Line,
     ///     ..PlotSettings::default()
     /// };
-    /// df.plotters_plot_column("value", "column_plot.png", settings).unwrap();
+    /// df.plotters_plot_column("value", "column_plot.png", settings).expect("operation should succeed");
     /// ```
     pub fn plotters_plot_column<P: AsRef<Path>>(
         &self,
@@ -222,7 +222,7 @@ impl DataFrame {
         }
 
         // Get numeric data
-        let column: &Series<f64> = self.get_column(col_name).unwrap();
+        let column: &Series<f64> = self.get_column(col_name).expect("operation should succeed");
         let values = column.as_f64()?;
 
         // Values are already f64, no need to handle NA conversion
@@ -266,7 +266,7 @@ impl DataFrame {
     ///     plot_kind: PlotKind::Line,
     ///     ..PlotSettings::default()
     /// };
-    /// df.plotters_plot_columns(&["value1", "value2"], "multi_plot.png", settings).unwrap();
+    /// df.plotters_plot_columns(&["value1", "value2"], "multi_plot.png", settings).expect("operation should succeed");
     /// ```
     pub fn plotters_plot_columns<P: AsRef<Path>>(
         &self,
@@ -298,7 +298,7 @@ impl DataFrame {
         // Prepare data for each column
         let mut series_data = Vec::new();
         for (i, &col_name) in col_names.iter().enumerate() {
-            let column: &Series<f64> = self.get_column(col_name).unwrap();
+            let column: &Series<f64> = self.get_column(col_name).expect("operation should succeed");
             let values = column.as_f64()?;
 
             // Values are already f64, no need to handle NA conversion
@@ -338,7 +338,7 @@ impl DataFrame {
     ///     plot_kind: PlotKind::Scatter,
     ///     ..PlotSettings::default()
     /// };
-    /// df.plotters_scatter("x_col", "y_col", "scatter_plot.png", settings).unwrap();
+    /// df.plotters_scatter("x_col", "y_col", "scatter_plot.png", settings).expect("operation should succeed");
     /// ```
     pub fn plotters_scatter<P: AsRef<Path>>(
         &self,
@@ -362,8 +362,8 @@ impl DataFrame {
         }
 
         // Get numeric data
-        let x_column: &Series<f64> = self.get_column(x_col).unwrap();
-        let y_column: &Series<f64> = self.get_column(y_col).unwrap();
+        let x_column: &Series<f64> = self.get_column(x_col).expect("operation should succeed");
+        let y_column: &Series<f64> = self.get_column(y_col).expect("operation should succeed");
         let x_values = x_column.as_f64()?;
         let y_values = y_column.as_f64()?;
 
@@ -421,7 +421,7 @@ impl DataFrame {
     ///     plot_kind: PlotKind::BoxPlot,
     ///     ..PlotSettings::default()
     /// };
-    /// df.plotters_boxplot("category", "value", "boxplot.png", settings).unwrap();
+    /// df.plotters_boxplot("category", "value", "boxplot.png", settings).expect("operation should succeed");
     /// ```
     pub fn plotters_boxplot<P: AsRef<Path>>(
         &self,
@@ -445,8 +445,12 @@ impl DataFrame {
         }
 
         // Create mapping of categories and their values
-        let cat_column: &Series<String> = self.get_column(category_col).unwrap();
-        let val_column: &Series<f64> = self.get_column(value_col).unwrap();
+        let cat_column: &Series<String> = self
+            .get_column(category_col)
+            .expect("operation should succeed");
+        let val_column: &Series<f64> = self
+            .get_column(value_col)
+            .expect("operation should succeed");
         let categories = cat_column
             .values()
             .iter()

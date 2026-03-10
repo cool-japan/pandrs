@@ -391,8 +391,13 @@ impl TimeSeries {
             ));
         }
 
-        let start = *self.index.start().unwrap();
-        let end = *self.index.end().unwrap();
+        let start = *self.index.start().ok_or_else(|| {
+            Error::InvalidInput("Time series index has no start date".to_string())
+        })?;
+        let end = *self
+            .index
+            .end()
+            .ok_or_else(|| Error::InvalidInput("Time series index has no end date".to_string()))?;
         let new_index = DateTimeIndex::date_range(start, end, frequency)?;
 
         let mut new_values = Vec::new();
@@ -801,14 +806,24 @@ mod tests {
 
     fn create_test_series() -> TimeSeries {
         let timestamps = vec![
-            Utc.timestamp_opt(1640995200, 0).unwrap(), // 2022-01-01
-            Utc.timestamp_opt(1641081600, 0).unwrap(), // 2022-01-02
-            Utc.timestamp_opt(1641168000, 0).unwrap(), // 2022-01-03
-            Utc.timestamp_opt(1641254400, 0).unwrap(), // 2022-01-04
-            Utc.timestamp_opt(1641340800, 0).unwrap(), // 2022-01-05
+            Utc.timestamp_opt(1640995200, 0)
+                .single()
+                .expect("operation should succeed"), // 2022-01-01
+            Utc.timestamp_opt(1641081600, 0)
+                .single()
+                .expect("operation should succeed"), // 2022-01-02
+            Utc.timestamp_opt(1641168000, 0)
+                .single()
+                .expect("operation should succeed"), // 2022-01-03
+            Utc.timestamp_opt(1641254400, 0)
+                .single()
+                .expect("operation should succeed"), // 2022-01-04
+            Utc.timestamp_opt(1641340800, 0)
+                .single()
+                .expect("operation should succeed"), // 2022-01-05
         ];
         let values = vec![1.0, 2.0, 3.0, 4.0, 5.0];
-        TimeSeries::from_vecs(timestamps, values).unwrap()
+        TimeSeries::from_vecs(timestamps, values).expect("operation should succeed")
     }
 
     #[test]
@@ -816,15 +831,21 @@ mod tests {
         let ts = create_test_series();
         assert_eq!(ts.len(), 5);
         assert!(!ts.is_empty());
-        assert_eq!(ts.get(0).unwrap().1, 1.0);
+        assert_eq!(ts.get(0).expect("operation should succeed").1, 1.0);
     }
 
     #[test]
     fn test_frequency_inference() {
         let timestamps = vec![
-            Utc.timestamp_opt(1640995200, 0).unwrap(),
-            Utc.timestamp_opt(1641081600, 0).unwrap(),
-            Utc.timestamp_opt(1641168000, 0).unwrap(),
+            Utc.timestamp_opt(1640995200, 0)
+                .single()
+                .expect("operation should succeed"),
+            Utc.timestamp_opt(1641081600, 0)
+                .single()
+                .expect("operation should succeed"),
+            Utc.timestamp_opt(1641168000, 0)
+                .single()
+                .expect("operation should succeed"),
         ];
         let index = DateTimeIndex::new(timestamps);
         assert_eq!(index.frequency, Some(Frequency::Daily));
@@ -833,33 +854,63 @@ mod tests {
     #[test]
     fn test_rolling_mean() {
         let ts = create_test_series();
-        let rolling = ts.rolling_mean(2).unwrap();
+        let rolling = ts.rolling_mean(2).expect("operation should succeed");
 
-        assert!(rolling.values.get_f64(0).unwrap().is_nan());
-        assert_eq!(rolling.values.get_f64(1).unwrap(), 1.5); // (1+2)/2
-        assert_eq!(rolling.values.get_f64(2).unwrap(), 2.5); // (2+3)/2
+        assert!(rolling
+            .values
+            .get_f64(0)
+            .expect("operation should succeed")
+            .is_nan());
+        assert_eq!(
+            rolling.values.get_f64(1).expect("operation should succeed"),
+            1.5
+        ); // (1+2)/2
+        assert_eq!(
+            rolling.values.get_f64(2).expect("operation should succeed"),
+            2.5
+        ); // (2+3)/2
     }
 
     #[test]
     fn test_diff() {
         let ts = create_test_series();
-        let diff = ts.diff(1).unwrap();
+        let diff = ts.diff(1).expect("operation should succeed");
 
-        assert!(diff.values.get_f64(0).unwrap().is_nan());
-        assert_eq!(diff.values.get_f64(1).unwrap(), 1.0); // 2-1
-        assert_eq!(diff.values.get_f64(2).unwrap(), 1.0); // 3-2
+        assert!(diff
+            .values
+            .get_f64(0)
+            .expect("operation should succeed")
+            .is_nan());
+        assert_eq!(
+            diff.values.get_f64(1).expect("operation should succeed"),
+            1.0
+        ); // 2-1
+        assert_eq!(
+            diff.values.get_f64(2).expect("operation should succeed"),
+            1.0
+        ); // 3-2
     }
 
     #[test]
     fn test_time_series_builder() {
         let ts = TimeSeriesBuilder::new()
-            .add_point(Utc.timestamp_opt(1640995200, 0).unwrap(), 1.0)
-            .add_point(Utc.timestamp_opt(1641081600, 0).unwrap(), 2.0)
+            .add_point(
+                Utc.timestamp_opt(1640995200, 0)
+                    .single()
+                    .expect("operation should succeed"),
+                1.0,
+            )
+            .add_point(
+                Utc.timestamp_opt(1641081600, 0)
+                    .single()
+                    .expect("operation should succeed"),
+                2.0,
+            )
             .name("test_series".to_string())
             .frequency(Frequency::Daily)
             .metadata("source".to_string(), "test".to_string())
             .build()
-            .unwrap();
+            .expect("operation should succeed");
 
         assert_eq!(ts.len(), 2);
         assert_eq!(ts.name, Some("test_series".to_string()));
@@ -869,20 +920,36 @@ mod tests {
     #[test]
     fn test_slice() {
         let ts = create_test_series();
-        let sliced = ts.slice(1, 4).unwrap();
+        let sliced = ts.slice(1, 4).expect("operation should succeed");
 
         assert_eq!(sliced.len(), 3);
-        assert_eq!(sliced.values.get_f64(0).unwrap(), 2.0);
-        assert_eq!(sliced.values.get_f64(2).unwrap(), 4.0);
+        assert_eq!(
+            sliced.values.get_f64(0).expect("operation should succeed"),
+            2.0
+        );
+        assert_eq!(
+            sliced.values.get_f64(2).expect("operation should succeed"),
+            4.0
+        );
     }
 
     #[test]
     fn test_shift() {
         let ts = create_test_series();
-        let shifted = ts.shift(1).unwrap();
+        let shifted = ts.shift(1).expect("operation should succeed");
 
-        assert!(shifted.values.get_f64(0).unwrap().is_nan());
-        assert_eq!(shifted.values.get_f64(1).unwrap(), 1.0);
-        assert_eq!(shifted.values.get_f64(2).unwrap(), 2.0);
+        assert!(shifted
+            .values
+            .get_f64(0)
+            .expect("operation should succeed")
+            .is_nan());
+        assert_eq!(
+            shifted.values.get_f64(1).expect("operation should succeed"),
+            1.0
+        );
+        assert_eq!(
+            shifted.values.get_f64(2).expect("operation should succeed"),
+            2.0
+        );
     }
 }

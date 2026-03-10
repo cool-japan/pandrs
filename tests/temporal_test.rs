@@ -1,3 +1,4 @@
+#![allow(clippy::result_large_err)]
 use chrono::NaiveDate;
 use pandrs::temporal::{date_range, Frequency, Temporal, TimeSeries};
 use pandrs::NA;

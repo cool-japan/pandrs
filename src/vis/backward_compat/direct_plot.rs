@@ -33,8 +33,8 @@ where
     /// use pandrs::Series;
     ///
     /// let data = vec![1, 2, 3, 4, 5];
-    /// let series = Series::new(data, Some("values".to_string())).unwrap();
-    /// series.plot_to("series_plot.png", None).unwrap();
+    /// let series = Series::new(data, Some("values".to_string())).expect("operation should succeed");
+    /// series.plot_to("series_plot.png", None).expect("operation should succeed");
     /// ```
     pub fn plot_to<P: AsRef<Path>>(&self, path: P, title: Option<&str>) -> Result<()> {
         let mut settings = PlotSettings::default();
@@ -222,7 +222,7 @@ impl DataFrame {
     ///
     /// let mut df = DataFrame::new();
     /// // Add data to the DataFrame...
-    /// df.plot_column("value", "column_plot.png", None).unwrap();
+    /// df.plot_column("value", "column_plot.png", None).expect("operation should succeed");
     /// ```
     pub fn plot_column<P: AsRef<Path>>(
         &self,

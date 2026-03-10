@@ -241,7 +241,10 @@ impl<'a> DataFrameGroupBy<'a> {
                         .filter_map(|&i| all_values.get(i).copied())
                         .collect();
                     let aggregated = agg_fn(&group_values);
-                    agg_values.get_mut(col).unwrap().push(aggregated);
+                    agg_values
+                        .get_mut(col)
+                        .expect("test should succeed")
+                        .push(aggregated);
                 }
             }
         }
@@ -302,19 +305,25 @@ impl<'a> DataFrameGroupBy<'a> {
             }
 
             let target_idx = if first {
-                *indices.first().unwrap()
+                *indices.first().expect("test should succeed")
             } else {
-                *indices.last().unwrap()
+                *indices.last().expect("test should succeed")
             };
 
             // Get first/last value for each column
             for col in &other_cols {
                 if let Ok(all_values) = self.df.get_column_numeric_values(col) {
                     let value = all_values.get(target_idx).copied().unwrap_or(f64::NAN);
-                    numeric_values.get_mut(col).unwrap().push(value);
+                    numeric_values
+                        .get_mut(col)
+                        .expect("test should succeed")
+                        .push(value);
                 } else if let Ok(all_values) = self.df.get_column_string_values(col) {
                     let value = all_values.get(target_idx).cloned().unwrap_or_default();
-                    string_values.get_mut(col).unwrap().push(value);
+                    string_values
+                        .get_mut(col)
+                        .expect("test should succeed")
+                        .push(value);
                 }
             }
         }
@@ -462,7 +471,7 @@ pub trait PandasGroupByExt {
     /// ```ignore
     /// use pandrs::dataframe::pandas_compat::PandasGroupByExt;
     ///
-    /// let result = df.groupby_multi(&["category"]).unwrap().sum().unwrap();
+    /// let result = df.groupby_multi(&["category"]).expect("test should succeed").sum().expect("test should succeed");
     /// ```
     fn groupby_multi(&self, by: &[&str]) -> Result<DataFrameGroupBy>;
 }
@@ -491,39 +500,54 @@ mod tests {
                 ],
                 Some("category".to_string()),
             )
-            .unwrap(),
+            .expect("test should succeed"),
         )
-        .unwrap();
+        .expect("test should succeed");
         df.add_column(
             "value".to_string(),
             Series::new(
                 vec![10.0, 20.0, 30.0, 40.0, 50.0],
                 Some("value".to_string()),
             )
-            .unwrap(),
+            .expect("test should succeed"),
         )
-        .unwrap();
+        .expect("test should succeed");
         df.add_column(
             "score".to_string(),
-            Series::new(vec![1.0, 2.0, 3.0, 4.0, 5.0], Some("score".to_string())).unwrap(),
+            Series::new(vec![1.0, 2.0, 3.0, 4.0, 5.0], Some("score".to_string()))
+                .expect("test should succeed"),
         )
-        .unwrap();
+        .expect("test should succeed");
         df
     }
 
     #[test]
     fn test_groupby_sum() {
         let df = create_test_df();
-        let result = df.groupby_multi(&["category"]).unwrap().sum().unwrap();
+        let result = df
+            .groupby_multi(&["category"])
+            .expect("test should succeed")
+            .sum()
+            .expect("test should succeed");
 
         assert_eq!(result.row_count(), 2);
 
-        let cats = result.get_column_string_values("category").unwrap();
-        let values = result.get_column_numeric_values("value").unwrap();
+        let cats = result
+            .get_column_string_values("category")
+            .expect("test should succeed");
+        let values = result
+            .get_column_numeric_values("value")
+            .expect("test should succeed");
 
         // Find indices for A and B
-        let a_idx = cats.iter().position(|c| c == "A").unwrap();
-        let b_idx = cats.iter().position(|c| c == "B").unwrap();
+        let a_idx = cats
+            .iter()
+            .position(|c| c == "A")
+            .expect("test should succeed");
+        let b_idx = cats
+            .iter()
+            .position(|c| c == "B")
+            .expect("test should succeed");
 
         // A: 10 + 30 + 50 = 90
         assert_eq!(values[a_idx], 90.0);
@@ -534,13 +558,27 @@ mod tests {
     #[test]
     fn test_groupby_mean() {
         let df = create_test_df();
-        let result = df.groupby_multi(&["category"]).unwrap().mean().unwrap();
+        let result = df
+            .groupby_multi(&["category"])
+            .expect("test should succeed")
+            .mean()
+            .expect("test should succeed");
 
-        let cats = result.get_column_string_values("category").unwrap();
-        let values = result.get_column_numeric_values("value").unwrap();
+        let cats = result
+            .get_column_string_values("category")
+            .expect("test should succeed");
+        let values = result
+            .get_column_numeric_values("value")
+            .expect("test should succeed");
 
-        let a_idx = cats.iter().position(|c| c == "A").unwrap();
-        let b_idx = cats.iter().position(|c| c == "B").unwrap();
+        let a_idx = cats
+            .iter()
+            .position(|c| c == "A")
+            .expect("test should succeed");
+        let b_idx = cats
+            .iter()
+            .position(|c| c == "B")
+            .expect("test should succeed");
 
         // A: (10 + 30 + 50) / 3 = 30
         assert_eq!(values[a_idx], 30.0);
@@ -551,13 +589,27 @@ mod tests {
     #[test]
     fn test_groupby_min() {
         let df = create_test_df();
-        let result = df.groupby_multi(&["category"]).unwrap().min().unwrap();
+        let result = df
+            .groupby_multi(&["category"])
+            .expect("test should succeed")
+            .min()
+            .expect("test should succeed");
 
-        let cats = result.get_column_string_values("category").unwrap();
-        let values = result.get_column_numeric_values("value").unwrap();
+        let cats = result
+            .get_column_string_values("category")
+            .expect("test should succeed");
+        let values = result
+            .get_column_numeric_values("value")
+            .expect("test should succeed");
 
-        let a_idx = cats.iter().position(|c| c == "A").unwrap();
-        let b_idx = cats.iter().position(|c| c == "B").unwrap();
+        let a_idx = cats
+            .iter()
+            .position(|c| c == "A")
+            .expect("test should succeed");
+        let b_idx = cats
+            .iter()
+            .position(|c| c == "B")
+            .expect("test should succeed");
 
         // A: min(10, 30, 50) = 10
         assert_eq!(values[a_idx], 10.0);
@@ -568,13 +620,27 @@ mod tests {
     #[test]
     fn test_groupby_max() {
         let df = create_test_df();
-        let result = df.groupby_multi(&["category"]).unwrap().max().unwrap();
+        let result = df
+            .groupby_multi(&["category"])
+            .expect("test should succeed")
+            .max()
+            .expect("test should succeed");
 
-        let cats = result.get_column_string_values("category").unwrap();
-        let values = result.get_column_numeric_values("value").unwrap();
+        let cats = result
+            .get_column_string_values("category")
+            .expect("test should succeed");
+        let values = result
+            .get_column_numeric_values("value")
+            .expect("test should succeed");
 
-        let a_idx = cats.iter().position(|c| c == "A").unwrap();
-        let b_idx = cats.iter().position(|c| c == "B").unwrap();
+        let a_idx = cats
+            .iter()
+            .position(|c| c == "A")
+            .expect("test should succeed");
+        let b_idx = cats
+            .iter()
+            .position(|c| c == "B")
+            .expect("test should succeed");
 
         // A: max(10, 30, 50) = 50
         assert_eq!(values[a_idx], 50.0);
@@ -585,13 +651,27 @@ mod tests {
     #[test]
     fn test_groupby_count() {
         let df = create_test_df();
-        let result = df.groupby_multi(&["category"]).unwrap().count().unwrap();
+        let result = df
+            .groupby_multi(&["category"])
+            .expect("test should succeed")
+            .count()
+            .expect("test should succeed");
 
-        let cats = result.get_column_string_values("category").unwrap();
-        let sizes = result.get_column_numeric_values("size").unwrap();
+        let cats = result
+            .get_column_string_values("category")
+            .expect("test should succeed");
+        let sizes = result
+            .get_column_numeric_values("size")
+            .expect("test should succeed");
 
-        let a_idx = cats.iter().position(|c| c == "A").unwrap();
-        let b_idx = cats.iter().position(|c| c == "B").unwrap();
+        let a_idx = cats
+            .iter()
+            .position(|c| c == "A")
+            .expect("test should succeed");
+        let b_idx = cats
+            .iter()
+            .position(|c| c == "B")
+            .expect("test should succeed");
 
         // A: 3 rows
         assert_eq!(sizes[a_idx], 3.0);
@@ -602,12 +682,23 @@ mod tests {
     #[test]
     fn test_groupby_std() {
         let df = create_test_df();
-        let result = df.groupby_multi(&["category"]).unwrap().std().unwrap();
+        let result = df
+            .groupby_multi(&["category"])
+            .expect("test should succeed")
+            .std()
+            .expect("test should succeed");
 
-        let cats = result.get_column_string_values("category").unwrap();
-        let values = result.get_column_numeric_values("value").unwrap();
+        let cats = result
+            .get_column_string_values("category")
+            .expect("test should succeed");
+        let values = result
+            .get_column_numeric_values("value")
+            .expect("test should succeed");
 
-        let a_idx = cats.iter().position(|c| c == "A").unwrap();
+        let a_idx = cats
+            .iter()
+            .position(|c| c == "A")
+            .expect("test should succeed");
 
         // A: std of [10, 30, 50] with sample std (n-1)
         // mean = 30, variance = ((10-30)^2 + (30-30)^2 + (50-30)^2) / 2 = 400
@@ -618,13 +709,27 @@ mod tests {
     #[test]
     fn test_groupby_first() {
         let df = create_test_df();
-        let result = df.groupby_multi(&["category"]).unwrap().first().unwrap();
+        let result = df
+            .groupby_multi(&["category"])
+            .expect("test should succeed")
+            .first()
+            .expect("test should succeed");
 
-        let cats = result.get_column_string_values("category").unwrap();
-        let values = result.get_column_numeric_values("value").unwrap();
+        let cats = result
+            .get_column_string_values("category")
+            .expect("test should succeed");
+        let values = result
+            .get_column_numeric_values("value")
+            .expect("test should succeed");
 
-        let a_idx = cats.iter().position(|c| c == "A").unwrap();
-        let b_idx = cats.iter().position(|c| c == "B").unwrap();
+        let a_idx = cats
+            .iter()
+            .position(|c| c == "A")
+            .expect("test should succeed");
+        let b_idx = cats
+            .iter()
+            .position(|c| c == "B")
+            .expect("test should succeed");
 
         // A first: 10
         assert_eq!(values[a_idx], 10.0);
@@ -635,13 +740,27 @@ mod tests {
     #[test]
     fn test_groupby_last() {
         let df = create_test_df();
-        let result = df.groupby_multi(&["category"]).unwrap().last().unwrap();
+        let result = df
+            .groupby_multi(&["category"])
+            .expect("test should succeed")
+            .last()
+            .expect("test should succeed");
 
-        let cats = result.get_column_string_values("category").unwrap();
-        let values = result.get_column_numeric_values("value").unwrap();
+        let cats = result
+            .get_column_string_values("category")
+            .expect("test should succeed");
+        let values = result
+            .get_column_numeric_values("value")
+            .expect("test should succeed");
 
-        let a_idx = cats.iter().position(|c| c == "A").unwrap();
-        let b_idx = cats.iter().position(|c| c == "B").unwrap();
+        let a_idx = cats
+            .iter()
+            .position(|c| c == "A")
+            .expect("test should succeed");
+        let b_idx = cats
+            .iter()
+            .position(|c| c == "B")
+            .expect("test should succeed");
 
         // A last: 50
         assert_eq!(values[a_idx], 50.0);
@@ -663,9 +782,9 @@ mod tests {
                 ],
                 Some("cat1".to_string()),
             )
-            .unwrap(),
+            .expect("test should succeed"),
         )
-        .unwrap();
+        .expect("test should succeed");
         df.add_column(
             "cat2".to_string(),
             Series::new(
@@ -677,16 +796,21 @@ mod tests {
                 ],
                 Some("cat2".to_string()),
             )
-            .unwrap(),
+            .expect("test should succeed"),
         )
-        .unwrap();
+        .expect("test should succeed");
         df.add_column(
             "value".to_string(),
-            Series::new(vec![1.0, 2.0, 3.0, 4.0], Some("value".to_string())).unwrap(),
+            Series::new(vec![1.0, 2.0, 3.0, 4.0], Some("value".to_string()))
+                .expect("test should succeed"),
         )
-        .unwrap();
+        .expect("test should succeed");
 
-        let result = df.groupby_multi(&["cat1", "cat2"]).unwrap().sum().unwrap();
+        let result = df
+            .groupby_multi(&["cat1", "cat2"])
+            .expect("test should succeed")
+            .sum()
+            .expect("test should succeed");
 
         // Should have 4 groups: (A,X), (A,Y), (B,X), (B,Y)
         assert_eq!(result.row_count(), 4);
@@ -701,18 +825,25 @@ mod tests {
                 vec!["A".to_string(), "A".to_string(), "A".to_string()],
                 Some("category".to_string()),
             )
-            .unwrap(),
+            .expect("test should succeed"),
         )
-        .unwrap();
+        .expect("test should succeed");
         df.add_column(
             "value".to_string(),
-            Series::new(vec![10.0, f64::NAN, 30.0], Some("value".to_string())).unwrap(),
+            Series::new(vec![10.0, f64::NAN, 30.0], Some("value".to_string()))
+                .expect("test should succeed"),
         )
-        .unwrap();
+        .expect("test should succeed");
 
-        let result = df.groupby_multi(&["category"]).unwrap().sum().unwrap();
+        let result = df
+            .groupby_multi(&["category"])
+            .expect("test should succeed")
+            .sum()
+            .expect("test should succeed");
 
-        let values = result.get_column_numeric_values("value").unwrap();
+        let values = result
+            .get_column_numeric_values("value")
+            .expect("test should succeed");
         // Sum should ignore NaN: 10 + 30 = 40
         assert_eq!(values[0], 40.0);
     }
@@ -722,25 +853,34 @@ mod tests {
         let df = create_test_df();
         let result = df
             .groupby_multi(&["category"])
-            .unwrap()
+            .expect("test should succeed")
             .agg(&[("value", "sum"), ("value", "mean"), ("score", "max")])
-            .unwrap();
+            .expect("test should succeed");
 
         assert!(result.contains_column("value_sum"));
         assert!(result.contains_column("value_mean"));
         assert!(result.contains_column("score_max"));
 
-        let value_sums = result.get_column_numeric_values("value_sum").unwrap();
-        let cats = result.get_column_string_values("category").unwrap();
+        let value_sums = result
+            .get_column_numeric_values("value_sum")
+            .expect("test should succeed");
+        let cats = result
+            .get_column_string_values("category")
+            .expect("test should succeed");
 
-        let a_idx = cats.iter().position(|c| c == "A").unwrap();
+        let a_idx = cats
+            .iter()
+            .position(|c| c == "A")
+            .expect("test should succeed");
         assert_eq!(value_sums[a_idx], 90.0);
     }
 
     #[test]
     fn test_ngroups() {
         let df = create_test_df();
-        let gb = df.groupby_multi(&["category"]).unwrap();
+        let gb = df
+            .groupby_multi(&["category"])
+            .expect("test should succeed");
         assert_eq!(gb.ngroups(), 2);
     }
 }

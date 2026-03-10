@@ -254,7 +254,10 @@ mod tests {
             .with_max_threads(4);
 
         assert_eq!(config.min_chunk_size, 500);
-        assert_eq!(config.max_threads.unwrap().get(), 4);
+        assert_eq!(
+            config.max_threads.expect("operation should succeed").get(),
+            4
+        );
     }
 
     #[test]

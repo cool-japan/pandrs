@@ -2,10 +2,41 @@
 //!
 //! This module provides direct connectivity to cloud storage services
 //! including AWS S3, Google Cloud Storage, and Azure Blob Storage.
+//!
+//! When the `cloud-storage` feature is enabled, real implementations backed by
+//! the `object_store` crate are used. Without the feature, the connectors still
+//! compile but every operation returns `Error::NotImplemented`.
 
 use crate::core::error::{Error, Result};
 use crate::dataframe::DataFrame;
 use std::collections::HashMap;
+
+#[cfg(feature = "cloud-storage")]
+use std::sync::Arc;
+
+#[cfg(feature = "cloud-storage")]
+use bytes::Bytes;
+
+#[cfg(feature = "cloud-storage")]
+use futures::StreamExt;
+
+#[cfg(feature = "cloud-storage")]
+use object_store::{
+    path::Path as ObjectPath, GetResult, ObjectMeta, ObjectStore, ObjectStoreExt, PutPayload,
+};
+
+#[cfg(feature = "cloud-storage")]
+use object_store::aws::AmazonS3Builder;
+
+#[cfg(feature = "cloud-storage")]
+use object_store::gcp::GoogleCloudStorageBuilder;
+
+#[cfg(feature = "cloud-storage")]
+use object_store::azure::MicrosoftAzureBuilder;
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Configuration types (always available, no feature gate required)
+// ──────────────────────────────────────────────────────────────────────────────
 
 /// Cloud storage configuration
 #[derive(Debug, Clone)]
@@ -16,7 +47,7 @@ pub struct CloudConfig {
     pub credentials: CloudCredentials,
     /// Region or location
     pub region: Option<String>,
-    /// Endpoint URL (for custom endpoints)
+    /// Endpoint URL (for custom endpoints or MinIO)
     pub endpoint: Option<String>,
     /// Connection timeout in seconds
     pub timeout: Option<u64>,
@@ -56,7 +87,7 @@ pub enum CloudCredentials {
         account_name: String,
         account_key: String,
     },
-    /// Environment-based authentication
+    /// Environment-based authentication (reads from env vars)
     Environment,
     /// Anonymous access
     Anonymous,
@@ -99,6 +130,60 @@ impl CloudConfig {
         self
     }
 }
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Shared data types
+// ──────────────────────────────────────────────────────────────────────────────
+
+/// Cloud object information
+#[derive(Debug, Clone)]
+pub struct CloudObject {
+    pub key: String,
+    pub size: u64,
+    pub last_modified: Option<String>,
+    pub etag: Option<String>,
+    pub content_type: Option<String>,
+}
+
+/// Object metadata
+#[derive(Debug, Clone)]
+pub struct ObjectMetadata {
+    pub size: u64,
+    pub last_modified: Option<String>,
+    pub content_type: Option<String>,
+    pub etag: Option<String>,
+    pub custom_metadata: HashMap<String, String>,
+}
+
+/// Supported file formats for cloud storage I/O
+#[derive(Debug, Clone)]
+pub enum FileFormat {
+    CSV { delimiter: char, has_header: bool },
+    Parquet,
+    JSON,
+    JSONL,
+}
+
+impl FileFormat {
+    /// Detect format from file extension
+    pub fn from_extension(path: &str) -> Option<Self> {
+        let extension = path.split('.').last()?.to_lowercase();
+        match extension.as_str() {
+            "csv" => Some(FileFormat::CSV {
+                delimiter: ',',
+                has_header: true,
+            }),
+            "parquet" | "pq" => Some(FileFormat::Parquet),
+            "json" => Some(FileFormat::JSON),
+            "jsonl" | "ndjson" => Some(FileFormat::JSONL),
+            _ => None,
+        }
+    }
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Trait
+// ──────────────────────────────────────────────────────────────────────────────
 
 /// Generic cloud storage connector trait
 #[allow(async_fn_in_trait)]
@@ -148,132 +233,238 @@ pub trait CloudConnector: Send + Sync {
     async fn delete_bucket(&self, bucket: &str) -> Result<()>;
 }
 
-/// Cloud object information
-#[derive(Debug, Clone)]
-pub struct CloudObject {
-    pub key: String,
-    pub size: u64,
-    pub last_modified: Option<String>,
-    pub etag: Option<String>,
-    pub content_type: Option<String>,
-}
+// ──────────────────────────────────────────────────────────────────────────────
+// Shared helpers (feature-gated)
+// ──────────────────────────────────────────────────────────────────────────────
 
-/// Object metadata
-#[derive(Debug, Clone)]
-pub struct ObjectMetadata {
-    pub size: u64,
-    pub last_modified: Option<String>,
-    pub content_type: Option<String>,
-    pub etag: Option<String>,
-    pub custom_metadata: HashMap<String, String>,
-}
-
-/// Supported file formats for cloud storage
-#[derive(Debug, Clone)]
-pub enum FileFormat {
-    CSV { delimiter: char, has_header: bool },
-    Parquet,
-    JSON,
-    JSONL,
-}
-
-impl FileFormat {
-    /// Detect format from file extension
-    pub fn from_extension(path: &str) -> Option<Self> {
-        let extension = path.split('.').last()?.to_lowercase();
-        match extension.as_str() {
-            "csv" => Some(FileFormat::CSV {
-                delimiter: ',',
-                has_header: true,
-            }),
-            "parquet" | "pq" => Some(FileFormat::Parquet),
-            "json" => Some(FileFormat::JSON),
-            "jsonl" | "ndjson" => Some(FileFormat::JSONL),
-            _ => None,
-        }
+/// Convert an `ObjectMeta` returned by `object_store` into our `CloudObject`.
+#[cfg(feature = "cloud-storage")]
+fn meta_to_cloud_object(meta: ObjectMeta) -> CloudObject {
+    CloudObject {
+        key: meta.location.to_string(),
+        size: meta.size as u64,
+        last_modified: Some(meta.last_modified.to_rfc3339()),
+        etag: meta.e_tag,
+        content_type: None,
     }
 }
 
-/// AWS S3 connector implementation
-pub struct S3Connector {
-    config: Option<CloudConfig>,
-    client: Option<S3Client>,
+/// Convert an `ObjectMeta` into our `ObjectMetadata`.
+#[cfg(feature = "cloud-storage")]
+fn meta_to_object_metadata(meta: ObjectMeta) -> ObjectMetadata {
+    ObjectMetadata {
+        size: meta.size as u64,
+        last_modified: Some(meta.last_modified.to_rfc3339()),
+        content_type: None,
+        etag: meta.e_tag,
+        custom_metadata: HashMap::new(),
+    }
 }
 
-// Mock S3 client for compilation
-struct S3Client;
+/// Serialize a `DataFrame` into a `PutPayload` using the requested `FileFormat`.
+#[cfg(feature = "cloud-storage")]
+fn df_to_payload(df: &DataFrame, format: &FileFormat) -> Result<PutPayload> {
+    use std::io::Write as IoWrite;
+
+    match format {
+        FileFormat::CSV { has_header, .. } => {
+            let tmp = tempfile::NamedTempFile::new().map_err(|e| Error::IoError(e.to_string()))?;
+            let path = tmp.path().to_owned();
+            let _ = has_header; // write_csv always writes header
+            crate::io::write_csv(df, &path)?;
+            let data = std::fs::read(&path).map_err(|e| Error::IoError(e.to_string()))?;
+            Ok(PutPayload::from(Bytes::from(data)))
+        }
+        FileFormat::JSON | FileFormat::JSONL => {
+            let tmp = tempfile::NamedTempFile::new().map_err(|e| Error::IoError(e.to_string()))?;
+            let path = tmp.path().to_owned();
+            crate::io::write_json(df, &path, crate::io::json::JsonOrient::Records)?;
+            let data = std::fs::read(&path).map_err(|e| Error::IoError(e.to_string()))?;
+            Ok(PutPayload::from(Bytes::from(data)))
+        }
+        FileFormat::Parquet => Err(Error::NotImplemented(
+            "Parquet write to cloud requires the 'parquet' feature".to_string(),
+        )),
+    }
+}
+
+/// Download `Bytes` to a temp file and parse it as a `DataFrame`.
+#[cfg(feature = "cloud-storage")]
+fn bytes_to_df(data: Bytes, format: &FileFormat) -> Result<DataFrame> {
+    use std::io::Write as IoWrite;
+
+    let mut tmp = tempfile::NamedTempFile::new().map_err(|e| Error::IoError(e.to_string()))?;
+    tmp.write_all(&data)
+        .map_err(|e| Error::IoError(e.to_string()))?;
+    tmp.flush().map_err(|e| Error::IoError(e.to_string()))?;
+    let path = tmp.path().to_owned();
+
+    match format {
+        FileFormat::CSV { has_header, .. } => crate::io::read_csv(&path, *has_header),
+        FileFormat::JSON | FileFormat::JSONL => crate::io::read_json(&path),
+        FileFormat::Parquet => Err(Error::NotImplemented(
+            "Parquet read from cloud requires the 'parquet' feature".to_string(),
+        )),
+    }
+}
+
+/// Build the full object path from `key`.
+///
+/// `object_store` paths do NOT include a bucket component — the store is
+/// already scoped to a single bucket.
+#[cfg(feature = "cloud-storage")]
+fn make_path(key: &str) -> ObjectPath {
+    ObjectPath::from(key)
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// S3 Connector
+// ──────────────────────────────────────────────────────────────────────────────
+
+/// AWS S3 connector
+///
+/// With the `cloud-storage` feature enabled this uses `object_store::aws`.
+/// Without the feature every method returns `Error::NotImplemented`.
+pub struct S3Connector {
+    #[cfg(feature = "cloud-storage")]
+    store: Option<Arc<dyn ObjectStore>>,
+    #[cfg(not(feature = "cloud-storage"))]
+    _phantom: std::marker::PhantomData<()>,
+}
 
 impl S3Connector {
-    /// Create new S3 connector
+    /// Create a new, unconnected S3 connector.
     pub fn new() -> Self {
         Self {
-            config: None,
-            client: None,
+            #[cfg(feature = "cloud-storage")]
+            store: None,
+            #[cfg(not(feature = "cloud-storage"))]
+            _phantom: std::marker::PhantomData,
         }
     }
 
-    /// Create S3 connector with immediate connection
+    /// Build and connect immediately using the provided configuration.
+    #[cfg(feature = "cloud-storage")]
     pub async fn connect_with_config(config: CloudConfig) -> Result<Self> {
         let mut connector = Self::new();
         connector.connect(&config).await?;
         Ok(connector)
     }
-}
 
-impl CloudConnector for S3Connector {
-    async fn connect(&mut self, config: &CloudConfig) -> Result<()> {
-        // In a real implementation, you'd initialize the AWS S3 client
-        // using aws-sdk-s3 or similar
+    /// Stub for no-feature builds.
+    #[cfg(not(feature = "cloud-storage"))]
+    pub async fn connect_with_config(_config: CloudConfig) -> Result<Self> {
+        Err(Error::NotImplemented(
+            "cloud-storage feature required for S3 connectivity".to_string(),
+        ))
+    }
+
+    #[cfg(feature = "cloud-storage")]
+    fn build_store(config: &CloudConfig, bucket: &str) -> Result<Arc<dyn ObjectStore>> {
+        let mut builder = AmazonS3Builder::new().with_bucket_name(bucket);
 
         match &config.credentials {
             CloudCredentials::AWS {
                 access_key_id,
                 secret_access_key,
-                ..
+                session_token,
             } => {
-                println!(
-                    "Connecting to S3 with access key: {}...",
-                    &access_key_id[..8]
-                );
+                builder = builder
+                    .with_access_key_id(access_key_id)
+                    .with_secret_access_key(secret_access_key);
+                if let Some(token) = session_token {
+                    builder = builder.with_token(token);
+                }
             }
             CloudCredentials::Environment => {
-                println!("Connecting to S3 using environment credentials");
+                let key_id = std::env::var("AWS_ACCESS_KEY_ID").unwrap_or_default();
+                let secret = std::env::var("AWS_SECRET_ACCESS_KEY").unwrap_or_default();
+                builder = builder
+                    .with_access_key_id(key_id)
+                    .with_secret_access_key(secret);
+                if let Ok(token) = std::env::var("AWS_SESSION_TOKEN") {
+                    builder = builder.with_token(token);
+                }
             }
             _ => {
                 return Err(Error::InvalidOperation(
-                    "Invalid credentials for S3".to_string(),
+                    "Invalid credentials for S3: expected AWS or Environment credentials"
+                        .to_string(),
                 ));
             }
         }
 
-        self.config = Some(config.clone());
-        self.client = Some(S3Client);
-        Ok(())
+        if let Some(region) = &config.region {
+            builder = builder.with_region(region);
+        }
+        if let Some(endpoint) = &config.endpoint {
+            builder = builder.with_endpoint(endpoint);
+            // MinIO / custom endpoints require HTTP and path-style access
+            builder = builder.with_allow_http(true);
+        }
+
+        let store = builder
+            .build()
+            .map_err(|e| Error::ConnectionError(format!("S3 build error: {e}")))?;
+        Ok(Arc::new(store))
+    }
+}
+
+impl Default for S3Connector {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl CloudConnector for S3Connector {
+    async fn connect(&mut self, config: &CloudConfig) -> Result<()> {
+        #[cfg(feature = "cloud-storage")]
+        {
+            let placeholder_bucket = config
+                .parameters
+                .get("bucket")
+                .cloned()
+                .unwrap_or_else(|| "default".to_string());
+            let store = Self::build_store(config, &placeholder_bucket)?;
+            self.store = Some(store);
+            Ok(())
+        }
+        #[cfg(not(feature = "cloud-storage"))]
+        {
+            let _ = config;
+            Err(Error::NotImplemented(
+                "cloud-storage feature required".to_string(),
+            ))
+        }
     }
 
     async fn list_objects(&self, bucket: &str, prefix: Option<&str>) -> Result<Vec<CloudObject>> {
-        let _client = self
-            .client
-            .as_ref()
-            .ok_or_else(|| Error::ConnectionError("Not connected to S3".to_string()))?;
+        #[cfg(feature = "cloud-storage")]
+        {
+            let store = self.store.as_ref().ok_or_else(|| {
+                Error::ConnectionError(
+                    "S3Connector not connected — call connect() first".to_string(),
+                )
+            })?;
+            let prefix_path = prefix.map(ObjectPath::from);
+            let results: Vec<_> = store.list(prefix_path.as_ref()).collect::<Vec<_>>().await;
 
-        // Mock implementation
-        Ok(vec![
-            CloudObject {
-                key: "data/sample.csv".to_string(),
-                size: 1024,
-                last_modified: Some("2025-06-15T10:00:00Z".to_string()),
-                etag: Some("\"abc123\"".to_string()),
-                content_type: Some("text/csv".to_string()),
-            },
-            CloudObject {
-                key: "data/large_dataset.parquet".to_string(),
-                size: 1048576,
-                last_modified: Some("2025-06-15T11:00:00Z".to_string()),
-                etag: Some("\"def456\"".to_string()),
-                content_type: Some("application/octet-stream".to_string()),
-            },
-        ])
+            let mut objects = Vec::with_capacity(results.len());
+            for item in results {
+                let meta = item.map_err(|e| {
+                    Error::IoError(format!("S3 list error for bucket '{}': {}", bucket, e))
+                })?;
+                objects.push(meta_to_cloud_object(meta));
+            }
+            Ok(objects)
+        }
+        #[cfg(not(feature = "cloud-storage"))]
+        {
+            let _ = (bucket, prefix);
+            Err(Error::NotImplemented(
+                "cloud-storage feature required".to_string(),
+            ))
+        }
     }
 
     async fn read_dataframe(
@@ -282,29 +473,29 @@ impl CloudConnector for S3Connector {
         key: &str,
         format: FileFormat,
     ) -> Result<DataFrame> {
-        let _client = self
-            .client
-            .as_ref()
-            .ok_or_else(|| Error::ConnectionError("Not connected to S3".to_string()))?;
-
-        println!(
-            "Reading {} from S3 bucket {} with format {:?}",
-            key, bucket, format
-        );
-
-        // Mock DataFrame creation
-        let mut df = DataFrame::new();
-        let series = crate::series::base::Series::new(
-            vec![
-                "cloud_data_1".to_string(),
-                "cloud_data_2".to_string(),
-                "cloud_data_3".to_string(),
-            ],
-            Some("s3_data".to_string()),
-        );
-        df.add_column("s3_data".to_string(), series?)?;
-
-        Ok(df)
+        #[cfg(feature = "cloud-storage")]
+        {
+            let store = self
+                .store
+                .as_ref()
+                .ok_or_else(|| Error::ConnectionError("S3Connector not connected".to_string()))?;
+            let path = make_path(key);
+            let result = store
+                .get(&path)
+                .await
+                .map_err(|e| Error::IoError(format!("S3 get '{}/{}': {}", bucket, key, e)))?;
+            let data: Bytes = result.bytes().await.map_err(|e| {
+                Error::IoError(format!("S3 read bytes '{}/{}': {}", bucket, key, e))
+            })?;
+            bytes_to_df(data, &format)
+        }
+        #[cfg(not(feature = "cloud-storage"))]
+        {
+            let _ = (bucket, key, format);
+            Err(Error::NotImplemented(
+                "cloud-storage feature required".to_string(),
+            ))
+        }
     }
 
     async fn write_dataframe(
@@ -314,105 +505,301 @@ impl CloudConnector for S3Connector {
         key: &str,
         format: FileFormat,
     ) -> Result<()> {
-        let _client = self
-            .client
-            .as_ref()
-            .ok_or_else(|| Error::ConnectionError("Not connected to S3".to_string()))?;
-
-        println!(
-            "Writing DataFrame to S3: s3://{}/{} (format: {:?})",
-            bucket, key, format
-        );
-        println!(
-            "DataFrame shape: {:?}",
-            (df.row_count(), df.column_names().len())
-        );
-
-        // In a real implementation, you'd:
-        // 1. Serialize the DataFrame to the specified format
-        // 2. Upload the data to S3
-
-        Ok(())
+        #[cfg(feature = "cloud-storage")]
+        {
+            let store = self
+                .store
+                .as_ref()
+                .ok_or_else(|| Error::ConnectionError("S3Connector not connected".to_string()))?;
+            let data = df_to_payload(df, &format)?;
+            let path = make_path(key);
+            store
+                .put(&path, data.into())
+                .await
+                .map_err(|e| Error::IoError(format!("S3 put '{}/{}': {}", bucket, key, e)))?;
+            Ok(())
+        }
+        #[cfg(not(feature = "cloud-storage"))]
+        {
+            let _ = (df, bucket, key, format);
+            Err(Error::NotImplemented(
+                "cloud-storage feature required".to_string(),
+            ))
+        }
     }
 
     async fn download_object(&self, bucket: &str, key: &str, local_path: &str) -> Result<()> {
-        println!("Downloading s3://{}/{} to {}", bucket, key, local_path);
-        Ok(())
+        #[cfg(feature = "cloud-storage")]
+        {
+            let store = self
+                .store
+                .as_ref()
+                .ok_or_else(|| Error::ConnectionError("S3Connector not connected".to_string()))?;
+            let path = make_path(key);
+            let result = store
+                .get(&path)
+                .await
+                .map_err(|e| Error::IoError(format!("S3 get '{}/{}': {}", bucket, key, e)))?;
+            let data: Bytes = result
+                .bytes()
+                .await
+                .map_err(|e| Error::IoError(format!("S3 read bytes: {}", e)))?;
+            std::fs::write(local_path, &data).map_err(|e| Error::IoError(e.to_string()))?;
+            Ok(())
+        }
+        #[cfg(not(feature = "cloud-storage"))]
+        {
+            let _ = (bucket, key, local_path);
+            Err(Error::NotImplemented(
+                "cloud-storage feature required".to_string(),
+            ))
+        }
     }
 
     async fn upload_object(&self, local_path: &str, bucket: &str, key: &str) -> Result<()> {
-        println!("Uploading {} to s3://{}/{}", local_path, bucket, key);
-        Ok(())
+        #[cfg(feature = "cloud-storage")]
+        {
+            let store = self
+                .store
+                .as_ref()
+                .ok_or_else(|| Error::ConnectionError("S3Connector not connected".to_string()))?;
+            let data = std::fs::read(local_path).map_err(|e| Error::IoError(e.to_string()))?;
+            let path = make_path(key);
+            store
+                .put(&path, Bytes::from(data).into())
+                .await
+                .map_err(|e| Error::IoError(format!("S3 put '{}/{}': {}", bucket, key, e)))?;
+            Ok(())
+        }
+        #[cfg(not(feature = "cloud-storage"))]
+        {
+            let _ = (local_path, bucket, key);
+            Err(Error::NotImplemented(
+                "cloud-storage feature required".to_string(),
+            ))
+        }
     }
 
     async fn delete_object(&self, bucket: &str, key: &str) -> Result<()> {
-        println!("Deleting s3://{}/{}", bucket, key);
-        Ok(())
+        #[cfg(feature = "cloud-storage")]
+        {
+            let store = self
+                .store
+                .as_ref()
+                .ok_or_else(|| Error::ConnectionError("S3Connector not connected".to_string()))?;
+            let path = make_path(key);
+            store
+                .delete(&path)
+                .await
+                .map_err(|e| Error::IoError(format!("S3 delete '{}/{}': {}", bucket, key, e)))?;
+            Ok(())
+        }
+        #[cfg(not(feature = "cloud-storage"))]
+        {
+            let _ = (bucket, key);
+            Err(Error::NotImplemented(
+                "cloud-storage feature required".to_string(),
+            ))
+        }
     }
 
     async fn get_object_metadata(&self, bucket: &str, key: &str) -> Result<ObjectMetadata> {
-        Ok(ObjectMetadata {
-            size: 1024,
-            last_modified: Some("2025-06-15T10:00:00Z".to_string()),
-            content_type: Some("text/csv".to_string()),
-            etag: Some("\"abc123\"".to_string()),
-            custom_metadata: HashMap::new(),
-        })
+        #[cfg(feature = "cloud-storage")]
+        {
+            let store = self
+                .store
+                .as_ref()
+                .ok_or_else(|| Error::ConnectionError("S3Connector not connected".to_string()))?;
+            let path = make_path(key);
+            let meta = store
+                .head(&path)
+                .await
+                .map_err(|e| Error::IoError(format!("S3 head '{}/{}': {}", bucket, key, e)))?;
+            Ok(meta_to_object_metadata(meta))
+        }
+        #[cfg(not(feature = "cloud-storage"))]
+        {
+            let _ = (bucket, key);
+            Err(Error::NotImplemented(
+                "cloud-storage feature required".to_string(),
+            ))
+        }
     }
 
     async fn object_exists(&self, bucket: &str, key: &str) -> Result<bool> {
-        // Mock implementation
-        Ok(key.contains("sample"))
+        #[cfg(feature = "cloud-storage")]
+        {
+            let store = self
+                .store
+                .as_ref()
+                .ok_or_else(|| Error::ConnectionError("S3Connector not connected".to_string()))?;
+            let path = make_path(key);
+            match store.head(&path).await {
+                Ok(_) => Ok(true),
+                Err(object_store::Error::NotFound { .. }) => Ok(false),
+                Err(e) => Err(Error::IoError(format!(
+                    "S3 head '{}/{}': {}",
+                    bucket, key, e
+                ))),
+            }
+        }
+        #[cfg(not(feature = "cloud-storage"))]
+        {
+            let _ = (bucket, key);
+            Err(Error::NotImplemented(
+                "cloud-storage feature required".to_string(),
+            ))
+        }
     }
 
-    async fn create_bucket(&self, bucket: &str) -> Result<()> {
-        println!("Creating S3 bucket: {}", bucket);
-        Ok(())
+    async fn create_bucket(&self, _bucket: &str) -> Result<()> {
+        // object_store does not expose a create-bucket API; bucket creation is
+        // typically done via the cloud provider's console or CLI.
+        Err(Error::NotImplemented(
+            "Bucket creation is not supported via object_store — use the cloud provider CLI or \
+             console"
+                .to_string(),
+        ))
     }
 
-    async fn delete_bucket(&self, bucket: &str) -> Result<()> {
-        println!("Deleting S3 bucket: {}", bucket);
-        Ok(())
+    async fn delete_bucket(&self, _bucket: &str) -> Result<()> {
+        Err(Error::NotImplemented(
+            "Bucket deletion is not supported via object_store — use the cloud provider CLI or \
+             console"
+                .to_string(),
+        ))
     }
 }
 
+// ──────────────────────────────────────────────────────────────────────────────
+// GCS Connector
+// ──────────────────────────────────────────────────────────────────────────────
+
 /// Google Cloud Storage connector
+///
+/// With the `cloud-storage` feature enabled this uses `object_store::gcp`.
 pub struct GCSConnector {
-    config: Option<CloudConfig>,
+    #[cfg(feature = "cloud-storage")]
+    store: Option<Arc<dyn ObjectStore>>,
+    #[cfg(not(feature = "cloud-storage"))]
+    _phantom: std::marker::PhantomData<()>,
 }
 
 impl GCSConnector {
+    /// Create a new, unconnected GCS connector.
     pub fn new() -> Self {
-        Self { config: None }
+        Self {
+            #[cfg(feature = "cloud-storage")]
+            store: None,
+            #[cfg(not(feature = "cloud-storage"))]
+            _phantom: std::marker::PhantomData,
+        }
+    }
+
+    /// Build and connect immediately using the provided configuration.
+    #[cfg(feature = "cloud-storage")]
+    pub async fn connect_with_config(config: CloudConfig) -> Result<Self> {
+        let mut connector = Self::new();
+        connector.connect(&config).await?;
+        Ok(connector)
+    }
+
+    /// Stub for no-feature builds.
+    #[cfg(not(feature = "cloud-storage"))]
+    pub async fn connect_with_config(_config: CloudConfig) -> Result<Self> {
+        Err(Error::NotImplemented(
+            "cloud-storage feature required for GCS connectivity".to_string(),
+        ))
+    }
+
+    #[cfg(feature = "cloud-storage")]
+    fn build_store(config: &CloudConfig, bucket: &str) -> Result<Arc<dyn ObjectStore>> {
+        let mut builder = GoogleCloudStorageBuilder::new().with_bucket_name(bucket);
+
+        match &config.credentials {
+            CloudCredentials::GCS {
+                service_account_key,
+                ..
+            } => {
+                builder = builder.with_service_account_key(service_account_key);
+            }
+            CloudCredentials::Environment => {
+                // Use Application Default Credentials (GOOGLE_APPLICATION_CREDENTIALS env var)
+                // object_store picks this up automatically.
+            }
+            _ => {
+                return Err(Error::InvalidOperation(
+                    "Invalid credentials for GCS: expected GCS or Environment credentials"
+                        .to_string(),
+                ));
+            }
+        }
+
+        if let Some(endpoint) = &config.endpoint {
+            builder = builder.with_url(endpoint);
+        }
+
+        let store = builder
+            .build()
+            .map_err(|e| Error::ConnectionError(format!("GCS build error: {e}")))?;
+        Ok(Arc::new(store))
+    }
+}
+
+impl Default for GCSConnector {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
 impl CloudConnector for GCSConnector {
     async fn connect(&mut self, config: &CloudConfig) -> Result<()> {
-        match &config.credentials {
-            CloudCredentials::GCS { project_id, .. } => {
-                println!("Connecting to GCS for project: {}", project_id);
-            }
-            CloudCredentials::Environment => {
-                println!("Connecting to GCS using environment credentials");
-            }
-            _ => {
-                return Err(Error::InvalidOperation(
-                    "Invalid credentials for GCS".to_string(),
-                ));
-            }
+        #[cfg(feature = "cloud-storage")]
+        {
+            let placeholder_bucket = config
+                .parameters
+                .get("bucket")
+                .cloned()
+                .unwrap_or_else(|| "default".to_string());
+            let store = Self::build_store(config, &placeholder_bucket)?;
+            self.store = Some(store);
+            Ok(())
         }
-
-        self.config = Some(config.clone());
-        Ok(())
+        #[cfg(not(feature = "cloud-storage"))]
+        {
+            let _ = config;
+            Err(Error::NotImplemented(
+                "cloud-storage feature required".to_string(),
+            ))
+        }
     }
 
     async fn list_objects(&self, bucket: &str, prefix: Option<&str>) -> Result<Vec<CloudObject>> {
-        println!(
-            "Listing GCS objects in bucket: {} with prefix: {:?}",
-            bucket, prefix
-        );
-        Ok(vec![])
+        #[cfg(feature = "cloud-storage")]
+        {
+            let store = self
+                .store
+                .as_ref()
+                .ok_or_else(|| Error::ConnectionError("GCSConnector not connected".to_string()))?;
+            let prefix_path = prefix.map(ObjectPath::from);
+            let results: Vec<_> = store.list(prefix_path.as_ref()).collect::<Vec<_>>().await;
+
+            let mut objects = Vec::with_capacity(results.len());
+            for item in results {
+                let meta = item.map_err(|e| {
+                    Error::IoError(format!("GCS list error for bucket '{}': {}", bucket, e))
+                })?;
+                objects.push(meta_to_cloud_object(meta));
+            }
+            Ok(objects)
+        }
+        #[cfg(not(feature = "cloud-storage"))]
+        {
+            let _ = (bucket, prefix);
+            Err(Error::NotImplemented(
+                "cloud-storage feature required".to_string(),
+            ))
+        }
     }
 
     async fn read_dataframe(
@@ -421,20 +808,30 @@ impl CloudConnector for GCSConnector {
         key: &str,
         format: FileFormat,
     ) -> Result<DataFrame> {
-        println!(
-            "Reading {} from GCS bucket {} with format {:?}",
-            key, bucket, format
-        );
-
-        // Mock DataFrame
-        let mut df = DataFrame::new();
-        let series = crate::series::base::Series::new(
-            vec!["gcs_data".to_string()],
-            Some("data".to_string()),
-        );
-        df.add_column("data".to_string(), series?)?;
-
-        Ok(df)
+        #[cfg(feature = "cloud-storage")]
+        {
+            let store = self
+                .store
+                .as_ref()
+                .ok_or_else(|| Error::ConnectionError("GCSConnector not connected".to_string()))?;
+            let path = make_path(key);
+            let result = store
+                .get(&path)
+                .await
+                .map_err(|e| Error::IoError(format!("GCS get '{}/{}': {}", bucket, key, e)))?;
+            let data: Bytes = result
+                .bytes()
+                .await
+                .map_err(|e| Error::IoError(format!("GCS read bytes: {}", e)))?;
+            bytes_to_df(data, &format)
+        }
+        #[cfg(not(feature = "cloud-storage"))]
+        {
+            let _ = (bucket, key, format);
+            Err(Error::NotImplemented(
+                "cloud-storage feature required".to_string(),
+            ))
+        }
     }
 
     async fn write_dataframe(
@@ -444,85 +841,301 @@ impl CloudConnector for GCSConnector {
         key: &str,
         format: FileFormat,
     ) -> Result<()> {
-        println!("Writing DataFrame to GCS: gs://{}/{}", bucket, key);
-        Ok(())
+        #[cfg(feature = "cloud-storage")]
+        {
+            let store = self
+                .store
+                .as_ref()
+                .ok_or_else(|| Error::ConnectionError("GCSConnector not connected".to_string()))?;
+            let data = df_to_payload(df, &format)?;
+            let path = make_path(key);
+            store
+                .put(&path, data.into())
+                .await
+                .map_err(|e| Error::IoError(format!("GCS put '{}/{}': {}", bucket, key, e)))?;
+            Ok(())
+        }
+        #[cfg(not(feature = "cloud-storage"))]
+        {
+            let _ = (df, bucket, key, format);
+            Err(Error::NotImplemented(
+                "cloud-storage feature required".to_string(),
+            ))
+        }
     }
 
     async fn download_object(&self, bucket: &str, key: &str, local_path: &str) -> Result<()> {
-        println!("Downloading gs://{}/{} to {}", bucket, key, local_path);
-        Ok(())
+        #[cfg(feature = "cloud-storage")]
+        {
+            let store = self
+                .store
+                .as_ref()
+                .ok_or_else(|| Error::ConnectionError("GCSConnector not connected".to_string()))?;
+            let path = make_path(key);
+            let result = store
+                .get(&path)
+                .await
+                .map_err(|e| Error::IoError(format!("GCS get '{}/{}': {}", bucket, key, e)))?;
+            let data: Bytes = result
+                .bytes()
+                .await
+                .map_err(|e| Error::IoError(format!("GCS read bytes: {}", e)))?;
+            std::fs::write(local_path, &data).map_err(|e| Error::IoError(e.to_string()))?;
+            Ok(())
+        }
+        #[cfg(not(feature = "cloud-storage"))]
+        {
+            let _ = (bucket, key, local_path);
+            Err(Error::NotImplemented(
+                "cloud-storage feature required".to_string(),
+            ))
+        }
     }
 
     async fn upload_object(&self, local_path: &str, bucket: &str, key: &str) -> Result<()> {
-        println!("Uploading {} to gs://{}/{}", local_path, bucket, key);
-        Ok(())
+        #[cfg(feature = "cloud-storage")]
+        {
+            let store = self
+                .store
+                .as_ref()
+                .ok_or_else(|| Error::ConnectionError("GCSConnector not connected".to_string()))?;
+            let data = std::fs::read(local_path).map_err(|e| Error::IoError(e.to_string()))?;
+            let path = make_path(key);
+            store
+                .put(&path, Bytes::from(data).into())
+                .await
+                .map_err(|e| Error::IoError(format!("GCS put '{}/{}': {}", bucket, key, e)))?;
+            Ok(())
+        }
+        #[cfg(not(feature = "cloud-storage"))]
+        {
+            let _ = (local_path, bucket, key);
+            Err(Error::NotImplemented(
+                "cloud-storage feature required".to_string(),
+            ))
+        }
     }
 
     async fn delete_object(&self, bucket: &str, key: &str) -> Result<()> {
-        println!("Deleting gs://{}/{}", bucket, key);
-        Ok(())
+        #[cfg(feature = "cloud-storage")]
+        {
+            let store = self
+                .store
+                .as_ref()
+                .ok_or_else(|| Error::ConnectionError("GCSConnector not connected".to_string()))?;
+            let path = make_path(key);
+            store
+                .delete(&path)
+                .await
+                .map_err(|e| Error::IoError(format!("GCS delete '{}/{}': {}", bucket, key, e)))?;
+            Ok(())
+        }
+        #[cfg(not(feature = "cloud-storage"))]
+        {
+            let _ = (bucket, key);
+            Err(Error::NotImplemented(
+                "cloud-storage feature required".to_string(),
+            ))
+        }
     }
 
     async fn get_object_metadata(&self, bucket: &str, key: &str) -> Result<ObjectMetadata> {
-        Ok(ObjectMetadata {
-            size: 2048,
-            last_modified: Some("2025-06-15T12:00:00Z".to_string()),
-            content_type: Some("application/json".to_string()),
-            etag: Some("\"gcs123\"".to_string()),
-            custom_metadata: HashMap::new(),
-        })
+        #[cfg(feature = "cloud-storage")]
+        {
+            let store = self
+                .store
+                .as_ref()
+                .ok_or_else(|| Error::ConnectionError("GCSConnector not connected".to_string()))?;
+            let path = make_path(key);
+            let meta = store
+                .head(&path)
+                .await
+                .map_err(|e| Error::IoError(format!("GCS head '{}/{}': {}", bucket, key, e)))?;
+            Ok(meta_to_object_metadata(meta))
+        }
+        #[cfg(not(feature = "cloud-storage"))]
+        {
+            let _ = (bucket, key);
+            Err(Error::NotImplemented(
+                "cloud-storage feature required".to_string(),
+            ))
+        }
     }
 
     async fn object_exists(&self, bucket: &str, key: &str) -> Result<bool> {
-        Ok(true)
+        #[cfg(feature = "cloud-storage")]
+        {
+            let store = self
+                .store
+                .as_ref()
+                .ok_or_else(|| Error::ConnectionError("GCSConnector not connected".to_string()))?;
+            let path = make_path(key);
+            match store.head(&path).await {
+                Ok(_) => Ok(true),
+                Err(object_store::Error::NotFound { .. }) => Ok(false),
+                Err(e) => Err(Error::IoError(format!(
+                    "GCS head '{}/{}': {}",
+                    bucket, key, e
+                ))),
+            }
+        }
+        #[cfg(not(feature = "cloud-storage"))]
+        {
+            let _ = (bucket, key);
+            Err(Error::NotImplemented(
+                "cloud-storage feature required".to_string(),
+            ))
+        }
     }
 
-    async fn create_bucket(&self, bucket: &str) -> Result<()> {
-        println!("Creating GCS bucket: {}", bucket);
-        Ok(())
+    async fn create_bucket(&self, _bucket: &str) -> Result<()> {
+        Err(Error::NotImplemented(
+            "Bucket creation is not supported via object_store".to_string(),
+        ))
     }
 
-    async fn delete_bucket(&self, bucket: &str) -> Result<()> {
-        println!("Deleting GCS bucket: {}", bucket);
-        Ok(())
+    async fn delete_bucket(&self, _bucket: &str) -> Result<()> {
+        Err(Error::NotImplemented(
+            "Bucket deletion is not supported via object_store".to_string(),
+        ))
     }
 }
 
+// ──────────────────────────────────────────────────────────────────────────────
+// Azure Blob Storage Connector
+// ──────────────────────────────────────────────────────────────────────────────
+
 /// Azure Blob Storage connector
+///
+/// With the `cloud-storage` feature enabled this uses `object_store::azure`.
 pub struct AzureConnector {
-    config: Option<CloudConfig>,
+    #[cfg(feature = "cloud-storage")]
+    store: Option<Arc<dyn ObjectStore>>,
+    #[cfg(not(feature = "cloud-storage"))]
+    _phantom: std::marker::PhantomData<()>,
 }
 
 impl AzureConnector {
+    /// Create a new, unconnected Azure connector.
     pub fn new() -> Self {
-        Self { config: None }
+        Self {
+            #[cfg(feature = "cloud-storage")]
+            store: None,
+            #[cfg(not(feature = "cloud-storage"))]
+            _phantom: std::marker::PhantomData,
+        }
+    }
+
+    /// Build and connect immediately using the provided configuration.
+    #[cfg(feature = "cloud-storage")]
+    pub async fn connect_with_config(config: CloudConfig) -> Result<Self> {
+        let mut connector = Self::new();
+        connector.connect(&config).await?;
+        Ok(connector)
+    }
+
+    /// Stub for no-feature builds.
+    #[cfg(not(feature = "cloud-storage"))]
+    pub async fn connect_with_config(_config: CloudConfig) -> Result<Self> {
+        Err(Error::NotImplemented(
+            "cloud-storage feature required for Azure connectivity".to_string(),
+        ))
+    }
+
+    #[cfg(feature = "cloud-storage")]
+    fn build_store(config: &CloudConfig, container: &str) -> Result<Arc<dyn ObjectStore>> {
+        let mut builder = MicrosoftAzureBuilder::new().with_container_name(container);
+
+        match &config.credentials {
+            CloudCredentials::Azure {
+                account_name,
+                account_key,
+            } => {
+                builder = builder
+                    .with_account(account_name)
+                    .with_access_key(account_key);
+            }
+            CloudCredentials::Environment => {
+                // Uses AZURE_STORAGE_ACCOUNT_NAME, AZURE_STORAGE_ACCOUNT_KEY, or
+                // AZURE_CLIENT_ID / AZURE_CLIENT_SECRET / AZURE_TENANT_ID.
+                // object_store picks these up automatically.
+            }
+            _ => {
+                return Err(Error::InvalidOperation(
+                    "Invalid credentials for Azure: expected Azure or Environment credentials"
+                        .to_string(),
+                ));
+            }
+        }
+
+        if let Some(endpoint) = &config.endpoint {
+            builder = builder.with_endpoint(endpoint.clone());
+        }
+
+        let store = builder
+            .build()
+            .map_err(|e| Error::ConnectionError(format!("Azure build error: {e}")))?;
+        Ok(Arc::new(store))
+    }
+}
+
+impl Default for AzureConnector {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
 impl CloudConnector for AzureConnector {
     async fn connect(&mut self, config: &CloudConfig) -> Result<()> {
-        match &config.credentials {
-            CloudCredentials::Azure { account_name, .. } => {
-                println!(
-                    "Connecting to Azure Blob Storage for account: {}",
-                    account_name
-                );
-            }
-            _ => {
-                return Err(Error::InvalidOperation(
-                    "Invalid credentials for Azure".to_string(),
-                ));
-            }
+        #[cfg(feature = "cloud-storage")]
+        {
+            let placeholder_container = config
+                .parameters
+                .get("container")
+                .or_else(|| config.parameters.get("bucket"))
+                .cloned()
+                .unwrap_or_else(|| "default".to_string());
+            let store = Self::build_store(config, &placeholder_container)?;
+            self.store = Some(store);
+            Ok(())
         }
-
-        self.config = Some(config.clone());
-        Ok(())
+        #[cfg(not(feature = "cloud-storage"))]
+        {
+            let _ = config;
+            Err(Error::NotImplemented(
+                "cloud-storage feature required".to_string(),
+            ))
+        }
     }
 
-    // Simplified implementations for all required methods
     async fn list_objects(&self, bucket: &str, prefix: Option<&str>) -> Result<Vec<CloudObject>> {
-        println!("Listing Azure blobs in container: {}", bucket);
-        Ok(vec![])
+        #[cfg(feature = "cloud-storage")]
+        {
+            let store = self.store.as_ref().ok_or_else(|| {
+                Error::ConnectionError("AzureConnector not connected".to_string())
+            })?;
+            let prefix_path = prefix.map(ObjectPath::from);
+            let results: Vec<_> = store.list(prefix_path.as_ref()).collect::<Vec<_>>().await;
+
+            let mut objects = Vec::with_capacity(results.len());
+            for item in results {
+                let meta = item.map_err(|e| {
+                    Error::IoError(format!(
+                        "Azure list error for container '{}': {}",
+                        bucket, e
+                    ))
+                })?;
+                objects.push(meta_to_cloud_object(meta));
+            }
+            Ok(objects)
+        }
+        #[cfg(not(feature = "cloud-storage"))]
+        {
+            let _ = (bucket, prefix);
+            Err(Error::NotImplemented(
+                "cloud-storage feature required".to_string(),
+            ))
+        }
     }
 
     async fn read_dataframe(
@@ -531,14 +1144,29 @@ impl CloudConnector for AzureConnector {
         key: &str,
         format: FileFormat,
     ) -> Result<DataFrame> {
-        println!("Reading {} from Azure container {}", key, bucket);
-        let mut df = DataFrame::new();
-        let series = crate::series::base::Series::new(
-            vec!["azure_data".to_string()],
-            Some("data".to_string()),
-        );
-        df.add_column("data".to_string(), series?)?;
-        Ok(df)
+        #[cfg(feature = "cloud-storage")]
+        {
+            let store = self.store.as_ref().ok_or_else(|| {
+                Error::ConnectionError("AzureConnector not connected".to_string())
+            })?;
+            let path = make_path(key);
+            let result = store
+                .get(&path)
+                .await
+                .map_err(|e| Error::IoError(format!("Azure get '{}/{}': {}", bucket, key, e)))?;
+            let data: Bytes = result
+                .bytes()
+                .await
+                .map_err(|e| Error::IoError(format!("Azure read bytes: {}", e)))?;
+            bytes_to_df(data, &format)
+        }
+        #[cfg(not(feature = "cloud-storage"))]
+        {
+            let _ = (bucket, key, format);
+            Err(Error::NotImplemented(
+                "cloud-storage feature required".to_string(),
+            ))
+        }
     }
 
     async fn write_dataframe(
@@ -548,75 +1176,194 @@ impl CloudConnector for AzureConnector {
         key: &str,
         format: FileFormat,
     ) -> Result<()> {
-        println!("Writing DataFrame to Azure: {}/{}", bucket, key);
-        Ok(())
+        #[cfg(feature = "cloud-storage")]
+        {
+            let store = self.store.as_ref().ok_or_else(|| {
+                Error::ConnectionError("AzureConnector not connected".to_string())
+            })?;
+            let data = df_to_payload(df, &format)?;
+            let path = make_path(key);
+            store
+                .put(&path, data.into())
+                .await
+                .map_err(|e| Error::IoError(format!("Azure put '{}/{}': {}", bucket, key, e)))?;
+            Ok(())
+        }
+        #[cfg(not(feature = "cloud-storage"))]
+        {
+            let _ = (df, bucket, key, format);
+            Err(Error::NotImplemented(
+                "cloud-storage feature required".to_string(),
+            ))
+        }
     }
 
     async fn download_object(&self, bucket: &str, key: &str, local_path: &str) -> Result<()> {
-        Ok(())
+        #[cfg(feature = "cloud-storage")]
+        {
+            let store = self.store.as_ref().ok_or_else(|| {
+                Error::ConnectionError("AzureConnector not connected".to_string())
+            })?;
+            let path = make_path(key);
+            let result = store
+                .get(&path)
+                .await
+                .map_err(|e| Error::IoError(format!("Azure get '{}/{}': {}", bucket, key, e)))?;
+            let data: Bytes = result
+                .bytes()
+                .await
+                .map_err(|e| Error::IoError(format!("Azure read bytes: {}", e)))?;
+            std::fs::write(local_path, &data).map_err(|e| Error::IoError(e.to_string()))?;
+            Ok(())
+        }
+        #[cfg(not(feature = "cloud-storage"))]
+        {
+            let _ = (bucket, key, local_path);
+            Err(Error::NotImplemented(
+                "cloud-storage feature required".to_string(),
+            ))
+        }
     }
 
     async fn upload_object(&self, local_path: &str, bucket: &str, key: &str) -> Result<()> {
-        Ok(())
+        #[cfg(feature = "cloud-storage")]
+        {
+            let store = self.store.as_ref().ok_or_else(|| {
+                Error::ConnectionError("AzureConnector not connected".to_string())
+            })?;
+            let data = std::fs::read(local_path).map_err(|e| Error::IoError(e.to_string()))?;
+            let path = make_path(key);
+            store
+                .put(&path, Bytes::from(data).into())
+                .await
+                .map_err(|e| Error::IoError(format!("Azure put '{}/{}': {}", bucket, key, e)))?;
+            Ok(())
+        }
+        #[cfg(not(feature = "cloud-storage"))]
+        {
+            let _ = (local_path, bucket, key);
+            Err(Error::NotImplemented(
+                "cloud-storage feature required".to_string(),
+            ))
+        }
     }
 
     async fn delete_object(&self, bucket: &str, key: &str) -> Result<()> {
-        Ok(())
+        #[cfg(feature = "cloud-storage")]
+        {
+            let store = self.store.as_ref().ok_or_else(|| {
+                Error::ConnectionError("AzureConnector not connected".to_string())
+            })?;
+            let path = make_path(key);
+            store
+                .delete(&path)
+                .await
+                .map_err(|e| Error::IoError(format!("Azure delete '{}/{}': {}", bucket, key, e)))?;
+            Ok(())
+        }
+        #[cfg(not(feature = "cloud-storage"))]
+        {
+            let _ = (bucket, key);
+            Err(Error::NotImplemented(
+                "cloud-storage feature required".to_string(),
+            ))
+        }
     }
 
     async fn get_object_metadata(&self, bucket: &str, key: &str) -> Result<ObjectMetadata> {
-        Ok(ObjectMetadata {
-            size: 4096,
-            last_modified: None,
-            content_type: None,
-            etag: None,
-            custom_metadata: HashMap::new(),
-        })
+        #[cfg(feature = "cloud-storage")]
+        {
+            let store = self.store.as_ref().ok_or_else(|| {
+                Error::ConnectionError("AzureConnector not connected".to_string())
+            })?;
+            let path = make_path(key);
+            let meta = store
+                .head(&path)
+                .await
+                .map_err(|e| Error::IoError(format!("Azure head '{}/{}': {}", bucket, key, e)))?;
+            Ok(meta_to_object_metadata(meta))
+        }
+        #[cfg(not(feature = "cloud-storage"))]
+        {
+            let _ = (bucket, key);
+            Err(Error::NotImplemented(
+                "cloud-storage feature required".to_string(),
+            ))
+        }
     }
 
     async fn object_exists(&self, bucket: &str, key: &str) -> Result<bool> {
-        Ok(false)
+        #[cfg(feature = "cloud-storage")]
+        {
+            let store = self.store.as_ref().ok_or_else(|| {
+                Error::ConnectionError("AzureConnector not connected".to_string())
+            })?;
+            let path = make_path(key);
+            match store.head(&path).await {
+                Ok(_) => Ok(true),
+                Err(object_store::Error::NotFound { .. }) => Ok(false),
+                Err(e) => Err(Error::IoError(format!(
+                    "Azure head '{}/{}': {}",
+                    bucket, key, e
+                ))),
+            }
+        }
+        #[cfg(not(feature = "cloud-storage"))]
+        {
+            let _ = (bucket, key);
+            Err(Error::NotImplemented(
+                "cloud-storage feature required".to_string(),
+            ))
+        }
     }
 
-    async fn create_bucket(&self, bucket: &str) -> Result<()> {
-        Ok(())
+    async fn create_bucket(&self, _bucket: &str) -> Result<()> {
+        Err(Error::NotImplemented(
+            "Container creation is not supported via object_store".to_string(),
+        ))
     }
 
-    async fn delete_bucket(&self, bucket: &str) -> Result<()> {
-        Ok(())
+    async fn delete_bucket(&self, _bucket: &str) -> Result<()> {
+        Err(Error::NotImplemented(
+            "Container deletion is not supported via object_store".to_string(),
+        ))
     }
 }
 
-/// Cloud connector factory
+// ──────────────────────────────────────────────────────────────────────────────
+// Factory
+// ──────────────────────────────────────────────────────────────────────────────
+
+/// Cloud connector factory — convenience constructors
 pub struct CloudConnectorFactory;
 
 impl CloudConnectorFactory {
-    /// Create S3 connector
+    /// Create an S3 connector
     pub fn s3() -> S3Connector {
         S3Connector::new()
     }
 
-    /// Create GCS connector
+    /// Create a GCS connector
     pub fn gcs() -> GCSConnector {
         GCSConnector::new()
     }
 
-    /// Create Azure connector
+    /// Create an Azure connector
     pub fn azure() -> AzureConnector {
         AzureConnector::new()
     }
 }
 
-// Note: Convenience functions for DataFrame cloud operations are provided
-// in the unified connector module (src/connectors/mod.rs) to avoid
-// trait object compatibility issues with async traits.
+// ──────────────────────────────────────────────────────────────────────────────
+// Unit tests
+// ──────────────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn test_cloud_config() {
+    fn test_cloud_config_builder() {
         let config = CloudConfig::new(
             CloudProvider::AWS,
             CloudCredentials::AWS {
@@ -636,30 +1383,71 @@ mod tests {
     #[test]
     fn test_file_format_detection() {
         assert!(matches!(
-            FileFormat::from_extension("data.csv").unwrap(),
+            FileFormat::from_extension("data.csv").expect("should detect CSV"),
             FileFormat::CSV { .. }
         ));
         assert!(matches!(
-            FileFormat::from_extension("data.parquet").unwrap(),
+            FileFormat::from_extension("data.parquet").expect("should detect Parquet"),
             FileFormat::Parquet
         ));
         assert!(matches!(
-            FileFormat::from_extension("data.json").unwrap(),
+            FileFormat::from_extension("data.json").expect("should detect JSON"),
             FileFormat::JSON
+        ));
+        assert!(matches!(
+            FileFormat::from_extension("data.jsonl").expect("should detect JSONL"),
+            FileFormat::JSONL
         ));
         assert!(FileFormat::from_extension("data.unknown").is_none());
     }
 
-    #[cfg(feature = "distributed")]
-    #[tokio::test]
-    async fn test_s3_connector() {
-        let mut connector = S3Connector::new();
-        let config = CloudConfig::new(CloudProvider::AWS, CloudCredentials::Environment);
+    #[test]
+    fn test_connectors_instantiate() {
+        let _s3 = S3Connector::new();
+        let _gcs = GCSConnector::new();
+        let _azure = AzureConnector::new();
+    }
 
-        let result = connector.connect(&config).await;
-        assert!(result.is_ok());
+    #[test]
+    fn test_factory() {
+        let _s3 = CloudConnectorFactory::s3();
+        let _gcs = CloudConnectorFactory::gcs();
+        let _azure = CloudConnectorFactory::azure();
+    }
 
-        let objects = connector.list_objects("test-bucket", None).await.unwrap();
-        assert_eq!(objects.len(), 2);
+    #[test]
+    fn test_gcs_config() {
+        let config = CloudConfig::new(
+            CloudProvider::GCS,
+            CloudCredentials::GCS {
+                service_account_key: "{}".to_string(),
+                project_id: "my-project".to_string(),
+            },
+        )
+        .with_parameter("bucket", "my-bucket");
+
+        assert!(matches!(config.provider, CloudProvider::GCS));
+        assert_eq!(
+            config.parameters.get("bucket"),
+            Some(&"my-bucket".to_string())
+        );
+    }
+
+    #[test]
+    fn test_azure_config() {
+        let config = CloudConfig::new(
+            CloudProvider::Azure,
+            CloudCredentials::Azure {
+                account_name: "myaccount".to_string(),
+                account_key: "base64key==".to_string(),
+            },
+        )
+        .with_parameter("container", "mycontainer");
+
+        assert!(matches!(config.provider, CloudProvider::Azure));
+        assert_eq!(
+            config.parameters.get("container"),
+            Some(&"mycontainer".to_string())
+        );
     }
 }

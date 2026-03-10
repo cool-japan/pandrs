@@ -226,8 +226,8 @@ impl GpuBenchmark {
         let a_data: Vec<f64> = (0..(m * k)).map(|i| (i % 10) as f64).collect();
         let b_data: Vec<f64> = (0..(k * n)).map(|i| (i % 10) as f64).collect();
 
-        let a = Array2::from_shape_vec((m, k), a_data).unwrap();
-        let b = Array2::from_shape_vec((k, n), b_data).unwrap();
+        let a = Array2::from_shape_vec((m, k), a_data).expect("operation should succeed");
+        let b = Array2::from_shape_vec((k, n), b_data).expect("operation should succeed");
 
         // Benchmark CPU implementation
         let cpu_start = Instant::now();
@@ -265,7 +265,7 @@ impl GpuBenchmark {
         self.benchmarks.push(summary);
 
         // Return reference to the added summary
-        Ok(self.benchmarks.last().unwrap())
+        Ok(self.benchmarks.last().expect("operation should succeed"))
     }
 
     /// Benchmark element-wise addition
@@ -274,8 +274,8 @@ impl GpuBenchmark {
         let a_data: Vec<f64> = (0..(m * n)).map(|i| (i % 10) as f64).collect();
         let b_data: Vec<f64> = (0..(m * n)).map(|i| (i % 10) as f64).collect();
 
-        let a = Array2::from_shape_vec((m, n), a_data).unwrap();
-        let b = Array2::from_shape_vec((m, n), b_data).unwrap();
+        let a = Array2::from_shape_vec((m, n), a_data).expect("operation should succeed");
+        let b = Array2::from_shape_vec((m, n), b_data).expect("operation should succeed");
 
         // Benchmark CPU implementation
         let cpu_start = Instant::now();
@@ -313,7 +313,7 @@ impl GpuBenchmark {
         self.benchmarks.push(summary);
 
         // Return reference to the added summary
-        Ok(self.benchmarks.last().unwrap())
+        Ok(self.benchmarks.last().expect("operation should succeed"))
     }
 
     /// Benchmark correlation matrix computation
@@ -374,7 +374,7 @@ impl GpuBenchmark {
         self.benchmarks.push(summary);
 
         // Return reference to the added summary
-        Ok(self.benchmarks.last().unwrap())
+        Ok(self.benchmarks.last().expect("operation should succeed"))
     }
 
     /// Benchmark linear regression
@@ -453,7 +453,7 @@ impl GpuBenchmark {
         self.benchmarks.push(summary);
 
         // Return reference to the added summary
-        Ok(self.benchmarks.last().unwrap())
+        Ok(self.benchmarks.last().expect("operation should succeed"))
     }
 
     /// Benchmark rolling window operation
@@ -515,7 +515,7 @@ impl GpuBenchmark {
         self.benchmarks.push(summary);
 
         // Return reference to the added summary
-        Ok(self.benchmarks.last().unwrap())
+        Ok(self.benchmarks.last().expect("operation should succeed"))
     }
 
     /// Get a summary of all benchmarks

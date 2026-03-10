@@ -51,7 +51,7 @@ fn uuid_v4() -> String {
 
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
+        .expect("operation should succeed")
         .as_nanos();
 
     let counter = COUNTER.fetch_add(1, Ordering::SeqCst);

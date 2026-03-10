@@ -374,11 +374,11 @@ mod tests {
             permissions: vec!["read".to_string(), "write".to_string()],
             iat: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
-                .unwrap()
+                .expect("operation should succeed")
                 .as_secs(),
             exp: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
-                .unwrap()
+                .expect("operation should succeed")
                 .as_secs()
                 + 3600,
             iss: "test-issuer".to_string(),
@@ -386,7 +386,7 @@ mod tests {
             jti: "token123".to_string(),
         };
 
-        let token = encode_jwt(&claims, &config).unwrap();
+        let token = encode_jwt(&claims, &config).expect("operation should succeed");
         assert!(!token.is_empty());
 
         // Token should have 3 parts
@@ -394,7 +394,7 @@ mod tests {
         assert_eq!(parts.len(), 3);
 
         // Decode and verify
-        let decoded = decode_jwt(&token, &config).unwrap();
+        let decoded = decode_jwt(&token, &config).expect("operation should succeed");
         assert_eq!(decoded.sub, "user123");
         assert_eq!(decoded.tenant_id, "tenant_a");
         assert_eq!(decoded.roles, vec!["admin"]);
@@ -412,11 +412,11 @@ mod tests {
             permissions: vec![],
             iat: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
-                .unwrap()
+                .expect("operation should succeed")
                 .as_secs(),
             exp: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
-                .unwrap()
+                .expect("operation should succeed")
                 .as_secs()
                 + 3600,
             iss: config.issuer.clone(),
@@ -424,7 +424,7 @@ mod tests {
             jti: "token123".to_string(),
         };
 
-        let token = encode_jwt(&claims, &config).unwrap();
+        let token = encode_jwt(&claims, &config).expect("operation should succeed");
 
         // Should fail with different secret
         let result = decode_jwt(&token, &config2);
@@ -447,7 +447,7 @@ mod tests {
             jti: "token123".to_string(),
         };
 
-        let token = encode_jwt(&claims, &config).unwrap();
+        let token = encode_jwt(&claims, &config).expect("operation should succeed");
 
         // Should fail due to expiration
         let result = decode_jwt(&token, &config);
@@ -458,7 +458,7 @@ mod tests {
     fn test_base64_url_encode_decode() {
         let data = b"Hello, World!";
         let encoded = base64_url_encode(data);
-        let decoded = base64_url_decode(&encoded).unwrap();
+        let decoded = base64_url_decode(&encoded).expect("operation should succeed");
         assert_eq!(decoded, data);
     }
 
@@ -484,11 +484,11 @@ mod tests {
             permissions: vec![],
             iat: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
-                .unwrap()
+                .expect("operation should succeed")
                 .as_secs(),
             exp: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
-                .unwrap()
+                .expect("operation should succeed")
                 .as_secs()
                 + 3600,
             iss: config.issuer.clone(),
@@ -496,13 +496,13 @@ mod tests {
             jti: "token123".to_string(),
         };
 
-        let token = encode_jwt(&claims, &config).unwrap();
+        let token = encode_jwt(&claims, &config).expect("operation should succeed");
 
         // Should not be expired
-        assert!(!is_token_expired(&token).unwrap());
+        assert!(!is_token_expired(&token).expect("operation should succeed"));
 
         // Get expiration time
-        let exp = get_token_expiration(&token).unwrap();
+        let exp = get_token_expiration(&token).expect("operation should succeed");
         assert!(exp > 0);
     }
 }

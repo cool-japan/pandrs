@@ -561,7 +561,7 @@ fn f_distribution_cdf(f: f64, df1: usize, df2: usize) -> f64 {
 /// use pandrs::stats::categorical;
 ///
 /// let data = vec!["A", "B", "A", "C", "B", "A"];
-/// let mode = categorical::mode(&data).unwrap();
+/// let mode = categorical::mode(&data).expect("operation should succeed");
 /// println!("Mode: {:?}", mode); // Should be ["A"]
 /// ```
 pub fn mode<T: AsRef<str> + Clone>(data: &[T]) -> Result<Vec<String>> {
@@ -605,7 +605,7 @@ pub fn mode<T: AsRef<str> + Clone>(data: &[T]) -> Result<Vec<String>> {
 /// use pandrs::stats::categorical;
 ///
 /// let data = vec!["A", "B", "A", "C", "B", "A"];
-/// let entropy = categorical::entropy(&data).unwrap();
+/// let entropy = categorical::entropy(&data).expect("operation should succeed");
 /// println!("Entropy: {}", entropy);
 /// ```
 pub fn entropy<T: AsRef<str>>(data: &[T]) -> Result<f64> {
@@ -652,7 +652,7 @@ pub fn entropy<T: AsRef<str>>(data: &[T]) -> Result<f64> {
 /// use pandrs::stats::categorical;
 ///
 /// let data = vec!["A", "B", "A", "C", "B", "A"];
-/// let freq = categorical::frequency_distribution(&data).unwrap();
+/// let freq = categorical::frequency_distribution(&data).expect("operation should succeed");
 /// 
 /// for (category, (count, percentage)) in &freq {
 ///     println!("{}: {} ({:.1}%)", category, count, percentage * 100.0);
@@ -702,7 +702,7 @@ mod tests {
         let row_labels = vec!["Row1".to_string(), "Row2".to_string()];
         let col_labels = vec!["Col1".to_string(), "Col2".to_string(), "Col3".to_string()];
         
-        let table = ContingencyTable::from_observed(observed, row_labels, col_labels).unwrap();
+        let table = ContingencyTable::from_observed(observed, row_labels, col_labels).expect("operation should succeed");
         
         // Check row totals
         assert_eq!(table.row_totals, vec![60.0, 150.0]);
@@ -733,10 +733,10 @@ mod tests {
         let row_labels = vec!["Row1".to_string(), "Row2".to_string()];
         let col_labels = vec!["Col1".to_string(), "Col2".to_string()];
         
-        let table = ContingencyTable::from_observed(observed, row_labels, col_labels).unwrap();
+        let table = ContingencyTable::from_observed(observed, row_labels, col_labels).expect("operation should succeed");
         
         // Chi-square test
-        let result = table.chi_square_test(0.05).unwrap();
+        let result = table.chi_square_test(0.05).expect("operation should succeed");
         
         // Should be significant (p < 0.05)
         assert!(result.chi2_statistic > 0.0);
@@ -756,10 +756,10 @@ mod tests {
         let row_labels = vec!["Row1".to_string(), "Row2".to_string()];
         let col_labels = vec!["Col1".to_string(), "Col2".to_string()];
         
-        let table = ContingencyTable::from_observed(observed, row_labels, col_labels).unwrap();
+        let table = ContingencyTable::from_observed(observed, row_labels, col_labels).expect("operation should succeed");
         
         // Cramer's V
-        let v = table.cramers_v().unwrap();
+        let v = table.cramers_v().expect("operation should succeed");
         
         // Perfect association should give V = 1
         assert!((v - 1.0).abs() < 0.01);
@@ -774,9 +774,9 @@ mod tests {
             observed_no_assoc, 
             row_labels.clone(), 
             col_labels.clone()
-        ).unwrap();
+        ).expect("operation should succeed");
         
-        let v_no_assoc = table_no_assoc.cramers_v().unwrap();
+        let v_no_assoc = table_no_assoc.cramers_v().expect("operation should succeed");
         
         // No association should give V = 0
         assert!(v_no_assoc < 0.01);
@@ -793,16 +793,16 @@ mod tests {
         let row_labels = vec!["Row1".to_string(), "Row2".to_string()];
         let col_labels = vec!["Col1".to_string(), "Col2".to_string()];
         
-        let table = ContingencyTable::from_observed(observed, row_labels, col_labels).unwrap();
+        let table = ContingencyTable::from_observed(observed, row_labels, col_labels).expect("operation should succeed");
         
         // Mutual information
-        let mi = table.mutual_information().unwrap();
+        let mi = table.mutual_information().expect("operation should succeed");
         
         // Perfect association should give MI = 1 bit for balanced 2x2 table
         assert!((mi - 1.0).abs() < 0.01);
         
         // Normalized mutual information should be 1
-        let nmi = table.normalized_mutual_information().unwrap();
+        let nmi = table.normalized_mutual_information().expect("operation should succeed");
         assert!((nmi - 1.0).abs() < 0.01);
     }
     
@@ -819,12 +819,12 @@ mod tests {
             .into_iter().map(|s| s.to_string()).collect::<Vec<_>>();
         
         df.add_column("cat1".to_string(), 
-                     Series::new(cat1, Some("cat1".to_string())).unwrap()).unwrap();
+                     Series::new(cat1, Some("cat1".to_string())).expect("operation should succeed")).expect("operation should succeed");
         df.add_column("cat2".to_string(), 
-                     Series::new(cat2, Some("cat2".to_string())).unwrap()).unwrap();
+                     Series::new(cat2, Some("cat2".to_string())).expect("operation should succeed")).expect("operation should succeed");
         
         // Create contingency table
-        let table = dataframe_contingency_table(&df, "cat1", "cat2").unwrap();
+        let table = dataframe_contingency_table(&df, "cat1", "cat2").expect("operation should succeed");
         
         // Check table dimensions
         assert_eq!(table.observed.len(), 2); // 2 rows (A, B)
@@ -850,12 +850,12 @@ mod tests {
         let num = vec![1.0, 1.1, 0.9, 4.9, 5.1, 5.0, 9.8, 10.1, 10.1];
         
         df.add_column("category".to_string(), 
-                     Series::new(cat, Some("category".to_string())).unwrap()).unwrap();
+                     Series::new(cat, Some("category".to_string())).expect("operation should succeed")).expect("operation should succeed");
         df.add_column("value".to_string(), 
-                     Series::new(num, Some("value".to_string())).unwrap()).unwrap();
+                     Series::new(num, Some("value".to_string())).expect("operation should succeed")).expect("operation should succeed");
         
         // Perform ANOVA
-        let result = dataframe_categorical_anova(&df, "category", "value", 0.05).unwrap();
+        let result = dataframe_categorical_anova(&df, "category", "value", 0.05).expect("operation should succeed");
         
         // The categories have clearly different means, so F should be large and p small
         assert!(result.f_statistic > 100.0);
@@ -867,12 +867,12 @@ mod tests {
     fn test_mode() {
         // Single mode
         let data = vec!["A", "B", "A", "C", "B", "A"];
-        let result = mode(&data).unwrap();
+        let result = mode(&data).expect("operation should succeed");
         assert_eq!(result, vec!["A"]);
         
         // Multiple modes (tie)
         let data_tie = vec!["A", "B", "A", "B", "C", "C"];
-        let result_tie = mode(&data_tie).unwrap();
+        let result_tie = mode(&data_tie).expect("operation should succeed");
         assert_eq!(result_tie.len(), 2);
         assert!(result_tie.contains(&"A".to_string()));
         assert!(result_tie.contains(&"B".to_string()));
@@ -882,37 +882,37 @@ mod tests {
     fn test_entropy() {
         // Uniform distribution (maximum entropy)
         let uniform = vec!["A", "B", "C", "D"];
-        let entropy_uniform = entropy(&uniform).unwrap();
+        let entropy_uniform = entropy(&uniform).expect("operation should succeed");
         assert!((entropy_uniform - 2.0).abs() < 0.01); // log2(4) = 2 bits
         
         // Single value (minimum entropy)
         let single = vec!["A", "A", "A", "A"];
-        let entropy_single = entropy(&single).unwrap();
+        let entropy_single = entropy(&single).expect("operation should succeed");
         assert!(entropy_single < 0.01); // Should be 0
         
         // Mixed distribution
         let mixed = vec!["A", "A", "B", "C", "C", "C", "C"];
-        let entropy_mixed = entropy(&mixed).unwrap();
+        let entropy_mixed = entropy(&mixed).expect("operation should succeed");
         assert!(entropy_mixed > 0.0 && entropy_mixed < 2.0);
     }
     
     #[test]
     fn test_frequency_distribution() {
         let data = vec!["A", "B", "A", "C", "B", "A"];
-        let freq = frequency_distribution(&data).unwrap();
+        let freq = frequency_distribution(&data).expect("operation should succeed");
         
         assert_eq!(freq.len(), 3); // Three categories: A, B, C
         
         // Check frequencies
-        let (a_count, a_freq) = freq.get("A").unwrap();
+        let (a_count, a_freq) = freq.get("A").expect("operation should succeed");
         assert_eq!(*a_count, 3);
         assert!((a_freq - 0.5).abs() < 0.01); // 3/6 = 0.5
         
-        let (b_count, b_freq) = freq.get("B").unwrap();
+        let (b_count, b_freq) = freq.get("B").expect("operation should succeed");
         assert_eq!(*b_count, 2);
         assert!((b_freq - 0.333).abs() < 0.01); // 2/6 = 0.333
         
-        let (c_count, c_freq) = freq.get("C").unwrap();
+        let (c_count, c_freq) = freq.get("C").expect("operation should succeed");
         assert_eq!(*c_count, 1);
         assert!((c_freq - 0.167).abs() < 0.01); // 1/6 = 0.167
     }

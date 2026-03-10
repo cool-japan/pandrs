@@ -1,3 +1,4 @@
+#![allow(clippy::result_large_err)]
 // Concurrency test imports
 use pandrs::optimized::OptimizedDataFrame;
 use std::sync::{Arc, Barrier};

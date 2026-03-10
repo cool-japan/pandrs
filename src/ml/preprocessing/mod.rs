@@ -87,8 +87,14 @@ impl StandardScaler {
             return Err(Error::InvalidValue("StandardScaler not fitted".into()));
         }
 
-        let means = self.means.as_ref().unwrap();
-        let stds = self.stds.as_ref().unwrap();
+        let means = self
+            .means
+            .as_ref()
+            .ok_or_else(|| Error::InvalidOperation("Model not fitted. Call fit() first.".into()))?;
+        let stds = self
+            .stds
+            .as_ref()
+            .ok_or_else(|| Error::InvalidOperation("Model not fitted. Call fit() first.".into()))?;
 
         let mut result = DataFrame::new();
 
@@ -211,14 +217,20 @@ impl MinMaxScaler {
                 }
 
                 // Calculate min and max
-                let min_val = *numeric_data
+                let min_val = numeric_data
                     .iter()
-                    .min_by(|a, b| a.partial_cmp(b).unwrap())
-                    .unwrap();
-                let max_val = *numeric_data
+                    .min_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+                    .copied()
+                    .ok_or_else(|| {
+                        Error::InvalidOperation("Cannot compute min of empty values".into())
+                    })?;
+                let max_val = numeric_data
                     .iter()
-                    .max_by(|a, b| a.partial_cmp(b).unwrap())
-                    .unwrap();
+                    .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+                    .copied()
+                    .ok_or_else(|| {
+                        Error::InvalidOperation("Cannot compute max of empty values".into())
+                    })?;
 
                 min_values.insert(col_name.to_string(), min_val);
                 max_values.insert(col_name.to_string(), max_val);
@@ -237,8 +249,14 @@ impl MinMaxScaler {
             return Err(Error::InvalidValue("MinMaxScaler not fitted".into()));
         }
 
-        let min_values = self.min_values.as_ref().unwrap();
-        let max_values = self.max_values.as_ref().unwrap();
+        let min_values = self
+            .min_values
+            .as_ref()
+            .ok_or_else(|| Error::InvalidOperation("Model not fitted. Call fit() first.".into()))?;
+        let max_values = self
+            .max_values
+            .as_ref()
+            .ok_or_else(|| Error::InvalidOperation("Model not fitted. Call fit() first.".into()))?;
         let (feature_min, feature_max) = self.feature_range;
 
         let mut result = DataFrame::new();

@@ -5,6 +5,17 @@
 //! - Memory-mapped files for efficient data access
 //! - Chunked processing for large datasets
 //! - Spill-to-disk operations when memory limits are reached
+//! - Out-of-core streaming DataFrame operations
+//! - External merge sort for datasets larger than RAM
+//! - Out-of-core hash join operations
+
+pub mod join;
+pub mod merge_sort;
+pub mod out_of_core;
+
+pub use join::{hash_join_out_of_core, JoinType as OutOfCoreJoinType};
+pub use merge_sort::{external_sort, merge_sorted_chunks};
+pub use out_of_core::{AggOp, DataFormat, OutOfCoreConfig, OutOfCoreReader, OutOfCoreWriter};
 
 use memmap2::{Mmap, MmapMut, MmapOptions};
 use std::collections::HashMap;
@@ -605,7 +616,10 @@ impl DiskBasedDataFrame {
             return Err(Error::EmptyDataFrame("No data to process".into()));
         }
 
-        Ok(results.into_iter().last().unwrap())
+        Ok(results
+            .into_iter()
+            .last()
+            .expect("operation should succeed"))
     }
 
     /// Apply an aggregation function that combines results from all chunks

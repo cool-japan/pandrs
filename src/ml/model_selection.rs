@@ -548,7 +548,11 @@ impl GridSearchCV {
         }
 
         // Sort by score and assign ranks
-        cv_results.sort_by(|a, b| b.mean_test_score.partial_cmp(&a.mean_test_score).unwrap());
+        cv_results.sort_by(|a, b| {
+            b.mean_test_score
+                .partial_cmp(&a.mean_test_score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         for (i, result) in cv_results.iter_mut().enumerate() {
             result.rank = i + 1;
         }
@@ -563,10 +567,9 @@ impl GridSearchCV {
 
         if self.verbose > 0 {
             println!("Best score: {:.4}", best_score);
-            println!(
-                "Best parameters: {:?}",
-                self.results_.as_ref().unwrap().best_params_
-            );
+            if let Some(results) = self.results_.as_ref() {
+                println!("Best parameters: {:?}", results.best_params_);
+            }
         }
 
         Ok(())
@@ -779,7 +782,7 @@ impl SelectKBest {
             .map(|(i, &score)| (i, score))
             .collect();
 
-        feature_scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+        feature_scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
         let selected_features: Vec<usize> = feature_scores
             .iter()
@@ -918,7 +921,7 @@ mod tests {
     fn test_parameter_distribution_sampling() {
         let uniform_int = ParameterDistribution::UniformInt { low: 1, high: 10 };
         let sample = uniform_int.sample();
-        let value: i64 = sample.parse().unwrap();
+        let value: i64 = sample.parse().expect("operation should succeed");
         assert!(value >= 1 && value <= 10);
 
         let uniform_float = ParameterDistribution::UniformFloat {
@@ -926,7 +929,7 @@ mod tests {
             high: 1.0,
         };
         let sample = uniform_float.sample();
-        let value: f64 = sample.parse().unwrap();
+        let value: f64 = sample.parse().expect("operation should succeed");
         assert!(value >= 0.0 && value <= 1.0);
 
         let choice =
@@ -941,7 +944,9 @@ mod tests {
         let y_true = vec![1.0, 2.0, 3.0, 4.0, 5.0];
         let y_pred = vec![1.1, 1.9, 3.1, 3.9, 5.1];
 
-        let score = scorer.score(&y_true, &y_pred).unwrap();
+        let score = scorer
+            .score(&y_true, &y_pred)
+            .expect("operation should succeed");
         assert!(score > 0.9); // Should be high R²
     }
 
@@ -967,30 +972,34 @@ mod tests {
         let mut x = DataFrame::new();
         x.add_column(
             "feature1".to_string(),
-            Series::new(vec![1.0, 2.0, 3.0, 4.0, 5.0], Some("feature1".to_string())).unwrap(),
+            Series::new(vec![1.0, 2.0, 3.0, 4.0, 5.0], Some("feature1".to_string()))
+                .expect("operation should succeed"),
         )
-        .unwrap();
+        .expect("operation should succeed");
         x.add_column(
             "feature2".to_string(),
-            Series::new(vec![2.0, 4.0, 6.0, 8.0, 10.0], Some("feature2".to_string())).unwrap(),
+            Series::new(vec![2.0, 4.0, 6.0, 8.0, 10.0], Some("feature2".to_string()))
+                .expect("operation should succeed"),
         )
-        .unwrap();
+        .expect("operation should succeed");
         x.add_column(
             "feature3".to_string(),
-            Series::new(vec![0.1, 0.2, 0.3, 0.4, 0.5], Some("feature3".to_string())).unwrap(),
+            Series::new(vec![0.1, 0.2, 0.3, 0.4, 0.5], Some("feature3".to_string()))
+                .expect("operation should succeed"),
         )
-        .unwrap();
+        .expect("operation should succeed");
 
         let mut y = DataFrame::new();
         y.add_column(
             "target".to_string(),
-            Series::new(vec![3.0, 6.0, 9.0, 12.0, 15.0], Some("target".to_string())).unwrap(),
+            Series::new(vec![3.0, 6.0, 9.0, 12.0, 15.0], Some("target".to_string()))
+                .expect("operation should succeed"),
         )
-        .unwrap();
+        .expect("operation should succeed");
 
         // Fit and transform
-        selector.fit(&x, &y).unwrap();
-        let selected = selector.transform(&x).unwrap();
+        selector.fit(&x, &y).expect("operation should succeed");
+        let selected = selector.transform(&x).expect("operation should succeed");
 
         // Should select 2 features
         assert_eq!(selected.column_names().len(), 2);

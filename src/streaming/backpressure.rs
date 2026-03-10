@@ -12,6 +12,7 @@ use std::time::{Duration, Instant};
 
 use super::StreamRecord;
 use crate::error::{Error, Result};
+use crate::{lock_safe, read_lock_safe, write_lock_safe};
 
 /// Strategy for handling backpressure
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -206,11 +207,11 @@ impl BackpressureBuffer {
 
     /// Tries to push a record into the buffer
     pub fn try_push(&self, record: StreamRecord) -> Result<bool> {
-        let mut stats = self.stats.write().unwrap();
+        let mut stats = write_lock_safe!(self.stats, "backpressure stats write")?;
         stats.records_received += 1;
 
         // Check current buffer size
-        let current_size = self.buffer.read().unwrap().len();
+        let current_size = read_lock_safe!(self.buffer, "backpressure buffer read")?.len();
         stats.current_buffer_size = current_size;
 
         // Check if we're above high watermark
@@ -224,7 +225,7 @@ impl BackpressureBuffer {
                     return Ok(false);
                 }
                 BackpressureStrategy::DropOldest => {
-                    let mut buffer = self.buffer.write().unwrap();
+                    let mut buffer = write_lock_safe!(self.buffer, "backpressure buffer write")?;
                     while buffer.len() >= self.config.high_watermark {
                         buffer.pop_front();
                         stats.records_dropped += 1;
@@ -238,13 +239,15 @@ impl BackpressureBuffer {
                 }
                 BackpressureStrategy::AdaptiveSampling => {
                     // Reduce sampling rate
-                    let mut rate = self.current_sampling_rate.write().unwrap();
+                    let mut rate =
+                        write_lock_safe!(self.current_sampling_rate, "sampling rate write")?;
                     *rate = (*rate * 0.9).max(self.config.min_sampling_rate);
                     stats.current_sampling_rate = *rate;
 
                     // Probabilistically accept the record
                     if should_sample(*rate) {
-                        let mut buffer = self.buffer.write().unwrap();
+                        let mut buffer =
+                            write_lock_safe!(self.buffer, "backpressure buffer write")?;
                         buffer.push_back(record);
                         return Ok(true);
                     } else {
@@ -254,8 +257,9 @@ impl BackpressureBuffer {
                 }
                 BackpressureStrategy::RateLimiting => {
                     // Check rate limiter
-                    if self.acquire_token() {
-                        let mut buffer = self.buffer.write().unwrap();
+                    if self.acquire_token()? {
+                        let mut buffer =
+                            write_lock_safe!(self.buffer, "backpressure buffer write")?;
                         buffer.push_back(record);
                         return Ok(true);
                     } else {
@@ -272,14 +276,14 @@ impl BackpressureBuffer {
 
             // Restore sampling rate for adaptive sampling
             if self.config.strategy == BackpressureStrategy::AdaptiveSampling {
-                let mut rate = self.current_sampling_rate.write().unwrap();
+                let mut rate = write_lock_safe!(self.current_sampling_rate, "sampling rate write")?;
                 *rate = (*rate * 1.1).min(1.0);
                 stats.current_sampling_rate = *rate;
             }
         }
 
         // Push the record
-        let mut buffer = self.buffer.write().unwrap();
+        let mut buffer = write_lock_safe!(self.buffer, "backpressure buffer write")?;
         buffer.push_back(record);
         Ok(true)
     }
@@ -307,22 +311,22 @@ impl BackpressureBuffer {
     }
 
     /// Pops a record from the buffer
-    pub fn pop(&self) -> Option<StreamRecord> {
-        let mut buffer = self.buffer.write().unwrap();
+    pub fn pop(&self) -> Result<Option<StreamRecord>> {
+        let mut buffer = write_lock_safe!(self.buffer, "backpressure buffer write")?;
         let record = buffer.pop_front();
 
         if record.is_some() {
-            let mut stats = self.stats.write().unwrap();
+            let mut stats = write_lock_safe!(self.stats, "backpressure stats write")?;
             stats.records_processed += 1;
             stats.current_buffer_size = buffer.len();
         }
 
-        record
+        Ok(record)
     }
 
     /// Pops multiple records from the buffer
-    pub fn pop_batch(&self, max_batch_size: usize) -> Vec<StreamRecord> {
-        let mut buffer = self.buffer.write().unwrap();
+    pub fn pop_batch(&self, max_batch_size: usize) -> Result<Vec<StreamRecord>> {
+        let mut buffer = write_lock_safe!(self.buffer, "backpressure buffer write")?;
         let batch_size = max_batch_size.min(buffer.len());
         let mut batch = Vec::with_capacity(batch_size);
 
@@ -333,22 +337,22 @@ impl BackpressureBuffer {
         }
 
         if !batch.is_empty() {
-            let mut stats = self.stats.write().unwrap();
+            let mut stats = write_lock_safe!(self.stats, "backpressure stats write")?;
             stats.records_processed += batch.len() as u64;
             stats.current_buffer_size = buffer.len();
         }
 
-        batch
+        Ok(batch)
     }
 
     /// Checks if the buffer is empty
-    pub fn is_empty(&self) -> bool {
-        self.buffer.read().unwrap().is_empty()
+    pub fn is_empty(&self) -> Result<bool> {
+        Ok(read_lock_safe!(self.buffer, "backpressure buffer read")?.is_empty())
     }
 
     /// Gets the current buffer size
-    pub fn len(&self) -> usize {
-        self.buffer.read().unwrap().len()
+    pub fn len(&self) -> Result<usize> {
+        Ok(read_lock_safe!(self.buffer, "backpressure buffer read")?.len())
     }
 
     /// Checks if backpressure is currently active
@@ -357,19 +361,20 @@ impl BackpressureBuffer {
     }
 
     /// Gets the current statistics
-    pub fn stats(&self) -> BackpressureStats {
-        self.stats.read().unwrap().clone()
+    pub fn stats(&self) -> Result<BackpressureStats> {
+        Ok(read_lock_safe!(self.stats, "backpressure stats read")?.clone())
     }
 
     /// Resets the statistics
-    pub fn reset_stats(&self) {
-        let mut stats = self.stats.write().unwrap();
+    pub fn reset_stats(&self) -> Result<()> {
+        let mut stats = write_lock_safe!(self.stats, "backpressure stats write")?;
         *stats = BackpressureStats::default();
+        Ok(())
     }
 
     /// Acquires a token from the rate limiter
-    fn acquire_token(&self) -> bool {
-        let mut state = self.rate_limiter.lock().unwrap();
+    fn acquire_token(&self) -> Result<bool> {
+        let mut state = lock_safe!(self.rate_limiter, "rate limiter lock")?;
 
         // Refill tokens based on elapsed time
         let now = Instant::now();
@@ -381,9 +386,9 @@ impl BackpressureBuffer {
         // Try to acquire a token
         if state.tokens >= 1.0 {
             state.tokens -= 1.0;
-            true
+            Ok(true)
         } else {
-            false
+            Ok(false)
         }
     }
 }
@@ -394,7 +399,7 @@ fn should_sample(rate: f64) -> bool {
 
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
+        .expect("operation should succeed")
         .subsec_nanos();
 
     (nanos as f64 / u32::MAX as f64) < rate
@@ -433,7 +438,7 @@ impl BackpressureChannel {
 
     /// Sends a record through the channel
     pub fn send(&self, record: StreamRecord) -> Result<()> {
-        let mut stats = self.stats.write().unwrap();
+        let mut stats = write_lock_safe!(self.stats, "backpressure channel stats write")?;
         stats.records_received += 1;
 
         let current_size = self.buffer_size.load(Ordering::SeqCst);
@@ -506,7 +511,7 @@ impl BackpressureChannel {
                     self.backpressure_active.store(false, Ordering::SeqCst);
                 }
 
-                let mut stats = self.stats.write().unwrap();
+                let mut stats = write_lock_safe!(self.stats, "backpressure channel stats write")?;
                 stats.records_processed += 1;
                 stats.current_buffer_size = current_size;
 
@@ -522,7 +527,7 @@ impl BackpressureChannel {
             Ok(record) => {
                 self.buffer_size.fetch_sub(1, Ordering::SeqCst);
 
-                let mut stats = self.stats.write().unwrap();
+                let mut stats = write_lock_safe!(self.stats, "backpressure channel stats write")?;
                 stats.records_processed += 1;
                 stats.current_buffer_size = self.buffer_size.load(Ordering::SeqCst);
 
@@ -544,8 +549,8 @@ impl BackpressureChannel {
     }
 
     /// Gets the current statistics
-    pub fn stats(&self) -> BackpressureStats {
-        self.stats.read().unwrap().clone()
+    pub fn stats(&self) -> Result<BackpressureStats> {
+        Ok(read_lock_safe!(self.stats, "backpressure stats read")?.clone())
     }
 
     /// Checks if backpressure is currently active
@@ -585,24 +590,27 @@ impl FlowController {
     }
 
     /// Records a processed record and returns whether to continue
-    pub fn record_processed(&self) -> bool {
+    pub fn record_processed(&self) -> Result<bool> {
         if !self.active.load(Ordering::SeqCst) {
-            return true;
+            return Ok(true);
         }
 
         // Increment count
         let count = self.record_count.fetch_add(1, Ordering::SeqCst) + 1;
 
         // Check if window has elapsed
-        let window_start = *self.window_start.read().unwrap();
+        let window_start =
+            *read_lock_safe!(self.window_start, "flow controller window start read")?;
         let elapsed = window_start.elapsed();
 
         if elapsed >= self.window_duration {
             // Calculate throughput and reset window
             let throughput = count as f64 / elapsed.as_secs_f64();
-            *self.current_throughput.write().unwrap() = throughput;
+            *write_lock_safe!(self.current_throughput, "flow controller throughput write")? =
+                throughput;
             self.record_count.store(0, Ordering::SeqCst);
-            *self.window_start.write().unwrap() = Instant::now();
+            *write_lock_safe!(self.window_start, "flow controller window start write")? =
+                Instant::now();
 
             // Check if we need to slow down
             if throughput > self.target_throughput * 1.1 {
@@ -611,12 +619,15 @@ impl FlowController {
             }
         }
 
-        true
+        Ok(true)
     }
 
     /// Gets the current throughput
-    pub fn current_throughput(&self) -> f64 {
-        *self.current_throughput.read().unwrap()
+    pub fn current_throughput(&self) -> Result<f64> {
+        Ok(*read_lock_safe!(
+            self.current_throughput,
+            "flow controller throughput read"
+        )?)
     }
 
     /// Sets the target throughput
@@ -653,10 +664,12 @@ mod tests {
         let buffer = BackpressureBuffer::new(config);
 
         for _ in 0..100 {
-            buffer.push(create_test_record()).unwrap();
+            buffer
+                .push(create_test_record())
+                .expect("operation should succeed");
         }
 
-        assert_eq!(buffer.len(), 100);
+        assert_eq!(buffer.len().expect("operation should succeed"), 100);
         assert!(!buffer.is_backpressure_active());
     }
 
@@ -671,11 +684,13 @@ mod tests {
         let buffer = BackpressureBuffer::new(config);
 
         for _ in 0..20 {
-            buffer.try_push(create_test_record()).unwrap();
+            buffer
+                .try_push(create_test_record())
+                .expect("operation should succeed");
         }
 
         // Buffer should not exceed high watermark
-        assert!(buffer.len() <= 10);
+        assert!(buffer.len().expect("operation should succeed") <= 10);
     }
 
     #[test]
@@ -689,11 +704,13 @@ mod tests {
         let buffer = BackpressureBuffer::new(config);
 
         for _ in 0..20 {
-            buffer.try_push(create_test_record()).unwrap();
+            buffer
+                .try_push(create_test_record())
+                .expect("operation should succeed");
         }
 
         // Buffer should equal high watermark (oldest records kept)
-        assert_eq!(buffer.len(), 10);
+        assert_eq!(buffer.len().expect("operation should succeed"), 10);
     }
 
     #[test]
@@ -707,10 +724,12 @@ mod tests {
         let buffer = BackpressureBuffer::new(config);
 
         for _ in 0..20 {
-            buffer.try_push(create_test_record()).unwrap();
+            buffer
+                .try_push(create_test_record())
+                .expect("operation should succeed");
         }
 
-        let stats = buffer.stats();
+        let stats = buffer.stats().expect("operation should succeed");
         assert_eq!(stats.records_received, 20);
         assert_eq!(stats.records_dropped, 10);
         assert!(stats.backpressure_events > 0);
@@ -726,13 +745,15 @@ mod tests {
         let channel = BackpressureChannel::new(config);
 
         for _ in 0..50 {
-            channel.send(create_test_record()).unwrap();
+            channel
+                .send(create_test_record())
+                .expect("operation should succeed");
         }
 
         assert_eq!(channel.len(), 50);
 
         for _ in 0..25 {
-            channel.recv().unwrap();
+            channel.recv().expect("operation should succeed");
         }
 
         assert_eq!(channel.len(), 25);
@@ -743,12 +764,14 @@ mod tests {
         let controller = FlowController::new(1000.0, Duration::from_millis(100));
 
         for _ in 0..100 {
-            controller.record_processed();
+            let _ = controller.record_processed();
         }
 
         // Flow controller should be tracking records
         controller.pause();
-        assert!(controller.record_processed());
+        assert!(controller
+            .record_processed()
+            .expect("operation should succeed"));
     }
 
     #[test]
@@ -757,11 +780,13 @@ mod tests {
         let buffer = BackpressureBuffer::new(config);
 
         for _ in 0..100 {
-            buffer.push(create_test_record()).unwrap();
+            buffer
+                .push(create_test_record())
+                .expect("operation should succeed");
         }
 
-        let batch = buffer.pop_batch(30);
+        let batch = buffer.pop_batch(30).expect("operation should succeed");
         assert_eq!(batch.len(), 30);
-        assert_eq!(buffer.len(), 70);
+        assert_eq!(buffer.len().expect("operation should succeed"), 70);
     }
 }

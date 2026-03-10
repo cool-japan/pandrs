@@ -5,6 +5,7 @@
 //! - OAuth 2.0 support (Authorization Code and Client Credentials flows)
 //! - API Key authentication
 //! - Session management
+//! - ReBAC (Relationship-Based Access Control)
 //! - Integration with multi-tenancy
 //!
 //! # Example
@@ -24,17 +25,34 @@
 //! // Validate token
 //! let claims = auth.validate_token(&token)?;
 //! ```
+//!
+//! # ReBAC Example
+//!
+//! ```ignore
+//! use pandrs::auth::rebac::RebacManager;
+//!
+//! let rebac = RebacManager::new();
+//!
+//! // Grant permission
+//! rebac.grant("user:alice", "owner", "document:123")?;
+//!
+//! // Check permission
+//! let can_access = rebac.check_access("user:alice", "owner", "document:123")?;
+//! ```
 
 pub mod api_key;
 pub mod jwt;
 pub mod oauth;
+pub mod rebac;
 pub mod session;
 
 pub use api_key::*;
 pub use jwt::*;
 pub use oauth::*;
+pub use rebac::*;
 pub use session::*;
 
+use crate::core::error::OptionExt;
 use crate::error::{Error, Result};
 use crate::multitenancy::{Permission, TenantId};
 use std::collections::HashMap;
@@ -777,7 +795,9 @@ impl AuthManager {
             session.refresh();
         }
 
-        Ok(self.sessions.get(session_id).unwrap())
+        self.sessions
+            .get(session_id)
+            .ok_or_else(|| Error::InvalidInput("Session not found".to_string()))
     }
 
     /// Logout and invalidate session
@@ -1046,7 +1066,7 @@ mod tests {
             .with_permission(Permission::Read)
             .with_permission(Permission::Write);
 
-        auth.register_user(user).unwrap();
+        auth.register_user(user).expect("operation should succeed");
 
         assert!(auth.get_user("user1").is_some());
     }
@@ -1058,7 +1078,7 @@ mod tests {
         let user =
             UserInfo::new("user1", "user@example.com", "tenant_a").with_password("secret123");
 
-        auth.register_user(user).unwrap();
+        auth.register_user(user).expect("operation should succeed");
 
         // Valid credentials
         let result = auth.authenticate_password("user@example.com", "secret123");
@@ -1081,9 +1101,11 @@ mod tests {
         let user =
             UserInfo::new("user1", "user@example.com", "tenant_a").with_password("secret123");
 
-        auth.register_user(user).unwrap();
+        auth.register_user(user).expect("operation should succeed");
 
-        let token = auth.generate_token("user1").unwrap();
+        let token = auth
+            .generate_token("user1")
+            .expect("operation should succeed");
         assert!(!token.is_empty());
 
         // Validate token
@@ -1099,15 +1121,17 @@ mod tests {
             .with_password("secret123")
             .with_permission(Permission::Read);
 
-        auth.register_user(user).unwrap();
+        auth.register_user(user).expect("operation should succeed");
 
-        let api_key = auth.create_api_key("user1", "test-key", None).unwrap();
+        let api_key = auth
+            .create_api_key("user1", "test-key", None)
+            .expect("operation should succeed");
         assert!(api_key.starts_with("pk_"));
 
         let result = auth.authenticate_api_key(&api_key);
         assert!(result.is_ok());
 
-        let auth_result = result.unwrap();
+        let auth_result = result.expect("operation should succeed");
         assert_eq!(auth_result.user_id, "user1");
         assert_eq!(auth_result.tenant_id, "tenant_a");
     }
@@ -1119,14 +1143,17 @@ mod tests {
         let user =
             UserInfo::new("user1", "user@example.com", "tenant_a").with_password("secret123");
 
-        auth.register_user(user).unwrap();
+        auth.register_user(user).expect("operation should succeed");
 
-        let refresh_token = auth.generate_refresh_token("user1").unwrap();
+        let refresh_token = auth
+            .generate_refresh_token("user1")
+            .expect("operation should succeed");
         let new_token = auth.refresh_access_token(&refresh_token);
         assert!(new_token.is_ok());
 
         // Revoke and try again
-        auth.revoke_refresh_token(&refresh_token).unwrap();
+        auth.revoke_refresh_token(&refresh_token)
+            .expect("operation should succeed");
         let result = auth.refresh_access_token(&refresh_token);
         assert!(result.is_err());
     }
@@ -1138,18 +1165,18 @@ mod tests {
         let user =
             UserInfo::new("user1", "user@example.com", "tenant_a").with_password("secret123");
 
-        auth.register_user(user).unwrap();
+        auth.register_user(user).expect("operation should succeed");
 
         let result = auth
             .authenticate_password("user@example.com", "secret123")
-            .unwrap();
-        let session_id = result.session_id.unwrap();
+            .expect("operation should succeed");
+        let session_id = result.session_id.expect("operation should succeed");
 
         // Validate session
         assert!(auth.validate_session(&session_id).is_ok());
 
         // Logout
-        auth.logout(&session_id).unwrap();
+        auth.logout(&session_id).expect("operation should succeed");
 
         // Session should be invalid now
         assert!(auth.validate_session(&session_id).is_err());
@@ -1161,10 +1188,11 @@ mod tests {
 
         let user = UserInfo::new("user1", "user@example.com", "tenant_a").with_password("oldpass");
 
-        auth.register_user(user).unwrap();
+        auth.register_user(user).expect("operation should succeed");
 
         // Change password
-        auth.change_password("user1", "oldpass", "newpass").unwrap();
+        auth.change_password("user1", "oldpass", "newpass")
+            .expect("operation should succeed");
 
         // Old password should fail
         let result = auth.authenticate_password("user@example.com", "oldpass");
@@ -1182,7 +1210,7 @@ mod tests {
         let user =
             UserInfo::new("user1", "user@example.com", "tenant_a").with_password("secret123");
 
-        auth.register_user(user).unwrap();
+        auth.register_user(user).expect("operation should succeed");
 
         // Login should work
         assert!(auth
@@ -1190,7 +1218,8 @@ mod tests {
             .is_ok());
 
         // Deactivate user
-        auth.deactivate_user("user1").unwrap();
+        auth.deactivate_user("user1")
+            .expect("operation should succeed");
 
         // Login should fail
         let result = auth.authenticate_password("user@example.com", "secret123");

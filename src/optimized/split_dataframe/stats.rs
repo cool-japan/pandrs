@@ -197,13 +197,17 @@ impl OptimizedDataFrame {
         // Convert to floating-point vectors
         let values1: Vec<f64> = match column1 {
             col if col.as_float64().is_some() => {
-                let float_col = col.as_float64().unwrap();
+                let float_col = col.as_float64().ok_or_else(|| {
+                    crate::error::Error::TypeMismatch("column type check failed for Float64".into())
+                })?;
                 (0..self.row_count())
                     .filter_map(|i| float_col.get(i).ok().flatten())
                     .collect()
             }
             col if col.as_int64().is_some() => {
-                let int_col = col.as_int64().unwrap();
+                let int_col = col.as_int64().ok_or_else(|| {
+                    crate::error::Error::TypeMismatch("column type check failed for Int64".into())
+                })?;
                 (0..self.row_count())
                     .filter_map(|i| int_col.get(i).ok().flatten().map(|v| v as f64))
                     .collect()
@@ -218,13 +222,17 @@ impl OptimizedDataFrame {
 
         let values2: Vec<f64> = match column2 {
             col if col.as_float64().is_some() => {
-                let float_col = col.as_float64().unwrap();
+                let float_col = col.as_float64().ok_or_else(|| {
+                    crate::error::Error::TypeMismatch("column type check failed for Float64".into())
+                })?;
                 (0..self.row_count())
                     .filter_map(|i| float_col.get(i).ok().flatten())
                     .collect()
             }
             col if col.as_int64().is_some() => {
-                let int_col = col.as_int64().unwrap();
+                let int_col = col.as_int64().ok_or_else(|| {
+                    crate::error::Error::TypeMismatch("column type check failed for Int64".into())
+                })?;
                 (0..self.row_count())
                     .filter_map(|i| int_col.get(i).ok().flatten().map(|v| v as f64))
                     .collect()
@@ -270,7 +278,9 @@ impl OptimizedDataFrame {
         // Convert values to floating-point
         let values: Vec<(f64, String)> = match value_column {
             col if col.as_float64().is_some() => {
-                let float_col = col.as_float64().unwrap();
+                let float_col = col.as_float64().ok_or_else(|| {
+                    crate::error::Error::TypeMismatch("column type check failed for Float64".into())
+                })?;
                 (0..self.row_count())
                     .filter_map(|i| {
                         let val = float_col.get(i).ok().flatten()?;
@@ -280,7 +290,9 @@ impl OptimizedDataFrame {
                     .collect()
             }
             col if col.as_int64().is_some() => {
-                let int_col = col.as_int64().unwrap();
+                let int_col = col.as_int64().ok_or_else(|| {
+                    crate::error::Error::TypeMismatch("column type check failed for Int64".into())
+                })?;
                 (0..self.row_count())
                     .filter_map(|i| {
                         let val = int_col.get(i).ok().flatten()? as f64;
@@ -344,13 +356,17 @@ impl OptimizedDataFrame {
         // Convert to floating-point vectors
         let values1: Vec<f64> = match column1 {
             col if col.as_float64().is_some() => {
-                let float_col = col.as_float64().unwrap();
+                let float_col = col.as_float64().ok_or_else(|| {
+                    crate::error::Error::TypeMismatch("column type check failed for Float64".into())
+                })?;
                 (0..self.row_count())
                     .filter_map(|i| float_col.get(i).ok().flatten())
                     .collect()
             }
             col if col.as_int64().is_some() => {
-                let int_col = col.as_int64().unwrap();
+                let int_col = col.as_int64().ok_or_else(|| {
+                    crate::error::Error::TypeMismatch("column type check failed for Int64".into())
+                })?;
                 (0..self.row_count())
                     .filter_map(|i| int_col.get(i).ok().flatten().map(|v| v as f64))
                     .collect()
@@ -365,13 +381,17 @@ impl OptimizedDataFrame {
 
         let values2: Vec<f64> = match column2 {
             col if col.as_float64().is_some() => {
-                let float_col = col.as_float64().unwrap();
+                let float_col = col.as_float64().ok_or_else(|| {
+                    crate::error::Error::TypeMismatch("column type check failed for Float64".into())
+                })?;
                 (0..self.row_count())
                     .filter_map(|i| float_col.get(i).ok().flatten())
                     .collect()
             }
             col if col.as_int64().is_some() => {
-                let int_col = col.as_int64().unwrap();
+                let int_col = col.as_int64().ok_or_else(|| {
+                    crate::error::Error::TypeMismatch("column type check failed for Int64".into())
+                })?;
                 (0..self.row_count())
                     .filter_map(|i| int_col.get(i).ok().flatten().map(|v| v as f64))
                     .collect()
@@ -424,13 +444,17 @@ impl OptimizedDataFrame {
         // Get count values
         let count_values: Vec<f64> = match count_column {
             col if col.as_float64().is_some() => {
-                let float_col = col.as_float64().unwrap();
+                let float_col = col.as_float64().ok_or_else(|| {
+                    crate::error::Error::TypeMismatch("column type check failed for Float64".into())
+                })?;
                 (0..self.row_count())
                     .filter_map(|i| float_col.get(i).ok().flatten())
                     .collect()
             }
             col if col.as_int64().is_some() => {
-                let int_col = col.as_int64().unwrap();
+                let int_col = col.as_int64().ok_or_else(|| {
+                    crate::error::Error::TypeMismatch("column type check failed for Int64".into())
+                })?;
                 (0..self.row_count())
                     .filter_map(|i| int_col.get(i).ok().flatten().map(|v| v as f64))
                     .collect()
@@ -570,16 +594,23 @@ mod tests {
 
         // Create test data
         let values = Float64Column::with_name(vec![1.0, 2.0, 3.0, 4.0, 5.0], "values");
-        df.add_column("values", Column::Float64(values)).unwrap();
+        df.add_column("values", Column::Float64(values))
+            .expect("operation should succeed");
 
         // Test describe function
-        let desc = df.describe("values").unwrap();
+        let desc = df.describe("values").expect("operation should succeed");
 
         // Verify results
-        assert_eq!(desc.stats.get("count").unwrap().clone() as usize, 5);
-        assert!((desc.stats.get("mean").unwrap() - 3.0).abs() < 1e-10);
-        assert!((desc.stats.get("min").unwrap() - 1.0).abs() < 1e-10);
-        assert!((desc.stats.get("max").unwrap() - 5.0).abs() < 1e-10);
+        assert_eq!(
+            desc.stats
+                .get("count")
+                .expect("operation should succeed")
+                .clone() as usize,
+            5
+        );
+        assert!((desc.stats.get("mean").expect("operation should succeed") - 3.0).abs() < 1e-10);
+        assert!((desc.stats.get("min").expect("operation should succeed") - 1.0).abs() < 1e-10);
+        assert!((desc.stats.get("max").expect("operation should succeed") - 5.0).abs() < 1e-10);
     }
 
     #[test]
@@ -590,13 +621,15 @@ mod tests {
         let values1 = Float64Column::with_name(vec![1.0, 2.0, 3.0, 4.0, 5.0], "sample1");
         let values2 = Float64Column::with_name(vec![2.0, 3.0, 4.0, 5.0, 6.0], "sample2");
 
-        df.add_column("sample1", Column::Float64(values1)).unwrap();
-        df.add_column("sample2", Column::Float64(values2)).unwrap();
+        df.add_column("sample1", Column::Float64(values1))
+            .expect("operation should succeed");
+        df.add_column("sample2", Column::Float64(values2))
+            .expect("operation should succeed");
 
         // Run t-test
         let result = df
             .ttest("sample1", "sample2", Some(0.05), Some(true))
-            .unwrap();
+            .expect("operation should succeed");
 
         // Verify results
         assert!(result.statistic < 0.0); // Because sample2 has larger values
@@ -636,11 +669,15 @@ mod tests {
             "group",
         );
 
-        df.add_column("values", Column::Float64(values)).unwrap();
-        df.add_column("group", Column::String(groups)).unwrap();
+        df.add_column("values", Column::Float64(values))
+            .expect("operation should succeed");
+        df.add_column("group", Column::String(groups))
+            .expect("operation should succeed");
 
         // Perform ANOVA
-        let result = df.anova("values", "group", Some(0.05)).unwrap();
+        let result = df
+            .anova("values", "group", Some(0.05))
+            .expect("operation should succeed");
 
         // Verify results
         assert!(result.f_statistic > 0.0);

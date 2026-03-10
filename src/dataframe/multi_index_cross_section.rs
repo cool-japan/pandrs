@@ -368,7 +368,15 @@ impl MultiIndexGroupBy {
             for col_name in &self.dataframe.column_names {
                 let values = self.extract_column_values(col_name, indices)?;
                 let aggregated = func.apply(&values);
-                result_data.get_mut(col_name).unwrap().push(aggregated);
+                // Safe: column was inserted into result_data during initialization
+                if let Some(col_vec) = result_data.get_mut(col_name) {
+                    col_vec.push(aggregated);
+                } else {
+                    return Err(Error::Column(format!(
+                        "Column '{}' not found in result_data",
+                        col_name
+                    )));
+                }
             }
         }
 
@@ -491,7 +499,7 @@ mod tests {
             vec![IndexValue::from("B"), IndexValue::from(2)],
         ];
 
-        let index = AdvancedMultiIndex::new(tuples, None).unwrap();
+        let index = AdvancedMultiIndex::new(tuples, None).expect("operation should succeed");
 
         // This test would require a proper DataFrame implementation
         // For now, we'll test the index operations
@@ -524,19 +532,21 @@ mod tests {
             ],
         ];
 
-        let index = AdvancedMultiIndex::new(tuples, None).unwrap();
-        let group_keys = index.get_group_keys(&[0]).unwrap();
+        let index = AdvancedMultiIndex::new(tuples, None).expect("operation should succeed");
+        let group_keys = index
+            .get_group_keys(&[0])
+            .expect("operation should succeed");
 
         assert_eq!(group_keys.len(), 2); // "A" and "B"
 
         let indices_a = index
             .get_group_indices(&[0], &[IndexValue::from("A")])
-            .unwrap();
+            .expect("operation should succeed");
         assert_eq!(indices_a, vec![0, 1]);
 
         let indices_b = index
             .get_group_indices(&[0], &[IndexValue::from("B")])
-            .unwrap();
+            .expect("operation should succeed");
         assert_eq!(indices_b, vec![2, 3]);
     }
 
@@ -574,11 +584,11 @@ mod tests {
             ],
         ];
 
-        let index = AdvancedMultiIndex::new(tuples, None).unwrap();
+        let index = AdvancedMultiIndex::new(tuples, None).expect("operation should succeed");
 
         // Test getting level values
         let level_0_values = (0..index.len())
-            .map(|i| index.get_tuple(i).unwrap()[0].clone())
+            .map(|i| index.get_tuple(i).expect("operation should succeed")[0].clone())
             .collect::<Vec<_>>();
         assert_eq!(
             level_0_values,
@@ -586,7 +596,7 @@ mod tests {
         );
 
         let level_2_values = (0..index.len())
-            .map(|i| index.get_tuple(i).unwrap()[2].clone())
+            .map(|i| index.get_tuple(i).expect("operation should succeed")[2].clone())
             .collect::<Vec<_>>();
         assert_eq!(
             level_2_values,

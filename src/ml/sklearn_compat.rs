@@ -237,7 +237,10 @@ impl SklearnTransformer for StandardScalerCompat {
         let means = self.mean_.as_ref().ok_or_else(|| {
             Error::InvalidOperation("StandardScaler must be fitted before transform".into())
         })?;
-        let scales = self.scale_.as_ref().unwrap();
+        let scales = self
+            .scale_
+            .as_ref()
+            .ok_or_else(|| Error::InvalidOperation("Model not fitted. Call fit() first.".into()))?;
 
         let mut result = DataFrame::new();
 
@@ -273,7 +276,10 @@ impl SklearnTransformer for StandardScalerCompat {
         let means = self.mean_.as_ref().ok_or_else(|| {
             Error::InvalidOperation("StandardScaler must be fitted before inverse_transform".into())
         })?;
-        let scales = self.scale_.as_ref().unwrap();
+        let scales = self
+            .scale_
+            .as_ref()
+            .ok_or_else(|| Error::InvalidOperation("Model not fitted. Call fit() first.".into()))?;
 
         let mut result = DataFrame::new();
 
@@ -501,7 +507,10 @@ impl SklearnTransformer for MinMaxScalerCompat {
         let scales = self.scale_.as_ref().ok_or_else(|| {
             Error::InvalidOperation("MinMaxScaler must be fitted before transform".into())
         })?;
-        let mins = self.min_.as_ref().unwrap();
+        let mins = self
+            .min_
+            .as_ref()
+            .ok_or_else(|| Error::InvalidOperation("Model not fitted. Call fit() first.".into()))?;
 
         let mut result = DataFrame::new();
 
@@ -539,7 +548,10 @@ impl SklearnTransformer for MinMaxScalerCompat {
         let scales = self.scale_.as_ref().ok_or_else(|| {
             Error::InvalidOperation("MinMaxScaler must be fitted before inverse_transform".into())
         })?;
-        let mins = self.min_.as_ref().unwrap();
+        let mins = self
+            .min_
+            .as_ref()
+            .ok_or_else(|| Error::InvalidOperation("Model not fitted. Call fit() first.".into()))?;
 
         let mut result = DataFrame::new();
 
@@ -865,26 +877,29 @@ mod tests {
         let mut df = DataFrame::new();
         df.add_column(
             "feature1".to_string(),
-            Series::new(vec![1.0, 2.0, 3.0, 4.0, 5.0], Some("feature1".to_string())).unwrap(),
+            Series::new(vec![1.0, 2.0, 3.0, 4.0, 5.0], Some("feature1".to_string()))
+                .expect("operation should succeed"),
         )
-        .unwrap();
+        .expect("operation should succeed");
         df.add_column(
             "feature2".to_string(),
             Series::new(
                 vec![10.0, 20.0, 30.0, 40.0, 50.0],
                 Some("feature2".to_string()),
             )
-            .unwrap(),
+            .expect("operation should succeed"),
         )
-        .unwrap();
+        .expect("operation should succeed");
 
         // Fit and transform
-        scaler.fit(&df, None).unwrap();
-        let transformed = scaler.transform(&df).unwrap();
+        scaler.fit(&df, None).expect("operation should succeed");
+        let transformed = scaler.transform(&df).expect("operation should succeed");
 
         // Check that means are approximately zero
-        let feature1_col = transformed.get_column::<f64>("feature1").unwrap();
-        let feature1_values = feature1_col.as_f64().unwrap();
+        let feature1_col = transformed
+            .get_column::<f64>("feature1")
+            .expect("operation should succeed");
+        let feature1_values = feature1_col.as_f64().expect("operation should succeed");
         let feature1_mean = feature1_values.iter().sum::<f64>() / feature1_values.len() as f64;
 
         assert!(
@@ -893,13 +908,19 @@ mod tests {
         );
 
         // Test inverse transform
-        let inverse_transformed = scaler.inverse_transform(&transformed).unwrap();
-        let original_feature1 = df.get_column::<f64>("feature1").unwrap().as_f64().unwrap();
+        let inverse_transformed = scaler
+            .inverse_transform(&transformed)
+            .expect("operation should succeed");
+        let original_feature1 = df
+            .get_column::<f64>("feature1")
+            .expect("operation should succeed")
+            .as_f64()
+            .expect("operation should succeed");
         let restored_feature1 = inverse_transformed
             .get_column::<f64>("feature1")
-            .unwrap()
+            .expect("operation should succeed")
             .as_f64()
-            .unwrap();
+            .expect("operation should succeed");
 
         for (original, restored) in original_feature1.iter().zip(restored_feature1.iter()) {
             assert!(
@@ -917,17 +938,20 @@ mod tests {
         let mut df = DataFrame::new();
         df.add_column(
             "feature1".to_string(),
-            Series::new(vec![1.0, 2.0, 3.0, 4.0, 5.0], Some("feature1".to_string())).unwrap(),
+            Series::new(vec![1.0, 2.0, 3.0, 4.0, 5.0], Some("feature1".to_string()))
+                .expect("operation should succeed"),
         )
-        .unwrap();
+        .expect("operation should succeed");
 
         // Fit and transform
-        scaler.fit(&df, None).unwrap();
-        let transformed = scaler.transform(&df).unwrap();
+        scaler.fit(&df, None).expect("operation should succeed");
+        let transformed = scaler.transform(&df).expect("operation should succeed");
 
         // Check that values are in range [0, 1]
-        let feature1_col = transformed.get_column::<f64>("feature1").unwrap();
-        let feature1_values = feature1_col.as_f64().unwrap();
+        let feature1_col = transformed
+            .get_column::<f64>("feature1")
+            .expect("operation should succeed");
+        let feature1_values = feature1_col.as_f64().expect("operation should succeed");
 
         for &value in &feature1_values {
             assert!(

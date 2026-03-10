@@ -93,8 +93,8 @@ pub struct IndexDefinition {
 /// ```no_run
 /// use pandrs::io::sql::{has_table, SqlConnection};
 ///
-/// let conn = SqlConnection::from_url("sqlite:data.db").unwrap();
-/// let exists = has_table("users", &conn, None).unwrap();
+/// let conn = SqlConnection::from_url("sqlite:data.db").expect("operation should succeed");
+/// let exists = has_table("users", &conn, None).expect("operation should succeed");
 /// println!("Table exists: {}", exists);
 /// ```
 pub fn has_table(
@@ -141,8 +141,8 @@ pub fn has_table(
 /// ```no_run
 /// use pandrs::io::sql::{list_tables, SqlConnection};
 ///
-/// let conn = SqlConnection::from_url("sqlite:data.db").unwrap();
-/// let tables = list_tables(&conn, None).unwrap();
+/// let conn = SqlConnection::from_url("sqlite:data.db").expect("operation should succeed");
+/// let tables = list_tables(&conn, None).expect("operation should succeed");
 /// for table in tables {
 ///     println!("Table: {}", table);
 /// }
@@ -192,8 +192,8 @@ pub fn list_tables(connection: &SqlConnection, schema: Option<&str>) -> Result<V
 /// ```no_run
 /// use pandrs::io::sql::{get_table_schema, SqlConnection};
 ///
-/// let conn = SqlConnection::from_url("sqlite:data.db").unwrap();
-/// let schema = get_table_schema("users", &conn, None).unwrap();
+/// let conn = SqlConnection::from_url("sqlite:data.db").expect("operation should succeed");
+/// let schema = get_table_schema("users", &conn, None).expect("operation should succeed");
 /// println!("Table {} has {} columns", schema.name, schema.columns.len());
 /// ```
 pub fn get_table_schema(
@@ -234,8 +234,8 @@ pub fn get_table_schema(
 /// // Create sample dataframe
 /// let df = OptimizedDataFrame::new();
 ///
-/// let conn = SqlConnection::from_url("sqlite:data.db").unwrap();
-/// let sql = get_create_table_sql(&df, "users", &conn).unwrap();
+/// let conn = SqlConnection::from_url("sqlite:data.db").expect("operation should succeed");
+/// let sql = get_create_table_sql(&df, "users", &conn).expect("operation should succeed");
 /// println!("CREATE SQL: {}", sql);
 /// ```
 pub fn get_create_table_sql(
@@ -427,7 +427,7 @@ impl SchemaIntrospector {
     /// use pandrs::io::sql::SchemaIntrospector;
     ///
     /// async fn example(inspector: &SchemaIntrospector) {
-    ///     let tables = inspector.list_tables().await.unwrap();
+    ///     let tables = inspector.list_tables().await.expect("operation should succeed");
     ///     for table in tables {
     ///         println!("Table: {}", table);
     ///     }
@@ -473,7 +473,7 @@ impl SchemaIntrospector {
     /// use pandrs::io::sql::SchemaIntrospector;
     ///
     /// async fn example(inspector: &SchemaIntrospector) {
-    ///     let schema = inspector.describe_table("users").await.unwrap();
+    ///     let schema = inspector.describe_table("users").await.expect("operation should succeed");
     ///     println!("Table has {} columns", schema.columns.len());
     /// }
     /// ```
@@ -534,7 +534,7 @@ impl SchemaIntrospector {
     /// use pandrs::io::sql::SchemaIntrospector;
     ///
     /// async fn example(inspector: &SchemaIntrospector) {
-    ///     let schemas = inspector.list_schemas().await.unwrap();
+    ///     let schemas = inspector.list_schemas().await.expect("operation should succeed");
     ///     for schema in schemas {
     ///         println!("Schema: {}", schema);
     ///     }
@@ -581,7 +581,7 @@ impl SchemaIntrospector {
     /// use pandrs::io::sql::SchemaIntrospector;
     ///
     /// async fn example(inspector: &SchemaIntrospector) {
-    ///     let stats = inspector.get_column_stats("users", None).await.unwrap();
+    ///     let stats = inspector.get_column_stats("users", None).await.expect("operation should succeed");
     ///     for (column, stat) in stats {
     ///         println!("Column {}: {} rows", column, stat.row_count);
     ///     }
@@ -667,7 +667,7 @@ impl SchemaIntrospector {
     /// use pandrs::io::sql::SchemaIntrospector;
     ///
     /// async fn example(inspector: &SchemaIntrospector) {
-    ///     let analysis = inspector.analyze_table("users").await.unwrap();
+    ///     let analysis = inspector.analyze_table("users").await.expect("operation should succeed");
     ///     println!("Table size: {} MB", analysis.size_mb);
     /// }
     /// ```
@@ -873,7 +873,7 @@ impl SchemaComparator {
     ///     indexes: vec![],
     /// };
     ///
-    /// let migration_sql = SchemaComparator::generate_migration(&old_schema, &new_schema).unwrap();
+    /// let migration_sql = SchemaComparator::generate_migration(&old_schema, &new_schema).expect("operation should succeed");
     /// for sql in migration_sql {
     ///     println!("Migration SQL: {}", sql);
     /// }

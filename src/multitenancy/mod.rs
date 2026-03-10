@@ -826,10 +826,14 @@ mod tests {
 
     fn create_test_df() -> DataFrame {
         let mut df = DataFrame::new();
-        let x = Series::new(vec![1.0, 2.0, 3.0, 4.0, 5.0], Some("x".to_string())).unwrap();
-        let y = Series::new(vec![10.0, 20.0, 30.0, 40.0, 50.0], Some("y".to_string())).unwrap();
-        df.add_column("x".to_string(), x).unwrap();
-        df.add_column("y".to_string(), y).unwrap();
+        let x = Series::new(vec![1.0, 2.0, 3.0, 4.0, 5.0], Some("x".to_string()))
+            .expect("operation should succeed");
+        let y = Series::new(vec![10.0, 20.0, 30.0, 40.0, 50.0], Some("y".to_string()))
+            .expect("operation should succeed");
+        df.add_column("x".to_string(), x)
+            .expect("operation should succeed");
+        df.add_column("y".to_string(), y)
+            .expect("operation should succeed");
         df
     }
 
@@ -838,7 +842,9 @@ mod tests {
         let mut manager = TenantManager::new();
 
         let config = TenantConfig::default_rw("tenant_a");
-        manager.register_tenant(config).unwrap();
+        manager
+            .register_tenant(config)
+            .expect("operation should succeed");
 
         assert!(manager.get_tenant("tenant_a").is_some());
         assert!(manager.get_tenant("tenant_b").is_none());
@@ -851,14 +857,16 @@ mod tests {
         // Register two tenants
         manager
             .register_tenant(TenantConfig::default_rw("tenant_a"))
-            .unwrap();
+            .expect("operation should succeed");
         manager
             .register_tenant(TenantConfig::default_rw("tenant_b"))
-            .unwrap();
+            .expect("operation should succeed");
 
         // Store data for tenant_a
         let df = create_test_df();
-        manager.store_dataframe("tenant_a", "data", df).unwrap();
+        manager
+            .store_dataframe("tenant_a", "data", df)
+            .expect("operation should succeed");
 
         // tenant_a can access their data
         assert!(manager.get_dataframe("tenant_a", "data").is_ok());
@@ -873,7 +881,9 @@ mod tests {
 
         // Create read-only tenant
         let config = TenantConfig::new("readonly").with_permission(Permission::Read);
-        manager.register_tenant(config).unwrap();
+        manager
+            .register_tenant(config)
+            .expect("operation should succeed");
 
         // Cannot create data without Create permission
         let df = create_test_df();
@@ -885,11 +895,15 @@ mod tests {
         let mut manager = TenantManager::new();
 
         let config = TenantConfig::default_rw("limited").with_max_rows(8); // Max 8 rows (5 + 5 = 10 would exceed)
-        manager.register_tenant(config).unwrap();
+        manager
+            .register_tenant(config)
+            .expect("operation should succeed");
 
         // First dataset with 5 rows should succeed
         let df = create_test_df();
-        manager.store_dataframe("limited", "data1", df).unwrap();
+        manager
+            .store_dataframe("limited", "data1", df)
+            .expect("operation should succeed");
 
         // Second dataset would exceed quota (5 + 5 > 8)
         let df2 = create_test_df();
@@ -903,12 +917,16 @@ mod tests {
 
         manager
             .register_tenant(TenantConfig::default_rw("tenant_a"))
-            .unwrap();
+            .expect("operation should succeed");
 
         let df = create_test_df();
-        manager.store_dataframe("tenant_a", "data", df).unwrap();
+        manager
+            .store_dataframe("tenant_a", "data", df)
+            .expect("operation should succeed");
 
-        let usage = manager.get_usage("tenant_a").unwrap();
+        let usage = manager
+            .get_usage("tenant_a")
+            .expect("operation should succeed");
         assert_eq!(usage.dataset_count, 1);
         assert_eq!(usage.total_rows, 5);
         assert_eq!(usage.write_operations, 1);
@@ -920,10 +938,12 @@ mod tests {
 
         manager
             .register_tenant(TenantConfig::default_rw("tenant_a"))
-            .unwrap();
+            .expect("operation should succeed");
 
         let df = create_test_df();
-        manager.store_dataframe("tenant_a", "data", df).unwrap();
+        manager
+            .store_dataframe("tenant_a", "data", df)
+            .expect("operation should succeed");
         let _ = manager.get_dataframe("tenant_a", "data");
 
         let audit = manager.get_audit_log(Some("tenant_a"));
@@ -936,22 +956,28 @@ mod tests {
 
         // Create tenant with share permission
         let config_a = TenantConfig::default_rw("tenant_a").with_permission(Permission::Share);
-        manager.register_tenant(config_a).unwrap();
+        manager
+            .register_tenant(config_a)
+            .expect("operation should succeed");
         manager
             .register_tenant(TenantConfig::default_rw("tenant_b"))
-            .unwrap();
+            .expect("operation should succeed");
 
         // Store data
         let df = create_test_df();
-        manager.store_dataframe("tenant_a", "data", df).unwrap();
+        manager
+            .store_dataframe("tenant_a", "data", df)
+            .expect("operation should succeed");
 
         // Share with tenant_b
         manager
             .share_dataset("tenant_a", "data", "tenant_b")
-            .unwrap();
+            .expect("operation should succeed");
 
         // Check metadata
-        let metadata = manager.get_dataset_metadata("tenant_a", "data").unwrap();
+        let metadata = manager
+            .get_dataset_metadata("tenant_a", "data")
+            .expect("operation should succeed");
         assert!(metadata.shared_with.contains("tenant_b"));
     }
 
@@ -961,14 +987,20 @@ mod tests {
 
         manager
             .register_tenant(TenantConfig::default_rw("tenant_a"))
-            .unwrap();
+            .expect("operation should succeed");
 
         let df1 = create_test_df();
         let df2 = create_test_df();
-        manager.store_dataframe("tenant_a", "data1", df1).unwrap();
-        manager.store_dataframe("tenant_a", "data2", df2).unwrap();
+        manager
+            .store_dataframe("tenant_a", "data1", df1)
+            .expect("operation should succeed");
+        manager
+            .store_dataframe("tenant_a", "data2", df2)
+            .expect("operation should succeed");
 
-        let datasets = manager.list_datasets("tenant_a").unwrap();
+        let datasets = manager
+            .list_datasets("tenant_a")
+            .expect("operation should succeed");
         assert_eq!(datasets.len(), 2);
     }
 
@@ -977,13 +1009,19 @@ mod tests {
         let mut manager = TenantManager::new();
 
         let config = TenantConfig::default_rw("tenant_a").with_permission(Permission::Delete);
-        manager.register_tenant(config).unwrap();
+        manager
+            .register_tenant(config)
+            .expect("operation should succeed");
 
         let df = create_test_df();
-        manager.store_dataframe("tenant_a", "data", df).unwrap();
+        manager
+            .store_dataframe("tenant_a", "data", df)
+            .expect("operation should succeed");
 
         assert!(manager.get_dataframe("tenant_a", "data").is_ok());
-        manager.delete_dataframe("tenant_a", "data").unwrap();
+        manager
+            .delete_dataframe("tenant_a", "data")
+            .expect("operation should succeed");
         assert!(manager.get_dataframe("tenant_a", "data").is_err());
     }
 

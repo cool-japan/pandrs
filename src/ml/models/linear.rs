@@ -316,8 +316,14 @@ impl SupervisedModel for LinearRegression {
             return Err(Error::InvalidValue("Model not fitted".into()));
         }
 
-        let coefficients = self.coefficients.as_ref().unwrap();
-        let feature_names = self.feature_names.as_ref().unwrap();
+        let coefficients = self
+            .coefficients
+            .as_ref()
+            .ok_or_else(|| Error::InvalidOperation("Model not fitted. Call fit() first.".into()))?;
+        let feature_names = self
+            .feature_names
+            .as_ref()
+            .ok_or_else(|| Error::InvalidOperation("Model not fitted. Call fit() first.".into()))?;
 
         // Validate input data
         for name in feature_names {

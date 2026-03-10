@@ -59,8 +59,10 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use crate::core::error::OptionExt;
 use crate::dataframe::DataFrame;
 use crate::error::{Error, PandRSError, Result};
+use crate::lock_safe;
 use crate::optimized::dataframe::OptimizedDataFrame;
 use crate::series::Series;
 use crate::series::Series as LegacySeries;
@@ -190,7 +192,7 @@ impl DataStream {
             .collect();
 
         let stream = DataStream::new(headers.clone(), config);
-        let sender = stream.get_sender().unwrap();
+        let sender = stream.get_sender().expect("operation should succeed");
 
         // Start a thread to read lines and send to stream
         thread::spawn(move || {
@@ -226,7 +228,7 @@ impl DataStream {
         T: Clone + Send + 'static,
     {
         let stream = DataStream::new(headers, config);
-        let sender = stream.get_sender().unwrap();
+        let sender = stream.get_sender().expect("operation should succeed");
 
         // Start a thread to read from iterator and send to stream
         thread::spawn(move || {
@@ -404,13 +406,21 @@ impl DataStream {
         for record in batch {
             for header in &self.headers {
                 let value = record.fields.get(header).cloned().unwrap_or_default();
-                columns.get_mut(header).unwrap().push(value);
+                columns
+                    .get_mut(header)
+                    .ok_or_else(|| {
+                        Error::InvalidOperation(format!("column not found: {}", header))
+                    })?
+                    .push(value);
             }
         }
 
         // Create DataFrame using add_column method
         for header in &self.headers {
-            let column_data = columns.get(header).unwrap().clone();
+            let column_data = columns
+                .get(header)
+                .ok_or_else(|| Error::InvalidOperation(format!("column not found: {}", header)))?
+                .clone();
             let series = crate::series::Series::new(column_data, Some(header.clone()))?;
             df.add_column(header.clone(), series)?;
         }
@@ -518,7 +528,9 @@ impl StreamAggregator {
                 .parse::<f64>()
                 .map_err(|_| Error::Cast(format!("Could not parse '{}' as number", value_str)))?;
 
-            let current = self.current_values.get_mut(column).unwrap();
+            let current = self.current_values.get_mut(column).ok_or_else(|| {
+                Error::InvalidOperation(format!("aggregation column not found: {}", column))
+            })?;
 
             match agg_type {
                 AggregationType::Sum => {
@@ -777,7 +789,7 @@ impl RealTimeAnalytics {
         let values_clone = self.current_values.clone();
         // Insert the initial value
         {
-            let mut values = values_clone.lock().unwrap();
+            let mut values = lock_safe!(values_clone, "stream metric values lock")?;
             values.insert(metric_key, 0.0);
         }
 
@@ -809,8 +821,10 @@ impl RealTimeAnalytics {
 
             loop {
                 // Check if stopped
-                if *stop.lock().unwrap() {
-                    break;
+                if let Ok(stop_guard) = lock_safe!(stop, "stream stop flag lock") {
+                    if *stop_guard {
+                        break;
+                    }
                 }
 
                 // Process records
@@ -867,8 +881,10 @@ impl RealTimeAnalytics {
                             }
                             MetricType::ExponentialMovingAverage(alpha) => {
                                 let last = values[values.len() - 1];
-                                if let Some(&prev_ema) =
-                                    current_values.lock().unwrap().get(metric_key)
+                                if let Some(prev_ema) =
+                                    lock_safe!(current_values, "stream current values lock")
+                                        .ok()
+                                        .and_then(|v| v.get(metric_key).copied())
                                 {
                                     alpha * last + (1.0 - alpha) * prev_ema
                                 } else {
@@ -902,9 +918,12 @@ impl RealTimeAnalytics {
                     }
 
                     // Update current values
-                    let mut current = current_values.lock().unwrap();
-                    for (key, value) in new_values {
-                        current.insert(key, value);
+                    if let Ok(mut current) =
+                        lock_safe!(current_values, "stream current values lock")
+                    {
+                        for (key, value) in new_values {
+                            current.insert(key, value);
+                        }
                     }
                 }
 
@@ -917,13 +936,14 @@ impl RealTimeAnalytics {
     }
 
     /// Stop background processing
-    pub fn stop(&self) {
-        let mut stop = self.stop.lock().unwrap();
+    pub fn stop(&self) -> Result<()> {
+        let mut stop = lock_safe!(self.stop, "stream stop flag lock")?;
         *stop = true;
+        Ok(())
     }
 
     /// Get current metric values
-    pub fn get_metrics(&self) -> HashMap<String, f64> {
-        self.current_values.lock().unwrap().clone()
+    pub fn get_metrics(&self) -> Result<HashMap<String, f64>> {
+        Ok(lock_safe!(self.current_values, "stream current values lock")?.clone())
     }
 }

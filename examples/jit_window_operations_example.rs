@@ -340,7 +340,7 @@ fn test_multiple_operations_jit(df: &DataFrame, jit_context: &JitWindowContext) 
 fn demonstrate_jit_statistics(jit_context: &JitWindowContext) -> Result<()> {
     println!("   JIT Compilation and Cache Statistics:");
 
-    let stats = jit_context.stats();
+    let stats = jit_context.stats().unwrap();
     println!("     Total Compilations: {}", stats.total_compilations());
     println!("     Rolling Compilations: {}", stats.rolling_compilations);
     println!(
@@ -360,7 +360,7 @@ fn demonstrate_jit_statistics(jit_context: &JitWindowContext) -> Result<()> {
     );
     println!(
         "     Functions in Cache: {}",
-        jit_context.compiled_functions_count()
+        jit_context.compiled_functions_count().unwrap()
     );
     println!(
         "     Compilation Time: {:.2} ms",
@@ -370,7 +370,7 @@ fn demonstrate_jit_statistics(jit_context: &JitWindowContext) -> Result<()> {
     println!("\n   Cache Management:");
     println!(
         "     Before clearing: {} functions",
-        jit_context.compiled_functions_count()
+        jit_context.compiled_functions_count().unwrap()
     );
     // Note: We won't actually clear the cache in this demo to maintain performance
     println!("     Cache automatically manages memory and evicts old functions");

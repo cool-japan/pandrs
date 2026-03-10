@@ -198,8 +198,11 @@ where
                     // Is this a shortest path to w via v?
                     if distance[&w] == dist_v + 1 {
                         let sigma_v = sigma[&v];
-                        *sigma.get_mut(&w).unwrap() += sigma_v;
-                        predecessors.get_mut(&w).unwrap().push(v);
+                        *sigma.get_mut(&w).expect("operation should succeed") += sigma_v;
+                        predecessors
+                            .get_mut(&w)
+                            .expect("operation should succeed")
+                            .push(v);
                     }
                 }
             }
@@ -211,11 +214,11 @@ where
         while let Some(w) = stack.pop() {
             for &v in &predecessors[&w] {
                 let coeff = (sigma[&v] / sigma[&w]) * (1.0 + delta[&w]);
-                *delta.get_mut(&v).unwrap() += coeff;
+                *delta.get_mut(&v).expect("operation should succeed") += coeff;
             }
 
             if w != source {
-                *centrality.get_mut(&w).unwrap() += delta[&w];
+                *centrality.get_mut(&w).expect("operation should succeed") += delta[&w];
             }
         }
     }
@@ -604,10 +607,18 @@ mod tests {
         let c = graph.add_node("C");
         let d = graph.add_node("D");
 
-        graph.add_edge(center, a, None).unwrap();
-        graph.add_edge(center, b, None).unwrap();
-        graph.add_edge(center, c, None).unwrap();
-        graph.add_edge(center, d, None).unwrap();
+        graph
+            .add_edge(center, a, None)
+            .expect("operation should succeed");
+        graph
+            .add_edge(center, b, None)
+            .expect("operation should succeed");
+        graph
+            .add_edge(center, c, None)
+            .expect("operation should succeed");
+        graph
+            .add_edge(center, d, None)
+            .expect("operation should succeed");
 
         graph
     }
@@ -689,8 +700,12 @@ mod tests {
         let c = graph.add_node("C");
 
         // A -> B -> C
-        graph.add_edge(a, b, None).unwrap();
-        graph.add_edge(b, c, None).unwrap();
+        graph
+            .add_edge(a, b, None)
+            .expect("operation should succeed");
+        graph
+            .add_edge(b, c, None)
+            .expect("operation should succeed");
 
         let (hubs, authorities) = hits_default(&graph);
 

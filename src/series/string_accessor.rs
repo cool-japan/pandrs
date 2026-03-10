@@ -1,4 +1,5 @@
 use crate::core::error::Error as PandrsError;
+use crate::lock_safe;
 use crate::series::base::Series;
 use regex::Regex;
 use std::collections::HashMap;
@@ -21,7 +22,7 @@ fn get_or_compile_regex(pattern: &str, case_insensitive: bool) -> Result<Regex, 
 
     // Try to get from cache first
     {
-        let cache_guard = cache.lock().unwrap();
+        let cache_guard = lock_safe!(cache, "regex cache read")?;
         if let Some(regex) = cache_guard.get(&cache_key) {
             return Ok(regex.clone());
         }
@@ -39,7 +40,7 @@ fn get_or_compile_regex(pattern: &str, case_insensitive: bool) -> Result<Regex, 
 
     // Store in cache
     {
-        let mut cache_guard = cache.lock().unwrap();
+        let mut cache_guard = lock_safe!(cache, "regex cache write")?;
         cache_guard.insert(cache_key, regex.clone());
     }
 
@@ -118,8 +119,8 @@ impl StringAccessor {
     /// ```
     /// use pandrs::Series;
     /// let data = vec!["hello world".to_string(), "HELLO".to_string()];
-    /// let series = Series::new(data, None).unwrap();
-    /// let result = series.str().unwrap().contains("hello", false, false).unwrap();
+    /// let series = Series::new(data, None).expect("operation should succeed");
+    /// let result = series.str().expect("operation should succeed").contains("hello", false, false).expect("operation should succeed");
     /// assert_eq!(result.values(), &[true, true]); // Case insensitive
     /// ```
     pub fn contains(
@@ -215,8 +216,8 @@ impl StringAccessor {
     /// ```
     /// use pandrs::Series;
     /// let data = vec!["hello world".to_string(), "test".to_string()];
-    /// let series = Series::new(data, None).unwrap();
-    /// let result = series.str().unwrap().replace("world", "rust", false, true).unwrap();
+    /// let series = Series::new(data, None).expect("operation should succeed");
+    /// let result = series.str().expect("operation should succeed").replace("world", "rust", false, true).expect("operation should succeed");
     /// assert_eq!(result.values()[0], "hello rust");
     /// ```
     pub fn replace(
@@ -305,8 +306,8 @@ impl StringAccessor {
     /// ```
     /// use pandrs::Series;
     /// let data = vec!["hello".to_string(), "café".to_string(), "🦀".to_string()];
-    /// let series = Series::new(data, None).unwrap();
-    /// let lengths = series.str().unwrap().len().unwrap();
+    /// let series = Series::new(data, None).expect("operation should succeed");
+    /// let lengths = series.str().expect("operation should succeed").len().expect("operation should succeed");
     /// assert_eq!(lengths.values(), &[5i64, 4i64, 1i64]); // Character count, not bytes
     /// ```
     pub fn len(&self) -> Result<Series<i64>, PandrsError> {
@@ -389,8 +390,8 @@ impl StringAccessor {
     /// ```
     /// use pandrs::Series;
     /// let data = vec!["abc123def".to_string(), "xyz456ghi".to_string()];
-    /// let series = Series::new(data, None).unwrap();
-    /// let result = series.str().unwrap().extract(r"(\d+)", None).unwrap();
+    /// let series = Series::new(data, None).expect("operation should succeed");
+    /// let result = series.str().expect("operation should succeed").extract(r"(\d+)", None).expect("operation should succeed");
     /// assert_eq!(result.values(), &["123".to_string(), "456".to_string()]);
     /// ```
     pub fn extract(
@@ -436,8 +437,8 @@ impl StringAccessor {
     /// ```
     /// use pandrs::Series;
     /// let data = vec!["abc123def456".to_string(), "nodigits".to_string()];
-    /// let series = Series::new(data, None).unwrap();
-    /// let result = series.str().unwrap().findall(r"\d+", None).unwrap();
+    /// let series = Series::new(data, None).expect("operation should succeed");
+    /// let result = series.str().expect("operation should succeed").findall(r"\d+", None).expect("operation should succeed");
     /// assert!(result.values()[0].contains("123"));
     /// assert!(result.values()[0].contains("456"));
     /// ```
@@ -474,8 +475,8 @@ impl StringAccessor {
     /// ```
     /// use pandrs::Series;
     /// let data = vec!["abc123def456".to_string(), "nodigits".to_string()];
-    /// let series = Series::new(data, None).unwrap();
-    /// let result = series.str().unwrap().count(r"\d", None).unwrap();
+    /// let series = Series::new(data, None).expect("operation should succeed");
+    /// let result = series.str().expect("operation should succeed").count(r"\d", None).expect("operation should succeed");
     /// assert_eq!(result.values(), &[6i64, 0i64]); // 6 digits in first, 0 in second
     /// ```
     pub fn count(&self, pattern: &str, flags: Option<&str>) -> Result<Series<i64>, PandrsError> {
@@ -499,8 +500,8 @@ impl StringAccessor {
     /// ```
     /// use pandrs::Series;
     /// let data = vec!["hello".to_string(), "world123".to_string(), "".to_string()];
-    /// let series = Series::new(data, None).unwrap();
-    /// let result = series.str().unwrap().isalpha().unwrap();
+    /// let series = Series::new(data, None).expect("operation should succeed");
+    /// let result = series.str().expect("operation should succeed").isalpha().expect("operation should succeed");
     /// assert_eq!(result.values(), &[true, false, false]);
     /// ```
     pub fn isalpha(&self) -> Result<Series<bool>, PandrsError> {
@@ -521,8 +522,8 @@ impl StringAccessor {
     /// ```
     /// use pandrs::Series;
     /// let data = vec!["123".to_string(), "12.3".to_string(), "".to_string()];
-    /// let series = Series::new(data, None).unwrap();
-    /// let result = series.str().unwrap().isdigit().unwrap();
+    /// let series = Series::new(data, None).expect("operation should succeed");
+    /// let result = series.str().expect("operation should succeed").isdigit().expect("operation should succeed");
     /// assert_eq!(result.values(), &[true, false, false]);
     /// ```
     pub fn isdigit(&self) -> Result<Series<bool>, PandrsError> {
@@ -543,8 +544,8 @@ impl StringAccessor {
     /// ```
     /// use pandrs::Series;
     /// let data = vec!["hello123".to_string(), "hello-world".to_string(), "".to_string()];
-    /// let series = Series::new(data, None).unwrap();
-    /// let result = series.str().unwrap().isalnum().unwrap();
+    /// let series = Series::new(data, None).expect("operation should succeed");
+    /// let result = series.str().expect("operation should succeed").isalnum().expect("operation should succeed");
     /// assert_eq!(result.values(), &[true, false, false]);
     /// ```
     pub fn isalnum(&self) -> Result<Series<bool>, PandrsError> {
@@ -565,8 +566,8 @@ impl StringAccessor {
     /// ```
     /// use pandrs::Series;
     /// let data = vec!["   ".to_string(), "\t\n".to_string(), "hello".to_string()];
-    /// let series = Series::new(data, None).unwrap();
-    /// let result = series.str().unwrap().isspace().unwrap();
+    /// let series = Series::new(data, None).expect("operation should succeed");
+    /// let result = series.str().expect("operation should succeed").isspace().expect("operation should succeed");
     /// assert_eq!(result.values(), &[true, true, false]);
     /// ```
     pub fn isspace(&self) -> Result<Series<bool>, PandrsError> {
@@ -587,8 +588,8 @@ impl StringAccessor {
     /// ```
     /// use pandrs::Series;
     /// let data = vec!["hello".to_string(), "Hello".to_string(), "123".to_string()];
-    /// let series = Series::new(data, None).unwrap();
-    /// let result = series.str().unwrap().islower().unwrap();
+    /// let series = Series::new(data, None).expect("operation should succeed");
+    /// let result = series.str().expect("operation should succeed").islower().expect("operation should succeed");
     /// assert_eq!(result.values(), &[true, false, false]);
     /// ```
     pub fn islower(&self) -> Result<Series<bool>, PandrsError> {
@@ -615,8 +616,8 @@ impl StringAccessor {
     /// ```
     /// use pandrs::Series;
     /// let data = vec!["HELLO".to_string(), "Hello".to_string(), "123".to_string()];
-    /// let series = Series::new(data, None).unwrap();
-    /// let result = series.str().unwrap().isupper().unwrap();
+    /// let series = Series::new(data, None).expect("operation should succeed");
+    /// let result = series.str().expect("operation should succeed").isupper().expect("operation should succeed");
     /// assert_eq!(result.values(), &[true, false, false]);
     /// ```
     pub fn isupper(&self) -> Result<Series<bool>, PandrsError> {
@@ -643,8 +644,8 @@ impl StringAccessor {
     /// ```
     /// use pandrs::Series;
     /// let data = vec!["Hello World".to_string(), "RUST".to_string()];
-    /// let series = Series::new(data, None).unwrap();
-    /// let result = series.str().unwrap().swapcase().unwrap();
+    /// let series = Series::new(data, None).expect("operation should succeed");
+    /// let result = series.str().expect("operation should succeed").swapcase().expect("operation should succeed");
     /// assert_eq!(result.values(), &["hELLO wORLD".to_string(), "rust".to_string()]);
     /// ```
     pub fn swapcase(&self) -> Result<Series<String>, PandrsError> {
@@ -682,8 +683,8 @@ impl StringAccessor {
     /// ```
     /// use pandrs::Series;
     /// let data = vec!["hi".to_string(), "world".to_string()];
-    /// let series = Series::new(data, None).unwrap();
-    /// let padded = series.str().unwrap().pad(8, "left", '*').unwrap();
+    /// let series = Series::new(data, None).expect("operation should succeed");
+    /// let padded = series.str().expect("operation should succeed").pad(8, "left", '*').expect("operation should succeed");
     /// assert_eq!(padded.values()[0], "******hi");
     /// ```
     ///
@@ -812,10 +813,10 @@ mod tests {
     #[test]
     fn test_string_upper() {
         let data = vec!["hello".to_string(), "world".to_string(), "RUST".to_string()];
-        let series = Series::new(data, Some("test".to_string())).unwrap();
-        let str_accessor = StringAccessor::new(series).unwrap();
+        let series = Series::new(data, Some("test".to_string())).expect("operation should succeed");
+        let str_accessor = StringAccessor::new(series).expect("operation should succeed");
 
-        let result = str_accessor.upper().unwrap();
+        let result = str_accessor.upper().expect("operation should succeed");
         let values = result.values();
 
         assert_eq!(
@@ -827,10 +828,10 @@ mod tests {
     #[test]
     fn test_string_lower() {
         let data = vec!["HELLO".to_string(), "World".to_string(), "rust".to_string()];
-        let series = Series::new(data, Some("test".to_string())).unwrap();
-        let str_accessor = StringAccessor::new(series).unwrap();
+        let series = Series::new(data, Some("test".to_string())).expect("operation should succeed");
+        let str_accessor = StringAccessor::new(series).expect("operation should succeed");
 
-        let result = str_accessor.lower().unwrap();
+        let result = str_accessor.lower().expect("operation should succeed");
         let values = result.values();
 
         assert_eq!(
@@ -846,10 +847,12 @@ mod tests {
             "rust programming".to_string(),
             "python data".to_string(),
         ];
-        let series = Series::new(data, Some("test".to_string())).unwrap();
-        let str_accessor = StringAccessor::new(series).unwrap();
+        let series = Series::new(data, Some("test".to_string())).expect("operation should succeed");
+        let str_accessor = StringAccessor::new(series).expect("operation should succeed");
 
-        let result = str_accessor.contains("rust", true, false).unwrap();
+        let result = str_accessor
+            .contains("rust", true, false)
+            .expect("operation should succeed");
         let values = result.values();
 
         assert_eq!(values, &[false, true, false]);
@@ -862,10 +865,12 @@ mod tests {
             "hello rust".to_string(),
             "goodbye".to_string(),
         ];
-        let series = Series::new(data, Some("test".to_string())).unwrap();
-        let str_accessor = StringAccessor::new(series).unwrap();
+        let series = Series::new(data, Some("test".to_string())).expect("operation should succeed");
+        let str_accessor = StringAccessor::new(series).expect("operation should succeed");
 
-        let result = str_accessor.startswith("hello", true).unwrap();
+        let result = str_accessor
+            .startswith("hello", true)
+            .expect("operation should succeed");
         let values = result.values();
 
         assert_eq!(values, &[true, true, false]);
@@ -874,10 +879,10 @@ mod tests {
     #[test]
     fn test_string_len() {
         let data = vec!["a".to_string(), "hello".to_string(), "world".to_string()];
-        let series = Series::new(data, Some("test".to_string())).unwrap();
-        let str_accessor = StringAccessor::new(series).unwrap();
+        let series = Series::new(data, Some("test".to_string())).expect("operation should succeed");
+        let str_accessor = StringAccessor::new(series).expect("operation should succeed");
 
-        let result = str_accessor.len().unwrap();
+        let result = str_accessor.len().expect("operation should succeed");
         let values = result.values();
 
         assert_eq!(values, &[1i64, 5i64, 5i64]);
@@ -890,10 +895,10 @@ mod tests {
             "\tworld\n".to_string(),
             " rust ".to_string(),
         ];
-        let series = Series::new(data, Some("test".to_string())).unwrap();
-        let str_accessor = StringAccessor::new(series).unwrap();
+        let series = Series::new(data, Some("test".to_string())).expect("operation should succeed");
+        let str_accessor = StringAccessor::new(series).expect("operation should succeed");
 
-        let result = str_accessor.strip(None).unwrap();
+        let result = str_accessor.strip(None).expect("operation should succeed");
         let values = result.values();
 
         assert_eq!(

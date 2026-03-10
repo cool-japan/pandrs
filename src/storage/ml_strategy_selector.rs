@@ -392,7 +392,7 @@ impl MLStrategySelector {
         }
 
         // Sort strategies by score for fallback list
-        strategy_scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+        strategy_scores.sort_by(|a, b| b.1.partial_cmp(&a.1).expect("operation should succeed"));
         let fallbacks: Vec<StorageType> = strategy_scores.iter()
             .skip(1) // Skip the best strategy
             .take(3) // Take top 3 alternatives

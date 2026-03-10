@@ -1505,7 +1505,9 @@ mod tests {
             "456.78".to_string(),
         ];
 
-        let characteristics = analyzer.analyze_strings(&strings).unwrap();
+        let characteristics = analyzer
+            .analyze_strings(&strings)
+            .expect("operation should succeed");
         assert!(characteristics.common_patterns.common_prefixes.len() > 0);
         assert!(
             characteristics
@@ -1521,8 +1523,12 @@ mod tests {
         let engine = StringCompressionEngine::new(StringCompressionAlgorithm::RunLength);
         let test_string = "aaaaaabbbbbbcccccc";
 
-        let compressed = engine.compress(test_string).unwrap();
-        let decompressed = engine.decompress(&compressed).unwrap();
+        let compressed = engine
+            .compress(test_string)
+            .expect("operation should succeed");
+        let decompressed = engine
+            .decompress(&compressed)
+            .expect("operation should succeed");
 
         assert_eq!(test_string, decompressed);
         assert!(compressed.len() < test_string.len());
@@ -1537,11 +1543,16 @@ mod tests {
             "world peace".to_string(),
         ];
 
-        dict.build_from_strings(&strings).unwrap();
+        dict.build_from_strings(&strings)
+            .expect("operation should succeed");
 
         let test_string = "hello world";
-        let compressed = dict.compress(test_string).unwrap();
-        let decompressed = dict.decompress(&compressed).unwrap();
+        let compressed = dict
+            .compress(test_string)
+            .expect("operation should succeed");
+        let decompressed = dict
+            .decompress(&compressed)
+            .expect("operation should succeed");
 
         assert_eq!(test_string, decompressed);
     }
@@ -1560,7 +1571,9 @@ mod tests {
             ..Default::default()
         };
 
-        let handle = strategy.create_storage(&storage_config).unwrap();
+        let handle = strategy
+            .create_storage(&storage_config)
+            .expect("operation should succeed");
 
         let strings = vec![
             "hello".to_string(),
@@ -1569,7 +1582,9 @@ mod tests {
         ];
         let chunk = DataChunk::from_strings(strings);
 
-        strategy.write_chunk(&handle, chunk).unwrap();
+        strategy
+            .write_chunk(&handle, chunk)
+            .expect("operation should succeed");
 
         let stats = strategy.storage_stats();
         assert!(stats.total_size > 0);
@@ -1585,7 +1600,9 @@ mod tests {
             "not_a_number".to_string(),
         ];
 
-        detector.analyze(&strings, &mut characteristics).unwrap();
+        detector
+            .analyze(&strings, &mut characteristics)
+            .expect("operation should succeed");
 
         assert_eq!(
             characteristics

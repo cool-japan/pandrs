@@ -378,7 +378,9 @@ impl Transformer for IsolationForest {
         
         // Calculate threshold based on contamination rate
         let mut sorted_scores = self.anomaly_scores.clone();
-        sorted_scores.sort_by(|a, b| b.partial_cmp(a).unwrap()); // Descending order
+        sorted_scores.sort_by(|a, b| {
+            b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal)
+        }); // Descending order
         
         let threshold_idx = (self.contamination * n_samples as f64).round() as usize;
         self.threshold = sorted_scores.get(threshold_idx.max(1) - 1).copied().unwrap_or(0.5);
@@ -538,7 +540,9 @@ impl LocalOutlierFactor {
         }
         
         // Sort by distance
-        distances.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+        distances.sort_by(|a, b| {
+            a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal)
+        });
         
         // Return top k
         distances.into_iter().take(k.min(n_samples - 1)).collect()
@@ -687,7 +691,9 @@ impl Transformer for LocalOutlierFactor {
         
         // Calculate threshold based on contamination rate
         let mut sorted_scores = self.lof_scores.clone();
-        sorted_scores.sort_by(|a, b| b.partial_cmp(a).unwrap()); // Descending order
+        sorted_scores.sort_by(|a, b| {
+            b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal)
+        }); // Descending order
         
         let threshold_idx = (self.contamination * n_samples as f64).round() as usize;
         self.threshold = sorted_scores.get(threshold_idx.max(1) - 1).copied().unwrap_or(1.0);

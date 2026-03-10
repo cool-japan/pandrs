@@ -1,3 +1,4 @@
+#![allow(clippy::result_large_err)]
 //! Configuration system tests
 //!
 //! Tests for the comprehensive configuration management system

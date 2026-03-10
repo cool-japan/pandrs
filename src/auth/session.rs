@@ -443,7 +443,7 @@ mod tests {
 
         // First session should be invalidated
         let session1 = store.get_session(&s1.session_id);
-        assert!(session1.is_none() || !session1.unwrap().active);
+        assert!(session1.is_none() || !session1.expect("operation should succeed").active);
 
         // Second session should be active
         assert!(store.get_session(&s2.session_id).is_some());

@@ -1,3 +1,4 @@
+#![allow(clippy::result_large_err)]
 use pandrs::error::Error;
 use pandrs::{BooleanColumn, Column, Float64Column, Int64Column, OptimizedDataFrame, StringColumn};
 use std::collections::HashMap;

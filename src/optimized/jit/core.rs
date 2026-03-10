@@ -278,7 +278,7 @@ mod tests {
     #[test]
     fn test_jit_compilation() {
         let func = jit_f64("test_sum", |data: &[f64]| data.iter().sum());
-        let compiled = func.compile().unwrap();
+        let compiled = func.compile().expect("operation should succeed");
 
         let data = vec![1.0, 2.0, 3.0];
         let result = compiled(&data);

@@ -39,21 +39,14 @@ impl DataFusionContext {
                 // Batch size configuration for better performance
                 .with_batch_size(8192);
 
-            // Add memory limit if specified
-            let mut config_builder = if let Some(memory_limit) = config.memory_limit() {
-                config_builder.with_memory_limit(memory_limit as u64)
-            } else {
-                config_builder
-            };
-
             // Set parquet parallel read for better IO performance if file operations are involved
-            config_builder = config_builder.set("parquet.parallel_read", "true");
+            config_builder = config_builder.set_str("parquet.parallel_read", "true");
 
             // Apply optimization settings if enabled
             if config.enable_optimization() {
                 // Convert optimizer rules to DataFusion format
                 for (rule, value) in config.optimizer_rules() {
-                    config_builder = config_builder.set(
+                    config_builder = config_builder.set_str(
                         &format!("optimizer.{}", rule),
                         value
                     );
@@ -61,17 +54,17 @@ impl DataFusionContext {
 
                 // Enable statistics-based optimization
                 config_builder = config_builder
-                    .set("statistics.enabled", "true")
-                    .set("optimizer.statistics_based_join_ordering", "true");
+                    .set_str("statistics.enabled", "true")
+                    .set_str("optimizer.statistics_based_join_ordering", "true");
             } else {
                 // Disable optimization if not enabled
                 config_builder = config_builder
-                    .set("optimizer.skip_optimize", "true")
-                    .set("statistics.enabled", "false");
+                    .set_str("optimizer.skip_optimize", "true")
+                    .set_str("statistics.enabled", "false");
             }
 
             // Create session context with the config
-            datafusion::execution::context::SessionContext::with_config(config_builder)
+            datafusion::execution::context::SessionContext::new_with_config(config_builder)
         };
 
         Self {
@@ -91,17 +84,12 @@ impl DataFusionContext {
 
         let schema = batches[0].schema();
 
-        // Create a memory table with options for better performance
-        // Enable predicate pushdown for better filter performance
-        let options = datafusion::datasource::MemTableConfig::new()
-            .with_schema(schema)
-            .with_batches(vec![batches]);
-
-        let provider = options.build()
+        // Create a memory table from record batches
+        let mem_table = datafusion::datasource::MemTable::try_new(schema, vec![batches])
             .map_err(|e| Error::DistributedProcessing(format!("Failed to create memory table: {}", e)))?;
 
         // Register the table
-        self.context.register_table(name, Arc::new(provider))
+        self.context.register_table(name, Arc::new(mem_table))
             .map_err(|e| Error::DistributedProcessing(format!("Failed to register table: {}", e)))?;
 
         Ok(())
@@ -351,7 +339,7 @@ impl ExecutionContext for DataFusionContext {
                 // Execute each UDF creation statement
                 for stmt in &statements {
                     if !stmt.trim().is_empty() {
-                        self.context.sql(stmt)
+                        futures::executor::block_on(self.context.sql(stmt))
                             .map_err(|e| Error::DistributedProcessing(
                                 format!("Failed to execute UDF creation: {}", e)
                             ))?;
@@ -362,12 +350,12 @@ impl ExecutionContext for DataFusionContext {
                 Vec::new()
             } else {
                 // For normal operations, execute the query and collect results
-                let df = self.context.sql(&sql)
+                let df = futures::executor::block_on(self.context.sql(&sql))
                     .map_err(|e| Error::DistributedProcessing(format!("Failed to execute SQL query: {}", e)))?;
 
                 // Collect the results
-                df.collect()
-                    .map_err(|e| Error::DistributedProcessing(format!("Failed to collect query results: {}", e)))?;
+                futures::executor::block_on(df.collect())
+                    .map_err(|e| Error::DistributedProcessing(format!("Failed to collect query results: {}", e)))?
             };
 
             // Calculate execution time
@@ -486,8 +474,9 @@ impl ExecutionContext for DataFusionContext {
             }
 
             // Register CSV with DataFusion
-            self.context.register_csv(name, path, datafusion::datasource::file_format::csv::CsvReadOptions::new())
-                .map_err(|e| Error::DistributedProcessing(format!("Failed to register CSV: {}", e)))?;
+            futures::executor::block_on(
+                self.context.register_csv(name, path, datafusion::prelude::CsvReadOptions::new())
+            ).map_err(|e| Error::DistributedProcessing(format!("Failed to register CSV: {}", e)))?;
 
             Ok(())
         }
@@ -509,8 +498,9 @@ impl ExecutionContext for DataFusionContext {
             }
 
             // Register Parquet with DataFusion
-            self.context.register_parquet(name, path, datafusion::datasource::file_format::parquet::ParquetReadOptions::default())
-                .map_err(|e| Error::DistributedProcessing(format!("Failed to register Parquet: {}", e)))?;
+            futures::executor::block_on(
+                self.context.register_parquet(name, path, datafusion::prelude::ParquetReadOptions::default())
+            ).map_err(|e| Error::DistributedProcessing(format!("Failed to register Parquet: {}", e)))?;
 
             Ok(())
         }
@@ -540,12 +530,12 @@ impl ExecutionContext for DataFusionContext {
             // If optimization is enabled, also get the optimized plan from DataFusion
             if self.config.enable_optimization() {
                 let sql = self.convert_operation_to_sql(plan)?;
-                let df = self.context.sql(&format!("EXPLAIN {}", sql))
+                let df = futures::executor::block_on(self.context.sql(&format!("EXPLAIN {}", sql)))
                     .map_err(|e| Error::DistributedProcessing(
                         format!("Failed to explain query: {}", e)))?;
 
                 // Convert to string
-                let batches = df.collect()
+                let batches = futures::executor::block_on(df.collect())
                     .map_err(|e| Error::DistributedProcessing(
                         format!("Failed to collect explain results: {}", e)))?;
 
@@ -592,11 +582,11 @@ impl ExecutionContext for DataFusionContext {
             let start_time = Instant::now();
 
             // Execute the SQL query
-            let df = self.context.sql(query)
+            let df = futures::executor::block_on(self.context.sql(query))
                 .map_err(|e| Error::DistributedProcessing(format!("Failed to execute SQL query: {}", e)))?;
 
             // Collect the results
-            let arrow_batches = df.collect()
+            let arrow_batches = futures::executor::block_on(df.collect())
                 .map_err(|e| Error::DistributedProcessing(format!("Failed to collect query results: {}", e)))?;
 
             // Calculate execution time

@@ -360,13 +360,17 @@ mod tests {
         let mut df = DataFrame::new();
 
         // Add slight noise to avoid singular matrix
-        let x = Series::new(vec![1.0, 2.0, 3.0, 4.0, 5.0], Some("x".to_string())).unwrap();
-        let y = Series::new(vec![2.1, 4.05, 5.9, 8.1, 9.95], Some("y".to_string())).unwrap();
+        let x = Series::new(vec![1.0, 2.0, 3.0, 4.0, 5.0], Some("x".to_string()))
+            .expect("operation should succeed");
+        let y = Series::new(vec![2.1, 4.05, 5.9, 8.1, 9.95], Some("y".to_string()))
+            .expect("operation should succeed");
 
-        df.add_column("x".to_string(), x).unwrap();
-        df.add_column("y".to_string(), y).unwrap();
+        df.add_column("x".to_string(), x)
+            .expect("operation should succeed");
+        df.add_column("y".to_string(), y)
+            .expect("operation should succeed");
 
-        let result = linear_regression_impl(&df, "y", &["x"]).unwrap();
+        let result = linear_regression_impl(&df, "y", &["x"]).expect("operation should succeed");
 
         // y ≈ 2x, so intercept should be close to 0 and coefficient close to 2
         assert!((result.intercept - 0.0).abs() < 0.3);
@@ -379,16 +383,23 @@ mod tests {
         let mut df = DataFrame::new();
 
         // Create simple, well-conditioned test data without multicollinearity
-        let x1 = Series::new(vec![1.0, 2.0, 3.0, 4.0, 5.0], Some("x1".to_string())).unwrap();
-        let x2 = Series::new(vec![1.0, 3.0, 2.0, 5.0, 4.0], Some("x2".to_string())).unwrap();
+        let x1 = Series::new(vec![1.0, 2.0, 3.0, 4.0, 5.0], Some("x1".to_string()))
+            .expect("operation should succeed");
+        let x2 = Series::new(vec![1.0, 3.0, 2.0, 5.0, 4.0], Some("x2".to_string()))
+            .expect("operation should succeed");
         // y = 1 + x1 + x2 (simple linear relationship)
-        let y = Series::new(vec![3.0, 6.0, 6.0, 10.0, 10.0], Some("y".to_string())).unwrap();
+        let y = Series::new(vec![3.0, 6.0, 6.0, 10.0, 10.0], Some("y".to_string()))
+            .expect("operation should succeed");
 
-        df.add_column("x1".to_string(), x1).unwrap();
-        df.add_column("x2".to_string(), x2).unwrap();
-        df.add_column("y".to_string(), y).unwrap();
+        df.add_column("x1".to_string(), x1)
+            .expect("operation should succeed");
+        df.add_column("x2".to_string(), x2)
+            .expect("operation should succeed");
+        df.add_column("y".to_string(), y)
+            .expect("operation should succeed");
 
-        let result = linear_regression_impl(&df, "y", &["x1", "x2"]).unwrap();
+        let result =
+            linear_regression_impl(&df, "y", &["x1", "x2"]).expect("operation should succeed");
 
         // For y = 1 + x1 + x2, we expect intercept ≈ 1, coefficients ≈ [1, 1]
         // Allow for reasonable numerical tolerance with small datasets

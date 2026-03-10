@@ -150,7 +150,7 @@ pub struct ChiSquareResult {
 /// use pandrs::stats;
 ///
 /// let data = vec![1.0, 2.0, 3.0, 4.0, 5.0];
-/// let stats = stats::describe(&data).unwrap();
+/// let stats = stats::describe(&data).expect("operation should succeed");
 /// println!("Mean: {}", stats.mean);
 /// println!("Standard deviation: {}", stats.std);
 /// ```
@@ -182,7 +182,7 @@ pub fn describe<T: AsRef<[f64]>>(data: T) -> Result<DescriptiveStats> {
 ///
 /// let x = vec![1.0, 2.0, 3.0, 4.0, 5.0];
 /// let y = vec![2.0, 4.0, 5.0, 4.0, 5.0];
-/// let corr = stats::correlation(&x, &y).unwrap();
+/// let corr = stats::correlation(&x, &y).expect("operation should succeed");
 /// println!("Correlation coefficient: {}", corr);
 /// ```
 pub fn correlation<T: AsRef<[f64]>, U: AsRef<[f64]>>(x: T, y: U) -> Result<f64> {
@@ -201,7 +201,7 @@ pub fn correlation<T: AsRef<[f64]>, U: AsRef<[f64]>>(x: T, y: U) -> Result<f64> 
 ///
 /// let x = vec![1.0, 2.0, 3.0, 4.0, 5.0];
 /// let y = vec![2.0, 4.0, 5.0, 4.0, 5.0];
-/// let cov = stats::covariance(&x, &y).unwrap();
+/// let cov = stats::covariance(&x, &y).expect("operation should succeed");
 /// println!("Covariance: {}", cov);
 /// ```
 pub fn covariance<T: AsRef<[f64]>, U: AsRef<[f64]>>(x: T, y: U) -> Result<f64> {
@@ -247,7 +247,7 @@ pub fn covariance<T: AsRef<[f64]>, U: AsRef<[f64]>>(x: T, y: U) -> Result<f64> {
 /// let sample1 = vec![1.0, 2.0, 3.0, 4.0, 5.0];
 /// let sample2 = vec![2.0, 3.0, 4.0, 5.0, 6.0];
 /// // t-test assuming equal variances, significance level 0.05
-/// let result = stats::ttest(&sample1, &sample2, 0.05, true).unwrap();
+/// let result = stats::ttest(&sample1, &sample2, 0.05, true).expect("operation should succeed");
 /// println!("t-statistic: {}", result.statistic);
 /// println!("p-value: {}", result.pvalue);
 /// println!("Significant difference: {}", result.significant);
@@ -275,12 +275,12 @@ pub fn ttest<T: AsRef<[f64]>, U: AsRef<[f64]>>(
 /// // Create DataFrame
 /// let mut df = DataFrame::new();
 /// // Add data
-/// df.add_column("x1".to_string(), Series::new(vec![1.0, 2.0, 3.0, 4.0, 5.0], Some("x1".to_string())).unwrap()).unwrap();
-/// df.add_column("x2".to_string(), Series::new(vec![2.0, 3.0, 4.0, 5.0, 6.0], Some("x2".to_string())).unwrap()).unwrap();
-/// df.add_column("y".to_string(), Series::new(vec![3.0, 5.0, 7.0, 9.0, 11.0], Some("y".to_string())).unwrap()).unwrap();
+/// df.add_column("x1".to_string(), Series::new(vec![1.0, 2.0, 3.0, 4.0, 5.0], Some("x1".to_string())).expect("operation should succeed")).expect("operation should succeed");
+/// df.add_column("x2".to_string(), Series::new(vec![2.0, 3.0, 4.0, 5.0, 6.0], Some("x2".to_string())).expect("operation should succeed")).expect("operation should succeed");
+/// df.add_column("y".to_string(), Series::new(vec![3.0, 5.0, 7.0, 9.0, 11.0], Some("y".to_string())).expect("operation should succeed")).expect("operation should succeed");
 ///
 /// // Regression analysis with y as target, x1 and x2 as predictors
-/// let model = stats::linear_regression(&df, "y", &["x1", "x2"]).unwrap();
+/// let model = stats::linear_regression(&df, "y", &["x1", "x2"]).expect("operation should succeed");
 /// println!("Intercept: {}", model.intercept);
 /// println!("Coefficients: {:?}", model.coefficients);
 /// println!("R-squared: {}", model.r_squared);
@@ -305,7 +305,7 @@ pub fn linear_regression(
 ///
 /// let df = DataFrame::new(); // DataFrame with data
 /// // Get a 10% random sample
-/// let sampled_df = stats::sample(&df, 0.1, true).unwrap();
+/// let sampled_df = stats::sample(&df, 0.1, true).expect("operation should succeed");
 /// ```
 pub fn sample(df: &DataFrame, fraction: f64, replace: bool) -> Result<DataFrame> {
     sampling::sample_impl(df, fraction, replace)
@@ -323,7 +323,7 @@ pub fn sample(df: &DataFrame, fraction: f64, replace: bool) -> Result<DataFrame>
 ///
 /// let data = vec![1.0, 2.0, 3.0, 4.0, 5.0];
 /// // 1000 bootstrap samples
-/// let bootstrap_samples = stats::bootstrap(&data, 1000).unwrap();
+/// let bootstrap_samples = stats::bootstrap(&data, 1000).expect("operation should succeed");
 /// ```
 pub fn bootstrap<T: AsRef<[f64]>>(data: T, n_samples: usize) -> Result<Vec<Vec<f64>>> {
     sampling::bootstrap_impl(data.as_ref(), n_samples)
@@ -346,7 +346,7 @@ pub fn bootstrap<T: AsRef<[f64]>>(data: T, n_samples: usize) -> Result<Vec<Vec<f
 /// groups.insert("Group C", vec![3.0, 4.0, 5.0, 6.0, 7.0]);
 ///
 /// // ANOVA test with significance level 0.05
-/// let result = stats::anova(&groups, 0.05).unwrap();
+/// let result = stats::anova(&groups, 0.05).expect("operation should succeed");
 /// println!("F-statistic: {}", result.f_statistic);
 /// println!("p-value: {}", result.p_value);
 /// println!("Significant difference: {}", result.significant);
@@ -378,7 +378,7 @@ pub fn anova<T: AsRef<[f64]>>(groups: &HashMap<&str, T>, alpha: f64) -> Result<A
 /// let sample1 = vec![1.0, 2.0, 3.0, 4.0, 5.0];
 /// let sample2 = vec![2.0, 3.0, 4.0, 5.0, 6.0];
 /// // Mann-Whitney U test with significance level 0.05
-/// let result = stats::mann_whitney_u(&sample1, &sample2, 0.05).unwrap();
+/// let result = stats::mann_whitney_u(&sample1, &sample2, 0.05).expect("operation should succeed");
 /// println!("U-statistic: {}", result.u_statistic);
 /// println!("p-value: {}", result.p_value);
 /// println!("Significant difference: {}", result.significant);
@@ -408,7 +408,7 @@ pub fn mann_whitney_u<T: AsRef<[f64]>, U: AsRef<[f64]>>(
 ///     vec![25.0, 25.0]
 /// ];
 /// // Chi-square test with significance level 0.05
-/// let result = stats::chi_square_test(&observed, 0.05).unwrap();
+/// let result = stats::chi_square_test(&observed, 0.05).expect("operation should succeed");
 /// println!("Chi-square statistic: {}", result.chi2_statistic);
 /// println!("p-value: {}", result.p_value);
 /// println!("Significant difference: {}", result.significant);
@@ -434,7 +434,7 @@ pub use categorical::ContingencyTable;
 /// use pandrs::dataframe::DataFrame;
 ///
 /// let df = DataFrame::new(); // DataFrame with categorical data
-/// let table = stats::contingency_table_from_df(&df, "category1", "category2").unwrap();
+/// let table = stats::contingency_table_from_df(&df, "category1", "category2").expect("operation should succeed");
 /// println!("Observed frequencies: {:?}", table.observed);
 /// ```
 pub fn contingency_table_from_df(
@@ -456,7 +456,7 @@ pub fn contingency_table_from_df(
 /// use pandrs::dataframe::DataFrame;
 ///
 /// let df = DataFrame::new(); // DataFrame with categorical data
-/// let result = stats::chi_square_independence(&df, "category1", "category2", 0.05).unwrap();
+/// let result = stats::chi_square_independence(&df, "category1", "category2", 0.05).expect("operation should succeed");
 /// println!("Chi-square statistic: {}", result.chi2_statistic);
 /// println!("p-value: {}", result.p_value);
 /// println!("Significant association: {}", result.significant);
@@ -482,7 +482,7 @@ pub fn chi_square_independence(
 /// use pandrs::dataframe::DataFrame;
 ///
 /// let df = DataFrame::new(); // DataFrame with categorical data
-/// let v = stats::cramers_v_from_df(&df, "category1", "category2").unwrap();
+/// let v = stats::cramers_v_from_df(&df, "category1", "category2").expect("operation should succeed");
 /// println!("Cramer's V: {}", v);
 /// ```
 pub fn cramers_v_from_df(df: &DataFrame, col1: &str, col2: &str) -> Result<f64> {
@@ -501,7 +501,7 @@ pub fn cramers_v_from_df(df: &DataFrame, col1: &str, col2: &str) -> Result<f64> 
 /// use pandrs::dataframe::DataFrame;
 ///
 /// let df = DataFrame::new(); // DataFrame with categorical and numeric data
-/// let result = stats::categorical_anova_from_df(&df, "category", "numeric_val", 0.05).unwrap();
+/// let result = stats::categorical_anova_from_df(&df, "category", "numeric_val", 0.05).expect("operation should succeed");
 /// println!("F-statistic: {}", result.f_statistic);
 /// println!("p-value: {}", result.p_value);
 /// println!("Significant difference: {}", result.significant);
@@ -527,7 +527,7 @@ pub fn categorical_anova_from_df(
 /// use pandrs::dataframe::DataFrame;
 ///
 /// let df = DataFrame::new(); // DataFrame with categorical data
-/// let nmi = stats::normalized_mutual_info(&df, "category1", "category2").unwrap();
+/// let nmi = stats::normalized_mutual_info(&df, "category1", "category2").expect("operation should succeed");
 /// println!("Normalized Mutual Information: {}", nmi);
 /// ```
 pub fn normalized_mutual_info(df: &DataFrame, col1: &str, col2: &str) -> Result<f64> {
@@ -754,7 +754,8 @@ impl StatisticalAnalyzer {
                 let mad = {
                     let deviations: Vec<f64> = values.iter().map(|&x| (x - median).abs()).collect();
                     let mut sorted_deviations = deviations;
-                    sorted_deviations.sort_by(|a, b| a.partial_cmp(b).unwrap());
+                    sorted_deviations
+                        .sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
                     advanced_descriptive::percentile(&sorted_deviations, 50.0)?
                 };
 

@@ -9,6 +9,7 @@ use super::super::core::OptimizedDataFrame;
 use super::types::{AggregateFn, AggregateOp, CustomAggregation, GroupBy};
 use crate::column::{BooleanColumn, Column, ColumnTrait, Float64Column, Int64Column, StringColumn};
 use crate::error::Result;
+use crate::lock_safe;
 
 impl<'a> GroupBy<'a> {
     /// Apply a custom aggregation function to a column in parallel
@@ -111,14 +112,19 @@ impl<'a> GroupBy<'a> {
                 if let Ok(group_df) = self.df.filter_by_indices(&row_indices) {
                     // Apply the filter function to determine if this group passes
                     if filter_fn(&group_df) {
-                        let mut indices = filtered_indices.lock().unwrap();
-                        indices.extend(row_indices.iter().copied());
+                        if let Ok(mut indices) =
+                            lock_safe!(filtered_indices, "group operations filtered indices lock")
+                        {
+                            indices.extend(row_indices.iter().copied());
+                        }
                     }
                 }
             });
 
         // Create a new DataFrame with the filtered rows
-        let indices = filtered_indices.into_inner().unwrap();
+        let indices = filtered_indices
+            .into_inner()
+            .expect("operation should succeed");
         self.df.filter_by_indices(&indices)
     }
 

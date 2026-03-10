@@ -399,7 +399,7 @@ fn benchmark_large_scale_processing(df: &DataFrame, jit_context: &JitWindowConte
 fn benchmark_memory_efficiency(jit_context: &JitWindowContext) -> Result<()> {
     println!("   Memory Efficiency and Cache Performance:");
 
-    let stats = jit_context.stats();
+    let stats = jit_context.stats().unwrap();
 
     println!("   JIT Compilation Statistics:");
     println!("     Total Compilations: {}", stats.total_compilations());
@@ -418,7 +418,7 @@ fn benchmark_memory_efficiency(jit_context: &JitWindowContext) -> Result<()> {
     println!("   Cache Management:");
     println!(
         "     Functions in Cache: {}",
-        jit_context.compiled_functions_count()
+        jit_context.compiled_functions_count().unwrap()
     );
     println!(
         "     Compilation Time: {:.2} ms",
@@ -435,7 +435,7 @@ fn benchmark_memory_efficiency(jit_context: &JitWindowContext) -> Result<()> {
 /// Display final statistics and performance summary
 #[allow(clippy::result_large_err)]
 fn display_final_statistics(jit_context: &JitWindowContext) -> Result<()> {
-    let stats = jit_context.stats();
+    let stats = jit_context.stats().unwrap();
 
     println!("JIT Window Operations Final Statistics:");
     println!("┌─────────────────────────────────────────────────────────────┐");
@@ -459,7 +459,7 @@ fn display_final_statistics(jit_context: &JitWindowContext) -> Result<()> {
     );
     println!(
         "│ Functions Cached                 │ {:25} │",
-        jit_context.compiled_functions_count()
+        jit_context.compiled_functions_count().unwrap()
     );
     println!(
         "│ Total Compilation Time           │ {:20.2} ms │",

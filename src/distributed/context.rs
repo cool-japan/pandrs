@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use crate::error::{Result, Error};
+use crate::lock_safe;
 use crate::dataframe::DataFrame;
 use super::config::DistributedConfig;
 use super::execution::{ExecutionEngine, ExecutionContext, ExecutionResult, ExecutionMetrics};
@@ -77,7 +78,7 @@ impl DistributedContext {
             let dist_df_with_context = DistributedDataFrame::new(
                 self.config.clone(),
                 self.engine.clone(),
-                self.context.lock().unwrap().as_ref().clone(),
+                lock_safe!(self.context, "distributed context lock")?.as_ref().clone(),
                 name.to_string(),
             );
             
@@ -105,7 +106,7 @@ impl DistributedContext {
             }
             
             // Register the CSV file with the execution context
-            let mut context = self.context.lock().unwrap();
+            let mut context = lock_safe!(self.context, "distributed context lock")?;
             context.register_csv(name, path)?;
             
             // Create a placeholder distributed DataFrame
@@ -140,7 +141,7 @@ impl DistributedContext {
             }
             
             // Register the Parquet file with the execution context
-            let mut context = self.context.lock().unwrap();
+            let mut context = lock_safe!(self.context, "distributed context lock")?;
             context.register_parquet(name, path)?;
             
             // Create a placeholder distributed DataFrame
@@ -170,7 +171,7 @@ impl DistributedContext {
         #[cfg(feature = "distributed")]
         {
             // Execute the SQL query using the execution context
-            let context = self.context.lock().unwrap();
+            let context = lock_safe!(self.context, "distributed context lock")?;
             context.sql(query)
         }
         

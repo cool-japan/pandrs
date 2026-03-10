@@ -510,7 +510,9 @@ impl DataFrameGroupBy {
                 }
             }
             AggFunc::First => Ok(group_values[0]),
-            AggFunc::Last => Ok(*group_values.last().unwrap()),
+            AggFunc::Last => group_values.last().copied().ok_or_else(|| {
+                Error::InvalidValue("Cannot compute Last aggregation on empty group".to_string())
+            }),
             AggFunc::Nunique => {
                 let mut unique_values = group_values;
                 unique_values.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));

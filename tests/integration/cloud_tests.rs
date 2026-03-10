@@ -197,10 +197,14 @@ async fn test_cloud_object_operations() -> Result<()> {
     assert!(metadata.last_modified.is_some());
     
     // Test download object
-    connector.download_object("test-bucket", "data/test.txt", "/tmp/downloaded.txt").await?;
-    
+    let downloaded_path = std::env::temp_dir().join("downloaded.txt");
+    let downloaded_str = downloaded_path.to_str().unwrap_or("/tmp/downloaded.txt");
+    connector.download_object("test-bucket", "data/test.txt", downloaded_str).await?;
+
     // Test upload object
-    connector.upload_object("/tmp/upload.txt", "test-bucket", "data/uploaded.txt").await?;
+    let upload_path = std::env::temp_dir().join("upload.txt");
+    let upload_str = upload_path.to_str().unwrap_or("/tmp/upload.txt");
+    connector.upload_object(upload_str, "test-bucket", "data/uploaded.txt").await?;
     
     // Test delete object
     connector.delete_object("test-bucket", "data/test.txt").await?;

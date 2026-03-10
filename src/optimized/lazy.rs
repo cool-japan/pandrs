@@ -3,6 +3,7 @@ use std::fmt::{self, Debug};
 use std::sync::Arc;
 
 use crate::column::{Column, ColumnType};
+use crate::core::error::OptionExt;
 use crate::error::{Error, Result};
 use crate::optimized::dataframe::OptimizedDataFrame;
 use crate::optimized::operations::AggregateOp;
@@ -198,7 +199,11 @@ impl LazyFrame {
                             let col_view = df.column(col_name.as_str())?;
                             let key_part = match col_view.column_type() {
                                 ColumnType::Int64 => {
-                                    let col = col_view.as_int64().unwrap();
+                                    let col = col_view.as_int64().ok_or_else(|| {
+                                        Error::TypeMismatch(
+                                            "column type check failed for Int64".into(),
+                                        )
+                                    })?;
                                     if let Ok(Some(val)) = col.get(row_idx) {
                                         val.to_string()
                                     } else {
@@ -206,7 +211,11 @@ impl LazyFrame {
                                     }
                                 }
                                 ColumnType::Float64 => {
-                                    let col = col_view.as_float64().unwrap();
+                                    let col = col_view.as_float64().ok_or_else(|| {
+                                        Error::TypeMismatch(
+                                            "column type check failed for Float64".into(),
+                                        )
+                                    })?;
                                     if let Ok(Some(val)) = col.get(row_idx) {
                                         val.to_string()
                                     } else {
@@ -214,7 +223,11 @@ impl LazyFrame {
                                     }
                                 }
                                 ColumnType::String => {
-                                    let col = col_view.as_string().unwrap();
+                                    let col = col_view.as_string().ok_or_else(|| {
+                                        Error::TypeMismatch(
+                                            "column type check failed for String".into(),
+                                        )
+                                    })?;
                                     if let Ok(Some(val)) = col.get(row_idx) {
                                         val.to_string()
                                     } else {
@@ -222,7 +235,11 @@ impl LazyFrame {
                                     }
                                 }
                                 ColumnType::Boolean => {
-                                    let col = col_view.as_boolean().unwrap();
+                                    let col = col_view.as_boolean().ok_or_else(|| {
+                                        Error::TypeMismatch(
+                                            "column type check failed for Boolean".into(),
+                                        )
+                                    })?;
                                     if let Ok(Some(val)) = col.get(row_idx) {
                                         val.to_string()
                                     } else {
@@ -257,7 +274,7 @@ impl LazyFrame {
                         for (i, col_name) in group_by.iter().enumerate() {
                             group_key_data
                                 .get_mut(col_name)
-                                .unwrap()
+                                .expect("operation should succeed")
                                 .push(key[i].clone());
                         }
 
@@ -266,7 +283,11 @@ impl LazyFrame {
                             let col_view = df.column(col_name.as_str())?;
                             let result = match (col_view.column_type(), op) {
                                 (ColumnType::Int64, AggregateOp::Sum) => {
-                                    let col = col_view.as_int64().unwrap();
+                                    let col = col_view.as_int64().ok_or_else(|| {
+                                        Error::TypeMismatch(
+                                            "column type check failed for Int64".into(),
+                                        )
+                                    })?;
                                     let mut sum = 0;
                                     for &idx in &row_indices {
                                         if let Ok(Some(val)) = col.get(idx) {
@@ -276,7 +297,11 @@ impl LazyFrame {
                                     sum as f64
                                 }
                                 (ColumnType::Int64, AggregateOp::Mean) => {
-                                    let col = col_view.as_int64().unwrap();
+                                    let col = col_view.as_int64().ok_or_else(|| {
+                                        Error::TypeMismatch(
+                                            "column type check failed for Int64".into(),
+                                        )
+                                    })?;
                                     let mut sum = 0;
                                     let mut count = 0;
                                     for &idx in &row_indices {
@@ -292,7 +317,11 @@ impl LazyFrame {
                                     }
                                 }
                                 (ColumnType::Int64, AggregateOp::Min) => {
-                                    let col = col_view.as_int64().unwrap();
+                                    let col = col_view.as_int64().ok_or_else(|| {
+                                        Error::TypeMismatch(
+                                            "column type check failed for Int64".into(),
+                                        )
+                                    })?;
                                     let mut min = i64::MAX;
                                     for &idx in &row_indices {
                                         if let Ok(Some(val)) = col.get(idx) {
@@ -306,7 +335,11 @@ impl LazyFrame {
                                     }
                                 }
                                 (ColumnType::Int64, AggregateOp::Max) => {
-                                    let col = col_view.as_int64().unwrap();
+                                    let col = col_view.as_int64().ok_or_else(|| {
+                                        Error::TypeMismatch(
+                                            "column type check failed for Int64".into(),
+                                        )
+                                    })?;
                                     let mut max = i64::MIN;
                                     for &idx in &row_indices {
                                         if let Ok(Some(val)) = col.get(idx) {
@@ -320,7 +353,11 @@ impl LazyFrame {
                                     }
                                 }
                                 (ColumnType::Float64, AggregateOp::Sum) => {
-                                    let col = col_view.as_float64().unwrap();
+                                    let col = col_view.as_float64().ok_or_else(|| {
+                                        Error::TypeMismatch(
+                                            "column type check failed for Float64".into(),
+                                        )
+                                    })?;
                                     let mut sum = 0.0;
                                     for &idx in &row_indices {
                                         if let Ok(Some(val)) = col.get(idx) {
@@ -330,7 +367,11 @@ impl LazyFrame {
                                     sum
                                 }
                                 (ColumnType::Float64, AggregateOp::Mean) => {
-                                    let col = col_view.as_float64().unwrap();
+                                    let col = col_view.as_float64().ok_or_else(|| {
+                                        Error::TypeMismatch(
+                                            "column type check failed for Float64".into(),
+                                        )
+                                    })?;
                                     let mut sum = 0.0;
                                     let mut count = 0;
                                     for &idx in &row_indices {
@@ -346,7 +387,11 @@ impl LazyFrame {
                                     }
                                 }
                                 (ColumnType::Float64, AggregateOp::Min) => {
-                                    let col = col_view.as_float64().unwrap();
+                                    let col = col_view.as_float64().ok_or_else(|| {
+                                        Error::TypeMismatch(
+                                            "column type check failed for Float64".into(),
+                                        )
+                                    })?;
                                     let mut min = f64::INFINITY;
                                     for &idx in &row_indices {
                                         if let Ok(Some(val)) = col.get(idx) {
@@ -360,7 +405,11 @@ impl LazyFrame {
                                     }
                                 }
                                 (ColumnType::Float64, AggregateOp::Max) => {
-                                    let col = col_view.as_float64().unwrap();
+                                    let col = col_view.as_float64().ok_or_else(|| {
+                                        Error::TypeMismatch(
+                                            "column type check failed for Float64".into(),
+                                        )
+                                    })?;
                                     let mut max = f64::NEG_INFINITY;
                                     for &idx in &row_indices {
                                         if let Ok(Some(val)) = col.get(idx) {
@@ -382,7 +431,15 @@ impl LazyFrame {
                                 }
                             };
 
-                            agg_result_data.get_mut(alias).unwrap().push(result);
+                            agg_result_data
+                                .get_mut(alias)
+                                .ok_or_else(|| {
+                                    Error::InvalidOperation(format!(
+                                        "aggregation result not found: {}",
+                                        alias
+                                    ))
+                                })?
+                                .push(result);
                         }
                     }
 
@@ -395,7 +452,12 @@ impl LazyFrame {
 
                     // Add aggregation result columns
                     for (_, _, alias) in &aggregations {
-                        let values = agg_result_data.get(alias).unwrap();
+                        let values = agg_result_data.get(alias).ok_or_else(|| {
+                            Error::InvalidOperation(format!(
+                                "aggregation result not found: {}",
+                                alias
+                            ))
+                        })?;
                         let col = crate::column::Float64Column::new(values.clone());
                         result.add_column(alias.clone(), Column::Float64(col))?;
                     }
@@ -433,7 +495,9 @@ impl LazyFrame {
                     for row_idx in 0..df.row_count() {
                         let key = match col_view.column_type() {
                             ColumnType::Int64 => {
-                                let col = col_view.as_int64().unwrap();
+                                let col = col_view.as_int64().ok_or_else(|| {
+                                    Error::TypeMismatch("column type check failed for Int64".into())
+                                })?;
                                 if let Ok(Some(val)) = col.get(row_idx) {
                                     val.to_string()
                                 } else {
@@ -441,7 +505,11 @@ impl LazyFrame {
                                 }
                             }
                             ColumnType::Float64 => {
-                                let col = col_view.as_float64().unwrap();
+                                let col = col_view.as_float64().ok_or_else(|| {
+                                    Error::TypeMismatch(
+                                        "column type check failed for Float64".into(),
+                                    )
+                                })?;
                                 if let Ok(Some(val)) = col.get(row_idx) {
                                     val.to_string()
                                 } else {
@@ -449,7 +517,11 @@ impl LazyFrame {
                                 }
                             }
                             ColumnType::String => {
-                                let col = col_view.as_string().unwrap();
+                                let col = col_view.as_string().ok_or_else(|| {
+                                    Error::TypeMismatch(
+                                        "column type check failed for String".into(),
+                                    )
+                                })?;
                                 if let Ok(Some(val)) = col.get(row_idx) {
                                     val.to_string()
                                 } else {
@@ -457,7 +529,11 @@ impl LazyFrame {
                                 }
                             }
                             ColumnType::Boolean => {
-                                let col = col_view.as_boolean().unwrap();
+                                let col = col_view.as_boolean().ok_or_else(|| {
+                                    Error::TypeMismatch(
+                                        "column type check failed for Boolean".into(),
+                                    )
+                                })?;
                                 if let Ok(Some(val)) = col.get(row_idx) {
                                     val.to_string()
                                 } else {
@@ -484,7 +560,9 @@ impl LazyFrame {
 
                         match col_type {
                             ColumnType::Int64 => {
-                                let col = col_view.as_int64().unwrap();
+                                let col = col_view.as_int64().ok_or_else(|| {
+                                    Error::TypeMismatch("column type check failed for Int64".into())
+                                })?;
                                 let mut new_data = Vec::with_capacity(df.row_count());
 
                                 for &(idx, _) in &pairs {
@@ -499,7 +577,11 @@ impl LazyFrame {
                                 result.add_column(col_name.to_string(), Column::Int64(new_col))?;
                             }
                             ColumnType::Float64 => {
-                                let col = col_view.as_float64().unwrap();
+                                let col = col_view.as_float64().ok_or_else(|| {
+                                    Error::TypeMismatch(
+                                        "column type check failed for Float64".into(),
+                                    )
+                                })?;
                                 let mut new_data = Vec::with_capacity(df.row_count());
 
                                 for &(idx, _) in &pairs {
@@ -515,7 +597,11 @@ impl LazyFrame {
                                     .add_column(col_name.to_string(), Column::Float64(new_col))?;
                             }
                             ColumnType::String => {
-                                let col = col_view.as_string().unwrap();
+                                let col = col_view.as_string().ok_or_else(|| {
+                                    Error::TypeMismatch(
+                                        "column type check failed for String".into(),
+                                    )
+                                })?;
                                 let mut new_data = Vec::with_capacity(df.row_count());
 
                                 for &(idx, _) in &pairs {
@@ -530,7 +616,11 @@ impl LazyFrame {
                                 result.add_column(col_name.to_string(), Column::String(new_col))?;
                             }
                             ColumnType::Boolean => {
-                                let col = col_view.as_boolean().unwrap();
+                                let col = col_view.as_boolean().ok_or_else(|| {
+                                    Error::TypeMismatch(
+                                        "column type check failed for Boolean".into(),
+                                    )
+                                })?;
                                 let mut new_data = Vec::with_capacity(df.row_count());
 
                                 for &(idx, _) in &pairs {

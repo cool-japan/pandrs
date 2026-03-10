@@ -289,7 +289,7 @@ fn invert_matrix(matrix: &[Vec<f64>]) -> Result<Vec<Vec<f64>>> {
 ///
 /// let x = vec![1.0, 2.0, 3.0, 4.0, 5.0];
 /// let y = vec![1.0, 4.0, 9.0, 16.0, 25.0];
-/// let result = regression::polynomial_regression(&x, &y, 2).unwrap();
+/// let result = regression::polynomial_regression(&x, &y, 2).expect("operation should succeed");
 /// println!("Coefficients: {:?}", result.coefficients);
 /// println!("R-squared: {}", result.r_squared);
 /// ```
@@ -435,7 +435,7 @@ pub fn polynomial_regression(
 /// let x = vec![1.0, 2.0, 3.0, 4.0, 5.0];
 /// let y = vec![2.0, 4.0, 5.0, 4.0, 5.0];
 ///
-/// let result = regression::simple_linear_regression(&x, &y).unwrap();
+/// let result = regression::simple_linear_regression(&x, &y).expect("operation should succeed");
 /// println!("Intercept: {}", result.intercept);
 /// println!("Slope: {}", result.coefficients[0]);
 /// println!("R-squared: {}", result.r_squared);
@@ -461,7 +461,7 @@ pub fn simple_linear_regression(x: &[f64], y: &[f64]) -> Result<LinearRegression
 /// use pandrs::stats::regression;
 ///
 /// let residuals = vec![0.5, -0.3, 0.2, -0.4, 0.1];
-/// let diagnostics = regression::residual_diagnostics(&residuals).unwrap();
+/// let diagnostics = regression::residual_diagnostics(&residuals).expect("operation should succeed");
 /// println!("Shapiro p-value (normality): {}", diagnostics["shapiro_p_value"]);
 /// println!("Durbin-Watson (autocorrelation): {}", diagnostics["durbin_watson"]);
 /// ```
@@ -632,7 +632,7 @@ mod tests {
             vec![2.0, 6.0]
         ];
         
-        let inverse = invert_matrix(&matrix).unwrap();
+        let inverse = invert_matrix(&matrix).expect("operation should succeed");
         
         // Expected inverse: [0.6, -0.7; -0.2, 0.4]
         assert!((inverse[0][0] - 0.6).abs() < 1e-10);
@@ -646,7 +646,7 @@ mod tests {
             vec![0.0, 1.0]
         ];
         
-        let identity_inv = invert_matrix(&identity).unwrap();
+        let identity_inv = invert_matrix(&identity).expect("operation should succeed");
         assert!((identity_inv[0][0] - 1.0).abs() < 1e-10);
         assert!((identity_inv[0][1] - 0.0).abs() < 1e-10);
         assert!((identity_inv[1][0] - 0.0).abs() < 1e-10);
@@ -658,7 +658,7 @@ mod tests {
         let x = vec![1.0, 2.0, 3.0, 4.0, 5.0];
         let y = vec![2.0, 4.0, 6.0, 8.0, 10.0];
         
-        let result = simple_linear_regression(&x, &y).unwrap();
+        let result = simple_linear_regression(&x, &y).expect("operation should succeed");
         
         // Perfect linear relationship y = 2x
         assert!((result.intercept - 0.0).abs() < 1e-10);
@@ -667,7 +667,7 @@ mod tests {
         
         // Test with some noise
         let y_noisy = vec![2.1, 3.9, 6.2, 7.8, 10.1];
-        let result_noisy = simple_linear_regression(&x, &y_noisy).unwrap();
+        let result_noisy = simple_linear_regression(&x, &y_noisy).expect("operation should succeed");
         
         // Should still be close to y = 2x
         assert!(result_noisy.intercept.abs() < 0.5);
@@ -682,11 +682,11 @@ mod tests {
         let y = vec![1.0, 4.0, 9.0, 16.0, 25.0];
         
         // Linear regression won't fit well
-        let linear_result = polynomial_regression(&x, &y, 1).unwrap();
+        let linear_result = polynomial_regression(&x, &y, 1).expect("operation should succeed");
         assert!(linear_result.r_squared < 0.9);
         
         // Quadratic regression should fit perfectly
-        let quad_result = polynomial_regression(&x, &y, 2).unwrap();
+        let quad_result = polynomial_regression(&x, &y, 2).expect("operation should succeed");
         
         // Should be close to y = 0 + 0*x + 1*x^2
         assert!(quad_result.intercept.abs() < 1e-8);
@@ -699,7 +699,7 @@ mod tests {
     fn test_residual_diagnostics() {
         // Well-behaved residuals (approximately normal)
         let normal_residuals = vec![0.1, -0.2, 0.3, -0.15, 0.25, -0.1, 0.05, -0.3];
-        let normal_diag = residual_diagnostics(&normal_residuals).unwrap();
+        let normal_diag = residual_diagnostics(&normal_residuals).expect("operation should succeed");
         
         // Mean should be close to zero
         assert!(normal_diag["mean"].abs() < 0.1);
@@ -712,7 +712,7 @@ mod tests {
         
         // Skewed residuals
         let skewed_residuals = vec![0.1, 0.2, 0.3, 0.4, 0.5, 1.0, 1.2, 1.5, 2.0];
-        let skewed_diag = residual_diagnostics(&skewed_residuals).unwrap();
+        let skewed_diag = residual_diagnostics(&skewed_residuals).expect("operation should succeed");
         
         // Should have positive skewness
         assert!(skewed_diag["skewness"] > 0.5);
@@ -731,12 +731,12 @@ mod tests {
         let y = vec![5.1, 8.9, 12.7, 14.8, 19.2];
         
         // Add columns to DataFrame
-        df.add_column("x1".to_string(), Series::new(x1, Some("x1".to_string())).unwrap()).unwrap();
-        df.add_column("x2".to_string(), Series::new(x2, Some("x2".to_string())).unwrap()).unwrap();
-        df.add_column("y".to_string(), Series::new(y, Some("y".to_string())).unwrap()).unwrap();
+        df.add_column("x1".to_string(), Series::new(x1, Some("x1".to_string())).expect("operation should succeed")).expect("operation should succeed");
+        df.add_column("x2".to_string(), Series::new(x2, Some("x2".to_string())).expect("operation should succeed")).expect("operation should succeed");
+        df.add_column("y".to_string(), Series::new(y, Some("y".to_string())).expect("operation should succeed")).expect("operation should succeed");
         
         // Test linear_regression_impl
-        let result = linear_regression_impl(&df, "y", &["x1", "x2"]).unwrap();
+        let result = linear_regression_impl(&df, "y", &["x1", "x2"]).expect("operation should succeed");
         
         // Coefficient for x1 should be close to 2
         assert!((result.coefficients[0] - 2.0).abs() < 0.5);

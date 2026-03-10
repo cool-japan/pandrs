@@ -17,6 +17,8 @@ use crate::distributed::execution::{
 #[cfg(feature = "distributed")]
 use crate::distributed::ToDistributed;
 use crate::error::{Error, Result};
+#[cfg(feature = "distributed")]
+use crate::lock_safe;
 
 /// A DataFrame implementation for distributed processing
 #[cfg(feature = "distributed")]
@@ -156,7 +158,7 @@ impl DistributedDataFrame {
 
     /// Gets the schema of this DataFrame
     pub fn schema(&self) -> Result<arrow::datatypes::SchemaRef> {
-        let context = self.context.lock().unwrap();
+        let context = lock_safe!(self.context, "distributed dataframe context lock")?;
 
         if let Some(result) = &self.current_result {
             Ok(result.schema().clone())
@@ -168,10 +170,14 @@ impl DistributedDataFrame {
     /// Executes all pending operations and returns the result
     pub fn execute(&mut self) -> Result<&ExecutionResult> {
         if self.pending_operations.is_empty() && self.current_result.is_some() {
-            return Ok(self.current_result.as_ref().unwrap());
+            return self
+                .current_result
+                .as_ref()
+                .ok_or_else(|| Error::InvalidOperation("No result computed yet".into()))
+                .map(|r| r);
         }
 
-        let mut context = self.context.lock().unwrap();
+        let mut context = lock_safe!(self.context, "distributed dataframe context lock")?;
 
         // Create a plan for the pending operations
         let mut plan = ExecutionPlan::new(&self.id);
@@ -188,7 +194,9 @@ impl DistributedDataFrame {
         // Clear pending operations
         self.pending_operations.clear();
 
-        Ok(self.current_result.as_ref().unwrap())
+        self.current_result
+            .as_ref()
+            .ok_or_else(|| Error::InvalidOperation("No result computed yet".into()))
     }
 
     /// Collects results and creates a local DataFrame
@@ -210,7 +218,7 @@ impl DistributedDataFrame {
             self.execute()?;
         }
 
-        let mut context = self.context.lock().unwrap();
+        let mut context = lock_safe!(self.context, "distributed dataframe context lock")?;
 
         // Write to Parquet
         if let Some(result) = &self.current_result {
@@ -227,7 +235,7 @@ impl DistributedDataFrame {
             self.execute()?;
         }
 
-        let mut context = self.context.lock().unwrap();
+        let mut context = lock_safe!(self.context, "distributed dataframe context lock")?;
 
         // Write to CSV
         if let Some(result) = &self.current_result {
@@ -274,7 +282,7 @@ impl DistributedDataFrame {
             })
         } else {
             // Execute immediately
-            let mut context = self.context.lock().unwrap();
+            let mut context = lock_safe!(self.context, "distributed dataframe context lock")?;
             let result = context.execute_plan(plan)?;
 
             let id = format!("{}_{}", self.id, "select");
@@ -312,7 +320,7 @@ impl DistributedDataFrame {
             })
         } else {
             // Execute immediately
-            let mut context = self.context.lock().unwrap();
+            let mut context = lock_safe!(self.context, "distributed dataframe context lock")?;
             let result = context.execute_plan(plan)?;
 
             let id = format!("{}_{}", self.id, "filter");
@@ -368,7 +376,7 @@ impl DistributedDataFrame {
             })
         } else {
             // Execute immediately
-            let mut context = self.context.lock().unwrap();
+            let mut context = lock_safe!(self.context, "distributed dataframe context lock")?;
             let result = context.execute_plan(plan)?;
 
             let id = format!("{}_{}", self.id, "aggregate");

@@ -9,6 +9,7 @@ use std::fmt;
 use std::sync::{Arc, Mutex};
 
 use crate::error::{Error, PandRSError, Result};
+use crate::lock_safe;
 use crate::optimized::dataframe::OptimizedDataFrame;
 use crate::DataFrame;
 use crate::Series;
@@ -125,18 +126,24 @@ impl GpuContext {
             return false;
         }
 
-        self.device_status.lock().unwrap().available
+        lock_safe!(self.device_status, "gpu device status lock")
+            .map(|status| status.available)
+            .unwrap_or(false)
     }
 
     /// Get device status
     pub fn get_device_status(&self) -> GpuDeviceStatus {
-        self.device_status.lock().unwrap().clone()
+        lock_safe!(self.device_status, "gpu device status lock")
+            .map(|status| status.clone())
+            .unwrap_or_default()
     }
 
     /// Update device status
     pub fn update_device_status(&self) {
         let new_status = Self::detect_device(&self.config);
-        *self.device_status.lock().unwrap() = new_status;
+        if let Ok(mut status) = lock_safe!(self.device_status, "gpu device status lock") {
+            *status = new_status;
+        }
     }
 
     /// Check if operation should be offloaded to GPU based on size threshold
@@ -260,7 +267,7 @@ pub fn init_gpu_with_config(config: GpuConfig) -> Result<GpuDeviceStatus> {
     let manager = GpuManager::with_config(config);
     let status = manager.device_info();
 
-    let mut global = GPU_MANAGER.lock().unwrap();
+    let mut global = lock_safe!(GPU_MANAGER, "global gpu manager lock")?;
     *global = Some(manager);
 
     Ok(status)
@@ -268,7 +275,7 @@ pub fn init_gpu_with_config(config: GpuConfig) -> Result<GpuDeviceStatus> {
 
 /// Get the global GPU manager instance
 pub fn get_gpu_manager() -> Result<GpuManager> {
-    let global = GPU_MANAGER.lock().unwrap();
+    let global = lock_safe!(GPU_MANAGER, "global gpu manager lock")?;
 
     match &*global {
         Some(manager) => Ok(manager.clone()),

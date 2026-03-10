@@ -1,3 +1,4 @@
+#![allow(clippy::result_large_err)]
 use pandrs::dataframe::apply::Axis;
 use pandrs::dataframe::ApplyExt;
 use pandrs::DataFrame;

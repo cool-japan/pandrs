@@ -69,13 +69,14 @@ impl<T: Temporal> DateRange<T> {
 
                     // Create the new date
                     let new_naive = NaiveDateTime::new(
-                        NaiveDate::from_ymd_opt(year, month, day).unwrap(),
+                        NaiveDate::from_ymd_opt(year, month, day)
+                            .expect("operation should succeed"),
                         naive.time(),
                     );
 
                     // Convert back to the original type
                     let new_utc = DateTime::<Utc>::from_naive_utc_and_offset(new_naive, Utc);
-                    T::from_str(&new_utc.to_rfc3339()).unwrap()
+                    T::from_str(&new_utc.to_rfc3339()).expect("operation should succeed")
                 }
                 Frequency::Quarterly => {
                     // Add quarters (every 3 months)
@@ -96,13 +97,14 @@ impl<T: Temporal> DateRange<T> {
 
                     // Create the new date
                     let new_naive = NaiveDateTime::new(
-                        NaiveDate::from_ymd_opt(year, month, day).unwrap(),
+                        NaiveDate::from_ymd_opt(year, month, day)
+                            .expect("operation should succeed"),
                         naive.time(),
                     );
 
                     // Convert back to the original type
                     let new_utc = DateTime::<Utc>::from_naive_utc_and_offset(new_naive, Utc);
-                    T::from_str(&new_utc.to_rfc3339()).unwrap()
+                    T::from_str(&new_utc.to_rfc3339()).expect("operation should succeed")
                 }
                 Frequency::Yearly => {
                     // Add years
@@ -122,13 +124,14 @@ impl<T: Temporal> DateRange<T> {
 
                     // Create the new date
                     let new_naive = NaiveDateTime::new(
-                        NaiveDate::from_ymd_opt(year, month, day).unwrap(),
+                        NaiveDate::from_ymd_opt(year, month, day)
+                            .expect("operation should succeed"),
                         naive.time(),
                     );
 
                     // Convert back to the original type
                     let new_utc = DateTime::<Utc>::from_naive_utc_and_offset(new_naive, Utc);
-                    T::from_str(&new_utc.to_rfc3339()).unwrap()
+                    T::from_str(&new_utc.to_rfc3339()).expect("operation should succeed")
                 }
                 Frequency::Custom(duration) => current.add(duration),
             };

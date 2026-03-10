@@ -655,12 +655,14 @@ where
                     result.extend(std::iter::repeat(f64::NAN).take(i));
                     result.push(v);
                 } else {
-                    let prev = ewm_val.unwrap();
+                    // SAFETY: ewm_val is Some because we're in the else branch
+                    let prev = ewm_val.expect("ewm_val should be Some in else branch");
                     ewm_val = Some(alpha * v + (1.0 - alpha) * prev);
-                    result.push(ewm_val.unwrap());
+                    result.push(ewm_val.expect("ewm_val was just set to Some"));
                 }
             } else if ewm_val.is_some() {
-                result.push(ewm_val.unwrap());
+                // SAFETY: We just checked that ewm_val is Some
+                result.push(ewm_val.expect("ewm_val should be Some"));
             } else {
                 result.push(f64::NAN);
             }
@@ -689,8 +691,9 @@ where
                     ewm_var = Some(0.0);
                     result.extend(std::iter::repeat(f64::NAN).take(i + 1));
                 } else {
-                    let prev_mean = ewm_mean.unwrap();
-                    let prev_var = ewm_var.unwrap();
+                    // SAFETY: ewm_mean and ewm_var are Some because we're in the else branch
+                    let prev_mean = ewm_mean.expect("ewm_mean should be Some in else branch");
+                    let prev_var = ewm_var.expect("ewm_var should be Some in else branch");
 
                     // Update mean
                     ewm_mean = Some(alpha * v + (1.0 - alpha) * prev_mean);
@@ -699,10 +702,11 @@ where
                     let diff = v - prev_mean;
                     ewm_var = Some((1.0 - alpha) * (prev_var + alpha * diff * diff));
 
-                    result.push(ewm_var.unwrap().sqrt());
+                    result.push(ewm_var.expect("ewm_var was just set to Some").sqrt());
                 }
             } else if ewm_var.is_some() {
-                result.push(ewm_var.unwrap().sqrt());
+                // SAFETY: We just checked that ewm_var is Some
+                result.push(ewm_var.expect("ewm_var should be Some").sqrt());
             } else {
                 result.push(f64::NAN);
             }

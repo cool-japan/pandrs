@@ -14,8 +14,8 @@
 //! let a = graph.add_node("A");
 //! let b = graph.add_node("B");
 //! let c = graph.add_node("C");
-//! graph.add_edge(a, b, None).unwrap();
-//! graph.add_edge(b, c, None).unwrap();
+//! graph.add_edge(a, b, None).expect("operation should succeed");
+//! graph.add_edge(b, c, None).expect("operation should succeed");
 //!
 //! // BFS traversal starting from node A
 //! let order = bfs(&graph, a);
@@ -471,10 +471,18 @@ mod tests {
         let e = graph.add_node("E");
 
         // Create a simple path: A - B - C - D - E
-        graph.add_edge(a, b, None).unwrap();
-        graph.add_edge(b, c, None).unwrap();
-        graph.add_edge(c, d, None).unwrap();
-        graph.add_edge(d, e, None).unwrap();
+        graph
+            .add_edge(a, b, None)
+            .expect("operation should succeed");
+        graph
+            .add_edge(b, c, None)
+            .expect("operation should succeed");
+        graph
+            .add_edge(c, d, None)
+            .expect("operation should succeed");
+        graph
+            .add_edge(d, e, None)
+            .expect("operation should succeed");
 
         graph
     }
@@ -498,7 +506,7 @@ mod tests {
         let a = NodeId(0);
         let e = NodeId(4);
 
-        let path = shortest_path_bfs(&graph, a, e).unwrap();
+        let path = shortest_path_bfs(&graph, a, e).expect("operation should succeed");
 
         assert_eq!(path.len(), 5);
         assert_eq!(path[0], a);
@@ -525,19 +533,39 @@ mod tests {
 
         // A -> B -> D
         // A -> C -> D
-        graph.add_edge(a, b, None).unwrap();
-        graph.add_edge(a, c, None).unwrap();
-        graph.add_edge(b, d, None).unwrap();
-        graph.add_edge(c, d, None).unwrap();
+        graph
+            .add_edge(a, b, None)
+            .expect("operation should succeed");
+        graph
+            .add_edge(a, c, None)
+            .expect("operation should succeed");
+        graph
+            .add_edge(b, d, None)
+            .expect("operation should succeed");
+        graph
+            .add_edge(c, d, None)
+            .expect("operation should succeed");
 
-        let sorted = topological_sort(&graph).unwrap();
+        let sorted = topological_sort(&graph).expect("operation should succeed");
 
         // A must come before B and C
         // B and C must come before D
-        let pos_a = sorted.iter().position(|&n| n == a).unwrap();
-        let pos_b = sorted.iter().position(|&n| n == b).unwrap();
-        let pos_c = sorted.iter().position(|&n| n == c).unwrap();
-        let pos_d = sorted.iter().position(|&n| n == d).unwrap();
+        let pos_a = sorted
+            .iter()
+            .position(|&n| n == a)
+            .expect("operation should succeed");
+        let pos_b = sorted
+            .iter()
+            .position(|&n| n == b)
+            .expect("operation should succeed");
+        let pos_c = sorted
+            .iter()
+            .position(|&n| n == c)
+            .expect("operation should succeed");
+        let pos_d = sorted
+            .iter()
+            .position(|&n| n == d)
+            .expect("operation should succeed");
 
         assert!(pos_a < pos_b);
         assert!(pos_a < pos_c);
@@ -553,13 +581,19 @@ mod tests {
         let c = graph.add_node("C");
 
         // A -> B -> C (no cycle)
-        graph.add_edge(a, b, None).unwrap();
-        graph.add_edge(b, c, None).unwrap();
+        graph
+            .add_edge(a, b, None)
+            .expect("operation should succeed");
+        graph
+            .add_edge(b, c, None)
+            .expect("operation should succeed");
 
         assert!(!has_cycle(&graph));
 
         // Add C -> A to create a cycle
-        graph.add_edge(c, a, None).unwrap();
+        graph
+            .add_edge(c, a, None)
+            .expect("operation should succeed");
         assert!(has_cycle(&graph));
     }
 

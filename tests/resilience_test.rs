@@ -1,3 +1,4 @@
+#![allow(clippy::result_large_err)]
 //! Tests for resilience patterns and fault tolerance
 //!
 //! This test module validates retry mechanisms, circuit breakers, and
@@ -116,25 +117,25 @@ mod resilience_tests {
         let cb = CircuitBreaker::new(config);
 
         // Initially closed
-        assert_eq!(cb.state(), CircuitState::Closed);
-        assert!(cb.can_execute());
+        assert_eq!(cb.state().unwrap(), CircuitState::Closed);
+        assert!(cb.can_execute().unwrap());
 
         // Record successful calls
         for _ in 0..3 {
-            cb.record_success();
+            cb.record_success().unwrap();
         }
-        assert_eq!(cb.state(), CircuitState::Closed);
+        assert_eq!(cb.state().unwrap(), CircuitState::Closed);
 
         // Record failures (not enough to trip yet due to minimum_calls)
         for _ in 0..2 {
-            cb.record_failure();
+            cb.record_failure().unwrap();
         }
-        assert_eq!(cb.state(), CircuitState::Closed);
+        assert_eq!(cb.state().unwrap(), CircuitState::Closed);
 
         // One more failure should trip the circuit (5 total calls, 3 failures >= threshold)
-        cb.record_failure();
-        assert_eq!(cb.state(), CircuitState::Open);
-        assert!(!cb.can_execute());
+        cb.record_failure().unwrap();
+        assert_eq!(cb.state().unwrap(), CircuitState::Open);
+        assert!(!cb.can_execute().unwrap());
     }
 
     #[tokio::test]
@@ -151,23 +152,23 @@ mod resilience_tests {
         let cb = CircuitBreaker::new(config);
 
         // Trip the circuit
-        cb.record_failure();
-        cb.record_failure();
-        assert_eq!(cb.state(), CircuitState::Open);
+        cb.record_failure().unwrap();
+        cb.record_failure().unwrap();
+        assert_eq!(cb.state().unwrap(), CircuitState::Open);
 
         // Wait for timeout
         tokio::time::sleep(Duration::from_secs(2)).await;
 
         // Should transition to half-open
-        assert!(cb.can_execute());
-        assert_eq!(cb.state(), CircuitState::HalfOpen);
+        assert!(cb.can_execute().unwrap());
+        assert_eq!(cb.state().unwrap(), CircuitState::HalfOpen);
 
         // Record success in half-open state
-        cb.record_success();
-        cb.record_success();
+        cb.record_success().unwrap();
+        cb.record_success().unwrap();
 
         // Should close circuit after successful calls
-        assert_eq!(cb.state(), CircuitState::Closed);
+        assert_eq!(cb.state().unwrap(), CircuitState::Closed);
     }
 
     #[tokio::test]
@@ -182,20 +183,20 @@ mod resilience_tests {
         let cb = CircuitBreaker::new(config);
 
         // Trip the circuit
-        cb.record_failure();
-        cb.record_failure();
-        assert_eq!(cb.state(), CircuitState::Open);
+        cb.record_failure().unwrap();
+        cb.record_failure().unwrap();
+        assert_eq!(cb.state().unwrap(), CircuitState::Open);
 
         // Wait for timeout
         tokio::time::sleep(Duration::from_secs(2)).await;
 
         // Should be half-open
-        assert!(cb.can_execute());
-        assert_eq!(cb.state(), CircuitState::HalfOpen);
+        assert!(cb.can_execute().unwrap());
+        assert_eq!(cb.state().unwrap(), CircuitState::HalfOpen);
 
         // Failure in half-open should reopen circuit
-        cb.record_failure();
-        assert_eq!(cb.state(), CircuitState::Open);
+        cb.record_failure().unwrap();
+        assert_eq!(cb.state().unwrap(), CircuitState::Open);
     }
 
     /// Test resilience manager integration
@@ -210,7 +211,9 @@ mod resilience_tests {
             retryable_errors: vec!["TestError".to_string()],
             ..Default::default()
         };
-        manager.set_retry_config("test_service", retry_config);
+        manager
+            .set_retry_config("test_service", retry_config)
+            .unwrap();
 
         let attempt_count = Arc::new(AtomicU32::new(0));
         let attempt_count_clone = attempt_count.clone();
@@ -258,11 +261,11 @@ mod resilience_tests {
         let manager = ResilienceManager::new();
 
         // Get circuit breaker to initialize it
-        let cb = manager.get_circuit_breaker("test_service");
-        cb.record_success();
-        cb.record_failure();
+        let cb = manager.get_circuit_breaker("test_service").unwrap();
+        cb.record_success().unwrap();
+        cb.record_failure().unwrap();
 
-        let health_status = manager.get_health_status();
+        let health_status = manager.get_health_status().unwrap();
 
         // Should have health information for the service
         assert!(health_status.contains_key("test_service"));
@@ -351,12 +354,12 @@ mod resilience_tests {
         let cb = CircuitBreaker::new(config);
 
         // Record various operations
-        cb.record_success();
-        cb.record_success();
-        cb.record_failure();
-        cb.record_rejection();
+        cb.record_success().unwrap();
+        cb.record_success().unwrap();
+        cb.record_failure().unwrap();
+        cb.record_rejection().unwrap();
 
-        let stats = cb.stats();
+        let stats = cb.stats().unwrap();
         assert_eq!(stats.total_calls, 3); // Success and failure calls
         assert_eq!(stats.successful_calls, 2);
         assert_eq!(stats.failed_calls, 1);

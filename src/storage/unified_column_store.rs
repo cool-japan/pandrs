@@ -1205,7 +1205,7 @@ impl StorageStrategy for UnifiedColumnStoreStrategy {
                 let compression_engine = self
                     .compression_engines
                     .get(&CompressionType::Zstd)
-                    .unwrap();
+                    .expect("operation should succeed");
 
                 // Decompress first
                 let decompressed = compression_engine.decompress(&block.data)?;
@@ -1299,8 +1299,10 @@ mod tests {
         let engine = Lz4CompressionEngine;
         let data = b"Hello, World! This is a test string for compression.";
 
-        let compressed = engine.compress(data).unwrap();
-        let decompressed = engine.decompress(&compressed).unwrap();
+        let compressed = engine.compress(data).expect("operation should succeed");
+        let decompressed = engine
+            .decompress(&compressed)
+            .expect("operation should succeed");
 
         assert_eq!(data.to_vec(), decompressed);
         // Note: This is a placeholder implementation, so compression may not reduce size
@@ -1311,8 +1313,8 @@ mod tests {
         let strategy = RunLengthEncodingStrategy;
         let data = b"aaaaabbbbcccccddddd";
 
-        let encoded = strategy.encode(data).unwrap();
-        let decoded = strategy.decode(&encoded).unwrap();
+        let encoded = strategy.encode(data).expect("operation should succeed");
+        let decoded = strategy.decode(&encoded).expect("operation should succeed");
 
         assert_eq!(data.to_vec(), decoded);
         assert!(encoded.data.len() < data.len()); // Should be smaller for repetitive data
@@ -1332,7 +1334,9 @@ mod tests {
             ..Default::default()
         };
 
-        let handle = strategy.create_storage(&storage_config).unwrap();
+        let handle = strategy
+            .create_storage(&storage_config)
+            .expect("operation should succeed");
         assert_eq!(handle.layout.data_type, ColumnDataType::Float64);
     }
 
@@ -1347,8 +1351,12 @@ mod tests {
             EncodingType::None,
         );
 
-        let block_id = manager.write_block(block).unwrap();
-        let read_block = manager.read_block(block_id).unwrap();
+        let block_id = manager
+            .write_block(block)
+            .expect("operation should succeed");
+        let read_block = manager
+            .read_block(block_id)
+            .expect("operation should succeed");
 
         assert_eq!(read_block.data, vec![1, 2, 3, 4, 5]);
     }

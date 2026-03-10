@@ -190,7 +190,7 @@ impl AsyncDatabasePool {
     /// #[tokio::main]
     /// async fn main() {
     ///     let config = PoolConfig::default();
-    ///     let pool = AsyncDatabasePool::new("postgresql://user:pass@localhost/db", config).await.unwrap();
+    ///     let pool = AsyncDatabasePool::new("postgresql://user:pass@localhost/db", config).await.expect("operation should succeed");
     /// }
     /// ```
     #[cfg(feature = "sql")]

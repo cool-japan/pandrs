@@ -210,7 +210,9 @@ pub fn get_or_init_global_pool() -> Arc<Mutex<StringPoolInner>> {
         if GLOBAL_STRING_POOL.is_none() {
             GLOBAL_STRING_POOL = Some(Arc::new(Mutex::new(StringPoolInner::new())));
         }
-        GLOBAL_STRING_POOL.as_ref().unwrap().clone()
+        GLOBAL_STRING_POOL.as_ref()
+            .expect("Global string pool must be initialized at this point")
+            .clone()
     }
 }
 

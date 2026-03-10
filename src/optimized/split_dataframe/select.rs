@@ -3,6 +3,7 @@
 use std::collections::HashSet;
 
 use crate::column::Column;
+use crate::core::error::OptionExt;
 use crate::error::Result;
 use crate::optimized::split_dataframe::core::OptimizedDataFrame;
 
@@ -27,7 +28,10 @@ impl OptimizedDataFrame {
                 return Err(crate::error::Error::ColumnNotFound(col_name.to_string()));
             }
 
-            let col_idx = self.column_indices.get(col_name).unwrap();
+            let col_idx = self
+                .column_indices
+                .get(col_name)
+                .ok_or_column_error(col_name)?;
             let column = &self.columns[*col_idx];
 
             df.add_column(col_name.to_string(), column.clone())?;

@@ -8,8 +8,10 @@ use rayon::prelude::*;
 use super::super::core::OptimizedDataFrame;
 use super::types::{AggregateFn, AggregateOp, CustomAggregation, GroupBy};
 use crate::column::{Column, ColumnTrait, Float64Column, StringColumn};
+use crate::core::error::OptionExt;
 use crate::error::{Error, Result};
 use crate::index::StringMultiIndex;
+use crate::lock_safe;
 
 impl<'a> GroupBy<'a> {
     /// Execute aggregation operations for each group in parallel
@@ -84,18 +86,24 @@ impl<'a> GroupBy<'a> {
 
             // Add values for grouping keys
             {
-                let mut group_key_map = group_key_data.lock().unwrap();
-                for (i, col_name) in self.group_by_columns.iter().enumerate() {
-                    group_key_map
-                        .get_mut(col_name)
-                        .unwrap()
-                        .push(key[i].clone());
-                }
+                if let Ok(mut group_key_map) =
+                    lock_safe!(group_key_data, "group aggregation key data lock")
+                {
+                    for (i, col_name) in self.group_by_columns.iter().enumerate() {
+                        group_key_map
+                            .get_mut(col_name)
+                            .expect("operation should succeed")
+                            .push(key[i].clone());
+                    }
 
-                // If creating multi-index, store the group key tuple
-                if self.create_multi_index && self.group_by_columns.len() > 1 {
-                    let mut tuples = group_tuples.lock().unwrap();
-                    tuples.push(key.clone());
+                    // If creating multi-index, store the group key tuple
+                    if self.create_multi_index && self.group_by_columns.len() > 1 {
+                        if let Ok(mut tuples) =
+                            lock_safe!(group_tuples, "group aggregation tuples lock")
+                        {
+                            tuples.push(key.clone());
+                        }
+                    }
                 }
             }
 
@@ -120,9 +128,15 @@ impl<'a> GroupBy<'a> {
 
             // Add results to shared result data
             {
-                let mut agg_data = agg_result_data.lock().unwrap();
-                for (alias, value) in local_results {
-                    agg_data.get_mut(&alias).unwrap().push(value);
+                if let Ok(mut agg_data) =
+                    lock_safe!(agg_result_data, "group aggregation result data lock")
+                {
+                    for (alias, value) in local_results {
+                        agg_data
+                            .get_mut(&alias)
+                            .expect("operation should succeed")
+                            .push(value);
+                    }
                 }
             }
         });
@@ -130,7 +144,7 @@ impl<'a> GroupBy<'a> {
         // Prepare for multi-index if needed
         if self.create_multi_index && self.group_by_columns.len() > 1 {
             // Create MultiIndex from collected tuples
-            let tuples = group_tuples.into_inner().unwrap();
+            let tuples = group_tuples.into_inner().expect("operation should succeed");
 
             // Create MultiIndex with names
             let names = Some(
@@ -146,15 +160,21 @@ impl<'a> GroupBy<'a> {
             result.set_index_from_multi_index(multi_index)?;
 
             // Add aggregation result columns only (not group keys)
-            let agg_data = agg_result_data.into_inner().unwrap();
+            let agg_data = agg_result_data
+                .into_inner()
+                .expect("operation should succeed");
             for (_, _, alias) in &aggregations {
-                let values = agg_data.get(alias).unwrap();
+                let values = agg_data.get(alias).ok_or_else(|| {
+                    Error::InvalidOperation(format!("aggregation result not found: {}", alias))
+                })?;
                 let col = Float64Column::new(values.clone());
                 result.add_column(alias.clone(), Column::Float64(col))?;
             }
         } else {
             // Regular process: add grouping key columns to result
-            let group_key_map = group_key_data.into_inner().unwrap();
+            let group_key_map = group_key_data
+                .into_inner()
+                .expect("operation should succeed");
             for (col_name, values) in group_key_map {
                 // Add as string column
                 let col = StringColumn::new(values);
@@ -162,9 +182,13 @@ impl<'a> GroupBy<'a> {
             }
 
             // Add aggregation result columns
-            let agg_data = agg_result_data.into_inner().unwrap();
+            let agg_data = agg_result_data
+                .into_inner()
+                .expect("operation should succeed");
             for (_, _, alias) in &aggregations {
-                let values = agg_data.get(alias).unwrap();
+                let values = agg_data.get(alias).ok_or_else(|| {
+                    Error::InvalidOperation(format!("aggregation result not found: {}", alias))
+                })?;
                 let col = Float64Column::new(values.clone());
                 result.add_column(alias.clone(), Column::Float64(col))?;
             }
@@ -267,18 +291,24 @@ impl<'a> GroupBy<'a> {
 
             // Add values for grouping keys
             {
-                let mut group_key_map = group_key_data.lock().unwrap();
-                for (i, col_name) in self.group_by_columns.iter().enumerate() {
-                    group_key_map
-                        .get_mut(col_name)
-                        .unwrap()
-                        .push(key[i].clone());
-                }
+                if let Ok(mut group_key_map) =
+                    lock_safe!(group_key_data, "group aggregation key data lock")
+                {
+                    for (i, col_name) in self.group_by_columns.iter().enumerate() {
+                        group_key_map
+                            .get_mut(col_name)
+                            .expect("operation should succeed")
+                            .push(key[i].clone());
+                    }
 
-                // If creating multi-index, store the group key tuple
-                if self.create_multi_index && self.group_by_columns.len() > 1 {
-                    let mut tuples = group_tuples.lock().unwrap();
-                    tuples.push(key.clone());
+                    // If creating multi-index, store the group key tuple
+                    if self.create_multi_index && self.group_by_columns.len() > 1 {
+                        if let Ok(mut tuples) =
+                            lock_safe!(group_tuples, "group aggregation tuples lock")
+                        {
+                            tuples.push(key.clone());
+                        }
+                    }
                 }
             }
 
@@ -320,9 +350,15 @@ impl<'a> GroupBy<'a> {
 
             // Add results to shared result data
             {
-                let mut agg_data = agg_result_data.lock().unwrap();
-                for (alias, value) in local_results {
-                    agg_data.get_mut(&alias).unwrap().push(value);
+                if let Ok(mut agg_data) =
+                    lock_safe!(agg_result_data, "group aggregation result data lock")
+                {
+                    for (alias, value) in local_results {
+                        agg_data
+                            .get_mut(&alias)
+                            .expect("operation should succeed")
+                            .push(value);
+                    }
                 }
             }
         });
@@ -330,7 +366,7 @@ impl<'a> GroupBy<'a> {
         // Prepare for multi-index if needed
         if self.create_multi_index && self.group_by_columns.len() > 1 {
             // Create MultiIndex from collected tuples
-            let tuples = group_tuples.into_inner().unwrap();
+            let tuples = group_tuples.into_inner().expect("operation should succeed");
 
             // Create MultiIndex with names
             let names = Some(
@@ -346,15 +382,24 @@ impl<'a> GroupBy<'a> {
             result.set_index_from_multi_index(multi_index)?;
 
             // Add aggregation result columns only (not group keys)
-            let agg_data = agg_result_data.into_inner().unwrap();
+            let agg_data = agg_result_data
+                .into_inner()
+                .expect("operation should succeed");
             for agg in &aggregations {
-                let values = agg_data.get(&agg.result_name).unwrap();
+                let values = agg_data.get(&agg.result_name).ok_or_else(|| {
+                    Error::InvalidOperation(format!(
+                        "aggregation result not found: {}",
+                        agg.result_name
+                    ))
+                })?;
                 let col = Float64Column::new(values.clone());
                 result.add_column(agg.result_name.clone(), Column::Float64(col))?;
             }
         } else {
             // Regular process: add grouping key columns to result
-            let group_key_map = group_key_data.into_inner().unwrap();
+            let group_key_map = group_key_data
+                .into_inner()
+                .expect("operation should succeed");
             for (col_name, values) in group_key_map {
                 // Add as string column
                 let col = StringColumn::new(values);
@@ -362,9 +407,16 @@ impl<'a> GroupBy<'a> {
             }
 
             // Add aggregation result columns
-            let agg_data = agg_result_data.into_inner().unwrap();
+            let agg_data = agg_result_data
+                .into_inner()
+                .expect("operation should succeed");
             for agg in &aggregations {
-                let values = agg_data.get(&agg.result_name).unwrap();
+                let values = agg_data.get(&agg.result_name).ok_or_else(|| {
+                    Error::InvalidOperation(format!(
+                        "aggregation result not found: {}",
+                        agg.result_name
+                    ))
+                })?;
                 let col = Float64Column::new(values.clone());
                 result.add_column(agg.result_name.clone(), Column::Float64(col))?;
             }
@@ -431,7 +483,7 @@ impl<'a> GroupBy<'a> {
             for (i, col_name) in self.group_by_columns.iter().enumerate() {
                 group_key_data
                     .get_mut(col_name)
-                    .unwrap()
+                    .expect("operation should succeed")
                     .push(key[i].clone());
             }
 
@@ -474,7 +526,7 @@ impl<'a> GroupBy<'a> {
 
                 agg_result_data
                     .get_mut(&agg.result_name)
-                    .unwrap()
+                    .expect("operation should succeed")
                     .push(result_value);
             }
         }
@@ -488,7 +540,12 @@ impl<'a> GroupBy<'a> {
 
         // Add aggregation result columns
         for agg in &aggregations {
-            let values = agg_result_data.get(&agg.result_name).unwrap();
+            let values = agg_result_data.get(&agg.result_name).ok_or_else(|| {
+                Error::InvalidOperation(format!(
+                    "aggregation result not found: {}",
+                    agg.result_name
+                ))
+            })?;
             let col = Float64Column::new(values.clone());
             result.add_column(agg.result_name.clone(), Column::Float64(col))?;
         }
@@ -616,7 +673,8 @@ impl<'a> GroupBy<'a> {
                 if row_indices.is_empty() {
                     Ok(0.0)
                 } else {
-                    match int_col.get(*row_indices.last().unwrap()) {
+                    let last_idx = row_indices.last().ok_or_empty_error("row indices")?;
+                    match int_col.get(*last_idx) {
                         Ok(Some(val)) => Ok(val as f64),
                         _ => Ok(0.0),
                     }
@@ -734,7 +792,8 @@ impl<'a> GroupBy<'a> {
                 if row_indices.is_empty() {
                     Ok(0.0)
                 } else {
-                    match float_col.get(*row_indices.last().unwrap()) {
+                    let last_idx = row_indices.last().ok_or_empty_error("row indices")?;
+                    match float_col.get(*last_idx) {
                         Ok(Some(val)) => Ok(val),
                         _ => Ok(0.0),
                     }
@@ -794,7 +853,7 @@ impl<'a> GroupBy<'a> {
             for (i, col_name) in self.group_by_columns.iter().enumerate() {
                 group_key_data
                     .get_mut(col_name)
-                    .unwrap()
+                    .expect("operation should succeed")
                     .push(key[i].clone());
             }
 
@@ -804,7 +863,10 @@ impl<'a> GroupBy<'a> {
                 let col = &self.df.columns[col_idx];
 
                 let result_value = self.calculate_aggregation(col, *op, row_indices)?;
-                agg_result_data.get_mut(alias).unwrap().push(result_value);
+                agg_result_data
+                    .get_mut(alias)
+                    .expect("operation should succeed")
+                    .push(result_value);
             }
         }
 
@@ -816,17 +878,27 @@ impl<'a> GroupBy<'a> {
             // 3. Set it as the index for the result DataFrame
 
             // Extract group key tuples
-            let mut tuples: Vec<Vec<String>> =
-                Vec::with_capacity(group_key_data.values().next().unwrap().len());
+            let mut tuples: Vec<Vec<String>> = Vec::with_capacity(
+                group_key_data
+                    .values()
+                    .next()
+                    .expect("operation should succeed")
+                    .len(),
+            );
 
             // Initialize tuples with empty vectors
-            for _ in 0..group_key_data.values().next().unwrap().len() {
+            for _ in 0..group_key_data
+                .values()
+                .next()
+                .expect("operation should succeed")
+                .len()
+            {
                 tuples.push(Vec::with_capacity(self.group_by_columns.len()));
             }
 
             // Fill the tuples with values
             for col_name in &self.group_by_columns {
-                let values = group_key_data.get(col_name).unwrap();
+                let values = group_key_data.get(col_name).ok_or_column_error(col_name)?;
                 for (i, value) in values.iter().enumerate() {
                     tuples[i].push(value.clone());
                 }
@@ -847,7 +919,9 @@ impl<'a> GroupBy<'a> {
 
             // Add aggregation result columns only (not group keys)
             for (_, _, alias) in &aggregations {
-                let values = agg_result_data.get(alias).unwrap();
+                let values = agg_result_data.get(alias).ok_or_else(|| {
+                    Error::InvalidOperation(format!("aggregation result not found: {}", alias))
+                })?;
                 let col = Float64Column::new(values.clone());
                 result.add_column(alias.clone(), Column::Float64(col))?;
             }
@@ -861,7 +935,9 @@ impl<'a> GroupBy<'a> {
 
             // Add aggregation result columns
             for (_, _, alias) in &aggregations {
-                let values = agg_result_data.get(alias).unwrap();
+                let values = agg_result_data.get(alias).ok_or_else(|| {
+                    Error::InvalidOperation(format!("aggregation result not found: {}", alias))
+                })?;
                 let col = Float64Column::new(values.clone());
                 result.add_column(alias.clone(), Column::Float64(col))?;
             }

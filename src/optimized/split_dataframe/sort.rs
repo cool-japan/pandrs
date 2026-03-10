@@ -30,7 +30,9 @@ impl OptimizedDataFrame {
         // Sort based on column type
         match column.column_type() {
             ColumnType::Int64 => {
-                let col = column.as_int64().unwrap();
+                let col = column.as_int64().ok_or_else(|| {
+                    Error::TypeMismatch("column type check failed for Int64".into())
+                })?;
                 // Create pairs of row index and value
                 let mut pairs: Vec<(usize, Option<i64>)> = indices
                     .iter()
@@ -55,7 +57,9 @@ impl OptimizedDataFrame {
                 indices = pairs.into_iter().map(|(idx, _)| idx).collect();
             }
             ColumnType::Float64 => {
-                let col = column.as_float64().unwrap();
+                let col = column.as_float64().ok_or_else(|| {
+                    Error::TypeMismatch("column type check failed for Float64".into())
+                })?;
                 // Create pairs of row index and value
                 let mut pairs: Vec<(usize, Option<f64>)> = indices
                     .iter()
@@ -80,7 +84,9 @@ impl OptimizedDataFrame {
                 indices = pairs.into_iter().map(|(idx, _)| idx).collect();
             }
             ColumnType::String => {
-                let col = column.as_string().unwrap();
+                let col = column.as_string().ok_or_else(|| {
+                    Error::TypeMismatch("column type check failed for String".into())
+                })?;
                 // Create pairs of row index and value
                 let mut pairs: Vec<(usize, Option<String>)> = indices
                     .iter()
@@ -105,7 +111,9 @@ impl OptimizedDataFrame {
                 indices = pairs.into_iter().map(|(idx, _)| idx).collect();
             }
             ColumnType::Boolean => {
-                let col = column.as_boolean().unwrap();
+                let col = column.as_boolean().ok_or_else(|| {
+                    Error::TypeMismatch("column type check failed for Boolean".into())
+                })?;
                 // Create pairs of row index and value
                 let mut pairs: Vec<(usize, Option<bool>)> = indices
                     .iter()
@@ -181,7 +189,9 @@ impl OptimizedDataFrame {
 
                 let cmp = match column.column_type() {
                     ColumnType::Int64 => {
-                        let col = column.as_int64().unwrap();
+                        let col = column
+                            .as_int64()
+                            .expect("column type already validated in match");
                         let val_a = col.get(a).ok().flatten();
                         let val_b = col.get(b).ok().flatten();
 
@@ -199,7 +209,9 @@ impl OptimizedDataFrame {
                         }
                     }
                     ColumnType::Float64 => {
-                        let col = column.as_float64().unwrap();
+                        let col = column
+                            .as_float64()
+                            .expect("column type already validated in match");
                         let val_a = col.get(a).ok().flatten();
                         let val_b = col.get(b).ok().flatten();
 
@@ -217,7 +229,9 @@ impl OptimizedDataFrame {
                         }
                     }
                     ColumnType::String => {
-                        let col = column.as_string().unwrap();
+                        let col = column
+                            .as_string()
+                            .expect("column type already validated in match");
                         let val_a = col.get(a).ok().flatten().map(|s| s.to_string());
                         let val_b = col.get(b).ok().flatten().map(|s| s.to_string());
 
@@ -235,7 +249,9 @@ impl OptimizedDataFrame {
                         }
                     }
                     ColumnType::Boolean => {
-                        let col = column.as_boolean().unwrap();
+                        let col = column
+                            .as_boolean()
+                            .expect("column type already validated in match");
                         let val_a = col.get(a).ok().flatten();
                         let val_b = col.get(b).ok().flatten();
 

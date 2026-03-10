@@ -32,7 +32,7 @@
 //! );
 //!
 //! // Set a reference to the latest version
-//! tracker.set_ref("latest", v1.clone()).unwrap();
+//! tracker.set_ref("latest", v1.clone()).expect("operation should succeed");
 //! ```
 //!
 //! # Recording Operations
@@ -90,7 +90,7 @@
 //! // let history = tracker.get_operation_history(&some_version_id);
 //!
 //! // Compute diff between versions
-//! // let diff = tracker.diff(&v1_id, &v2_id).unwrap();
+//! // let diff = tracker.diff(&v1_id, &v2_id).expect("operation should succeed");
 //! ```
 //!
 //! # Thread-Safe Usage
@@ -111,7 +111,7 @@
 //!     tracker_clone.register_version(DataVersion::new(schema))
 //! });
 //!
-//! let version_id = handle.join().unwrap();
+//! let version_id = handle.join().expect("operation should succeed").expect("register should succeed");
 //! assert!(tracker.get_version(&version_id).is_some());
 //! ```
 
@@ -267,12 +267,15 @@ mod tests {
             ],
             Some("name".to_string()),
         )
-        .unwrap();
+        .expect("operation should succeed");
 
-        let values = Series::new(vec![1.0, 2.0, 3.0], Some("value".to_string())).unwrap();
+        let values = Series::new(vec![1.0, 2.0, 3.0], Some("value".to_string()))
+            .expect("operation should succeed");
 
-        df.add_column("name".to_string(), names).unwrap();
-        df.add_column("value".to_string(), values).unwrap();
+        df.add_column("name".to_string(), names)
+            .expect("operation should succeed");
+        df.add_column("value".to_string(), values)
+            .expect("operation should succeed");
 
         df
     }
@@ -292,7 +295,9 @@ mod tests {
         let mut tracker = LineageTracker::new();
 
         let version_id = df.create_version(&mut tracker);
-        let version = tracker.get_version(&version_id).unwrap();
+        let version = tracker
+            .get_version(&version_id)
+            .expect("operation should succeed");
 
         assert_eq!(version.schema.row_count, 3);
     }

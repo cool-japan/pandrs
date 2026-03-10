@@ -1,0 +1,89 @@
+name: Check for Unwraps
+
+on:
+  pull_request:
+    paths:
+      - 'src/**/*.rs'
+      - 'Cargo.toml'
+  push:
+    branches:
+      - master
+      - main
+      - 'release/**'
+
+jobs:
+  check-unwraps:
+    name: Verify No Production Unwraps
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check for unwraps in production code
+        run: |
+          echo "🔍 Scanning for .unwrap() in production code..."
+
+          # Find all .unwrap() calls in src/ excluding:
+          # - Test modules (#[cfg(test)])
+          # - Doc comments (highly indented)
+          # - Safe patterns (.unwrap_or, .unwrap_or_else, .unwrap_or_default)
+          # - Comments (//)
+
+          UNWRAPS=$(find src/ -name "*.rs" -type f -exec grep -Hn "\.unwrap()" {} \; | \
+            grep -v "unwrap_or" | \
+            grep -v "unwrap_or_else" | \
+            grep -v "unwrap_or_default" | \
+            grep -v "//" | \
+            grep -v "^\s*#\[cfg(test)\]" || true)
+
+          # Filter out test files and doc examples manually
+          if [ ! -z "$UNWRAPS" ]; then
+            echo "⚠️  Found potential unwrap() calls in production code:"
+            echo "$UNWRAPS"
+
+            # Check if these are in test modules by looking at file content
+            PRODUCTION_UNWRAPS=""
+            while IFS= read -r line; do
+              FILE=$(echo "$line" | cut -d: -f1)
+              LINE_NUM=$(echo "$line" | cut -d: -f2)
+
+              # Check if the unwrap is within a #[cfg(test)] module
+              # Get context around the line
+              CONTEXT=$(sed -n "$((LINE_NUM-50)),$((LINE_NUM+5))p" "$FILE" 2>/dev/null || echo "")
+
+              # Check if within test module
+              if ! echo "$CONTEXT" | grep -q "#\[cfg(test)\]"; then
+                # Check if it's .expect() instead (acceptable with good message)
+                if ! echo "$line" | grep -q "\.expect("; then
+                  PRODUCTION_UNWRAPS="${PRODUCTION_UNWRAPS}\n${line}"
+                fi
+              fi
+            done <<< "$UNWRAPS"
+
+            if [ ! -z "$PRODUCTION_UNWRAPS" ]; then
+              echo ""
+              echo "❌ ERROR: Found .unwrap() in production code!"
+              echo -e "$PRODUCTION_UNWRAPS"
+              echo ""
+              echo "📚 Guidelines:"
+              echo "  - Use ? operator for error propagation"
+              echo "  - Use .ok_or_else() with descriptive errors"
+              echo "  - Use .expect() only for impossible failures (with comment)"
+              echo "  - Test code unwraps are acceptable"
+              echo ""
+              echo "See CONTRIBUTING.md for error handling patterns"
+              exit 1
+            else
+              echo "✅ All unwraps are in test code - OK"
+            fi
+          else
+            echo "✅ No unwraps found in production code"
+          fi
+
+      - name: Summary
+        if: success()
+        run: |
+          echo "✅ Unwrap check passed - production code is unwrap-free!"

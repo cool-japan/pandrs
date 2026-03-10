@@ -139,7 +139,9 @@ pub fn merge(
         if let Ok(values) = left.get_column_numeric_values(col_name) {
             let merged: Vec<f64> = if col_name == on {
                 // For join key, use right value when left is None
-                let right_values = right.get_column_numeric_values(on).unwrap();
+                let right_values = right
+                    .get_column_numeric_values(on)
+                    .expect("test should succeed");
                 matched_pairs
                     .iter()
                     .map(|(left_idx, right_idx)| {
@@ -168,7 +170,9 @@ pub fn merge(
         } else if let Ok(values) = left.get_column_string_values(col_name) {
             let merged: Vec<String> = if col_name == on {
                 // For join key, use right value when left is None
-                let right_values = right.get_column_string_values(on).unwrap();
+                let right_values = right
+                    .get_column_string_values(on)
+                    .expect("test should succeed");
                 matched_pairs
                     .iter()
                     .map(|(left_idx, right_idx)| {
@@ -281,14 +285,15 @@ mod tests {
                 ],
                 Some("key".to_string()),
             )
-            .unwrap(),
+            .expect("test should succeed"),
         )
-        .unwrap();
+        .expect("test should succeed");
         df.add_column(
             "value1".to_string(),
-            Series::new(vec![1.0, 2.0, 3.0, 4.0], Some("value1".to_string())).unwrap(),
+            Series::new(vec![1.0, 2.0, 3.0, 4.0], Some("value1".to_string()))
+                .expect("test should succeed"),
         )
-        .unwrap();
+        .expect("test should succeed");
         df
     }
 
@@ -305,14 +310,15 @@ mod tests {
                 ],
                 Some("key".to_string()),
             )
-            .unwrap(),
+            .expect("test should succeed"),
         )
-        .unwrap();
+        .expect("test should succeed");
         df.add_column(
             "value2".to_string(),
-            Series::new(vec![20.0, 30.0, 40.0, 50.0], Some("value2".to_string())).unwrap(),
+            Series::new(vec![20.0, 30.0, 40.0, 50.0], Some("value2".to_string()))
+                .expect("test should succeed"),
         )
-        .unwrap();
+        .expect("test should succeed");
         df
     }
 
@@ -321,18 +327,25 @@ mod tests {
         let left = create_left_df();
         let right = create_right_df();
 
-        let result = merge(&left, &right, "key", JoinType::Inner, ("_x", "_y")).unwrap();
+        let result = merge(&left, &right, "key", JoinType::Inner, ("_x", "_y"))
+            .expect("test should succeed");
 
         // Inner join should have 3 rows (B, C, D)
         assert_eq!(result.row_count(), 3);
 
-        let keys = result.get_column_string_values("key").unwrap();
+        let keys = result
+            .get_column_string_values("key")
+            .expect("test should succeed");
         assert_eq!(keys, vec!["B", "C", "D"]);
 
-        let val1 = result.get_column_numeric_values("value1").unwrap();
+        let val1 = result
+            .get_column_numeric_values("value1")
+            .expect("test should succeed");
         assert_eq!(val1, vec![2.0, 3.0, 4.0]);
 
-        let val2 = result.get_column_numeric_values("value2").unwrap();
+        let val2 = result
+            .get_column_numeric_values("value2")
+            .expect("test should succeed");
         assert_eq!(val2, vec![20.0, 30.0, 40.0]);
     }
 
@@ -341,18 +354,25 @@ mod tests {
         let left = create_left_df();
         let right = create_right_df();
 
-        let result = merge(&left, &right, "key", JoinType::Left, ("_x", "_y")).unwrap();
+        let result =
+            merge(&left, &right, "key", JoinType::Left, ("_x", "_y")).expect("test should succeed");
 
         // Left join should have 4 rows (all from left: A, B, C, D)
         assert_eq!(result.row_count(), 4);
 
-        let keys = result.get_column_string_values("key").unwrap();
+        let keys = result
+            .get_column_string_values("key")
+            .expect("test should succeed");
         assert_eq!(keys, vec!["A", "B", "C", "D"]);
 
-        let val1 = result.get_column_numeric_values("value1").unwrap();
+        let val1 = result
+            .get_column_numeric_values("value1")
+            .expect("test should succeed");
         assert_eq!(val1, vec![1.0, 2.0, 3.0, 4.0]);
 
-        let val2 = result.get_column_numeric_values("value2").unwrap();
+        let val2 = result
+            .get_column_numeric_values("value2")
+            .expect("test should succeed");
         assert!(val2[0].is_nan()); // A has no match
         assert_eq!(val2[1], 20.0);
         assert_eq!(val2[2], 30.0);
@@ -364,21 +384,28 @@ mod tests {
         let left = create_left_df();
         let right = create_right_df();
 
-        let result = merge(&left, &right, "key", JoinType::Right, ("_x", "_y")).unwrap();
+        let result = merge(&left, &right, "key", JoinType::Right, ("_x", "_y"))
+            .expect("test should succeed");
 
         // Right join should have 4 rows (all from right: B, C, D, E)
         assert_eq!(result.row_count(), 4);
 
-        let keys = result.get_column_string_values("key").unwrap();
+        let keys = result
+            .get_column_string_values("key")
+            .expect("test should succeed");
         assert_eq!(keys, vec!["B", "C", "D", "E"]);
 
-        let val1 = result.get_column_numeric_values("value1").unwrap();
+        let val1 = result
+            .get_column_numeric_values("value1")
+            .expect("test should succeed");
         assert_eq!(val1[0], 2.0);
         assert_eq!(val1[1], 3.0);
         assert_eq!(val1[2], 4.0);
         assert!(val1[3].is_nan()); // E has no match
 
-        let val2 = result.get_column_numeric_values("value2").unwrap();
+        let val2 = result
+            .get_column_numeric_values("value2")
+            .expect("test should succeed");
         assert_eq!(val2, vec![20.0, 30.0, 40.0, 50.0]);
     }
 
@@ -387,22 +414,29 @@ mod tests {
         let left = create_left_df();
         let right = create_right_df();
 
-        let result = merge(&left, &right, "key", JoinType::Outer, ("_x", "_y")).unwrap();
+        let result = merge(&left, &right, "key", JoinType::Outer, ("_x", "_y"))
+            .expect("test should succeed");
 
         // Outer join should have 5 rows (A, B, C, D, E)
         assert_eq!(result.row_count(), 5);
 
-        let keys = result.get_column_string_values("key").unwrap();
+        let keys = result
+            .get_column_string_values("key")
+            .expect("test should succeed");
         assert_eq!(keys, vec!["A", "B", "C", "D", "E"]);
 
-        let val1 = result.get_column_numeric_values("value1").unwrap();
+        let val1 = result
+            .get_column_numeric_values("value1")
+            .expect("test should succeed");
         assert_eq!(val1[0], 1.0); // A
         assert_eq!(val1[1], 2.0); // B
         assert_eq!(val1[2], 3.0); // C
         assert_eq!(val1[3], 4.0); // D
         assert!(val1[4].is_nan()); // E (no match in left)
 
-        let val2 = result.get_column_numeric_values("value2").unwrap();
+        let val2 = result
+            .get_column_numeric_values("value2")
+            .expect("test should succeed");
         assert!(val2[0].is_nan()); // A (no match in right)
         assert_eq!(val2[1], 20.0); // B
         assert_eq!(val2[2], 30.0); // C
@@ -419,14 +453,14 @@ mod tests {
                 vec!["A".to_string(), "B".to_string()],
                 Some("key".to_string()),
             )
-            .unwrap(),
+            .expect("test should succeed"),
         )
-        .unwrap();
+        .expect("test should succeed");
         left.add_column(
             "value".to_string(),
-            Series::new(vec![1.0, 2.0], Some("value".to_string())).unwrap(),
+            Series::new(vec![1.0, 2.0], Some("value".to_string())).expect("test should succeed"),
         )
-        .unwrap();
+        .expect("test should succeed");
 
         let mut right = DataFrame::new();
         right
@@ -436,26 +470,32 @@ mod tests {
                     vec!["A".to_string(), "B".to_string()],
                     Some("key".to_string()),
                 )
-                .unwrap(),
+                .expect("test should succeed"),
             )
-            .unwrap();
+            .expect("test should succeed");
         right
             .add_column(
                 "value".to_string(),
-                Series::new(vec![10.0, 20.0], Some("value".to_string())).unwrap(),
+                Series::new(vec![10.0, 20.0], Some("value".to_string()))
+                    .expect("test should succeed"),
             )
-            .unwrap();
+            .expect("test should succeed");
 
-        let result = merge(&left, &right, "key", JoinType::Inner, ("_left", "_right")).unwrap();
+        let result = merge(&left, &right, "key", JoinType::Inner, ("_left", "_right"))
+            .expect("test should succeed");
 
         // Should have renamed overlapping 'value' column
         assert!(result.contains_column("value_left"));
         assert!(result.contains_column("value_right"));
 
-        let val_left = result.get_column_numeric_values("value_left").unwrap();
+        let val_left = result
+            .get_column_numeric_values("value_left")
+            .expect("test should succeed");
         assert_eq!(val_left, vec![1.0, 2.0]);
 
-        let val_right = result.get_column_numeric_values("value_right").unwrap();
+        let val_right = result
+            .get_column_numeric_values("value_right")
+            .expect("test should succeed");
         assert_eq!(val_right, vec![10.0, 20.0]);
     }
 
@@ -464,9 +504,9 @@ mod tests {
         let mut left = DataFrame::new();
         left.add_column(
             "id".to_string(),
-            Series::new(vec![1.0, 2.0, 3.0], Some("id".to_string())).unwrap(),
+            Series::new(vec![1.0, 2.0, 3.0], Some("id".to_string())).expect("test should succeed"),
         )
-        .unwrap();
+        .expect("test should succeed");
         left.add_column(
             "name".to_string(),
             Series::new(
@@ -477,32 +517,39 @@ mod tests {
                 ],
                 Some("name".to_string()),
             )
-            .unwrap(),
+            .expect("test should succeed"),
         )
-        .unwrap();
+        .expect("test should succeed");
 
         let mut right = DataFrame::new();
         right
             .add_column(
                 "id".to_string(),
-                Series::new(vec![2.0, 3.0, 4.0], Some("id".to_string())).unwrap(),
+                Series::new(vec![2.0, 3.0, 4.0], Some("id".to_string()))
+                    .expect("test should succeed"),
             )
-            .unwrap();
+            .expect("test should succeed");
         right
             .add_column(
                 "score".to_string(),
-                Series::new(vec![85.0, 90.0, 95.0], Some("score".to_string())).unwrap(),
+                Series::new(vec![85.0, 90.0, 95.0], Some("score".to_string()))
+                    .expect("test should succeed"),
             )
-            .unwrap();
+            .expect("test should succeed");
 
-        let result = merge(&left, &right, "id", JoinType::Inner, ("_x", "_y")).unwrap();
+        let result =
+            merge(&left, &right, "id", JoinType::Inner, ("_x", "_y")).expect("test should succeed");
 
         assert_eq!(result.row_count(), 2); // Only 2.0 and 3.0 match
 
-        let names = result.get_column_string_values("name").unwrap();
+        let names = result
+            .get_column_string_values("name")
+            .expect("test should succeed");
         assert_eq!(names, vec!["Bob", "Charlie"]);
 
-        let scores = result.get_column_numeric_values("score").unwrap();
+        let scores = result
+            .get_column_numeric_values("score")
+            .expect("test should succeed");
         assert_eq!(scores, vec![85.0, 90.0]);
     }
 }

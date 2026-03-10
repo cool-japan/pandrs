@@ -12,7 +12,8 @@ mod tests {
         let true_labels = vec![true, false, true, true, false, false];
         let pred_labels = vec![true, false, false, true, true, false];
 
-        let accuracy = accuracy_score(&true_labels, &pred_labels).unwrap();
+        let accuracy =
+            accuracy_score(&true_labels, &pred_labels).expect("operation should succeed");
         assert!((accuracy - 0.6666666).abs() < 1e-6); // 4/6 = 0.6666...
     }
 
@@ -21,7 +22,8 @@ mod tests {
         let true_labels = vec![true, false, true, true, false, false];
         let pred_labels = vec![true, false, false, true, true, false];
 
-        let precision = precision_score(&true_labels, &pred_labels).unwrap();
+        let precision =
+            precision_score(&true_labels, &pred_labels).expect("operation should succeed");
         assert!((precision - 0.6666666).abs() < 1e-6); // TP=2, FP=1, 2/(2+1) = 0.6666...
     }
 
@@ -30,7 +32,7 @@ mod tests {
         let true_labels = vec![true, false, true, true, false, false];
         let pred_labels = vec![true, false, false, true, true, false];
 
-        let recall = recall_score(&true_labels, &pred_labels).unwrap();
+        let recall = recall_score(&true_labels, &pred_labels).expect("operation should succeed");
         assert!((recall - 0.6666666).abs() < 1e-6); // TP=2, FN=1, 2/(2+1) = 0.6666...
     }
 
@@ -39,7 +41,7 @@ mod tests {
         let true_labels = vec![true, false, true, true, false, false];
         let pred_labels = vec![true, false, false, true, true, false];
 
-        let f1 = f1_score(&true_labels, &pred_labels).unwrap();
+        let f1 = f1_score(&true_labels, &pred_labels).expect("operation should succeed");
         assert!((f1 - 0.6666666).abs() < 1e-6); // precision=recall=0.6666..., F1 = 2*p*r/(p+r) = 0.6666...
     }
 

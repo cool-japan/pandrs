@@ -10,6 +10,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 use crate::error::{Error, Result};
 use crate::gpu::operations::{GpuMatrix, GpuVector};
 use crate::gpu::{GpuConfig, GpuDeviceStatus, GpuError, GpuManager};
+use crate::lock_safe;
 
 #[cfg(cuda_available)]
 use cudarc::driver::CudaContext as CudarcContext;
@@ -435,7 +436,9 @@ pub fn init_multi_gpu(config: MultiGpuConfig) -> Result<()> {
 /// Get the global multi-GPU manager
 pub fn get_multi_gpu_manager() -> Result<Arc<Mutex<MultiGpuManager>>> {
     match MULTI_GPU_MANAGER.get() {
-        Some(manager) => Ok(Arc::new(Mutex::new(manager.lock().unwrap().clone()))),
+        Some(manager) => Ok(Arc::new(Mutex::new(
+            lock_safe!(manager, "multi gpu manager lock")?.clone(),
+        ))),
         None => {
             // Initialize with default config
             init_multi_gpu(MultiGpuConfig::default())?;
@@ -453,7 +456,7 @@ impl Clone for MultiGpuManager {
                 device_ids: vec![0],
                 ..self.config.clone()
             };
-            Self::new(fallback_config).unwrap()
+            Self::new(fallback_config).expect("operation should succeed")
         })
     }
 }
@@ -473,7 +476,7 @@ mod tests {
         let manager = MultiGpuManager::new(config);
         assert!(manager.is_ok());
 
-        let manager = manager.unwrap();
+        let manager = manager.expect("operation should succeed");
         assert_eq!(manager.device_count(), 1);
     }
 
@@ -485,7 +488,7 @@ mod tests {
             ..MultiGpuConfig::default()
         };
 
-        let manager = MultiGpuManager::new(config).unwrap();
+        let manager = MultiGpuManager::new(config).expect("operation should succeed");
 
         let matrix_data = Array2::from_shape_vec(
             (4, 3),
@@ -493,14 +496,16 @@ mod tests {
                 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0,
             ],
         )
-        .unwrap();
+        .expect("operation should succeed");
 
         let matrix = GpuMatrix {
             data: matrix_data,
             on_gpu: false,
         };
 
-        let distributed = manager.distribute_matrix(&matrix).unwrap();
+        let distributed = manager
+            .distribute_matrix(&matrix)
+            .expect("operation should succeed");
         assert_eq!(distributed.len(), 2);
 
         // Check that chunks have correct sizes
@@ -516,13 +521,13 @@ mod tests {
             ..MultiGpuConfig::default()
         };
 
-        let manager = MultiGpuManager::new(config).unwrap();
+        let manager = MultiGpuManager::new(config).expect("operation should succeed");
 
         // Create distributed results
-        let chunk1_data =
-            Array2::from_shape_vec((2, 3), vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]).unwrap();
-        let chunk2_data =
-            Array2::from_shape_vec((2, 3), vec![7.0, 8.0, 9.0, 10.0, 11.0, 12.0]).unwrap();
+        let chunk1_data = Array2::from_shape_vec((2, 3), vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+            .expect("operation should succeed");
+        let chunk2_data = Array2::from_shape_vec((2, 3), vec![7.0, 8.0, 9.0, 10.0, 11.0, 12.0])
+            .expect("operation should succeed");
 
         let distributed_results = vec![
             (
@@ -541,7 +546,9 @@ mod tests {
             ),
         ];
 
-        let result = manager.collect_results(distributed_results).unwrap();
+        let result = manager
+            .collect_results(distributed_results)
+            .expect("operation should succeed");
         assert_eq!(result.data.shape(), &[4, 3]);
     }
 }

@@ -1385,99 +1385,10 @@ impl HierarchicalGroupByExt for DataFrame {
     }
 }
 
-/// Builder for creating hierarchical aggregation specifications
-pub struct HierarchicalAggBuilder {
-    column: String,
-    level_functions: Vec<(usize, AggFunc, String)>,
-    custom_fn: Option<CustomAggFn>,
-    propagate_up: bool,
-    include_intermediate: bool,
-}
-
-impl HierarchicalAggBuilder {
-    /// Create a new hierarchical aggregation builder
-    pub fn new(column: String) -> Self {
-        Self {
-            column,
-            level_functions: Vec::new(),
-            custom_fn: None,
-            propagate_up: false,
-            include_intermediate: true,
-        }
-    }
-
-    /// Add aggregation for a specific level
-    pub fn at_level(mut self, level: usize, func: AggFunc, alias: String) -> Self {
-        self.level_functions.push((level, func, alias));
-        self
-    }
-
-    /// Add aggregation for all levels
-    pub fn at_all_levels(mut self, func: AggFunc, base_alias: String) -> Self {
-        // This would be updated when we know the number of levels
-        // For now, just add to level 0
-        self.level_functions.push((0, func, base_alias));
-        self
-    }
-
-    /// Enable propagation of aggregations up the hierarchy
-    pub fn with_propagation(mut self) -> Self {
-        self.propagate_up = true;
-        self
-    }
-
-    /// Set custom aggregation function
-    pub fn with_custom<F>(mut self, func: F) -> Self
-    where
-        F: Fn(&[f64]) -> f64 + Send + Sync + 'static,
-    {
-        self.custom_fn = Some(Arc::new(func));
-        self
-    }
-
-    /// Build the hierarchical aggregation
-    pub fn build(self) -> HierarchicalAgg {
-        HierarchicalAgg {
-            column: self.column,
-            level_functions: self.level_functions,
-            custom_fn: self.custom_fn,
-            propagate_up: self.propagate_up,
-            include_intermediate: self.include_intermediate,
-        }
-    }
-}
-
-/// Utility functions for hierarchical groupby operations
-pub mod utils {
-    use super::*;
-
-    /// Create a simple hierarchical aggregation
-    pub fn simple_hierarchical_agg(column: &str, func: AggFunc, level: usize) -> HierarchicalAgg {
-        HierarchicalAggBuilder::new(column.to_string())
-            .at_level(level, func, format!("{}_{}", func.as_str(), column))
-            .build()
-    }
-
-    /// Create aggregations for all levels
-    pub fn all_levels_agg(column: &str, func: AggFunc, max_levels: usize) -> Vec<HierarchicalAgg> {
-        (0..max_levels)
-            .map(|level| simple_hierarchical_agg(column, func, level))
-            .collect()
-    }
-
-    /// Create comprehensive aggregations (sum, mean, count) for a column
-    pub fn comprehensive_agg(column: &str, level: usize) -> Vec<HierarchicalAgg> {
-        vec![
-            simple_hierarchical_agg(column, AggFunc::Sum, level),
-            simple_hierarchical_agg(column, AggFunc::Mean, level),
-            simple_hierarchical_agg(column, AggFunc::Count, level),
-        ]
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::dataframe::hierarchical_agg_builder::{utils, HierarchicalAggBuilder};
 
     #[test]
     fn test_hierarchical_key() {
@@ -1567,9 +1478,9 @@ mod tests {
                 regions.iter().map(|s| s.to_string()).collect(),
                 Some("region".to_string()),
             )
-            .unwrap(),
+            .expect("test should succeed"),
         )
-        .unwrap();
+        .expect("test should succeed");
 
         df.add_column(
             "department".to_string(),
@@ -1577,9 +1488,9 @@ mod tests {
                 departments.iter().map(|s| s.to_string()).collect(),
                 Some("department".to_string()),
             )
-            .unwrap(),
+            .expect("test should succeed"),
         )
-        .unwrap();
+        .expect("test should succeed");
 
         df.add_column(
             "sales".to_string(),
@@ -1587,13 +1498,13 @@ mod tests {
                 values.iter().map(|s| s.to_string()).collect(),
                 Some("sales".to_string()),
             )
-            .unwrap(),
+            .expect("test should succeed"),
         )
-        .unwrap();
+        .expect("test should succeed");
 
         let hierarchical_gb = df
             .hierarchical_groupby(vec!["region".to_string(), "department".to_string()])
-            .unwrap();
+            .expect("test should succeed");
 
         let stats = hierarchical_gb.hierarchy_stats();
         assert_eq!(stats.total_levels, 2);
@@ -1616,9 +1527,9 @@ mod tests {
                 regions.iter().map(|s| s.to_string()).collect(),
                 Some("region".to_string()),
             )
-            .unwrap(),
+            .expect("test should succeed"),
         )
-        .unwrap();
+        .expect("test should succeed");
 
         df.add_column(
             "department".to_string(),
@@ -1626,9 +1537,9 @@ mod tests {
                 departments.iter().map(|s| s.to_string()).collect(),
                 Some("department".to_string()),
             )
-            .unwrap(),
+            .expect("test should succeed"),
         )
-        .unwrap();
+        .expect("test should succeed");
 
         df.add_column(
             "sales".to_string(),
@@ -1636,15 +1547,15 @@ mod tests {
                 values.iter().map(|s| s.to_string()).collect(),
                 Some("sales".to_string()),
             )
-            .unwrap(),
+            .expect("test should succeed"),
         )
-        .unwrap();
+        .expect("test should succeed");
 
         let hierarchical_gb = df
             .hierarchical_groupby(vec!["region".to_string(), "department".to_string()])
-            .unwrap();
+            .expect("test should succeed");
 
-        let sizes = hierarchical_gb.size().unwrap();
+        let sizes = hierarchical_gb.size().expect("test should succeed");
         assert_eq!(sizes.row_count(), 4); // 4 unique region-department combinations
     }
 
@@ -1663,9 +1574,9 @@ mod tests {
                 regions.iter().map(|s| s.to_string()).collect(),
                 Some("region".to_string()),
             )
-            .unwrap(),
+            .expect("test should succeed"),
         )
-        .unwrap();
+        .expect("test should succeed");
 
         df.add_column(
             "department".to_string(),
@@ -1673,9 +1584,9 @@ mod tests {
                 departments.iter().map(|s| s.to_string()).collect(),
                 Some("department".to_string()),
             )
-            .unwrap(),
+            .expect("test should succeed"),
         )
-        .unwrap();
+        .expect("test should succeed");
 
         df.add_column(
             "sales".to_string(),
@@ -1683,20 +1594,22 @@ mod tests {
                 values.iter().map(|s| s.to_string()).collect(),
                 Some("sales".to_string()),
             )
-            .unwrap(),
+            .expect("test should succeed"),
         )
-        .unwrap();
+        .expect("test should succeed");
 
         let hierarchical_gb = df
             .hierarchical_groupby(vec!["region".to_string(), "department".to_string()])
-            .unwrap();
+            .expect("test should succeed");
 
         let agg = HierarchicalAggBuilder::new("sales".to_string())
             .at_level(0, AggFunc::Sum, "region_total".to_string())
             .at_level(1, AggFunc::Sum, "dept_total".to_string())
             .build();
 
-        let result = hierarchical_gb.agg_hierarchical(vec![agg]).unwrap();
+        let result = hierarchical_gb
+            .agg_hierarchical(vec![agg])
+            .expect("test should succeed");
         assert!(result.row_count() > 0);
         assert!(result.contains_column("region_total"));
         assert!(result.contains_column("dept_total"));
@@ -1718,9 +1631,9 @@ mod tests {
                 regions.iter().map(|s| s.to_string()).collect(),
                 Some("region".to_string()),
             )
-            .unwrap(),
+            .expect("test should succeed"),
         )
-        .unwrap();
+        .expect("test should succeed");
 
         df.add_column(
             "department".to_string(),
@@ -1728,9 +1641,9 @@ mod tests {
                 departments.iter().map(|s| s.to_string()).collect(),
                 Some("department".to_string()),
             )
-            .unwrap(),
+            .expect("test should succeed"),
         )
-        .unwrap();
+        .expect("test should succeed");
 
         df.add_column(
             "product".to_string(),
@@ -1738,9 +1651,9 @@ mod tests {
                 products.iter().map(|s| s.to_string()).collect(),
                 Some("product".to_string()),
             )
-            .unwrap(),
+            .expect("test should succeed"),
         )
-        .unwrap();
+        .expect("test should succeed");
 
         df.add_column(
             "sales".to_string(),
@@ -1748,9 +1661,9 @@ mod tests {
                 values.iter().map(|s| s.to_string()).collect(),
                 Some("sales".to_string()),
             )
-            .unwrap(),
+            .expect("test should succeed"),
         )
-        .unwrap();
+        .expect("test should succeed");
 
         let hierarchical_gb = df
             .hierarchical_groupby(vec![
@@ -1758,11 +1671,11 @@ mod tests {
                 "department".to_string(),
                 "product".to_string(),
             ])
-            .unwrap();
+            .expect("test should succeed");
 
         let result = hierarchical_gb
             .cross_level_agg("sales", AggFunc::Sum, 2, 1)
-            .unwrap();
+            .expect("test should succeed");
         assert!(result.row_count() > 0);
         assert!(result.contains_column("sum_sales_from_level_2"));
     }
@@ -1782,9 +1695,9 @@ mod tests {
                 regions.iter().map(|s| s.to_string()).collect(),
                 Some("region".to_string()),
             )
-            .unwrap(),
+            .expect("test should succeed"),
         )
-        .unwrap();
+        .expect("test should succeed");
 
         df.add_column(
             "department".to_string(),
@@ -1792,9 +1705,9 @@ mod tests {
                 departments.iter().map(|s| s.to_string()).collect(),
                 Some("department".to_string()),
             )
-            .unwrap(),
+            .expect("test should succeed"),
         )
-        .unwrap();
+        .expect("test should succeed");
 
         df.add_column(
             "sales".to_string(),
@@ -1802,15 +1715,17 @@ mod tests {
                 values.iter().map(|s| s.to_string()).collect(),
                 Some("sales".to_string()),
             )
-            .unwrap(),
+            .expect("test should succeed"),
         )
-        .unwrap();
+        .expect("test should succeed");
 
         let hierarchical_gb = df
             .hierarchical_groupby(vec!["region".to_string(), "department".to_string()])
-            .unwrap();
+            .expect("test should succeed");
 
-        let result = hierarchical_gb.inter_level_ratio("sales", 0, 1).unwrap();
+        let result = hierarchical_gb
+            .inter_level_ratio("sales", 0, 1)
+            .expect("test should succeed");
         assert!(result.row_count() > 0);
         assert!(result.contains_column("sales_ratio_to_level_0"));
     }
@@ -1830,9 +1745,9 @@ mod tests {
                 regions.iter().map(|s| s.to_string()).collect(),
                 Some("region".to_string()),
             )
-            .unwrap(),
+            .expect("test should succeed"),
         )
-        .unwrap();
+        .expect("test should succeed");
 
         df.add_column(
             "department".to_string(),
@@ -1840,9 +1755,9 @@ mod tests {
                 departments.iter().map(|s| s.to_string()).collect(),
                 Some("department".to_string()),
             )
-            .unwrap(),
+            .expect("test should succeed"),
         )
-        .unwrap();
+        .expect("test should succeed");
 
         df.add_column(
             "sales".to_string(),
@@ -1850,17 +1765,17 @@ mod tests {
                 values.iter().map(|s| s.to_string()).collect(),
                 Some("sales".to_string()),
             )
-            .unwrap(),
+            .expect("test should succeed"),
         )
-        .unwrap();
+        .expect("test should succeed");
 
         let hierarchical_gb = df
             .hierarchical_groupby(vec!["region".to_string(), "department".to_string()])
-            .unwrap();
+            .expect("test should succeed");
 
         let result = hierarchical_gb
             .nested_rollup("sales", AggFunc::Sum)
-            .unwrap();
+            .expect("test should succeed");
         assert!(result.row_count() > 0);
         assert!(result.contains_column("rollup_level"));
         assert!(result.contains_column("sum_sales_rollup"));
@@ -1881,9 +1796,9 @@ mod tests {
                 regions.iter().map(|s| s.to_string()).collect(),
                 Some("region".to_string()),
             )
-            .unwrap(),
+            .expect("test should succeed"),
         )
-        .unwrap();
+        .expect("test should succeed");
 
         df.add_column(
             "department".to_string(),
@@ -1891,9 +1806,9 @@ mod tests {
                 departments.iter().map(|s| s.to_string()).collect(),
                 Some("department".to_string()),
             )
-            .unwrap(),
+            .expect("test should succeed"),
         )
-        .unwrap();
+        .expect("test should succeed");
 
         df.add_column(
             "sales".to_string(),
@@ -1901,13 +1816,13 @@ mod tests {
                 values.iter().map(|s| s.to_string()).collect(),
                 Some("sales".to_string()),
             )
-            .unwrap(),
+            .expect("test should succeed"),
         )
-        .unwrap();
+        .expect("test should succeed");
 
         let hierarchical_gb = df
             .hierarchical_groupby(vec!["region".to_string(), "department".to_string()])
-            .unwrap();
+            .expect("test should succeed");
 
         // Filter departments with sales > 500
         let filtered_gb = hierarchical_gb
@@ -1916,7 +1831,7 @@ mod tests {
                 1, // Department level
                 |total_sales| total_sales > 500.0,
             )
-            .unwrap();
+            .expect("test should succeed");
 
         let filtered_stats = filtered_gb.hierarchy_stats();
         assert!(filtered_stats.total_groups > 0);
@@ -1966,9 +1881,9 @@ mod tests {
                 vec!["A".to_string(), "B".to_string()],
                 Some("valid_column".to_string()),
             )
-            .unwrap(),
+            .expect("test should succeed"),
         )
-        .unwrap();
+        .expect("test should succeed");
 
         let result = df.hierarchical_groupby(vec!["non_existent_column".to_string()]);
         assert!(result.is_err());
@@ -1980,11 +1895,13 @@ mod tests {
                 vec!["North".to_string(), "South".to_string()],
                 Some("region".to_string()),
             )
-            .unwrap(),
+            .expect("test should succeed"),
         )
-        .unwrap();
+        .expect("test should succeed");
 
-        let hierarchical_gb = df.hierarchical_groupby(vec!["region".to_string()]).unwrap();
+        let hierarchical_gb = df
+            .hierarchical_groupby(vec!["region".to_string()])
+            .expect("test should succeed");
 
         // Test cross-level aggregation with invalid levels
         let result = hierarchical_gb.cross_level_agg("valid_column", AggFunc::Sum, 10, 0);
