@@ -7,6 +7,7 @@
 use std::time::{Duration, Instant};
 use std::fmt;
 
+use rand::RngExt;
 use super::jit_core::{JitCompilable, JitFunction};
 
 /// Result of a benchmark run

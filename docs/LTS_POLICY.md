@@ -214,7 +214,7 @@ v2.0.0: Feature X removed
 - **Documentation**: Always documented in release notes and README
 
 ### Current MSRV
-- **v0.2.0/v1.0.0**: Rust 1.75+
+- **v0.3.0/v1.0.0**: Rust 1.75+
 - **Tested On**:
   - stable (latest)
   - beta (latest)

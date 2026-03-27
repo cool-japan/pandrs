@@ -359,42 +359,6 @@ impl PyOptimizedDataFrame {
         }
     }
 
-    /// Write DataFrame to SQL database
-    #[cfg(feature = "sql")]
-    fn to_sql(&self, table_name: &str, db_path: &str, if_exists: &str) -> PyResult<()> {
-        use ::pandrs::io::sql::write_to_sql;
-        
-        match write_to_sql(&self.inner, table_name, db_path, if_exists) {
-            Ok(_) => Ok(()),
-            Err(e) => Err(PyValueError::new_err(format!("Failed to write to SQL: {}", e))),
-        }
-    }
-
-    /// Read DataFrame from SQL query
-    #[cfg(feature = "sql")]
-    #[classmethod]  
-    fn from_sql(_cls: &Bound<'_, PyType>, query: &str, db_path: &str) -> PyResult<Self> {
-        use ::pandrs::io::sql::read_sql;
-        
-        match read_sql(query, db_path) {
-            Ok(df) => {
-                // Convert regular DataFrame to OptimizedDataFrame
-                let mut opt_df = OptimizedDataFrame::new();
-                
-                // Add each column from the regular DataFrame
-                for col_name in df.column_names() {
-                    // This is a placeholder - we'd need proper conversion logic here
-                    // For now, return error suggesting to use regular DataFrame for SQL
-                    return Err(PyValueError::new_err(
-                        "SQL operations currently only supported for regular DataFrame. Use DataFrame.from_sql() instead."
-                    ));
-                }
-                
-                Ok(PyOptimizedDataFrame { inner: opt_df })
-            },
-            Err(e) => Err(PyValueError::new_err(format!("Failed to read from SQL: {}", e))),
-        }
-    }
 }
 
 /// Python wrapper for LazyFrame

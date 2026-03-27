@@ -2,7 +2,7 @@
 
 use pandrs::error::Result;
 use pandrs::{DataFrame, Series, TTestResult};
-use rand::Rng;
+use rand::{Rng, RngExt};
 
 #[allow(clippy::result_large_err)]
 fn main() -> Result<()> {

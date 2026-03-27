@@ -1338,7 +1338,7 @@ let df = DataFrame::read_parquet("file.parquet")?;
 ```toml
 # Add to Cargo.toml
 [dependencies]
-pandrs = { version = "0.2.0", features = ["parquet"] }
+pandrs = { version = "0.3.0", features = ["parquet"] }
 ```
 
 **Tip:** Check documentation for required features.
@@ -1651,7 +1651,7 @@ Complete ETL pipeline benchmark (load → transform → aggregate → save):
 ```toml
 # Cargo.toml - Enable all optimizations
 [dependencies]
-pandrs = { version = "0.2.0", features = ["optimized", "jit"] }
+pandrs = { version = "0.3.0", features = ["optimized", "jit"] }
 
 [profile.release]
 opt-level = 3
@@ -1765,7 +1765,7 @@ For advanced visualization, export to pandas or use Rust plotting libraries dire
 
 ```toml
 [dependencies]
-pandrs = { version = "0.2.0", features = ["cuda"] }
+pandrs = { version = "0.3.0", features = ["cuda"] }
 ```
 
 ```rust
@@ -1786,7 +1786,7 @@ Note: CUDA is not available on macOS.
 
 ```toml
 [dependencies]
-pandrs = { version = "0.2.0", features = ["distributed"] }
+pandrs = { version = "0.3.0", features = ["distributed"] }
 ```
 
 ```rust
@@ -1990,7 +1990,7 @@ let result = df.column::<f64>("price")
 
 ```toml
 [dependencies]
-pandrs = { version = "0.2.0", features = ["wasm"] }
+pandrs = { version = "0.3.0", features = ["wasm"] }
 ```
 
 ```rust
@@ -2014,7 +2014,7 @@ pandrs = { version = "0.2.0", features = ["wasm"] }
 
 ```toml
 [dependencies]
-pandrs = { version = "0.2.0", features = ["sql"] }
+pandrs = { version = "0.3.0", features = ["sql"] }
 ```
 
 ```rust

@@ -880,7 +880,7 @@ pub fn write_parquet_advanced(
         WriterProperties::builder().set_compression(Compression::from(options.compression));
 
     if let Some(row_group_size) = options.row_group_size {
-        props_builder = props_builder.set_max_row_group_size(row_group_size);
+        props_builder = props_builder.set_max_row_group_row_count(Some(row_group_size));
     }
 
     if let Some(page_size) = options.page_size {

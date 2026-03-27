@@ -16,6 +16,8 @@ use pandrs::ml::models::{LinearRegression, LogisticRegression};
 use pandrs::OptimizedDataFrame;
 #[cfg(feature = "optimized")]
 use rand::Rng;
+#[cfg(feature = "optimized")]
+use rand::RngExt;
 
 #[cfg(not(feature = "optimized"))]
 fn main() {

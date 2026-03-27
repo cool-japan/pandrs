@@ -30,7 +30,7 @@ pub struct JwtConfig {
 
 impl Default for JwtConfig {
     fn default() -> Self {
-        use rand::RngCore;
+        use rand::Rng;
         let mut secret = vec![0u8; 64];
         rand::rng().fill_bytes(&mut secret);
 

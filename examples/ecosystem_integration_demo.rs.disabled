@@ -148,60 +148,15 @@ fn arrow_integration_demo(_df: &DataFrame) -> Result<()> {
 /// Demonstrate database connectivity
 #[allow(clippy::result_large_err)]
 fn database_connectivity_demo(_df: &DataFrame) -> Result<()> {
-    use pandrs::connectors::{DatabaseConfig, DatabaseConnectorFactory};
-
     println!("  🔧 Setting up database connections...");
 
-    // SQLite demonstration (always available)
+    // SQLite demonstration
     println!("\n  📁 SQLite Integration:");
-    let _sqlite_config = DatabaseConfig::new("sqlite::memory:")
-        .with_pool_size(5)
-        .with_timeout(30);
-
-    let _sqlite_connector = DatabaseConnectorFactory::sqlite();
-    println!("    ✓ SQLite connector created");
-
-    #[cfg(feature = "sql")]
-    {
-        println!("    🔌 Connecting to in-memory SQLite database...");
-        println!("    ✓ Connected to SQLite successfully (demonstration)");
-
-        println!("    📤 Writing DataFrame to database table...");
-        println!("    ✓ Data written to 'customers' table (demonstration)");
-
-        println!("    📥 Reading data back from database...");
-        println!("    ✓ Query executed, returned 5 rows (demonstration)");
-
-        println!("    📊 Listing database tables...");
-        println!("    ✓ Found 1 tables: [\"customers\"] (demonstration)");
-    }
-
-    #[cfg(not(feature = "sql"))]
-    {
-        println!("    ℹ️  Full SQL functionality requires 'sql' feature");
-    }
+    println!("    ℹ️  Full SQL functionality requires 'sql' feature");
 
     // PostgreSQL demonstration
     println!("\n  🐘 PostgreSQL Integration:");
-    #[cfg(feature = "sql")]
-    {
-        let _pg_config = DatabaseConfig::new("postgresql://user:pass@localhost/pandrs_demo")
-            .with_pool_size(10)
-            .with_ssl()
-            .with_parameter("sslmode", "prefer");
-
-        println!("    ✓ PostgreSQL configuration created");
-        println!("    💡 Connection string: postgresql://user:pass@localhost/pandrs_demo");
-        println!("    💡 SSL enabled with preferred mode");
-
-        // Note: Actual connection would require a running PostgreSQL instance
-        println!("    ⚠️  Actual connection requires running PostgreSQL server");
-    }
-
-    #[cfg(not(feature = "sql"))]
-    {
-        println!("    ℹ️  PostgreSQL requires 'sql' feature flag");
-    }
+    println!("    ℹ️  PostgreSQL requires 'sql' feature flag");
 
     Ok(())
 }

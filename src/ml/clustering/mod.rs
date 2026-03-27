@@ -13,7 +13,7 @@ use rand::prelude::IndexedRandom;
 use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
 use rand::Rng;
-use rand::RngCore;
+use rand::RngExt;
 use rand::SeedableRng;
 use std::collections::{HashMap, HashSet};
 

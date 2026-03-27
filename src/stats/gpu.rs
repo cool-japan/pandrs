@@ -649,7 +649,7 @@ pub fn kmeans(
     // Sample without replacement
     let indices: Vec<usize> = all_indices
         .as_slice()
-        .choose_multiple(&mut rng, k)
+        .sample(&mut rng, k)
         .cloned()
         .collect();
 

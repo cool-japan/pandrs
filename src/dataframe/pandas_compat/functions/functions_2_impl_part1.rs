@@ -638,7 +638,7 @@ pub(super) fn replace_numeric(
 
 pub(super) fn sample(df: &DataFrame, n: usize, replace: bool) -> Result<DataFrame> {
     use rand::seq::SliceRandom;
-    use rand::Rng;
+    use rand::{Rng, RngExt};
     let n_rows = df.row_count();
     if n_rows == 0 {
         return Ok(DataFrame::new());

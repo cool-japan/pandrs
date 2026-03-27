@@ -540,7 +540,7 @@ impl GpuWindowContext {
 
     /// Clear all caches (JIT and GPU memory)
     pub fn clear_caches(&self) -> Result<()> {
-        self.jit_context.clear_cache();
+        let _ = self.jit_context.clear_cache();
         let mut cache = lock_safe!(self.memory_cache, "gpu window memory cache lock")?;
         cache.clear();
         Ok(())

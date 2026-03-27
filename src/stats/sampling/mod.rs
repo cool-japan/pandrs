@@ -3,6 +3,7 @@
 use crate::dataframe::DataFrame;
 use crate::error::{Error, Result};
 use rand::prelude::*;
+use rand::RngExt;
 use std::collections::HashMap;
 
 /// Internal implementation for sampling from DataFrame

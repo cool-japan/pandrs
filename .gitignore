@@ -77,7 +77,9 @@ py_bindings/.venv/
 # Local development files
 /dev/
 /tmp/
-.cargo/
+# Cargo local cache (but keep .cargo/config.toml for shared build settings)
+.cargo/*
+!.cargo/config.toml
 
 examples/*.png
 examples/*.svg
@@ -89,3 +91,6 @@ examples/weather_*.png
 jupyter_output/*
 **/jupyter_output/
 jupyter_output/*.html
+
+# Rustc ICE dumps
+rustc-ice-*.txt

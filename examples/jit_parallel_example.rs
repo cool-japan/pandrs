@@ -5,7 +5,7 @@
 //!
 //! Run with: cargo run --example jit_parallel_example --features jit --release
 
-use rand::Rng;
+use rand::{Rng, RngExt};
 use std::error::Error;
 use std::time::{Duration, Instant};
 

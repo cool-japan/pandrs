@@ -180,26 +180,6 @@ impl FaultTolerantDataFusionContext {
         self.inner.register_parquet(name, path)
     }
     
-    /// Executes a SQL query with fault tolerance
-    pub fn sql(&self, query: &str) -> Result<ExecutionResult> {
-        // Create a simple execution plan for the SQL query
-        let plan = ExecutionPlan::new(
-            crate::distributed::execution::Operation::Custom {
-                name: "sql".to_string(),
-                params: {
-                    let mut params = std::collections::HashMap::new();
-                    params.insert("query".to_string(), query.to_string());
-                    params
-                },
-            },
-            vec![],
-            "sql_result".to_string(),
-        );
-        
-        // Execute with fault tolerance
-        self.execute(&plan)
-    }
-    
     /// Explains an execution plan
     pub fn explain_plan(&self, plan: &ExecutionPlan, with_statistics: bool) -> Result<String> {
         self.inner.explain_plan(plan, with_statistics)

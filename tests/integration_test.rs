@@ -15,9 +15,6 @@ use pandrs::distributed::{DistributedConfig, DistributedContext};
 #[cfg(feature = "parquet")]
 use pandrs::io::parquet::{read_parquet, write_parquet, ParquetCompression};
 
-#[cfg(feature = "sql")]
-use pandrs::io::sql::{read_sql, write_to_sql};
-
 /// Test DataFrame operations
 #[test]
 #[allow(clippy::result_large_err)]
@@ -234,78 +231,6 @@ fn test_enhanced_parquet_io() -> Result<()> {
     Ok(())
 }
 
-/// Test enhanced SQL I/O with real data
-#[cfg(feature = "sql")]
-#[test]
-#[allow(clippy::result_large_err)]
-fn test_enhanced_sql_io() -> Result<()> {
-    use std::fs::remove_file;
-    use std::path::Path;
-
-    let db_file = "test_integration.db";
-
-    // Clean up any existing test file
-    if Path::new(db_file).exists() {
-        let _ = remove_file(db_file);
-    }
-
-    // Create test data
-    let mut df = OptimizedDataFrame::new();
-
-    let customer_ids = Int64Column::new(vec![1, 2, 3, 4]);
-    let customer_names = StringColumn::new(vec![
-        "John Doe".to_string(),
-        "Jane Smith".to_string(),
-        "Bob Johnson".to_string(),
-        "Alice Brown".to_string(),
-    ]);
-    let order_amounts = Int64Column::new(vec![150, 200, 75, 300]);
-
-    df.add_column("customer_id", Column::Int64(customer_ids))?;
-    df.add_column("customer_name", Column::String(customer_names))?;
-    df.add_column("order_amount", Column::Int64(order_amounts))?;
-
-    // Test write to SQL with different modes
-
-    // Write initial data
-    write_to_sql(&df, "customers", db_file, "replace")?;
-
-    // Verify file was created
-    assert!(Path::new(db_file).exists());
-
-    // Read back data
-    let loaded_df = read_sql("SELECT * FROM customers ORDER BY customer_id", db_file)?;
-
-    // Verify data integrity
-    assert_eq!(loaded_df.row_count(), 4);
-    assert!(loaded_df.contains_column("customer_id"));
-    assert!(loaded_df.contains_column("customer_name"));
-    assert!(loaded_df.contains_column("order_amount"));
-
-    // Test specific query results
-    let specific_df = read_sql(
-        "SELECT customer_name, order_amount FROM customers WHERE order_amount > 100",
-        db_file,
-    )?;
-
-    assert_eq!(specific_df.row_count(), 3); // 3 customers with orders > 100
-
-    // Test aggregation query
-    let agg_df = read_sql(
-        "SELECT COUNT(*) as total_customers, AVG(CAST(order_amount AS REAL)) as avg_amount FROM customers",
-        db_file
-    )?;
-
-    assert_eq!(agg_df.row_count(), 1);
-    assert!(agg_df.contains_column("total_customers"));
-    assert!(agg_df.contains_column("avg_amount"));
-
-    // Clean up
-    let _ = remove_file(db_file);
-
-    Ok(())
-}
-
 /// Test distributed processing integration
 #[cfg(feature = "distributed")]
 #[test]
@@ -367,7 +292,8 @@ fn test_cross_feature_integration() -> Result<()> {
     use std::fs::remove_file;
     use std::path::Path;
 
-    let test_file = "test_cross_feature.parquet";
+    let test_file = std::env::temp_dir().join("test_cross_feature.parquet");
+    let test_file = test_file.to_str().expect("temp dir path");
 
     // Clean up any existing test file
     if Path::new(test_file).exists() {

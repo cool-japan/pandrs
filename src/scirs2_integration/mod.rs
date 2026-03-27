@@ -7,7 +7,7 @@
 //!
 //! ```toml
 //! [dependencies]
-//! pandrs = { version = "0.2.0", features = ["scirs2"] }
+//! pandrs = { version = "0.3.0", features = ["scirs2"] }
 //! ```
 //!
 //! ## Overview

@@ -1,0 +1,7 @@
+# Project-specific Cargo settings
+# Global settings (~/.cargo/config.toml) handle debug info reduction
+
+[build]
+# Limit parallel compile jobs to prevent OOM on resource-constrained environments
+# Adjust based on available RAM: ~2GB per linker job for all-features build
+# jobs = 4  # Uncomment and adjust for constrained environments

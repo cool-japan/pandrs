@@ -41,16 +41,6 @@ pub fn read_parquet(path: &str, context: &DistributedContext) -> Result<Distribu
     context.read_parquet(path)
 }
 
-/// Reads from a SQL table into a distributed DataFrame
-#[cfg(feature = "sql")]
-pub fn read_sql(
-    query: &str,
-    url: &str,
-    context: &DistributedContext,
-) -> Result<DistributedDataFrame> {
-    context.read_sql(query, url)
-}
-
 /// Creates an empty distributed DataFrame
 pub fn empty_distributed(context: &DistributedContext) -> Result<DistributedDataFrame> {
     context.empty()

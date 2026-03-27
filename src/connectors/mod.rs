@@ -1,21 +1,12 @@
 //! # Data Connectors
 //!
 //! This module provides connectivity to various data sources including
-//! databases, cloud storage, and other external systems.
+//! cloud storage and other external systems.
 
 pub mod cloud;
-pub mod database;
 pub mod local;
 
 // Re-export commonly used types
-pub use database::{
-    ColumnInfo, DatabaseConfig, DatabaseConnector, DatabaseConnectorFactory, SQLiteConnector,
-    TableInfo, WriteMode,
-};
-
-#[cfg(feature = "sql")]
-pub use database::PostgreSQLConnector;
-
 pub use cloud::{
     AzureConnector, CloudConfig, CloudConnector, CloudConnectorFactory, CloudCredentials,
     CloudObject, CloudProvider, FileFormat, GCSConnector, ObjectMetadata, S3Connector,
@@ -28,9 +19,6 @@ use crate::dataframe::DataFrame;
 
 /// High-level data connector that can connect to various sources
 pub enum DataConnector {
-    SQLite(database::SQLiteConnector),
-    #[cfg(feature = "sql")]
-    PostgreSQL(database::PostgreSQLConnector),
     S3(cloud::S3Connector),
     GCS(cloud::GCSConnector),
     Azure(cloud::AzureConnector),
@@ -38,17 +26,6 @@ pub enum DataConnector {
 }
 
 impl DataConnector {
-    /// Create SQLite connector
-    pub fn sqlite() -> Self {
-        Self::SQLite(database::SQLiteConnector::new())
-    }
-
-    /// Create PostgreSQL connector
-    #[cfg(feature = "sql")]
-    pub fn postgresql() -> Self {
-        Self::PostgreSQL(database::PostgreSQLConnector::new())
-    }
-
     /// Create S3 connector
     pub fn s3() -> Self {
         Self::S3(cloud::S3Connector::new())
@@ -80,21 +57,6 @@ impl DataConnector {
         } else if connection_string.starts_with("local://") {
             let base = connection_string.trim_start_matches("local://");
             Ok(Self::local(base))
-        } else if connection_string.starts_with("sqlite:") {
-            Ok(Self::sqlite())
-        } else if connection_string.starts_with("postgresql://")
-            || connection_string.starts_with("postgres://")
-        {
-            #[cfg(feature = "sql")]
-            {
-                Ok(Self::postgresql())
-            }
-            #[cfg(not(feature = "sql"))]
-            {
-                Err(Error::FeatureNotAvailable(
-                    "SQL feature not enabled".to_string(),
-                ))
-            }
         } else {
             Err(Error::InvalidOperation(format!(
                 "Unsupported connection string: {}",
@@ -115,25 +77,6 @@ impl DataSource {
         Self { connector }
     }
 
-    /// Read DataFrame from SQL query (database sources only)
-    pub async fn read_sql(&self, query: &str) -> Result<DataFrame> {
-        use database::DatabaseConnector;
-
-        match &self.connector {
-            #[cfg(feature = "sql")]
-            DataConnector::SQLite(db) => db.query(query).await,
-            #[cfg(feature = "sql")]
-            DataConnector::PostgreSQL(db) => db.query(query).await,
-            #[cfg(not(feature = "sql"))]
-            DataConnector::SQLite(_) => Err(Error::FeatureNotAvailable(
-                "SQL feature not enabled".to_string(),
-            )),
-            _ => Err(Error::InvalidOperation(
-                "SQL queries not supported for cloud storage connectors".to_string(),
-            )),
-        }
-    }
-
     /// Read DataFrame from cloud storage path
     pub async fn read_cloud(&self, bucket: &str, key: &str) -> Result<DataFrame> {
         use cloud::CloudConnector;
@@ -148,30 +91,6 @@ impl DataSource {
             DataConnector::GCS(cloud) => cloud.read_dataframe(bucket, key, format).await,
             DataConnector::Azure(cloud) => cloud.read_dataframe(bucket, key, format).await,
             DataConnector::Local(cloud) => cloud.read_dataframe(bucket, key, format).await,
-            _ => Err(Error::InvalidOperation(
-                "Cloud storage operations not supported for database connectors".to_string(),
-            )),
-        }
-    }
-
-    /// Write DataFrame to database table
-    pub async fn write_sql(&self, df: &DataFrame, table_name: &str) -> Result<()> {
-        use database::DatabaseConnector;
-
-        match &self.connector {
-            #[cfg(feature = "sql")]
-            DataConnector::SQLite(db) => db.write_table(df, table_name, WriteMode::Replace).await,
-            #[cfg(feature = "sql")]
-            DataConnector::PostgreSQL(db) => {
-                db.write_table(df, table_name, WriteMode::Replace).await
-            }
-            #[cfg(not(feature = "sql"))]
-            DataConnector::SQLite(_) => Err(Error::FeatureNotAvailable(
-                "SQL feature not enabled".to_string(),
-            )),
-            _ => Err(Error::InvalidOperation(
-                "Database operations not supported for cloud storage connectors".to_string(),
-            )),
         }
     }
 
@@ -189,9 +108,6 @@ impl DataSource {
             DataConnector::GCS(cloud) => cloud.write_dataframe(df, bucket, key, format).await,
             DataConnector::Azure(cloud) => cloud.write_dataframe(df, bucket, key, format).await,
             DataConnector::Local(cloud) => cloud.write_dataframe(df, bucket, key, format).await,
-            _ => Err(Error::InvalidOperation(
-                "Cloud storage operations not supported for database connectors".to_string(),
-            )),
         }
     }
 }
@@ -203,25 +119,16 @@ impl DataFrame {
         let connector = DataConnector::from_connection_string(connection_string)?;
         let source = DataSource::new(connector);
 
-        if connection_string.starts_with("s3://")
-            || connection_string.starts_with("gs://")
-            || connection_string.starts_with("azure://")
-            || connection_string.starts_with("local://")
-        {
-            // Extract bucket and key from path
-            let parts: Vec<&str> = query_or_path.split('/').collect();
-            if parts.len() >= 2 {
-                let bucket = parts[0];
-                let key = parts[1..].join("/");
-                source.read_cloud(bucket, &key).await
-            } else {
-                Err(Error::InvalidOperation(
-                    "Invalid cloud storage path".to_string(),
-                ))
-            }
+        // Extract bucket and key from path
+        let parts: Vec<&str> = query_or_path.split('/').collect();
+        if parts.len() >= 2 {
+            let bucket = parts[0];
+            let key = parts[1..].join("/");
+            source.read_cloud(bucket, &key).await
         } else {
-            // Database query
-            source.read_sql(query_or_path).await
+            Err(Error::InvalidOperation(
+                "Invalid cloud storage path".to_string(),
+            ))
         }
     }
 
@@ -230,25 +137,16 @@ impl DataFrame {
         let connector = DataConnector::from_connection_string(connection_string)?;
         let source = DataSource::new(connector);
 
-        if connection_string.starts_with("s3://")
-            || connection_string.starts_with("gs://")
-            || connection_string.starts_with("azure://")
-            || connection_string.starts_with("local://")
-        {
-            // Extract bucket and key from path
-            let parts: Vec<&str> = table_or_path.split('/').collect();
-            if parts.len() >= 2 {
-                let bucket = parts[0];
-                let key = parts[1..].join("/");
-                source.write_cloud(self, bucket, &key).await
-            } else {
-                Err(Error::InvalidOperation(
-                    "Invalid cloud storage path".to_string(),
-                ))
-            }
+        // Extract bucket and key from path
+        let parts: Vec<&str> = table_or_path.split('/').collect();
+        if parts.len() >= 2 {
+            let bucket = parts[0];
+            let key = parts[1..].join("/");
+            source.write_cloud(self, bucket, &key).await
         } else {
-            // Database table
-            source.write_sql(self, table_or_path).await
+            Err(Error::InvalidOperation(
+                "Invalid cloud storage path".to_string(),
+            ))
         }
     }
 }
@@ -272,14 +170,6 @@ mod tests {
         assert!(matches!(
             gcs_connector.expect("operation should succeed"),
             DataConnector::GCS(_)
-        ));
-
-        // Test database URLs
-        let sqlite_connector = DataConnector::from_connection_string("sqlite::memory:");
-        assert!(sqlite_connector.is_ok());
-        assert!(matches!(
-            sqlite_connector.expect("operation should succeed"),
-            DataConnector::SQLite(_)
         ));
 
         // Test local filesystem URL

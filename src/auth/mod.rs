@@ -949,7 +949,7 @@ pub struct RefreshToken {
 
 /// Generate a unique token ID
 fn generate_token_id() -> String {
-    use rand::RngCore;
+    use rand::Rng;
     let mut bytes = [0u8; 32];
     rand::rng().fill_bytes(&mut bytes);
     bytes.iter().map(|b| format!("{:02x}", b)).collect()
@@ -957,7 +957,7 @@ fn generate_token_id() -> String {
 
 /// Generate an API key
 fn generate_api_key() -> String {
-    use rand::RngCore;
+    use rand::Rng;
     let mut bytes = [0u8; 32];
     rand::rng().fill_bytes(&mut bytes);
     format!(
@@ -972,7 +972,7 @@ fn generate_api_key() -> String {
 /// Hash password using PBKDF2
 fn hash_password(password: &str) -> String {
     use pbkdf2::pbkdf2_hmac;
-    use rand::RngCore;
+    use rand::Rng;
     use sha2::Sha256;
 
     let mut salt = [0u8; 16];

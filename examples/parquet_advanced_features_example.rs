@@ -464,7 +464,7 @@ fn metadata_analysis_example() -> Result<()> {
         schema: "struct<id:int64,name:string,price:double,volume:int64,date:timestamp,sector:string>".to_string(),
         file_size: Some(85_000_000), // 85 MB
         compression: "ZSTD".to_string(),
-        created_by: Some("pandrs 0.1.0".to_string()),
+        created_by: Some("pandrs 0.3.0".to_string()),
     };
 
         println!("  File metadata:");

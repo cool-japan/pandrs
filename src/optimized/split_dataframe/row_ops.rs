@@ -320,7 +320,7 @@ impl OptimizedDataFrame {
     /// so the actual implementation is provided as `sample_rows`.
     pub fn sample_rows(&self, n: usize, replace: bool, seed: Option<u64>) -> Result<Self> {
         use rand::rngs::StdRng;
-        use rand::{seq::SliceRandom, Rng, RngCore, SeedableRng};
+        use rand::{seq::SliceRandom, Rng, RngExt, SeedableRng};
 
         if self.row_count == 0 {
             return Ok(Self::new());

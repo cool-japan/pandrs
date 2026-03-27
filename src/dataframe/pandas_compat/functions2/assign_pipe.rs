@@ -631,7 +631,7 @@ impl PandasCompatExt for DataFrame {
     }
     fn sample(&self, n: usize, replace: bool) -> Result<DataFrame> {
         use rand::seq::SliceRandom;
-        use rand::Rng;
+        use rand::{Rng, RngExt};
         let n_rows = self.row_count();
         if n_rows == 0 {
             return Ok(DataFrame::new());

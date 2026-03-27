@@ -10,6 +10,8 @@ use pandrs::stats;
 use pandrs::*;
 #[cfg(feature = "optimized")]
 use rand::Rng;
+#[cfg(feature = "optimized")]
+use rand::RngExt;
 
 // Example code to demonstrate a pipeline that only supports OptimizedDataFrame
 // with a simple example using a regular DataFrame

@@ -13,6 +13,8 @@ use rand::rngs::StdRng;
 #[cfg(feature = "optimized")]
 use rand::Rng;
 #[cfg(feature = "optimized")]
+use rand::RngExt;
+#[cfg(feature = "optimized")]
 use rand::SeedableRng;
 
 #[cfg(not(feature = "optimized"))]

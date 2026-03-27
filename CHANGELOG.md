@@ -5,6 +5,34 @@ All notable changes to PandRS will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-03-27
+
+### Breaking Changes
+
+- Removed all SQL/database dependencies (sqlx, rusqlite, libsqlite3-sys) to enforce Pure Rust policy
+  - Removed sql module (src/io/sql/), sql_backup.rs, database connector
+  - Removed SqlOps, SqlConnection traits
+  - Removed sql feature flag
+  - Removed database examples and tests
+
+### Changed
+
+- Upgraded parquet/arrow 57.3 to 58.1
+- Upgraded datafusion 52.2 to 53.0
+- Upgraded cranelift 0.129 to 0.130
+- Upgraded tokio 1.48 to 1.50
+- Upgraded calamine 0.32 to 0.34
+- Upgraded toml 0.9.10 to 1.1.0
+- Upgraded scirs2-* 0.3.1 to 0.4.0
+- Upgraded cudarc 0.19.3 to 0.19.4
+- Upgraded tempfile 3.26 to 3.27
+- Added global debug info reduction (.cargo/config.toml) for build size optimization
+
+### Fixed
+
+- Fixed rand 0.10.x API compatibility (RngExt imports)
+- Fixed parquet deprecated API (set_max_row_group_size to set_max_row_group_row_count)
+
 ## [0.2.0] - 2026-03-07
 
 ### 🎉 Major Milestone Release - Production-Ready Enterprise Features

@@ -1,8 +1,8 @@
-# PandRS v0.2.0 User Guide
+# PandRS v0.3.0 User Guide
 
 A comprehensive guide to using PandRS - A high-performance DataFrame library for Rust.
 
-**Version:** 0.2.0
+**Version:** 0.3.0
 **Author:** COOLJAPAN OU (Team Kitasan)
 **License:** Apache-2.0
 
@@ -30,7 +30,7 @@ Add PandRS to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-pandrs = "0.2.0"
+pandrs = "0.3.0"
 ```
 
 #### Feature Flags
@@ -39,7 +39,7 @@ PandRS supports various optional features:
 
 ```toml
 [dependencies]
-pandrs = { version = "0.2.0", features = ["stable", "parquet", "excel", "sql"] }
+pandrs = { version = "0.3.0", features = ["stable", "parquet", "excel", "sql"] }
 ```
 
 **Core Features:**
@@ -2431,10 +2431,10 @@ let mut df = OptimizedDataFrame::new();
 ```toml
 # ✅ Good: Enable only needed features
 [dependencies]
-pandrs = { version = "0.2.0", features = ["stable", "parquet"] }
+pandrs = { version = "0.3.0", features = ["stable", "parquet"] }
 
 # ❌ Avoid: Enabling all features increases compile time
-# pandrs = { version = "0.2.0", features = ["stable", "cuda", "wasm", "jit"] }
+# pandrs = { version = "0.3.0", features = ["stable", "cuda", "wasm", "jit"] }
 ```
 
 #### Batch Operations

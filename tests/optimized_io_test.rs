@@ -288,16 +288,6 @@ fn test_parquet_io() -> Result<()> {
 
 #[test]
 #[allow(clippy::result_large_err)]
-fn test_sql_io() -> Result<()> {
-    // Skip SQLite test (may not be available in CI environments)
-    // Or might fail due to Rusqlite dependency issues
-
-    // Just pass the test
-    Ok(())
-}
-
-#[test]
-#[allow(clippy::result_large_err)]
 fn test_csv_parquet_integration() -> Result<()> {
     // Create temporary directory
     let dir = tempdir()?;

@@ -3,16 +3,16 @@
 [![Crate](https://img.shields.io/crates/v/pandrs.svg)](https://crates.io/crates/pandrs)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 [![Documentation](https://docs.rs/pandrs/badge.svg)](https://docs.rs/pandrs)
-![Tests](https://img.shields.io/badge/tests-1819%20passing-brightgreen.svg)
+![Tests](https://img.shields.io/badge/tests-1794%20passing-brightgreen.svg)
 
 A high-performance DataFrame library for Rust, providing pandas-like API with advanced features including SIMD optimization, parallel processing, and distributed computing capabilities.
 
-> **Version 0.2.0 - March 2026**: PandRS is under active development with ongoing quality improvements. With **1819 tests passing**, enhanced documentation, and optimized performance, PandRS delivers a robust pandas-like experience for Rust developers.
+> **Version 0.3.0 - March 2026**: PandRS is under active development with ongoing quality improvements. With **1794 tests passing**, enhanced documentation, and optimized performance, PandRS delivers a robust pandas-like experience for Rust developers.
 
 ## Code Quality Highlights
 
-**Comprehensive Testing**: 1819 tests passing (nextest) + 157 doc tests with extensive coverage
-**Active Development**: Ongoing improvements to error handling and code quality (632 Rust files, 204,203 lines of code)
+**Comprehensive Testing**: 1794 tests passing (nextest) + 128 doc tests with extensive coverage
+**Active Development**: Ongoing improvements to error handling and code quality (622 Rust files, 198,745 lines of code)
 **Production-Ready Error Handling**: Established error handling patterns with descriptive messages
 
 ## Overview
@@ -122,15 +122,7 @@ let grouped = df.groupby(vec!["department"])?.agg(HashMap::from([
 - **Parquet**: Apache Parquet with compression support
 - **JSON**: Both records and columnar JSON formats
 - **Excel**: XLSX/XLS read/write with multi-sheet support
-- **SQL**: Direct database read/write
 - **Arrow**: Zero-copy Arrow integration
-
-#### Database Support
-- PostgreSQL
-- MySQL/MariaDB
-- SQLite
-- ODBC connectivity
-- Connection pooling
 
 #### Cloud Storage
 - AWS S3
@@ -219,7 +211,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-pandrs = "0.2.0"
+pandrs = "0.3.0"
 ```
 
 ### Feature Flags
@@ -228,7 +220,7 @@ Enable additional functionality with feature flags:
 
 ```toml
 [dependencies]
-pandrs = { version = "0.2.0", features = ["optimized"] }
+pandrs = { version = "0.3.0", features = ["optimized"] }
 ```
 
 Available features:
@@ -238,7 +230,6 @@ Available features:
 - **Data formats:**
   - `parquet`: Parquet file support
   - `excel`: Excel file support
-  - `sql`: Database connectivity
 - **Advanced features:**
   - `distributed`: Distributed computing with DataFusion
   - `visualization`: Plotting capabilities
@@ -301,7 +292,6 @@ The `examples/` directory contains comprehensive examples demonstrating all majo
 - **CSV**: Examples integrated into basic operations
 - **Parquet**: `parquet_example.rs`, `parquet_advanced_example.rs`, `parquet_advanced_features_example.rs`
 - **Excel**: `excel_multisheet_example.rs`, `excel_advanced_features_example.rs`
-- **SQL/Databases**: `sql_advanced_example.rs`, `database_integration_example.rs`
 
 ### Performance & Optimization
 - **SIMD & Parallel**: `parallel_example.rs`, `optimized_dataframe_example.rs`, `optimized_large_dataset_example.rs`

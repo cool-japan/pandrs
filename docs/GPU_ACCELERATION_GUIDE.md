@@ -20,7 +20,7 @@ Enable GPU acceleration by adding the `cuda` feature:
 
 ```toml
 [dependencies]
-pandrs = { version = "0.1.0", features = ["cuda"] }
+pandrs = { version = "0.3.0", features = ["cuda"] }
 ```
 
 Build with CUDA support:

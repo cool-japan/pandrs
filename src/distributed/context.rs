@@ -1,7 +1,7 @@
 //! # Distributed Processing Context
 //!
 //! This module provides a high-level context for distributed processing,
-//! enabling management of multiple datasets and direct SQL query execution.
+//! enabling management of multiple datasets.
 
 use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
@@ -11,11 +11,9 @@ use crate::error::{Result, Error};
 use crate::lock_safe;
 use crate::dataframe::DataFrame;
 use super::config::DistributedConfig;
-use super::execution::{ExecutionEngine, ExecutionContext, ExecutionResult, ExecutionMetrics};
+use super::execution::{ExecutionEngine, ExecutionContext};
 use super::dataframe::DistributedDataFrame;
 use super::ToDistributed;
-use super::expr::ExprSchema;
-use super::schema_validator::SchemaValidator;
 
 /// A context for managing distributed processing operations
 pub struct DistributedContext {
@@ -166,23 +164,6 @@ impl DistributedContext {
         }
     }
     
-    /// Executes a SQL query against registered datasets
-    pub fn sql(&self, query: &str) -> Result<ExecutionResult> {
-        #[cfg(feature = "distributed")]
-        {
-            // Execute the SQL query using the execution context
-            let context = lock_safe!(self.context, "distributed context lock")?;
-            context.sql(query)
-        }
-        
-        #[cfg(not(feature = "distributed"))]
-        {
-            Err(Error::FeatureNotAvailable(
-                "Distributed processing is not available. Recompile with the 'distributed' feature flag.".to_string()
-            ))
-        }
-    }
-    
     /// Gets a registered dataset by name
     pub fn get_dataset(&self, name: &str) -> Option<&DistributedDataFrame> {
         self.datasets.get(name)
@@ -191,47 +172,6 @@ impl DistributedContext {
     /// Lists all registered dataset names
     pub fn dataset_names(&self) -> Vec<String> {
         self.datasets.keys().cloned().collect()
-    }
-    
-    /// Executes a SQL query and returns the result as a local DataFrame
-    pub fn sql_to_dataframe(&self, query: &str) -> Result<DataFrame> {
-        #[cfg(feature = "distributed")]
-        {
-            // Execute the SQL query
-            let result = self.sql(query)?;
-            
-            // Convert the result to a local DataFrame
-            result.collect_to_local()
-        }
-        
-        #[cfg(not(feature = "distributed"))]
-        {
-            Err(Error::FeatureNotAvailable(
-                "Distributed processing is not available. Recompile with the 'distributed' feature flag.".to_string()
-            ))
-        }
-    }
-    
-    /// Executes a SQL query and writes the result directly to a Parquet file
-    pub fn sql_to_parquet(&self, query: &str, path: &str) -> Result<ExecutionMetrics> {
-        #[cfg(feature = "distributed")]
-        {
-            // Execute the SQL query
-            let result = self.sql(query)?;
-            
-            // Write the result to a Parquet file
-            result.write_parquet(path)?;
-            
-            // Return the execution metrics
-            Ok(result.metrics().clone())
-        }
-        
-        #[cfg(not(feature = "distributed"))]
-        {
-            Err(Error::FeatureNotAvailable(
-                "Distributed processing is not available. Recompile with the 'distributed' feature flag.".to_string()
-            ))
-        }
     }
     
     /// Returns the configuration used by this context

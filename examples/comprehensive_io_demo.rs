@@ -6,7 +6,7 @@
 //! 3. Database Integration Expansion - async operations, connection pooling, transactions
 //!
 //! To run this example:
-//!   cargo run --example comprehensive_io_demo --features "excel streaming sql"
+//!   cargo run --example comprehensive_io_demo --features "excel streaming"
 //!
 //! Note: This example focuses on demonstrating the API concepts and enhanced features.
 
@@ -22,16 +22,6 @@ use pandrs::io::{ParquetCompression, ParquetMetadata, ParquetWriteOptions};
 
 #[cfg(feature = "excel")]
 use pandrs::io::{ExcelReadOptions, ExcelWorkbookInfo, ExcelWriteOptions, NamedRange};
-
-#[cfg(feature = "sql")]
-use pandrs::io::{
-    ColumnDefinition, DatabaseConnection, InsertMethod, PoolConfig, SqlWriteOptions, TableSchema,
-    WriteMode,
-};
-
-#[cfg(any(feature = "parquet", feature = "sql"))]
-#[cfg(feature = "sql")]
-use std::time::Duration;
 
 #[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
@@ -174,14 +164,6 @@ fn parquet_advanced_examples(df: &DataFrame, large_df: &DataFrame) -> Result<()>
 fn database_advanced_examples(df: &DataFrame) -> Result<()> {
     println!("\n--- Database Integration Expansion ---");
 
-    // 1. Async Connection Pooling
-    #[cfg(feature = "sql")]
-    {
-        println!("Setting up async database connection pool...");
-        // Note: Async example would require async main function
-        println!("  Async connection pool example would be demonstrated here");
-    }
-
     // 2. Transaction Management
     println!("Demonstrating transaction management...");
     transaction_management_example(df)?;
@@ -189,35 +171,6 @@ fn database_advanced_examples(df: &DataFrame) -> Result<()> {
     // 3. Type-Safe SQL Query Builder
     println!("Using type-safe SQL query builder...");
     query_builder_example(df)?;
-
-    // 4. Database Schema Introspection
-    #[cfg(feature = "sql")]
-    {
-        println!("Analyzing database schema...");
-        schema_introspection_example()?;
-    }
-
-    // 5. Bulk Insert Operations
-    #[cfg(feature = "sql")]
-    {
-        println!("Testing bulk insert operations...");
-        bulk_insert_example(df)?;
-    }
-
-    // 6. Connection Statistics and Monitoring
-    #[cfg(feature = "sql")]
-    {
-        println!("Monitoring connection pool statistics...");
-        // Note: Async example would require async main function
-        println!("  Connection monitoring example would be demonstrated here");
-    }
-
-    // 7. Multi-Database Support
-    #[cfg(feature = "sql")]
-    {
-        println!("Demonstrating multi-database integration...");
-        multi_database_example(df)?;
-    }
 
     Ok(())
 }
@@ -664,7 +617,7 @@ fn parquet_metadata_analysis_example() -> Result<()> {
         schema: "struct<name:string,price:double,volume:int64,date:timestamp>".to_string(),
         file_size: Some(2500000), // 2.5 MB
         compression: "SNAPPY".to_string(),
-        created_by: Some("pandrs 0.1.0".to_string()),
+        created_by: Some("pandrs 0.3.0".to_string()),
     };
 
     println!("  File metadata:");
@@ -698,35 +651,6 @@ fn parquet_metadata_analysis_example() -> Result<()> {
 // ============================================================================
 // Database Integration Implementation Examples
 // ============================================================================
-
-#[cfg(feature = "sql")]
-#[allow(dead_code)]
-#[allow(clippy::result_large_err)]
-async fn async_connection_pool_example(_df: &DataFrame) -> Result<()> {
-    println!("  Setting up async database connection pool...");
-
-    let pool_config = PoolConfig {
-        max_connections: 20,
-        min_connections: 5,
-        connect_timeout: Duration::from_secs(30),
-        idle_timeout: Some(Duration::from_secs(300)),
-    };
-
-    println!("  Pool configuration:");
-    println!("    • Max connections: {}", pool_config.max_connections);
-    println!("    • Min connections: {}", pool_config.min_connections);
-    println!("    • Connect timeout: {:?}", pool_config.connect_timeout);
-    println!("    • Idle timeout: {:?}", pool_config.idle_timeout);
-
-    // Simulate async operations
-    println!("  Performing async database operations...");
-    println!("    • Connection acquired from pool");
-    println!("    • Async query executed: SELECT * FROM data");
-    println!("    • Connection returned to pool");
-
-    println!("  Async connection pool operations completed");
-    Ok(())
-}
 
 #[allow(clippy::result_large_err)]
 fn transaction_management_example(_df: &DataFrame) -> Result<()> {
@@ -779,193 +703,6 @@ fn query_builder_example(_df: &DataFrame) -> Result<()> {
     println!("    • Parameterized query: SELECT * FROM data WHERE price BETWEEN ? AND ?");
     println!("    • Parameters: [100.0, 500.0]");
     println!("    • Type safety: ✓ Verified at compile time");
-
-    Ok(())
-}
-
-#[cfg(feature = "sql")]
-#[allow(clippy::result_large_err)]
-fn schema_introspection_example() -> Result<()> {
-    println!("  Analyzing database schema...");
-
-    // Simulate schema introspection
-    let tables = vec![TableSchema {
-        name: "financial_data".to_string(),
-        columns: vec![
-            ColumnDefinition {
-                name: "id".to_string(),
-                data_type: "INTEGER PRIMARY KEY".to_string(),
-                nullable: false,
-                default_value: None,
-                max_length: None,
-                precision: None,
-                scale: None,
-                auto_increment: true,
-            },
-            ColumnDefinition {
-                name: "name".to_string(),
-                data_type: "VARCHAR(100)".to_string(),
-                nullable: false,
-                default_value: None,
-                max_length: Some(100),
-                precision: None,
-                scale: None,
-                auto_increment: false,
-            },
-            ColumnDefinition {
-                name: "price".to_string(),
-                data_type: "DECIMAL(10,2)".to_string(),
-                nullable: true,
-                default_value: Some("0.00".to_string()),
-                max_length: None,
-                precision: Some(10),
-                scale: Some(2),
-                auto_increment: false,
-            },
-        ],
-        primary_keys: vec!["id".to_string()],
-        foreign_keys: vec![],
-        indexes: vec![],
-    }];
-
-    println!("  Database schema analysis:");
-    for table in &tables {
-        println!("    • Table: {}", table.name);
-        println!("      - Columns: {}", table.columns.len());
-        println!("      - Primary keys: {:?}", table.primary_keys);
-
-        for column in &table.columns {
-            let nullable_str = if column.nullable {
-                "nullable"
-            } else {
-                "NOT NULL"
-            };
-            println!(
-                "        - {} ({}) {}",
-                column.name, column.data_type, nullable_str
-            );
-        }
-    }
-
-    Ok(())
-}
-
-#[cfg(feature = "sql")]
-#[allow(clippy::result_large_err)]
-fn bulk_insert_example(df: &DataFrame) -> Result<()> {
-    println!("  Testing bulk insert operations...");
-
-    let write_options = SqlWriteOptions {
-        chunksize: Some(5000),
-        if_exists: WriteMode::Append,
-        method: InsertMethod::Multi,
-        ..Default::default()
-    };
-
-    println!("  Bulk insert configuration:");
-    println!(
-        "    • Chunk size: {} rows",
-        write_options.chunksize.unwrap_or(1)
-    );
-    println!("    • Insert method: {:?}", write_options.method);
-    println!("    • Mode: {:?}", write_options.if_exists);
-
-    // Simulate bulk insert
-    let total_rows = df.row_count();
-    let chunk_size = write_options.chunksize.unwrap_or(1000);
-    let num_chunks = (total_rows + chunk_size - 1) / chunk_size;
-
-    println!("  Bulk insert progress:");
-    for i in 0..num_chunks.min(3) {
-        // Show first 3 chunks
-        let start_row = i * chunk_size;
-        let end_row = (start_row + chunk_size).min(total_rows);
-        println!(
-            "    • Chunk {}/{}: inserted rows {}-{}",
-            i + 1,
-            num_chunks,
-            start_row,
-            end_row
-        );
-    }
-
-    if num_chunks > 3 {
-        println!("    • ... {} more chunks processed", num_chunks - 3);
-    }
-
-    println!("  Bulk insert completed: {} total rows", total_rows);
-    Ok(())
-}
-
-#[cfg(feature = "sql")]
-#[allow(dead_code)]
-#[allow(clippy::result_large_err)]
-async fn connection_monitoring_example() -> Result<()> {
-    println!("  Monitoring connection pool statistics...");
-
-    // Simulate connection pool statistics
-    let stats = vec![
-        ("Active connections", 8),
-        ("Idle connections", 2),
-        ("Total connections", 10),
-        ("Pending requests", 0),
-        ("Failed connections", 1),
-        ("Average response time", 45), // milliseconds
-    ];
-
-    println!("  Connection pool statistics:");
-    for (metric, value) in stats {
-        if metric == "Average response time" {
-            println!("    • {}: {} ms", metric, value);
-        } else {
-            println!("    • {}: {}", metric, value);
-        }
-    }
-
-    println!("  Connection health: ✓ Good");
-    println!("  Recommendation: Pool size is appropriate for current load");
-
-    Ok(())
-}
-
-#[cfg(feature = "sql")]
-#[allow(clippy::result_large_err)]
-fn multi_database_example(_df: &DataFrame) -> Result<()> {
-    println!("  Demonstrating multi-database integration...");
-
-    let databases = [
-        DatabaseConnection::Sqlite("data.db".to_string()),
-        #[cfg(feature = "sql")]
-        DatabaseConnection::PostgreSQL("postgresql://user:pass@localhost/db".to_string()),
-        #[cfg(feature = "sql")]
-        DatabaseConnection::MySQL("mysql://user:pass@localhost/db".to_string()),
-    ];
-
-    println!("  Supported database types:");
-    for (i, db) in databases.iter().enumerate() {
-        match db {
-            DatabaseConnection::Sqlite(path) => {
-                println!("    {}. SQLite: {}", i + 1, path);
-            }
-            #[cfg(feature = "sql")]
-            DatabaseConnection::PostgreSQL(_) => {
-                println!("    {}. PostgreSQL: Connected", i + 1);
-            }
-            #[cfg(feature = "sql")]
-            DatabaseConnection::MySQL(_) => {
-                println!("    {}. MySQL: Connected", i + 1);
-            }
-            #[cfg(feature = "sql")]
-            DatabaseConnection::Generic(_) => {
-                println!("    {}. Generic database: Connected", i + 1);
-            }
-        }
-    }
-
-    println!("  Cross-database query example:");
-    println!("    • Source: PostgreSQL production database");
-    println!("    • Destination: SQLite analytics database");
-    println!("    • Operation: Data synchronization completed");
 
     Ok(())
 }

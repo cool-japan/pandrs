@@ -1,7 +1,7 @@
 //! # Distributed Processing Context
 //!
 //! This module provides a high-level context for distributed processing,
-//! enabling management of multiple datasets and direct SQL query execution.
+//! enabling management of multiple datasets.
 
 #[cfg(feature = "distributed")]
 use std::collections::HashMap;
@@ -17,9 +17,7 @@ use crate::dataframe::DataFrame;
 #[cfg(feature = "distributed")]
 use crate::distributed::core::dataframe::DistributedDataFrame;
 #[cfg(feature = "distributed")]
-use crate::distributed::execution::{
-    ExecutionContext, ExecutionEngine, ExecutionMetrics, ExecutionResult,
-};
+use crate::distributed::execution::{ExecutionContext, ExecutionEngine, ExecutionMetrics};
 #[cfg(feature = "distributed")]
 use crate::distributed::expr::ExprSchema;
 #[cfg(feature = "distributed")]
@@ -134,32 +132,6 @@ impl DistributedContext {
     /// Gets a registered dataset by name (mutable)
     pub fn get_dataset_mut(&mut self, name: &str) -> Option<&mut DistributedDataFrame> {
         self.datasets.get_mut(name)
-    }
-
-    /// Executes a SQL query
-    pub fn sql(&mut self, query: &str) -> Result<DistributedDataFrame> {
-        let result = {
-            let mut context = lock_safe!(self.context, "distributed context lock")?;
-            context.sql(query)?
-        };
-
-        // Create a new distributed DataFrame with the result
-        let id = format!("sql_result_{}", self.datasets.len());
-
-        let df = DistributedDataFrame::with_result(
-            self.config.clone(),
-            self.engine.clone(),
-            lock_safe!(self.context, "distributed context lock")?
-                .as_ref()
-                .clone(),
-            id.clone(),
-            result,
-        );
-
-        // Register the result
-        self.datasets.insert(id.clone(), df.clone());
-
-        Ok(df)
     }
 
     /// Gets the configuration

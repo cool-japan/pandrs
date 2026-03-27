@@ -2,7 +2,7 @@
 #[cfg(feature = "visualization")]
 use plotters::prelude::*;
 #[cfg(feature = "visualization")]
-use rand::{rng, Rng};
+use rand::{rng, Rng, RngExt};
 
 // Translated Japanese comments and strings into English
 #[cfg(feature = "visualization")]

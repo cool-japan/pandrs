@@ -32,7 +32,7 @@ let mut df = DataFrame::new();
 
 ```toml
 [dependencies]
-pandrs = { version = "0.1.0", features = ["cuda", "distributed", "jit"] }
+pandrs = { version = "0.3.0", features = ["cuda", "distributed", "jit"] }
 ```
 
 ### Batch Operations
@@ -139,7 +139,7 @@ let quantile_fn = array_ops::quantile(0.95);
 
 ```toml
 [dependencies]
-pandrs = { version = "0.1.0", features = ["cuda"] }
+pandrs = { version = "0.3.0", features = ["cuda"] }
 ```
 
 ### GPU Window Operations

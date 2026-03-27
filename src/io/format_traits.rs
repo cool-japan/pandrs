@@ -8,7 +8,6 @@ use crate::core::error::{Error, Result};
 use crate::dataframe::DataFrame;
 use std::collections::HashMap;
 use std::future::Future;
-use std::io::{Read, Write};
 use std::path::Path;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -121,258 +120,6 @@ pub enum FormatDataType {
     Map,
 }
 
-/// Trait for SQL-like operations
-pub trait SqlOps: Send + Sync {
-    /// Connect to the database
-    fn connect(
-        &self,
-        connection_string: &str,
-    ) -> Pin<Box<dyn Future<Output = Result<Box<dyn SqlConnection>>> + Send + '_>>;
-
-    /// Execute a query and return results
-    fn execute_query(
-        &self,
-        conn: &dyn SqlConnection,
-        query: &str,
-    ) -> Pin<Box<dyn Future<Output = Result<DataFrame>> + Send + '_>>;
-
-    /// Execute a non-query statement
-    fn execute_statement(
-        &self,
-        conn: &dyn SqlConnection,
-        statement: &str,
-    ) -> Pin<Box<dyn Future<Output = Result<SqlQueryResult>> + Send + '_>>;
-
-    /// Insert DataFrame into a table
-    fn insert_dataframe(
-        &self,
-        conn: &dyn SqlConnection,
-        table_name: &str,
-        df: &DataFrame,
-    ) -> Pin<Box<dyn Future<Output = Result<()>> + Send + '_>>;
-
-    /// Create table from DataFrame schema
-    fn create_table_from_dataframe(
-        &self,
-        conn: &dyn SqlConnection,
-        table_name: &str,
-        df: &DataFrame,
-    ) -> Pin<Box<dyn Future<Output = Result<()>> + Send + '_>>;
-
-    /// List tables in the database
-    fn list_tables(
-        &self,
-        conn: &dyn SqlConnection,
-    ) -> Pin<Box<dyn Future<Output = Result<Vec<String>>> + Send + '_>>;
-
-    /// Get table schema
-    fn get_table_schema(
-        &self,
-        conn: &dyn SqlConnection,
-        table_name: &str,
-    ) -> Pin<Box<dyn Future<Output = Result<TableSchema>> + Send + '_>>;
-
-    /// Check if table exists
-    fn table_exists(
-        &self,
-        conn: &dyn SqlConnection,
-        table_name: &str,
-    ) -> Pin<Box<dyn Future<Output = Result<bool>> + Send + '_>>;
-
-    /// Get database capabilities
-    fn capabilities(&self) -> SqlCapabilities;
-}
-
-/// SQL connection trait
-pub trait SqlConnection: Send + Sync {
-    /// Execute a raw query
-    fn execute_raw(
-        &self,
-        query: &str,
-    ) -> Pin<Box<dyn Future<Output = Result<SqlQueryResult>> + Send + '_>>;
-
-    /// Check if connection is valid
-    fn is_valid(&self) -> bool;
-
-    /// Close the connection
-    fn close(&self) -> Pin<Box<dyn Future<Output = Result<()>> + Send + '_>>;
-
-    /// Get connection metadata
-    fn metadata(&self) -> HashMap<String, String>;
-}
-
-/// SQL query result
-#[derive(Debug, Clone)]
-pub struct SqlQueryResult {
-    /// Number of rows affected
-    pub rows_affected: u64,
-    /// Execution time in milliseconds
-    pub execution_time_ms: u64,
-    /// Additional metadata
-    pub metadata: HashMap<String, String>,
-}
-
-/// SQL capabilities description
-#[derive(Debug, Clone)]
-pub struct SqlCapabilities {
-    /// Supports transactions
-    pub supports_transactions: bool,
-    /// Supports stored procedures
-    pub supports_stored_procedures: bool,
-    /// Supports user-defined functions
-    pub supports_udf: bool,
-    /// Supports window functions
-    pub supports_window_functions: bool,
-    /// Supports CTEs
-    pub supports_cte: bool,
-    /// Supports JSON data types
-    pub supports_json: bool,
-    /// Supports arrays
-    pub supports_arrays: bool,
-    /// Maximum connection pool size
-    pub max_connections: Option<usize>,
-    /// Supported SQL standard level
-    pub sql_standard: SqlStandard,
-}
-
-/// SQL standard support levels
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SqlStandard {
-    Sql92,
-    Sql99,
-    Sql2003,
-    Sql2006,
-    Sql2008,
-    Sql2011,
-    Sql2016,
-    Custom,
-}
-
-/// Table schema definition
-#[derive(Debug, Clone)]
-pub struct TableSchema {
-    /// Table name
-    pub name: String,
-    /// Column definitions
-    pub columns: Vec<ColumnDefinition>,
-    /// Primary key columns
-    pub primary_key: Vec<String>,
-    /// Foreign key constraints
-    pub foreign_keys: Vec<ForeignKeyConstraint>,
-    /// Indexes
-    pub indexes: Vec<IndexDefinition>,
-    /// Table metadata
-    pub metadata: HashMap<String, String>,
-}
-
-/// Column definition
-#[derive(Debug, Clone)]
-pub struct ColumnDefinition {
-    /// Column name
-    pub name: String,
-    /// Data type
-    pub data_type: SqlDataType,
-    /// Whether nullable
-    pub nullable: bool,
-    /// Default value
-    pub default_value: Option<String>,
-    /// Column constraints
-    pub constraints: Vec<ColumnConstraint>,
-    /// Column metadata
-    pub metadata: HashMap<String, String>,
-}
-
-/// SQL data types
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum SqlDataType {
-    Boolean,
-    SmallInt,
-    Integer,
-    BigInt,
-    Real,
-    Double,
-    Decimal { precision: u8, scale: u8 },
-    Char(u16),
-    VarChar(Option<u16>),
-    Text,
-    Binary(u16),
-    VarBinary(Option<u16>),
-    Blob,
-    Date,
-    Time,
-    Timestamp,
-    TimestampWithTimeZone,
-    Interval,
-    Json,
-    Xml,
-    Array(Box<SqlDataType>),
-    Custom(String),
-}
-
-/// Column constraints
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ColumnConstraint {
-    NotNull,
-    Unique,
-    PrimaryKey,
-    ForeignKey { table: String, column: String },
-    Check(String),
-    Default(String),
-}
-
-/// Foreign key constraint
-#[derive(Debug, Clone)]
-pub struct ForeignKeyConstraint {
-    /// Constraint name
-    pub name: String,
-    /// Local columns
-    pub columns: Vec<String>,
-    /// Referenced table
-    pub referenced_table: String,
-    /// Referenced columns
-    pub referenced_columns: Vec<String>,
-    /// On delete action
-    pub on_delete: ReferentialAction,
-    /// On update action
-    pub on_update: ReferentialAction,
-}
-
-/// Referential actions
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ReferentialAction {
-    NoAction,
-    Restrict,
-    Cascade,
-    SetNull,
-    SetDefault,
-}
-
-/// Index definition
-#[derive(Debug, Clone)]
-pub struct IndexDefinition {
-    /// Index name
-    pub name: String,
-    /// Indexed columns
-    pub columns: Vec<String>,
-    /// Whether unique
-    pub unique: bool,
-    /// Index type
-    pub index_type: IndexType,
-    /// Index metadata
-    pub metadata: HashMap<String, String>,
-}
-
-/// Index types
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum IndexType {
-    BTree,
-    Hash,
-    Bitmap,
-    FullText,
-    Spatial,
-    Custom(u8),
-}
-
 /// Trait for streaming operations
 pub trait StreamingOps: Send + Sync {
     /// Create a new stream
@@ -449,8 +196,6 @@ pub enum SerializationFormat {
 pub struct FormatRegistry {
     /// Registered file formats
     formats: HashMap<String, Arc<dyn FileFormat>>,
-    /// Registered SQL providers
-    sql_providers: HashMap<String, Arc<dyn SqlOps>>,
     /// Registered streaming providers
     streaming_providers: HashMap<String, Arc<dyn StreamingOps>>,
 }
@@ -460,7 +205,6 @@ impl FormatRegistry {
     pub fn new() -> Self {
         Self {
             formats: HashMap::new(),
-            sql_providers: HashMap::new(),
             streaming_providers: HashMap::new(),
         }
     }
@@ -469,11 +213,6 @@ impl FormatRegistry {
     pub fn register_format<F: FileFormat + 'static>(&mut self, format: F) {
         let name = format.format_name().to_string();
         self.formats.insert(name, Arc::new(format));
-    }
-
-    /// Register a SQL provider
-    pub fn register_sql_provider<S: SqlOps + 'static>(&mut self, name: String, provider: S) {
-        self.sql_providers.insert(name, Arc::new(provider));
     }
 
     /// Register a streaming provider
@@ -488,11 +227,6 @@ impl FormatRegistry {
     /// Get format by name
     pub fn get_format(&self, name: &str) -> Option<Arc<dyn FileFormat>> {
         self.formats.get(name).cloned()
-    }
-
-    /// Get SQL provider by name
-    pub fn get_sql_provider(&self, name: &str) -> Option<Arc<dyn SqlOps>> {
-        self.sql_providers.get(name).cloned()
     }
 
     /// Get streaming provider by name
@@ -523,11 +257,6 @@ impl FormatRegistry {
     /// List all registered formats
     pub fn list_formats(&self) -> Vec<String> {
         self.formats.keys().cloned().collect()
-    }
-
-    /// List all SQL providers
-    pub fn list_sql_providers(&self) -> Vec<String> {
-        self.sql_providers.keys().cloned().collect()
     }
 
     /// List all streaming providers
@@ -589,11 +318,6 @@ pub enum DataSource {
         format: Option<String>,
         options: HashMap<String, String>,
     },
-    Sql {
-        connection: String,
-        query: String,
-        options: HashMap<String, String>,
-    },
     Stream {
         provider: String,
         stream_name: String,
@@ -616,11 +340,6 @@ pub enum DataDestination {
     File {
         path: String,
         format: Option<String>,
-        options: HashMap<String, String>,
-    },
-    Sql {
-        connection: String,
-        table: String,
         options: HashMap<String, String>,
     },
     Stream {
@@ -687,8 +406,6 @@ pub enum JoinType {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Cursor;
-
     /// Mock file format for testing
     struct MockFormat;
 
@@ -846,42 +563,6 @@ mod tests {
             }
             _ => panic!("Expected File source"),
         }
-    }
-
-    #[test]
-    fn test_table_schema() {
-        let schema = TableSchema {
-            name: "test_table".to_string(),
-            columns: vec![
-                ColumnDefinition {
-                    name: "id".to_string(),
-                    data_type: SqlDataType::Integer,
-                    nullable: false,
-                    default_value: None,
-                    constraints: vec![ColumnConstraint::PrimaryKey],
-                    metadata: HashMap::new(),
-                },
-                ColumnDefinition {
-                    name: "name".to_string(),
-                    data_type: SqlDataType::VarChar(Some(255)),
-                    nullable: true,
-                    default_value: Some("''".to_string()),
-                    constraints: vec![],
-                    metadata: HashMap::new(),
-                },
-            ],
-            primary_key: vec!["id".to_string()],
-            foreign_keys: vec![],
-            indexes: vec![],
-            metadata: HashMap::new(),
-        };
-
-        assert_eq!(schema.name, "test_table");
-        assert_eq!(schema.columns.len(), 2);
-        assert_eq!(schema.columns[0].name, "id");
-        assert_eq!(schema.columns[0].data_type, SqlDataType::Integer);
-        assert!(!schema.columns[0].nullable);
-        assert_eq!(schema.primary_key, vec!["id"]);
     }
 
     #[test]

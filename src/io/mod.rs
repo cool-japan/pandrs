@@ -114,42 +114,6 @@ pub mod json;
 #[cfg(feature = "parquet")]
 pub mod parquet;
 
-/// SQL database connectivity (requires `sql` feature).
-///
-/// Connect to relational databases and execute queries:
-/// - PostgreSQL
-/// - MySQL
-/// - SQLite
-/// - Connection pooling
-/// - Transaction support
-///
-/// # Examples
-///
-/// ```rust,no_run
-/// # #[cfg(feature = "sql")]
-/// # {
-/// use pandrs::io;
-///
-/// // Read from database (SQLite)
-/// let db_path = "data.db";
-/// let df = io::read_sql("SELECT * FROM users", db_path)
-///     .expect("Failed to read from SQL");
-///
-/// // Write to database (requires OptimizedDataFrame)
-/// // let odf = pandrs::OptimizedDataFrame::from_dataframe(&df).expect("convert");
-/// // io::write_to_sql(&odf, "users_backup", db_path, "replace")
-/// //     .expect("Failed to write to SQL");
-/// # }
-/// ```
-///
-/// # Security Best Practices
-///
-/// - Use connection pooling for better performance
-/// - Always use parameterized queries to prevent SQL injection
-/// - Store credentials securely using the config module
-#[cfg(feature = "sql")]
-pub mod sql;
-
 /// Streaming I/O for processing data in chunks.
 ///
 /// Process large datasets that don't fit in memory:
@@ -169,11 +133,9 @@ pub use excel::{
     ExcelReadOptions, ExcelSheetInfo, ExcelWorkbookInfo, ExcelWriteOptions, NamedRange,
 };
 pub use format_traits::{
-    ColumnConstraint, ColumnDefinition as FormatColumnDefinition, DataDestination, DataOperations,
-    DataSource, FileFormat, ForeignKeyConstraint, FormatCapabilities, FormatDataType,
-    FormatRegistry, IndexDefinition, IndexType, JoinType, ReferentialAction, SerializationFormat,
-    SqlCapabilities, SqlDataType, SqlOps, SqlStandard, StreamingCapabilities, StreamingOps,
-    TableSchema as FormatTableSchema, TransformPipeline, TransformStage,
+    DataDestination, DataOperations, DataSource, FileFormat, FormatCapabilities, FormatDataType,
+    FormatRegistry, JoinType, SerializationFormat, StreamingCapabilities, StreamingOps,
+    TransformPipeline, TransformStage,
 };
 pub use json::{read_json, write_json};
 #[cfg(feature = "parquet")]
@@ -184,14 +146,6 @@ pub use parquet::{
     write_parquet_streaming, AdvancedParquetReadOptions, ColumnStats, ParquetCompression,
     ParquetMetadata, ParquetReadOptions, ParquetSchemaAnalysis, ParquetWriteOptions,
     PredicateFilter, RowGroupInfo, SchemaEvolution, StreamingParquetReader,
-};
-#[cfg(feature = "sql")]
-pub use sql::{
-    execute_sql, get_create_table_sql, get_table_schema, has_table, list_tables, read_sql,
-    read_sql_advanced, read_sql_table, write_sql_advanced, write_to_sql, AsyncDatabasePool,
-    ColumnDefinition, ConnectionStats, DatabaseConnection, DatabaseOperation, ForeignKey,
-    InsertMethod, IsolationLevel, PoolConfig, QueryBuilder, SchemaIntrospector, SqlConnection,
-    SqlReadOptions, SqlValue, SqlWriteOptions, TableSchema, TransactionManager, WriteMode,
 };
 #[cfg(feature = "streaming")]
 pub use streaming::{

@@ -106,7 +106,7 @@ impl IsolationForest {
         let mut scores = vec![1.0; n_samples]; // Default: all normal points
 
         // Mark random 10% as anomalies for demonstration
-        use rand::Rng;
+        use rand::{Rng, RngExt};
         let mut rng = rand::rng();
 
         for _ in 0..((n_samples as f64 * 0.1) as usize) {
@@ -124,7 +124,7 @@ impl IsolationForest {
         let n_samples = data.row_count();
         let mut scores = Vec::with_capacity(n_samples);
 
-        use rand::Rng;
+        use rand::{Rng, RngExt};
         let mut rng = rand::rng();
 
         for _ in 0..n_samples {
@@ -143,7 +143,7 @@ impl UnsupervisedModel for IsolationForest {
         let n_samples = data.row_count();
         let mut scores = Vec::with_capacity(n_samples);
 
-        use rand::Rng;
+        use rand::{Rng, RngExt};
         let mut rng = rand::rng();
 
         for _ in 0..n_samples {
@@ -374,7 +374,7 @@ impl UnsupervisedModel for OneClassSVM {
         let n_samples = data.row_count();
 
         // Placeholder implementation for scoring
-        use rand::Rng;
+        use rand::{Rng, RngExt};
         let mut rng = rand::rng();
 
         let scores: Vec<f64> = (0..n_samples)

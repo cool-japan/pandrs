@@ -10,7 +10,7 @@ use pandrs::vis::direct::{DataFramePlotExt, SeriesPlotExt};
 #[cfg(feature = "visualization")]
 use pandrs::{DataFrame, Series};
 #[cfg(feature = "visualization")]
-use rand::{rng, Rng};
+use rand::{rng, Rng, RngExt};
 
 #[cfg(not(feature = "visualization"))]
 fn main() {

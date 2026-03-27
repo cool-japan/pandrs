@@ -2,10 +2,10 @@
 
 ## Current Release
 
-**Version:** 0.2.0
+**Version:** 0.3.0
 **Release Date:** March 2026
 **Status:** Production Ready - Enterprise-Grade Release
-**Test Coverage:** 1819 tests passing (nextest) + 157 doc tests, zero clippy warnings
+**Test Coverage:** 1794 tests passing (nextest) + 128 doc tests, zero clippy warnings
 
 ## Completed Features (v0.1.0)
 
@@ -41,7 +41,7 @@
 - [x] JSON support (records and columnar)
 - [x] Parquet integration with compression
 - [x] Excel read/write with multi-sheet support
-- [x] SQL database connectivity
+- [x] ~~SQL database connectivity~~ (removed in v0.3.0 — Pure Rust policy)
 - [x] Arrow format integration
 
 ### Performance Optimizations ✓
@@ -314,7 +314,7 @@
 - [x] Eliminated 6,984 unwrap() calls ✓
 - [x] Large file refactoring (<2000 lines policy) ✓
 
-### v0.3.0 - Performance & Ecosystem (Q3 2026)
+### v0.3.0 - Pure Rust & Ecosystem (March 2026) ✓
 - [x] Advanced lazy evaluation engine with query optimization
 - [ ] Streaming DataFrame operations for out-of-core processing
 - [ ] R and Julia language bindings
@@ -325,6 +325,8 @@
 - [ ] Automated performance regression testing in CI
 - [ ] Full SciRS2-Core integration for scientific computing
 - [x] Arrow Flight RPC support for distributed data transfer
+- [x] Removed SQL dependencies for Pure Rust compliance (no C/Fortran deps)
+- [x] Dependency upgrades (parquet/arrow 58.1, datafusion 53.0, cranelift 0.130)
 
 ### v1.0.0 - Production Release (Q2 2026)
 - [x] Full pandas API compatibility (Complete - 100%)
@@ -439,7 +441,7 @@ We welcome contributions in the following areas:
 ## Testing & Quality
 
 ### Current Status
-- 1819 tests passing (nextest) + 157 doc tests
+- 1794 tests passing (nextest) + 128 doc tests
 - Comprehensive property-based testing
 - Continuous integration with GitHub Actions
 - Regular performance regression testing
@@ -459,7 +461,7 @@ We welcome contributions in the following areas:
 4. Gather user feedback
 
 ### Release Criteria
-- [x] All tests passing (1819 nextest + 157 doc tests)
+- [x] All tests passing (1794 nextest + 128 doc tests)
 - [x] No critical bugs
 - [x] Documentation complete
 - [x] Performance benchmarks met
@@ -481,5 +483,5 @@ We welcome contributions in the following areas:
 
 ---
 
-Last Updated: 2026-03-10
+Last Updated: 2026-03-27
 Maintainer: COOLJAPAN OU (Team Kitasan)

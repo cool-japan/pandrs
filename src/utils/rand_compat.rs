@@ -3,6 +3,7 @@
 
 use rand::distr::uniform::{SampleRange, SampleUniform};
 use rand::Rng;
+use rand::RngExt;
 
 /// Compatibility wrapper for thread_rng
 ///

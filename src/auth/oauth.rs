@@ -798,7 +798,7 @@ impl OAuthClient {
 
 /// Generate a state parameter for CSRF protection
 fn generate_state() -> String {
-    use rand::RngCore;
+    use rand::Rng;
     let mut bytes = [0u8; 16];
     rand::rng().fill_bytes(&mut bytes);
     bytes.iter().map(|b| format!("{:02x}", b)).collect()
@@ -806,7 +806,7 @@ fn generate_state() -> String {
 
 /// Generate PKCE code verifier and challenge pair
 fn generate_pkce_pair() -> (String, String) {
-    use rand::RngCore;
+    use rand::Rng;
     let mut bytes = [0u8; 32];
     rand::rng().fill_bytes(&mut bytes);
 
@@ -855,7 +855,7 @@ fn compute_code_challenge(verifier: &str) -> String {
 
 /// Generate authorization code
 fn generate_authorization_code() -> String {
-    use rand::RngCore;
+    use rand::Rng;
     let mut bytes = [0u8; 32];
     rand::rng().fill_bytes(&mut bytes);
     bytes.iter().map(|b| format!("{:02x}", b)).collect()
@@ -863,7 +863,7 @@ fn generate_authorization_code() -> String {
 
 /// Generate access token
 fn generate_access_token() -> String {
-    use rand::RngCore;
+    use rand::Rng;
     let mut bytes = [0u8; 32];
     rand::rng().fill_bytes(&mut bytes);
     format!(
@@ -877,7 +877,7 @@ fn generate_access_token() -> String {
 
 /// Generate refresh token
 fn generate_refresh_token() -> String {
-    use rand::RngCore;
+    use rand::Rng;
     let mut bytes = [0u8; 32];
     rand::rng().fill_bytes(&mut bytes);
     format!(

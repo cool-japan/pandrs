@@ -250,19 +250,6 @@ fn bench_distributed_processing(c: &mut Criterion) {
             let df = create_test_dataframe(*size);
 
             group.bench_with_input(
-                BenchmarkId::new(format!("sql_aggregation_{}threads", concurrency), size),
-                &(df.clone(), *concurrency),
-                |b, (df, concurrency)| {
-                    b.iter(|| {
-                        let mut context = DistributedContext::new_local(*concurrency).unwrap();
-                        context.register_dataframe("test_data", df).unwrap();
-                        let result = context.sql("SELECT category, AVG(CAST(value AS FLOAT)) as avg_value FROM test_data GROUP BY category").unwrap();
-                        std::hint::black_box(result)
-                    })
-                }
-            );
-
-            group.bench_with_input(
                 BenchmarkId::new(
                     format!("dataframe_aggregation_{}threads", concurrency),
                     size,

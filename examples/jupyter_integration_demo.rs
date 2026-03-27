@@ -492,7 +492,7 @@ set_jupyter_config(config);
     </div>
 
     <footer style="text-align: center; margin-top: 40px; padding: 20px; color: #666;">
-        <p>🔬 <strong>PandRS 0.1.0</strong> - High-performance DataFrame Library for Rust</p>
+        <p>🔬 <strong>PandRS 0.3.0</strong> - High-performance DataFrame Library for Rust</p>
         <p>📔 Rich Jupyter integration with interactive widgets and customizable displays</p>
     </footer>
 </body>

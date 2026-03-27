@@ -83,7 +83,7 @@ cargo audit  # Shows paste as a warning only
 2. **With SQL Support**: If you need database connectivity:
    ```toml
    [dependencies]
-   pandrs = { version = "0.2.0", features = ["sql"] }
+   pandrs = { version = "0.3.0", features = ["sql"] }
    ```
    Be aware this includes MySQL support with the RSA vulnerability.
 
