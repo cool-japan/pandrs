@@ -221,21 +221,18 @@ mod tests {
 
         // 50% sampling (without replacement)
         let sample = sample_impl(&df, 0.5, false).expect("operation should succeed");
-        // The row count might be 0 in test environments
-        // Row count is always >= 0 as it's a usize
-        assert!(true);
+        // Sampling never adds new columns
+        assert!(sample.column_count() <= df.column_count());
 
         // 30% sampling (with replacement)
         let sample = sample_impl(&df, 0.3, true).expect("operation should succeed");
-        // The row count might be 0 in test environments
-        // Row count is always >= 0 as it's a usize
-        assert!(true);
+        // Sampling never adds new columns
+        assert!(sample.column_count() <= df.column_count());
 
         // 200% sampling (with replacement)
         let sample = sample_impl(&df, 2.0, true).expect("operation should succeed");
-        // The row count might be 0 in test environments
-        // Row count is always >= 0 as it's a usize
-        assert!(true);
+        // Sampling never adds new columns
+        assert!(sample.column_count() <= df.column_count());
 
         // 200% sampling (without replacement) - should error
         let result = sample_impl(&df, 2.0, false);

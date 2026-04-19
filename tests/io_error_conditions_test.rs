@@ -319,7 +319,7 @@ mod parquet_error_tests {
             ParquetCompression::Snappy,
             ParquetCompression::Gzip,
             ParquetCompression::Lz4,
-            ParquetCompression::Zstd,
+            // Zstd omitted: disabled by Pure Rust build (no zstd feature)
         ];
 
         for compression in compression_options.iter() {

@@ -748,6 +748,5 @@ mod tests {
     fn test_describe_gpu() {
         // Test GPU-accelerated descriptive statistics
         // This is just a placeholder for actual tests
-        assert!(true);
     }
 }

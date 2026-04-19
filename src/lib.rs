@@ -76,7 +76,7 @@
 //!
 //! ## Version
 //!
-//! Current version: 0.3.0
+//! Current version: 0.3.2
 
 // Disable specific warnings
 #![allow(clippy::all)]
@@ -842,3 +842,52 @@ pub use analytics::{
 ///
 /// This version string is automatically populated from the Cargo.toml package version.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// Convenience prelude for common PandRS types.
+///
+/// Importing `pandrs::prelude::*` brings the most-used types and traits into
+/// scope without needing to spell out full paths.
+///
+/// # Example
+///
+/// ```rust
+/// use pandrs::prelude::*;
+///
+/// let mut df = DataFrame::new();
+/// df.add_column(
+///     "x".to_string(),
+///     Series::new(vec![1i64, 2, 3], Some("x".to_string())).expect("series creation"),
+/// ).expect("column add");
+/// assert_eq!(df.row_count(), 3);
+/// ```
+pub mod prelude {
+    // Core data structures
+    pub use crate::dataframe::DataFrame;
+    pub use crate::series::Series;
+
+    // Error / Result
+    pub use crate::core::error::{Error, Result};
+    pub use crate::error::PandRSError;
+
+    // GroupBy and aggregation building blocks
+    pub use crate::dataframe::groupby::{
+        AggFunc, ColumnAggBuilder, DataFrameGroupBy, GroupByExt, NamedAgg,
+    };
+
+    // Optimized DataFrame
+    pub use crate::optimized::OptimizedDataFrame;
+
+    // Index types
+    pub use crate::index::{MultiIndex, RangeIndex, StringIndex};
+
+    // Column types
+    pub use crate::column::{
+        BooleanColumn, Column, ColumnType, Float64Column, Int64Column, StringColumn,
+    };
+
+    // NA support
+    pub use crate::na::NA;
+
+    // Series extension (categorical, NA series, etc.)
+    pub use crate::series::{Categorical, CategoricalOrder, NASeries, StringCategorical};
+}

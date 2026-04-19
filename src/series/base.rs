@@ -92,6 +92,37 @@ where
         let string_values: Vec<String> = self.values.iter().map(|v| v.to_string()).collect();
         Series::new(string_values, self.name.clone())
     }
+
+    /// Shift values by `periods`, filling exposed slots with NA.
+    ///
+    /// Positive `periods` shifts values toward larger indices (inserts NA at the front);
+    /// negative `periods` shifts toward smaller indices (inserts NA at the end).
+    /// When `|periods|` is greater than or equal to the Series length, the result is
+    /// all NA. Matches pandas' `Series.shift(periods)` semantics with the default
+    /// `fill_value` of NA.
+    pub fn shift(&self, periods: i64) -> Result<crate::series::NASeries<T>> {
+        let len = self.values.len();
+        let abs = periods.unsigned_abs().min(len as u64) as usize;
+        let mut shifted: Vec<crate::na::NA<T>> = Vec::with_capacity(len);
+
+        if periods >= 0 {
+            for _ in 0..abs {
+                shifted.push(crate::na::NA::NA);
+            }
+            for v in &self.values[..len - abs] {
+                shifted.push(crate::na::NA::Value(v.clone()));
+            }
+        } else {
+            for v in &self.values[abs..] {
+                shifted.push(crate::na::NA::Value(v.clone()));
+            }
+            for _ in 0..abs {
+                shifted.push(crate::na::NA::NA);
+            }
+        }
+
+        crate::series::NASeries::new(shifted, self.name.clone())
+    }
 }
 
 // Additional implementations for numeric types

@@ -184,6 +184,38 @@ where
 
         Self::new(filled_values, self.name.clone())
     }
+
+    /// Shift values by `periods`, filling exposed slots with NA.
+    ///
+    /// Positive `periods` shifts values toward larger indices (inserts NA at the front);
+    /// negative `periods` shifts toward smaller indices (inserts NA at the end).
+    /// Existing NA values are preserved at their shifted positions. When
+    /// `|periods|` is greater than or equal to the Series length, the result is
+    /// all NA. Matches pandas' `Series.shift(periods)` semantics with the default
+    /// `fill_value` of NA.
+    pub fn shift(&self, periods: i64) -> Result<Self> {
+        let len = self.values.len();
+        let abs = periods.unsigned_abs().min(len as u64) as usize;
+        let mut shifted: Vec<NA<T>> = Vec::with_capacity(len);
+
+        if periods >= 0 {
+            for _ in 0..abs {
+                shifted.push(NA::NA);
+            }
+            for v in &self.values[..len - abs] {
+                shifted.push(v.clone());
+            }
+        } else {
+            for v in &self.values[abs..] {
+                shifted.push(v.clone());
+            }
+            for _ in 0..abs {
+                shifted.push(NA::NA);
+            }
+        }
+
+        Self::new(shifted, self.name.clone())
+    }
 }
 
 // Specialized implementation for numeric NASeries
@@ -296,3 +328,130 @@ where
 
 // This NASeries implementation is the current one; no need to re-export the legacy version from here
 // The legacy version will be handled in the mod.rs file
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_issue_5_shift_positive() -> Result<()> {
+        let s = NASeries::<i32>::from_vec(vec![1, 2, 3, 4, 5], Some("x".to_string()))?;
+        let shifted = s.shift(1)?;
+
+        assert_eq!(shifted.len(), 5);
+        assert_eq!(shifted.name(), Some(&"x".to_string()));
+        assert_eq!(shifted.values()[0], NA::NA);
+        assert_eq!(shifted.values()[1], NA::Value(1));
+        assert_eq!(shifted.values()[2], NA::Value(2));
+        assert_eq!(shifted.values()[3], NA::Value(3));
+        assert_eq!(shifted.values()[4], NA::Value(4));
+
+        // A larger positive shift still only pads the front and drops from the tail.
+        let shifted3 = s.shift(3)?;
+        assert_eq!(shifted3.values()[0], NA::NA);
+        assert_eq!(shifted3.values()[1], NA::NA);
+        assert_eq!(shifted3.values()[2], NA::NA);
+        assert_eq!(shifted3.values()[3], NA::Value(1));
+        assert_eq!(shifted3.values()[4], NA::Value(2));
+
+        // Existing NAs are preserved at their shifted positions.
+        let mixed = NASeries::<i32>::new(
+            vec![NA::Value(10), NA::NA, NA::Value(30), NA::Value(40)],
+            Some("mixed".to_string()),
+        )?;
+        let mixed_shifted = mixed.shift(1)?;
+        assert_eq!(mixed_shifted.values()[0], NA::NA);
+        assert_eq!(mixed_shifted.values()[1], NA::Value(10));
+        assert_eq!(mixed_shifted.values()[2], NA::NA);
+        assert_eq!(mixed_shifted.values()[3], NA::Value(30));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_issue_5_shift_negative() -> Result<()> {
+        let s = NASeries::<i32>::from_vec(vec![1, 2, 3, 4, 5], Some("x".to_string()))?;
+        let shifted = s.shift(-2)?;
+
+        assert_eq!(shifted.len(), 5);
+        assert_eq!(shifted.name(), Some(&"x".to_string()));
+        assert_eq!(shifted.values()[0], NA::Value(3));
+        assert_eq!(shifted.values()[1], NA::Value(4));
+        assert_eq!(shifted.values()[2], NA::Value(5));
+        assert_eq!(shifted.values()[3], NA::NA);
+        assert_eq!(shifted.values()[4], NA::NA);
+
+        // Negative one-step shift pads just the tail.
+        let shifted1 = s.shift(-1)?;
+        assert_eq!(shifted1.values()[0], NA::Value(2));
+        assert_eq!(shifted1.values()[3], NA::Value(5));
+        assert_eq!(shifted1.values()[4], NA::NA);
+
+        // Existing NAs are preserved at their shifted positions.
+        let mixed = NASeries::<i32>::new(
+            vec![NA::Value(10), NA::NA, NA::Value(30), NA::Value(40)],
+            None,
+        )?;
+        let mixed_shifted = mixed.shift(-1)?;
+        assert_eq!(mixed_shifted.values()[0], NA::NA);
+        assert_eq!(mixed_shifted.values()[1], NA::Value(30));
+        assert_eq!(mixed_shifted.values()[2], NA::Value(40));
+        assert_eq!(mixed_shifted.values()[3], NA::NA);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_issue_5_shift_zero() -> Result<()> {
+        let s = NASeries::<i32>::new(
+            vec![
+                NA::Value(1),
+                NA::NA,
+                NA::Value(3),
+                NA::Value(4),
+                NA::Value(5),
+            ],
+            Some("x".to_string()),
+        )?;
+        let shifted = s.shift(0)?;
+
+        assert_eq!(shifted.len(), 5);
+        assert_eq!(shifted.name(), Some(&"x".to_string()));
+        assert_eq!(shifted.values()[0], NA::Value(1));
+        assert_eq!(shifted.values()[1], NA::NA);
+        assert_eq!(shifted.values()[2], NA::Value(3));
+        assert_eq!(shifted.values()[3], NA::Value(4));
+        assert_eq!(shifted.values()[4], NA::Value(5));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_issue_5_shift_exceeds_len() -> Result<()> {
+        let s = NASeries::<i32>::from_vec(vec![1, 2, 3, 4, 5], Some("x".to_string()))?;
+
+        // |periods| == len: the entire result is NA.
+        let exactly = s.shift(5)?;
+        assert_eq!(exactly.len(), 5);
+        assert!(exactly.values().iter().all(|v| v.is_na()));
+
+        // |periods| > len in the positive direction.
+        let overshoot_pos = s.shift(10)?;
+        assert_eq!(overshoot_pos.len(), 5);
+        assert!(overshoot_pos.values().iter().all(|v| v.is_na()));
+
+        // |periods| > len in the negative direction.
+        let overshoot_neg = s.shift(-10)?;
+        assert_eq!(overshoot_neg.len(), 5);
+        assert!(overshoot_neg.values().iter().all(|v| v.is_na()));
+
+        // Empty series with any periods stays empty.
+        let empty = NASeries::<i32>::from_vec(vec![], None)?;
+        let shifted_empty = empty.shift(3)?;
+        assert_eq!(shifted_empty.len(), 0);
+        let shifted_empty_neg = empty.shift(-3)?;
+        assert_eq!(shifted_empty_neg.len(), 0);
+
+        Ok(())
+    }
+}

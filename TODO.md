@@ -2,10 +2,10 @@
 
 ## Current Release
 
-**Version:** 0.3.1
-**Release Date:** March 2026
+**Version:** 0.3.2
+**Release Date:** April 2026
 **Status:** Production Ready - Enterprise-Grade Release
-**Test Coverage:** 1809 tests passing (nextest) + 117 doc tests, zero clippy warnings
+**Test Coverage:** 1818 tests passing (nextest) + 118 doc tests, zero clippy warnings
 
 ### Acknowledged upstream Pure Rust tech debt (feature-gated; default build unaffected)
 - `parquet` / `distributed` / `flight` pull `flate2`/`zstd`/`lz4_flex`/`snap`/`bzip2`/`brotli`/`miniz_oxide` via upstream arrow/parquet/datafusion/async-compression.
@@ -320,7 +320,7 @@
 
 ### v0.3.0 - Pure Rust & Ecosystem (March 2026) ✓
 - [x] Advanced lazy evaluation engine with query optimization
-- [ ] Streaming DataFrame operations for out-of-core processing
+- [x] Streaming DataFrame operations for out-of-core processing
 - [ ] R and Julia language bindings
 - [x] Cloud-native storage backends (S3, GCS, Azure Blob)
 - [x] Advanced visualization library (SVG/HTML output)
@@ -336,62 +336,72 @@
 - [x] Fix broken intra-doc link in `src/io/excel.rs` (private module reference)
 - [x] Replace `calamine` + `simple_excel_writer` with OxiARC-backed xlsx (Pure Rust policy)
 - [x] Remove -sys crate violations (Pure Rust policy follow-on)
-- [x] All 1809 tests passing, 117 doc tests passing
+- [x] All 1813 tests passing, 117 doc tests passing
 - [x] Zero clippy warnings (including with `-D warnings`)
 - [x] Rustdoc builds cleanly with `-D warnings`
 
+### v0.3.2 - Workspace Consolidation (April 2026) ✓
+- [x] Convert root Cargo.toml to virtual workspace with ~55 shared dependencies
+- [x] py_bindings inherits version/authors/edition/license from workspace root
+- [x] Fix clippy::assertions_on_constants violations in tests and stats modules
+- [x] Replace hardcoded /tmp/ paths with std::env::temp_dir() for portability
+- [x] Add shift() method to NASeries and PyNASeries with pandas semantics
+- [x] Add prelude module for convenient access to core types
+- [x] All 1818 tests passing (nextest) + 118 doc tests
+- [x] Zero clippy warnings, clean rustdoc with -D warnings
+
 ### v1.0.0 - Production Release (Q2 2026)
-- [x] Full pandas API compatibility (Complete - 100%)
-  - [x] Core functional methods (assign, pipe, isin, apply)
-  - [x] Selection methods (nlargest, nsmallest, idxmax, idxmin, head, tail, sample)
-  - [x] Ranking and cumulative operations (rank, cumsum, cumprod, etc.)
-  - [x] Statistical analysis (describe, corr, cov, value_counts, quantile)
-  - [x] Data transformation (clip, between, transpose, replace, abs, round)
-  - [x] Time series operations (pct_change, diff, shift)
-  - [x] Column operations (drop_columns, rename_columns)
-  - [x] Utility methods (unique, unique_numeric, memory_usage)
-  - [x] Missing data handling (fillna, dropna, isna)
-  - [x] Advanced missing data methods (fillna_method with ffill/bfill, interpolate)
-  - [x] DataFrame-level aggregations (sum_all, mean_all, std_all, var_all, min_all, max_all)
-  - [x] Multi-column sorting (sort_values, sort_by_columns)
-  - [x] DataFrame merging and joining (merge with inner, left, right, outer join types)
-  - [x] GroupBy operations (groupby_multi with sum, mean, min, max, std, var, count, first, last, agg)
-  - [x] DataFrame concatenation (concat with row-wise and column-wise support)
-  - [x] Conditional operations (where_cond, mask)
-  - [x] Duplicate handling (drop_duplicates with first/last/none)
-  - [x] Column type selection (select_dtypes)
-  - [x] Boolean aggregations (any_numeric, all_numeric, count_valid)
-  - [x] DataFrame ordering (reverse_columns, reverse_rows)
-  - [x] Data reshaping (melt, explode)
-  - [x] Duplicate detection (duplicated)
-  - [x] Advanced statistics (skew, kurtosis, mode, median_all, product_all)
-  - [x] Exponential weighted functions (ewma)
-  - [x] Index operations (iloc, iloc_range, first_valid_index, last_valid_index)
-  - [x] Column naming utilities (add_prefix, add_suffix)
-  - [x] Data filtering and detection (filter_by_mask, notna)
-  - [x] Conversion utilities (copy, to_dict, percentile)
-  - [x] Advanced reshaping (stack, unstack, pivot)
-  - [x] Type conversion (astype for numeric/string conversion)
-  - [x] Element-wise operations (applymap for custom functions)
-  - [x] Multiple aggregations (agg for combining aggregations)
-  - [x] Data type inspection (dtypes for column type information)
-  - [x] Value manipulation (set_values for index-based assignment)
-  - [x] Query operations (query_eq, query_gt, query_lt, query_contains)
-  - [x] Column selection (select_columns for subsetting)
-  - [x] Scalar arithmetic (add_scalar, mul_scalar, sub_scalar, div_scalar)
-  - [x] Mathematical functions (pow, sqrt, log, exp)
-  - [x] Column-wise arithmetic (col_add, col_mul, col_sub, col_div)
-  - [x] Row iteration (iterrows, to_records, items)
-  - [x] Fast scalar access (at, iat, get_value)
-  - [x] Row manipulation (drop_rows, take, sample_frac)
-  - [x] Index management (set_index, reset_index)
-  - [x] DataFrame utilities (shape, size, empty, first_row, last_row)
-  - [x] Column operations (swap_columns, sort_columns, rename_column, get_column_by_index)
-  - [x] DataFrame combination (update, combine, lookup)
-  - [x] Categorical encoding (to_categorical with mapping)
-  - [x] Row hashing (row_hash, duplicated_rows)
-  - [x] Column statistics (var_column, std_column, corr_columns, cov_columns)
-  - [x] String operations (str_lower, str_upper, str_strip, str_contains, str_replace, str_split, str_len)
+- [ ] Full pandas API compatibility (Complete - 100%)
+  - [ ] Core functional methods (assign, pipe, isin, apply)
+  - [ ] Selection methods (nlargest, nsmallest, idxmax, idxmin, head, tail, sample)
+  - [ ] Ranking and cumulative operations (rank, cumsum, cumprod, etc.)
+  - [ ] Statistical analysis (describe, corr, cov, value_counts, quantile)
+  - [ ] Data transformation (clip, between, transpose, replace, abs, round)
+  - [ ] Time series operations (pct_change, diff, shift)
+  - [ ] Column operations (drop_columns, rename_columns)
+  - [ ] Utility methods (unique, unique_numeric, memory_usage)
+  - [ ] Missing data handling (fillna, dropna, isna)
+  - [ ] Advanced missing data methods (fillna_method with ffill/bfill, interpolate)
+  - [ ] DataFrame-level aggregations (sum_all, mean_all, std_all, var_all, min_all, max_all)
+  - [ ] Multi-column sorting (sort_values, sort_by_columns)
+  - [ ] DataFrame merging and joining (merge with inner, left, right, outer join types)
+  - [ ] GroupBy operations (groupby_multi with sum, mean, min, max, std, var, count, first, last, agg)
+  - [ ] DataFrame concatenation (concat with row-wise and column-wise support)
+  - [ ] Conditional operations (where_cond, mask)
+  - [ ] Duplicate handling (drop_duplicates with first/last/none)
+  - [ ] Column type selection (select_dtypes)
+  - [ ] Boolean aggregations (any_numeric, all_numeric, count_valid)
+  - [ ] DataFrame ordering (reverse_columns, reverse_rows)
+  - [ ] Data reshaping (melt, explode)
+  - [ ] Duplicate detection (duplicated)
+  - [ ] Advanced statistics (skew, kurtosis, mode, median_all, product_all)
+  - [ ] Exponential weighted functions (ewma)
+  - [ ] Index operations (iloc, iloc_range, first_valid_index, last_valid_index)
+  - [ ] Column naming utilities (add_prefix, add_suffix)
+  - [ ] Data filtering and detection (filter_by_mask, notna)
+  - [ ] Conversion utilities (copy, to_dict, percentile)
+  - [ ] Advanced reshaping (stack, unstack, pivot)
+  - [ ] Type conversion (astype for numeric/string conversion)
+  - [ ] Element-wise operations (applymap for custom functions)
+  - [ ] Multiple aggregations (agg for combining aggregations)
+  - [ ] Data type inspection (dtypes for column type information)
+  - [ ] Value manipulation (set_values for index-based assignment)
+  - [ ] Query operations (query_eq, query_gt, query_lt, query_contains)
+  - [ ] Column selection (select_columns for subsetting)
+  - [ ] Scalar arithmetic (add_scalar, mul_scalar, sub_scalar, div_scalar)
+  - [ ] Mathematical functions (pow, sqrt, log, exp)
+  - [ ] Column-wise arithmetic (col_add, col_mul, col_sub, col_div)
+  - [ ] Row iteration (iterrows, to_records, items)
+  - [ ] Fast scalar access (at, iat, get_value)
+  - [ ] Row manipulation (drop_rows, take, sample_frac)
+  - [ ] Index management (set_index, reset_index)
+  - [ ] DataFrame utilities (shape, size, empty, first_row, last_row)
+  - [ ] Column operations (swap_columns, sort_columns, rename_column, get_column_by_index)
+  - [ ] DataFrame combination (update, combine, lookup)
+  - [ ] Categorical encoding (to_categorical with mapping)
+  - [ ] Row hashing (row_hash, duplicated_rows)
+  - [ ] Column statistics (var_column, std_column, corr_columns, cov_columns)
+  - [ ] String operations (str_lower, str_upper, str_strip, str_contains, str_replace, str_split, str_len)
   - str_startswith()/str_endswith() for prefix/suffix matching
   - str_pad_left()/str_pad_right() for string padding
   - str_slice() for substring extraction
@@ -399,14 +409,14 @@
   - str_repeat() for repeating strings
   - str_center() for centering strings
   - str_zfill() for zero-filling
-  - [x] Column type conversion (get_column_as_f64, get_column_as_string)
-  - [x] GroupBy with custom functions (groupby_apply)
-  - [x] Complete time series resampling and frequency conversion
-  - [x] Full categorical data support with efficient memory usage
-- [x] Stabilized public API ✓
-- [x] Comprehensive documentation ✓
-- [x] Enterprise support options ✓
-- [x] Long-term support (LTS) commitment ✓
+  - [ ] Column type conversion (get_column_as_f64, get_column_as_string)
+  - [ ] GroupBy with custom functions (groupby_apply)
+  - [ ] Complete time series resampling and frequency conversion
+  - [ ] Full categorical data support with efficient memory usage
+- [ ] Stabilized public API ✓
+- [ ] Comprehensive documentation ✓
+- [ ] Enterprise support options ✓
+- [ ] Long-term support (LTS) commitment ✓
 
 ## Development Priorities
 
@@ -453,7 +463,7 @@ We welcome contributions in the following areas:
 ## Testing & Quality
 
 ### Current Status
-- 1809 tests passing (nextest) + 117 doc tests
+- 1813 tests passing (nextest) + 117 doc tests
 - Comprehensive property-based testing
 - Continuous integration with GitHub Actions
 - Regular performance regression testing
@@ -473,7 +483,7 @@ We welcome contributions in the following areas:
 4. Gather user feedback
 
 ### Release Criteria
-- [x] All tests passing (1809 nextest + 117 doc tests)
+- [x] All tests passing (1818 nextest + 118 doc tests)
 - [x] No critical bugs
 - [x] Documentation complete
 - [x] Performance benchmarks met

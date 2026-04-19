@@ -60,6 +60,30 @@ impl GpuMatrix {
         Ok(self.data.clone())
     }
 
+    /// Create from a row-major flat `Vec<f64>` plus shape.
+    ///
+    /// Used by Python bindings to bridge the ndarray version boundary: the bindings
+    /// link against ndarray 0.16 (required by numpy 0.25), while the root crate uses
+    /// ndarray 0.17. `Vec<f64>` is version-agnostic and is the safe handoff point.
+    pub fn from_raw_parts(data: Vec<f64>, nrows: usize, ncols: usize) -> Result<Self> {
+        let arr = Array2::from_shape_vec((nrows, ncols), data)
+            .map_err(|e| Error::InvalidValue(e.to_string()))?;
+        Ok(Self::new(arr))
+    }
+
+    /// Export to a row-major flat `Vec<f64>` plus shape `(nrows, ncols)`.
+    ///
+    /// Used by Python bindings for the same ndarray version bridge as `from_raw_parts`.
+    /// The iteration order is always logical row-major regardless of the underlying
+    /// memory layout, so a subsequent `Array2::from_shape_vec` with the returned
+    /// shape will reproduce the original matrix exactly.
+    pub fn to_raw_parts(&self) -> (Vec<f64>, usize, usize) {
+        let nrows = self.data.nrows();
+        let ncols = self.data.ncols();
+        let flat: Vec<f64> = self.data.iter().cloned().collect();
+        (flat, nrows, ncols)
+    }
+
     /// Multiply this matrix by another matrix (CPU fallback)
     pub fn dot_cpu(&self, other: &GpuMatrix) -> Result<GpuMatrix> {
         // Check if dimensions are compatible

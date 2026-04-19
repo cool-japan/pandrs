@@ -198,12 +198,14 @@ async fn test_cloud_object_operations() -> Result<()> {
     
     // Test download object
     let downloaded_path = std::env::temp_dir().join("downloaded.txt");
-    let downloaded_str = downloaded_path.to_str().unwrap_or("/tmp/downloaded.txt");
+    let downloaded_fallback = downloaded_path.to_string_lossy().into_owned();
+    let downloaded_str = downloaded_path.to_str().unwrap_or(&downloaded_fallback);
     connector.download_object("test-bucket", "data/test.txt", downloaded_str).await?;
 
     // Test upload object
     let upload_path = std::env::temp_dir().join("upload.txt");
-    let upload_str = upload_path.to_str().unwrap_or("/tmp/upload.txt");
+    let upload_fallback = upload_path.to_string_lossy().into_owned();
+    let upload_str = upload_path.to_str().unwrap_or(&upload_fallback);
     connector.upload_object(upload_str, "test-bucket", "data/uploaded.txt").await?;
     
     // Test delete object

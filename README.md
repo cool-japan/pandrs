@@ -3,16 +3,16 @@
 [![Crate](https://img.shields.io/crates/v/pandrs.svg)](https://crates.io/crates/pandrs)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 [![Documentation](https://docs.rs/pandrs/badge.svg)](https://docs.rs/pandrs)
-![Tests](https://img.shields.io/badge/tests-1809%20passing-brightgreen.svg)
+![Tests](https://img.shields.io/badge/tests-1818%20passing-brightgreen.svg)
 
 A high-performance DataFrame library for Rust, providing pandas-like API with advanced features including SIMD optimization, parallel processing, and distributed computing capabilities.
 
-> **Version 0.3.1 - April 2026**: PandRS is under active development with ongoing quality improvements. With **1809 tests passing**, enhanced documentation, and optimized performance, PandRS delivers a robust pandas-like experience for Rust developers.
+> **Version 0.3.2 - April 2026**: PandRS is under active development with ongoing quality improvements. With **1818 tests passing**, a Cargo virtual workspace consolidating ~55 shared dependencies, a new prelude module, and NASeries.shift() with pandas semantics, PandRS delivers a robust pandas-like experience for Rust developers.
 
 ## Code Quality Highlights
 
-**Comprehensive Testing**: 1809 tests passing (nextest) + 117 doc tests with extensive coverage
-**Active Development**: Ongoing improvements to error handling and code quality (629 Rust files, 248,775 lines of code)
+**Comprehensive Testing**: 1818 tests passing (nextest) + 118 doc tests with extensive coverage
+**Active Development**: Ongoing improvements to error handling and code quality (629 Rust files across src/, tests/, examples/, and benches/, 248,775 lines of code)
 **Production-Ready Error Handling**: Established error handling patterns with descriptive messages
 
 ## Overview
@@ -29,24 +29,48 @@ PandRS is a comprehensive data manipulation library that brings the power and fa
 
 ```rust
 use pandrs::{DataFrame, Series};
-use std::collections::HashMap;
+use pandrs::dataframe::{AggFunc, GroupByExt, NamedAgg};
 
-// Create a DataFrame
+// Create a DataFrame.
 let mut df = DataFrame::new();
-df.add_column("name".to_string(), 
-    Series::from_vec(vec!["Alice", "Bob", "Carol"], Some("name")))?;
-df.add_column("age".to_string(),
-    Series::from_vec(vec![30, 25, 35], Some("age")))?;
-df.add_column("salary".to_string(),
-    Series::from_vec(vec![75000.0, 65000.0, 85000.0], Some("salary")))?;
+df.add_column(
+    "name".to_string(),
+    Series::new(
+        vec!["Alice".to_string(), "Bob".to_string(), "Carol".to_string()],
+        Some("name".to_string()),
+    )?,
+)?;
+df.add_column(
+    "age".to_string(),
+    Series::new(vec![30i64, 25, 35], Some("age".to_string()))?,
+)?;
+df.add_column(
+    "department".to_string(),
+    Series::new(
+        vec![
+            "Engineering".to_string(),
+            "Engineering".to_string(),
+            "Sales".to_string(),
+        ],
+        Some("department".to_string()),
+    )?,
+)?;
+df.add_column(
+    "salary".to_string(),
+    Series::new(vec![75_000i64, 65_000, 85_000], Some("salary".to_string()))?,
+)?;
 
-// Perform operations
-let filtered = df.filter("age > 25")?;
-let mean_salary = df.column("salary")?.mean()?;
-let grouped = df.groupby(vec!["department"])?.agg(HashMap::from([
-    ("salary".to_string(), vec!["mean", "sum"]),
-    ("age".to_string(), vec!["max"])
-]))?;
+// Column-level numeric summary.
+let mean_salary = df.mean("salary")?;
+
+// GroupBy + named aggregations. Use the explicit trait path because
+// `DataFrame` also exposes an inherent `groupby(&str)` from the pivot
+// module which shadows the extension method.
+let grouped = GroupByExt::groupby(&df, &["department"])?.agg(vec![
+    NamedAgg::new("salary".to_string(), AggFunc::Mean, "salary_mean".to_string()),
+    NamedAgg::new("salary".to_string(), AggFunc::Sum, "salary_sum".to_string()),
+    NamedAgg::new("age".to_string(), AggFunc::Max, "age_max".to_string()),
+])?;
 ```
 
 ## Core Features
@@ -211,7 +235,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-pandrs = "0.3.1"
+pandrs = "0.3.2"
 ```
 
 ### Feature Flags
@@ -220,7 +244,7 @@ Enable additional functionality with feature flags:
 
 ```toml
 [dependencies]
-pandrs = { version = "0.3.1", features = ["optimized"] }
+pandrs = { version = "0.3.2", features = ["optimized"] }
 ```
 
 Available features:
@@ -306,28 +330,57 @@ The `examples/` directory contains comprehensive examples demonstrating all majo
 ### Basic Data Analysis
 
 ```rust
-use pandrs::prelude::*;
+use pandrs::{DataFrame, Series};
+use pandrs::dataframe::{AggFunc, GroupByExt, NamedAgg};
 
-let df = DataFrame::read_csv("data.csv", CsvReadOptions::default())?;
+// Build a DataFrame inline. (Use `pandrs::io::read_csv(path, has_header)?`
+// for CSV ingestion; `DataFrame::read_csv` is reserved for future API work.)
+let mut df = DataFrame::new();
+df.add_column(
+    "city".to_string(),
+    Series::new(
+        vec!["Tallinn".to_string(), "Tallinn".to_string(), "Tartu".to_string()],
+        Some("city".to_string()),
+    )?,
+)?;
+df.add_column(
+    "occupation".to_string(),
+    Series::new(
+        vec!["Engineer".to_string(), "Engineer".to_string(), "Analyst".to_string()],
+        Some("occupation".to_string()),
+    )?,
+)?;
+df.add_column(
+    "age".to_string(),
+    Series::new(vec![21i64, 34, 40], Some("age".to_string()))?,
+)?;
+df.add_column(
+    "income".to_string(),
+    Series::new(vec![55_000i64, 72_000, 81_000], Some("income".to_string()))?,
+)?;
 
-// Basic statistics
-let stats = df.describe()?;
-println!("Data statistics:\n{}", stats);
-
-// Filtering and aggregation
-let result = df
-    .filter("age >= 18 && income > 50000")?
-    .groupby(vec!["city", "occupation"])?
-    .agg(HashMap::from([
-        ("income".to_string(), vec!["mean", "median", "std"]),
-        ("age".to_string(), vec!["mean"])
-    ]))?
-    .sort_values(vec!["income_mean"], vec![false])?;
+// Grouped aggregation with explicit named aggregations.
+let result = GroupByExt::groupby(&df, &["city", "occupation"])?.agg(vec![
+    NamedAgg::new("income".to_string(), AggFunc::Mean, "income_mean".to_string()),
+    NamedAgg::new("income".to_string(), AggFunc::Median, "income_median".to_string()),
+    NamedAgg::new("income".to_string(), AggFunc::Std, "income_std".to_string()),
+    NamedAgg::new("age".to_string(), AggFunc::Mean, "age_mean".to_string()),
+])?;
 ```
+
+> Note: the `Time Series Analysis` and `Machine Learning Pipeline` snippets
+> below are illustrative of the target pandas-like API and still reference
+> helpers (`fillna`, `resample`, `ewm`, `get_dummies`, `apply_columns`,
+> `DataFrame::read_parquet`) that are not yet wired up on the stable
+> `DataFrame`. They are being aligned with the real surface in a follow-up;
+> see `examples/` for snippets that build and run today.
 
 ### Time Series Analysis
 
-```rust
+```rust,ignore
+// NOTE: This snippet shows the target API. Some helpers (resample, ewm,
+// DataFrame::read_csv on the base DataFrame) are not yet wired up on the
+// stable DataFrame. See examples/time_series_example.rs for runnable code.
 use pandrs::prelude::*;
 use chrono::{Duration, Utc};
 
@@ -357,7 +410,11 @@ let ewm = daily.ewm(EwmOptions {
 
 ### Machine Learning Pipeline
 
-```rust
+```rust,ignore
+// NOTE: This snippet shows the target API. Some helpers (read_parquet on the
+// base DataFrame, fillna, get_dummies, apply_columns) are not yet wired up
+// on the stable DataFrame. See examples/optimized_ml_pipeline_example.rs for
+// runnable code.
 use pandrs::prelude::*;
 
 // Load and preprocess data

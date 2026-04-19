@@ -1,5 +1,6 @@
 #![allow(clippy::result_large_err)]
 use pandrs::series::Series;
+use pandrs::NA;
 
 #[test]
 fn test_series_creation() {
@@ -63,4 +64,32 @@ fn test_series_with_strings() {
     assert_eq!(series.len(), 3);
     assert_eq!(series.name(), Some(&"fruits".to_string()));
     assert_eq!(series.get(0), Some(&"apple".to_string()));
+}
+
+#[test]
+fn test_issue_5_series_shift() -> Result<(), Box<dyn std::error::Error>> {
+    let s = Series::new(vec![1, 2, 3, 4, 5], Some("x".to_string()))?;
+
+    let forward = s.shift(1)?;
+    assert_eq!(forward.len(), 5);
+    assert_eq!(forward.name(), Some(&"x".to_string()));
+    assert_eq!(forward.values()[0], NA::NA);
+    assert_eq!(forward.values()[1], NA::Value(1));
+    assert_eq!(forward.values()[4], NA::Value(4));
+
+    let backward = s.shift(-2)?;
+    assert_eq!(backward.values()[0], NA::Value(3));
+    assert_eq!(backward.values()[2], NA::Value(5));
+    assert_eq!(backward.values()[3], NA::NA);
+    assert_eq!(backward.values()[4], NA::NA);
+
+    let overshoot = s.shift(10)?;
+    assert_eq!(overshoot.len(), 5);
+    assert!(overshoot.values().iter().all(|v| v.is_na()));
+
+    let zero = s.shift(0)?;
+    assert_eq!(zero.values()[0], NA::Value(1));
+    assert_eq!(zero.values()[4], NA::Value(5));
+
+    Ok(())
 }

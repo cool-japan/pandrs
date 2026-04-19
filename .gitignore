@@ -10,6 +10,8 @@
 **/*.rs.backup
 **/*.rs.orig
 **/*.rs.old
+**/*.rs.backup2
+**/*.backup2
 
 # Miscellaneous
 .ipynb_checkpoints/

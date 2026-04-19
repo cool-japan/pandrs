@@ -5,6 +5,42 @@ All notable changes to PandRS will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.2] - 2026-04-19
+
+### Changed
+
+- Converted the root `Cargo.toml` into a Cargo virtual workspace and hoisted the
+  common dependency set (~55 entries) into `[workspace.dependencies]`, so
+  subcrates inherit consistent versions via `*.workspace = true`.
+- `py_bindings` subcrate now inherits `version`, `authors`, `edition`,
+  `license`, and related metadata from the workspace root.
+- Documented the Pure Rust feature pins for `datafusion`, `arrow`, and
+  `parquet` (`flate2-zlib-rs` backend) inline where they are declared.
+
+### Fixed
+
+- Resolved `clippy::assertions_on_constants` violations in
+  `tests/distributed_*.rs`, `src/stats/gpu.rs`, and
+  `src/stats/sampling/mod.rs`.
+- Replaced hardcoded `/tmp/` paths in the plugin and cloud-storage integration
+  tests with `std::env::temp_dir()` so tests are portable across platforms.
+- Weakened the assertion in `stats::sampling::test_simple_sample` to reflect
+  the true invariant: `sample_impl` never adds columns (a known pre-existing
+  limitation that the test had been asserting against incorrectly).
+- Excluded `ParquetCompression::Zstd` from `test_parquet_compression_options`,
+  since Zstd is intentionally disabled under the Pure Rust build.
+
+### Removed
+
+- Dropped the unused `sql` feature from `py_bindings/Cargo.toml` — the feature
+  never existed on the parent `pandrs` crate and only produced a warning.
+- Purged 134 stale `*.backup2` / `*.rs.backup2` files from the tree and added
+  matching patterns to `.gitignore` to prevent reintroduction.
+
+### Notes
+
+- 1813 tests pass (up from 1809 in 0.3.1). No public API changes.
+
 ## [0.3.1] - 2026-04-19
 
 ### Changed

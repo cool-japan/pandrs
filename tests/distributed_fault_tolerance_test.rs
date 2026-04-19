@@ -37,6 +37,5 @@ mod tests {
     #[test]
     fn test_distributed_feature_disabled() {
         // Placeholder test when distributed feature is disabled
-        assert!(true);
     }
 }

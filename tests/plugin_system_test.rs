@@ -433,13 +433,11 @@ fn test_pipeline_missing_plugin_returns_error() {
     let registry = Arc::new(registry);
 
     let mut src_opts = HashMap::new();
+    let dummy_csv_path = std::env::temp_dir().join("dummy.csv");
+    let fallback = dummy_csv_path.to_string_lossy().into_owned();
     src_opts.insert(
         "path".to_string(),
-        std::env::temp_dir()
-            .join("dummy.csv")
-            .to_str()
-            .unwrap_or("/tmp/dummy.csv")
-            .to_string(),
+        dummy_csv_path.to_str().unwrap_or(&fallback).to_string(),
     );
 
     let pipeline = PluginPipeline::new(registry)

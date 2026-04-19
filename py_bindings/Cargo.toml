@@ -1,11 +1,12 @@
 [package]
 name = "pandrs-python"
-version = "0.3.1"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
 description = "Python bindings for PandRS (Rust implementation of pandas-like DataFrame)"
-authors = ["COOLJAPAN OU (Team Kitasan)"]
-license = "Apache-2.0"
-repository = "https://github.com/cool-japan/pandrs"
 
 [lib]
 name = "pandrs"
@@ -13,13 +14,19 @@ crate-type = ["cdylib"]
 
 [dependencies]
 pandrs = { path = "..", default-features = false }
-pyo3 = { version = "0.25.0", features = ["extension-module", "abi3-py38"] }
+pyo3 = { version = "0.25.0", features = ["abi3-py38", "multiple-pymethods"] }
 numpy = "0.25.0"
+# pinned to 0.16.1 - numpy 0.25 ABI requires this; root uses 0.17.2 via workspace
 ndarray = "0.16.1"
 
 [features]
-default = ["parquet", "sql"]
+# Dropped `sql` — py_bindings/src has no SQL code; pandrs has no top-level `sql`
+# feature (SQL lives under `distributed` via datafusion). Python test guards with
+# hasattr(), so removing the feature doesn't change runtime behavior.
+default = ["parquet"]
 cuda = ["pandrs/cuda"]
 parquet = ["pandrs/parquet"]
-sql = ["pandrs/sql"]
 distributed = ["pandrs/distributed"]
+
+[lints]
+workspace = true

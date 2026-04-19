@@ -489,6 +489,32 @@ mod tests {
         assert!(!caps.is_empty());
     }
 
+    /// Regression test for issue #7:
+    /// `simd_capabilities()` must compile and return a sensible
+    /// value on non-x86_64 platforms (aarch64, arm, etc.).
+    /// The original bug was a `let mut caps = Vec::new();` whose
+    /// element type could not be inferred once the x86_64-only
+    /// `caps.push("...")` calls were `#[cfg]`-gated out.
+    #[test]
+    fn test_issue_7_simd_capabilities_compiles_on_non_x86_64() {
+        // This merely calling the function is the regression check —
+        // a type-inference failure would prevent the crate from
+        // compiling on the current host in the first place.
+        let caps = simd_capabilities();
+        assert!(
+            !caps.is_empty(),
+            "simd_capabilities() must never return empty"
+        );
+
+        #[cfg(not(target_arch = "x86_64"))]
+        {
+            assert_eq!(
+                caps, "None",
+                "on non-x86_64 platforms simd_capabilities() must report \"None\""
+            );
+        }
+    }
+
     #[test]
     fn test_empty_arrays() {
         let empty_f64: Vec<f64> = vec![];

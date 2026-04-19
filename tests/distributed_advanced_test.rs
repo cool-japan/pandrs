@@ -37,6 +37,5 @@ mod tests {
     #[test]
     fn test_distributed_feature_disabled() {
         // This test runs when distributed feature is disabled
-        assert!(true, "Distributed feature is disabled");
     }
 }

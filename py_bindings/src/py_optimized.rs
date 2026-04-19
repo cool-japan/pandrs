@@ -1,23 +1,25 @@
 use numpy::IntoPyArray;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
-use pyo3::types::{PyDict, PyList};
+use pyo3::types::{PyDict, PyList, PyType};
 use std::collections::HashMap;
 // Import the parent crate (using explicit paths)
-use ::pandrs::{
-    OptimizedDataFrame, LazyFrame, AggregateOp, 
-    Column, Int64Column, Float64Column, StringColumn, BooleanColumn
-};
 use ::pandrs::column::ColumnTrait;
+use ::pandrs::{
+    AggregateOp, BooleanColumn, Column, Float64Column, Int64Column, LazyFrame, OptimizedDataFrame,
+    StringColumn,
+};
 
 // Import the string pool implementation
 pub mod py_string_pool;
-use self::py_string_pool::{get_or_init_global_pool, py_string_list_to_indices, indices_to_py_string_list};
+use self::py_string_pool::{
+    get_or_init_global_pool, indices_to_py_string_list, py_string_list_to_indices,
+};
 
 /// Python wrapper for optimized pandrs DataFrame
 #[pyclass(name = "OptimizedDataFrame")]
 pub struct PyOptimizedDataFrame {
-    inner: OptimizedDataFrame,
+    pub(crate) inner: OptimizedDataFrame,
 }
 
 #[pymethods]
@@ -26,7 +28,7 @@ impl PyOptimizedDataFrame {
     #[new]
     fn new() -> Self {
         PyOptimizedDataFrame {
-            inner: OptimizedDataFrame::new()
+            inner: OptimizedDataFrame::new(),
         }
     }
 
@@ -35,7 +37,10 @@ impl PyOptimizedDataFrame {
         let column = Int64Column::new(data);
         match self.inner.add_column(name, Column::Int64(column)) {
             Ok(_) => Ok(()),
-            Err(e) => Err(PyValueError::new_err(format!("Failed to add column: {}", e))),
+            Err(e) => Err(PyValueError::new_err(format!(
+                "Failed to add column: {}",
+                e
+            ))),
         }
     }
 
@@ -44,7 +49,10 @@ impl PyOptimizedDataFrame {
         let column = Float64Column::new(data);
         match self.inner.add_column(name, Column::Float64(column)) {
             Ok(_) => Ok(()),
-            Err(e) => Err(PyValueError::new_err(format!("Failed to add column: {}", e))),
+            Err(e) => Err(PyValueError::new_err(format!(
+                "Failed to add column: {}",
+                e
+            ))),
         }
     }
 
@@ -54,7 +62,7 @@ impl PyOptimizedDataFrame {
         // String pool optimization (sharing duplicate strings)
         let pool = get_or_init_global_pool();
         let mut string_indices = Vec::with_capacity(data.len());
-        
+
         // Add each string to the pool and get its index
         for s in data {
             let idx = match pool.lock() {
@@ -63,37 +71,45 @@ impl PyOptimizedDataFrame {
             };
             string_indices.push(idx);
         }
-        
+
         // Create a StringColumn from the indices (stores indices instead of actual strings)
-        let interned_strings: Vec<String> = string_indices.iter()
-            .map(|&idx| idx.to_string())
-            .collect();
-        
+        let interned_strings: Vec<String> =
+            string_indices.iter().map(|&idx| idx.to_string()).collect();
+
         // Create a string column that retains the original index information
         let column = StringColumn::new(interned_strings);
         match self.inner.add_column(name, Column::String(column)) {
             Ok(_) => Ok(()),
-            Err(e) => Err(PyValueError::new_err(format!("Failed to add column: {}", e))),
+            Err(e) => Err(PyValueError::new_err(format!(
+                "Failed to add column: {}",
+                e
+            ))),
         }
     }
-    
+
     /// Add a column to the DataFrame directly from a Python list
-    fn add_string_column_from_pylist(&mut self, py: Python<'_>, name: String, data: PyObject) -> PyResult<()> {
+    fn add_string_column_from_pylist(
+        &mut self,
+        py: Python<'_>,
+        name: String,
+        data: PyObject,
+    ) -> PyResult<()> {
         // Downcast to a list
         let list_obj = data.downcast_bound::<PyList>(py)?;
-        
+
         // Efficiently convert using the string pool
-        let indices = py_string_list_to_indices(py, &list_obj)?;
-        
+        let indices = py_string_list_to_indices(py, list_obj)?;
+
         // Create a StringColumn from the indices
-        let interned_strings: Vec<String> = indices.iter()
-            .map(|&idx| idx.to_string())
-            .collect();
-        
+        let interned_strings: Vec<String> = indices.iter().map(|&idx| idx.to_string()).collect();
+
         let column = StringColumn::new(interned_strings);
         match self.inner.add_column(name, Column::String(column)) {
             Ok(_) => Ok(()),
-            Err(e) => Err(PyValueError::new_err(format!("Failed to add column: {}", e))),
+            Err(e) => Err(PyValueError::new_err(format!(
+                "Failed to add column: {}",
+                e
+            ))),
         }
     }
 
@@ -102,7 +118,10 @@ impl PyOptimizedDataFrame {
         let column = BooleanColumn::new(data);
         match self.inner.add_column(name, Column::Boolean(column)) {
             Ok(_) => Ok(()),
-            Err(e) => Err(PyValueError::new_err(format!("Failed to add column: {}", e))),
+            Err(e) => Err(PyValueError::new_err(format!(
+                "Failed to add column: {}",
+                e
+            ))),
         }
     }
 
@@ -125,17 +144,20 @@ impl PyOptimizedDataFrame {
         // Convert Python dict to Rust HashMap
         let dict = columns.downcast_bound::<PyDict>(py)?;
         let mut column_map = HashMap::new();
-        
+
         for item in dict.iter() {
             let (key, value) = item;
             let old_name: String = key.extract()?;
             let new_name: String = value.extract()?;
             column_map.insert(old_name, new_name);
         }
-        
+
         match self.inner.rename_columns(&column_map) {
             Ok(_) => Ok(()),
-            Err(e) => Err(PyValueError::new_err(format!("Failed to rename columns: {}", e))),
+            Err(e) => Err(PyValueError::new_err(format!(
+                "Failed to rename columns: {}",
+                e
+            ))),
         }
     }
 
@@ -143,7 +165,10 @@ impl PyOptimizedDataFrame {
     fn set_column_names(&mut self, names: Vec<String>) -> PyResult<()> {
         match self.inner.set_column_names(names) {
             Ok(_) => Ok(()),
-            Err(e) => Err(PyValueError::new_err(format!("Failed to set column names: {}", e))),
+            Err(e) => Err(PyValueError::new_err(format!(
+                "Failed to set column names: {}",
+                e
+            ))),
         }
     }
 
@@ -169,25 +194,30 @@ impl PyOptimizedDataFrame {
     fn to_pandas(&self, py: Python<'_>) -> PyResult<PyObject> {
         let pandas = py.import("pandas")?;
         let pd_df = pandas.getattr("DataFrame")?;
-        
+
         // Convert to dictionary
         let dict = PyDict::new(py);
-        
+
         // Add each column to the dictionary with optimized type conversion
         for name in self.inner.column_names() {
             let col_view = match self.inner.column(name) {
                 Ok(view) => view,
-                Err(e) => return Err(PyValueError::new_err(format!("Failed to get column: {}", e))),
+                Err(e) => {
+                    return Err(PyValueError::new_err(format!(
+                        "Failed to get column: {}",
+                        e
+                    )))
+                }
             };
-            
+
             // Type-specific conversion to NumPy arrays for better performance
             if let Some(int_col) = col_view.as_int64() {
                 let mut values = Vec::with_capacity(int_col.len());
                 for i in 0..int_col.len() {
                     if let Ok(Some(val)) = int_col.get(i) {
-                        values.push(val as f64);  // NumPy uses float64 as default
+                        values.push(val as f64); // NumPy uses float64 as default
                     } else {
-                        values.push(f64::NAN);  // Use NaN for null values
+                        values.push(f64::NAN); // Use NaN for null values
                     }
                 }
                 let np_array = values.into_pyarray(py);
@@ -207,7 +237,7 @@ impl PyOptimizedDataFrame {
                 // Efficiently convert using the string pool
                 let pool = get_or_init_global_pool();
                 let mut string_indices = Vec::with_capacity(string_col.len());
-                
+
                 // Restore values from indices in the string column
                 for i in 0..string_col.len() {
                     if let Ok(Some(val)) = string_col.get(i) {
@@ -220,8 +250,10 @@ impl PyOptimizedDataFrame {
                                 Ok(mut pool_guard) => {
                                     let idx = pool_guard.add(val.to_string());
                                     string_indices.push(idx);
-                                },
-                                Err(_) => return Err(PyValueError::new_err("Failed to lock string pool")),
+                                }
+                                Err(_) => {
+                                    return Err(PyValueError::new_err("Failed to lock string pool"))
+                                }
                             }
                         }
                     } else {
@@ -230,12 +262,14 @@ impl PyOptimizedDataFrame {
                             Ok(mut pool_guard) => {
                                 let idx = pool_guard.add(String::new());
                                 string_indices.push(idx);
-                            },
-                            Err(_) => return Err(PyValueError::new_err("Failed to lock string pool")),
+                            }
+                            Err(_) => {
+                                return Err(PyValueError::new_err("Failed to lock string pool"))
+                            }
                         }
                     }
                 }
-                
+
                 // Convert indices to a Python string list
                 let py_string_list = indices_to_py_string_list(py, &string_indices)?;
                 dict.set_item(name, py_string_list)?;
@@ -252,12 +286,12 @@ impl PyOptimizedDataFrame {
                 dict.set_item(name, py_list)?;
             }
         }
-        
+
         // Create pandas DataFrame
         let pd_df_obj = pd_df.call1((dict,))?;
         Ok(pd_df_obj.into())
     }
-    
+
     /// Create an optimized DataFrame from a pandas DataFrame
     #[staticmethod]
     fn from_pandas(py: Python<'_>, pandas_df: PyObject) -> PyResult<Self> {
@@ -266,17 +300,17 @@ impl PyOptimizedDataFrame {
         let columns = pd_obj.getattr("columns")?;
         let columns_vec = columns.extract::<Vec<String>>()?;
         let mut df = OptimizedDataFrame::new();
-        
+
         // Efficiently process each column
         for col_name in &columns_vec {
             // Access column using pandas' __getitem__
             let get_item = pd_obj.getattr("__getitem__")?;
             let pd_col = get_item.call1((col_name,))?;
-            
+
             // Get dtype info to determine the best column type
             let dtype = pd_col.getattr("dtype")?;
             let dtype_str = dtype.str()?.to_string();
-            
+
             // Specialized processing based on data type
             if dtype_str.contains("int") {
                 // Use numpy's to_list to get values as Python list
@@ -284,54 +318,74 @@ impl PyOptimizedDataFrame {
                 let int_values: Vec<i64> = values.extract()?;
                 let column = Int64Column::new(int_values);
                 match df.add_column(col_name.clone(), Column::Int64(column)) {
-                    Ok(_) => {},
-                    Err(e) => return Err(PyValueError::new_err(format!("Failed to add int column: {}", e))),
+                    Ok(_) => {}
+                    Err(e) => {
+                        return Err(PyValueError::new_err(format!(
+                            "Failed to add int column: {}",
+                            e
+                        )))
+                    }
                 }
             } else if dtype_str.contains("float") {
                 let values = pd_col.call_method0("to_list")?;
                 let float_values: Vec<f64> = values.extract()?;
                 let column = Float64Column::new(float_values);
                 match df.add_column(col_name.clone(), Column::Float64(column)) {
-                    Ok(_) => {},
-                    Err(e) => return Err(PyValueError::new_err(format!("Failed to add float column: {}", e))),
+                    Ok(_) => {}
+                    Err(e) => {
+                        return Err(PyValueError::new_err(format!(
+                            "Failed to add float column: {}",
+                            e
+                        )))
+                    }
                 }
             } else if dtype_str.contains("bool") {
                 let values = pd_col.call_method0("to_list")?;
                 let bool_values: Vec<bool> = values.extract()?;
                 let column = BooleanColumn::new(bool_values);
                 match df.add_column(col_name.clone(), Column::Boolean(column)) {
-                    Ok(_) => {},
-                    Err(e) => return Err(PyValueError::new_err(format!("Failed to add bool column: {}", e))),
+                    Ok(_) => {}
+                    Err(e) => {
+                        return Err(PyValueError::new_err(format!(
+                            "Failed to add bool column: {}",
+                            e
+                        )))
+                    }
                 }
             } else {
                 // Default to string for anything else - use string pool for efficiency
                 let values = pd_col.call_method0("to_list")?;
                 let py_list = values.downcast::<PyList>()?;
-                
+
                 // Efficiently convert using the string pool
-                let indices = py_string_list_to_indices(py, &py_list)?;
-                
+                let indices = py_string_list_to_indices(py, py_list)?;
+
                 // Create a string column from the indices
-                let interned_strings: Vec<String> = indices.iter()
-                    .map(|&idx| idx.to_string())
-                    .collect();
-                
+                let interned_strings: Vec<String> =
+                    indices.iter().map(|&idx| idx.to_string()).collect();
+
                 let column = StringColumn::new(interned_strings);
                 match df.add_column(col_name.clone(), Column::String(column)) {
-                    Ok(_) => {},
-                    Err(e) => return Err(PyValueError::new_err(format!("Failed to add string column: {}", e))),
+                    Ok(_) => {}
+                    Err(e) => {
+                        return Err(PyValueError::new_err(format!(
+                            "Failed to add string column: {}",
+                            e
+                        )))
+                    }
                 }
             }
         }
-        
+
         Ok(PyOptimizedDataFrame { inner: df })
     }
 
     /// Write DataFrame to Parquet file with optional compression
     #[cfg(feature = "parquet")]
+    #[pyo3(signature = (path, compression=None))]
     fn to_parquet(&self, path: &str, compression: Option<&str>) -> PyResult<()> {
         use ::pandrs::io::parquet::{write_parquet, ParquetCompression};
-        
+
         let compression_type = compression.map(|comp| match comp {
             "snappy" => ParquetCompression::Snappy,
             "gzip" => ParquetCompression::Gzip,
@@ -340,25 +394,31 @@ impl PyOptimizedDataFrame {
             "zstd" => ParquetCompression::Zstd,
             _ => ParquetCompression::Snappy,
         });
-        
+
         match write_parquet(&self.inner, path, compression_type) {
             Ok(_) => Ok(()),
-            Err(e) => Err(PyValueError::new_err(format!("Failed to write Parquet: {}", e))),
+            Err(e) => Err(PyValueError::new_err(format!(
+                "Failed to write Parquet: {}",
+                e
+            ))),
         }
     }
 
-    /// Read DataFrame from Parquet file  
+    /// Read DataFrame from Parquet file
     #[cfg(feature = "parquet")]
     #[classmethod]
     fn from_parquet(_cls: &Bound<'_, PyType>, path: &str) -> PyResult<Self> {
-        use ::pandrs::io::parquet::read_parquet;
-        
-        match read_parquet(path) {
+        // Use OptimizedDataFrame's own from_parquet (defined in
+        // `src/optimized/dataframe/io.rs`), which returns
+        // `Result<OptimizedDataFrame>` — no conversion required.
+        match OptimizedDataFrame::from_parquet(path) {
             Ok(df) => Ok(PyOptimizedDataFrame { inner: df }),
-            Err(e) => Err(PyValueError::new_err(format!("Failed to read Parquet: {}", e))),
+            Err(e) => Err(PyValueError::new_err(format!(
+                "Failed to read Parquet: {}",
+                e
+            ))),
         }
     }
-
 }
 
 /// Python wrapper for LazyFrame
@@ -373,16 +433,16 @@ impl PyLazyFrame {
     #[new]
     fn new(df: &PyOptimizedDataFrame) -> Self {
         PyLazyFrame {
-            inner: LazyFrame::new(df.inner.clone())
+            inner: LazyFrame::new(df.inner.clone()),
         }
     }
-    
+
     /// Filter rows by a boolean column
     fn filter(&self, column: String) -> PyResult<Self> {
         let filtered = self.inner.clone().filter(&column);
         Ok(PyLazyFrame { inner: filtered })
     }
-    
+
     /// Select columns to keep
     fn select(&self, columns: Vec<String>) -> PyResult<Self> {
         // Convert the list of strings to a slice
@@ -390,28 +450,34 @@ impl PyLazyFrame {
         let selected = self.inner.clone().select(&columns_str);
         Ok(PyLazyFrame { inner: selected })
     }
-    
+
     /// Perform aggregate operations
-    fn aggregate(&self, group_by: Vec<String>, agg_list: Vec<(String, String, String)>) -> PyResult<Self> {
+    fn aggregate(
+        &self,
+        group_by: Vec<String>,
+        agg_list: Vec<(String, String, String)>,
+    ) -> PyResult<Self> {
         // Convert string operation names to AggregateOp enum
-        let agg_ops: Result<Vec<(String, AggregateOp, String)>, PyErr> = agg_list.into_iter()
-            .map(|(col, op_str, new_name)| {
-                match op_str.as_str() {
-                    "sum" => Ok((col, AggregateOp::Sum, new_name)),
-                    "mean" | "avg" | "average" => Ok((col, AggregateOp::Mean, new_name)),
-                    "min" => Ok((col, AggregateOp::Min, new_name)),
-                    "max" => Ok((col, AggregateOp::Max, new_name)),
-                    "count" => Ok((col, AggregateOp::Count, new_name)),
-                    _ => Err(PyValueError::new_err(format!("Unsupported aggregate operation: {}", op_str))),
-                }
+        let agg_ops: Result<Vec<(String, AggregateOp, String)>, PyErr> = agg_list
+            .into_iter()
+            .map(|(col, op_str, new_name)| match op_str.as_str() {
+                "sum" => Ok((col, AggregateOp::Sum, new_name)),
+                "mean" | "avg" | "average" => Ok((col, AggregateOp::Mean, new_name)),
+                "min" => Ok((col, AggregateOp::Min, new_name)),
+                "max" => Ok((col, AggregateOp::Max, new_name)),
+                "count" => Ok((col, AggregateOp::Count, new_name)),
+                _ => Err(PyValueError::new_err(format!(
+                    "Unsupported aggregate operation: {}",
+                    op_str
+                ))),
             })
             .collect();
-            
+
         let aggs = agg_ops?;
         let aggregated = self.inner.clone().aggregate(group_by, aggs);
         Ok(PyLazyFrame { inner: aggregated })
     }
-    
+
     /// Execute all the lazy operations and return a materialized DataFrame
     fn execute(&self) -> PyResult<PyOptimizedDataFrame> {
         match self.inner.clone().execute() {
@@ -426,9 +492,9 @@ pub fn register_optimized_types(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Register the basic optimized classes
     m.add_class::<PyOptimizedDataFrame>()?;
     m.add_class::<PyLazyFrame>()?;
-    
+
     // Register the string pool optimization classes
     py_string_pool::register_string_pool_types(m)?;
-    
+
     Ok(())
 }
