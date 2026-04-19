@@ -16,9 +16,6 @@ use crate::optimized::split_dataframe::io::ParquetCompression;
 
 use super::core::{ColumnView, JsonOrient, OptimizedDataFrame};
 
-#[cfg(feature = "excel")]
-use simple_excel_writer::{Sheet, Workbook};
-
 impl OptimizedDataFrame {
     /// Create a DataFrame from a CSV file (high-performance implementation)
     /// # Arguments

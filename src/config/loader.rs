@@ -229,6 +229,53 @@ pub fn save_to_file(config: &PandRSConfig, path: &Path) -> Result<()> {
     })
 }
 
+/// Resolve the user configuration directory using only `std::env`.
+///
+/// This is a Pure Rust replacement for `dirs::config_dir()` that follows the
+/// same platform conventions:
+///
+/// - **Linux / BSD / other Unix**: `$XDG_CONFIG_HOME` when set and non-empty,
+///   otherwise `$HOME/.config`.
+/// - **macOS**: `$HOME/Library/Application Support`.
+/// - **Windows**: `%APPDATA%` when set and non-empty, otherwise
+///   `%USERPROFILE%\AppData\Roaming`.
+///
+/// Returns `None` when the required environment variables are unavailable,
+/// matching the original behavior expected by the caller.
+fn user_config_dir() -> Option<std::path::PathBuf> {
+    #[cfg(target_os = "macos")]
+    {
+        let home = env::var("HOME").ok().filter(|h| !h.is_empty())?;
+        let mut path = std::path::PathBuf::from(home);
+        path.push("Library");
+        path.push("Application Support");
+        Some(path)
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        if let Some(appdata) = env::var("APPDATA").ok().filter(|v| !v.is_empty()) {
+            return Some(std::path::PathBuf::from(appdata));
+        }
+        let profile = env::var("USERPROFILE").ok().filter(|v| !v.is_empty())?;
+        let mut path = std::path::PathBuf::from(profile);
+        path.push("AppData");
+        path.push("Roaming");
+        Some(path)
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        if let Some(xdg) = env::var("XDG_CONFIG_HOME").ok().filter(|v| !v.is_empty()) {
+            return Some(std::path::PathBuf::from(xdg));
+        }
+        let home = env::var("HOME").ok().filter(|h| !h.is_empty())?;
+        let mut path = std::path::PathBuf::from(home);
+        path.push(".config");
+        Some(path)
+    }
+}
+
 /// Get configuration file paths in order of precedence
 pub fn get_config_file_paths() -> Vec<std::path::PathBuf> {
     let mut paths = Vec::new();
@@ -239,7 +286,7 @@ pub fn get_config_file_paths() -> Vec<std::path::PathBuf> {
     paths.push("pandrs.toml".into());
 
     // User config directory
-    if let Some(config_dir) = dirs::config_dir() {
+    if let Some(config_dir) = user_config_dir() {
         let pandrs_dir = config_dir.join("pandrs");
         paths.push(pandrs_dir.join("config.yml"));
         paths.push(pandrs_dir.join("config.yaml"));

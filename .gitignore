@@ -94,3 +94,6 @@ jupyter_output/*.html
 
 # Rustc ICE dumps
 rustc-ice-*.txt
+
+# LLM
+**/.claude/

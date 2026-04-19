@@ -5,6 +5,69 @@ All notable changes to PandRS will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1] - 2026-04-19
+
+### Changed
+
+#### Pure Rust Policy — Excel/xlsx (in-tree, OxiARC-backed)
+
+- Replaced `simple_excel_writer` + `calamine` with an in-tree xlsx reader/writer built on `oxiarc-archive` (Pure Rust ZIP) and `quick-xml`. The `excel` feature no longer pulls `zip`, `flate2`, or `miniz_oxide`. Public xlsx API is fully preserved; advanced features (formulas/formatting/named-ranges) behave the same as they did under the previous path, with formula/named-range tracking deferred to a follow-up.
+- New internal module `src/io/xlsx/` containing:
+  - `reader.rs` — OxiARC + quick-xml based xlsx reader
+  - `writer.rs` — OxiARC + quick-xml based xlsx writer
+  - `cell.rs` — cell value / coordinate helpers
+  - `schema.rs` — workbook / sheet schema types
+  - `error.rs` — xlsx-local error type
+  - `mod.rs` — module surface
+- `src/io/excel.rs` is now a thin public facade that preserves all existing public types (`ExcelCell`, `ExcelCellFormat`, `NamedRange`, ...) and function signatures; it forwards to `crate::io::xlsx` internally.
+- New round-trip integration test: `tests/excel_roundtrip_test.rs`.
+- Added `oxiarc-archive = "0.2.6"` and `quick-xml = "0.39.2"` as optional deps under the `excel` feature; removed `calamine` and `simple_excel_writer` from the dependency tree.
+
+#### Pure Rust Policy — `-sys` crate cleanup
+
+- Replaced the `dirs` crate with an inline `std::env`-based `user_config_dir()` in `src/config/loader.rs`. Resolution follows XDG / macOS / Windows conventions and returns `Option<PathBuf>` with identical semantics. Removes `dirs` and its `dirs-sys` transitive from the default build; `cargo build --no-default-features` now has zero `-sys` crates outside the OS-API acceptable set (only `core-foundation-sys` via `iana-time-zone`/`chrono` for macOS timezone lookup remains, which is unavoidable OS FFI).
+- Pinned `datafusion 53.1.0` to `default-features = false` with an explicit feature list that drops `compression`. Eliminates `liblzma-sys` (C libxz) completely from `--features distributed`, `--features flight`, `--features serving`, and `--all-features`, and also drops the `bzip2` / `async-compression` chain those defaults pulled in. User-visible DataFusion APIs are unchanged.
+- Pinned `parquet 58.1.0` to `default-features = false` with `[arrow, snap, brotli, flate2-zlib-rs, lz4, base64, simdutf8]`. The `flate2-zlib-rs` backend selects the Pure Rust `zlib-rs` implementation (not `miniz_oxide`). Eliminates `zstd-sys` from `--features stable`.
+- Pinned `arrow 58.1.0` to `default-features = false` with `[csv, ipc, json]` (the existing upstream default) to lock down against future default-set drift that could re-introduce `ipc_compression` → `zstd-sys` / `lz4-sys`.
+
+#### Dependency bumps
+
+- `scirs2-core`, `scirs2-stats`, `scirs2-linalg`: `0.4.0` → `0.4.2`
+- `datafusion`: `53.0.0` → `53.1.0` (pinned `default-features = false`; see Pure Rust section above)
+- `tokio`: `1.50` → `1.52` (both primary and dev-dependency)
+- `rayon`: `1.11.0` → `1.12.0`
+- `rand`: `0.10.0` → `0.10.1`
+- `cranelift` / `cranelift-module` / `cranelift-jit` / `cranelift-frontend` / `cranelift-native`: `0.130.0` → `0.130.1`
+- `uuid`: `1.23.0` → `1.23.1`
+- `lru`: `0.16.3` → `0.17.0`
+- `toml`: `1.1.0` → `1.1.2`
+- `wasm-bindgen`: `0.2.114` → `0.2.118`
+- `js-sys`: `0.3.91` → `0.3.95`
+- `web-sys`: `0.3.91` → `0.3.95`
+
+### Fixed
+
+- Pinned `sha2 = "0.10"` (was `sha2 = "0.10.8"`) so Cargo can resolve a `digest 0.10.x`-compatible version shared with `pbkdf2` / `aes-gcm`. Fixes a build error triggered when `sha2 0.10.9` shifted its `digest` contract.
+- Intra-doc link fix in `src/io/excel.rs` (referenced a private module); rustdoc now builds cleanly with `-D warnings`.
+- Refactored Excel I/O error handling and formatting for readability (no behaviour change).
+
+### Regressions (intentional, Pure Rust policy)
+
+- Zstd-compressed parquet files are no longer readable on `--features stable` / `--features parquet`. Snappy (the pandas default), gzip, brotli, and lz4 compressed parquet continue to work. Users needing zstd on pure `stable` must pre-decompress or enable a future opt-in C feature (not currently provided).
+- DataFusion's built-in xz / bz2 / zstd auto-decompression for CSV and JSON readers on `--features distributed` / `--features flight` / `--features serving` is disabled. Plain and gzip-compressed inputs still work via DataFusion's default readers; for other compressions, decompress upstream.
+
+### Known tech debt (acknowledged, feature-gated)
+
+- `parquet` / `distributed` / `flight` features still transitively pull `flate2`, `lz4_flex`, `snap`, `brotli`, `miniz_oxide` via upstream `arrow` / `parquet` / `datafusion`. Default `cargo build` pulls none of these.
+- `--features distributed` / `--features flight` still transitively pull `zstd-sys` and `miniz_oxide` because `datafusion 53.1.0`'s own `Cargo.toml` hardcodes `default-features = true` on the `parquet` crate (see `datafusion-53.1.0/Cargo.toml [dependencies.parquet]`). Cargo features are additive across a dep graph, so our `default-features = false` on pandrs's direct `parquet` dep cannot suppress the `zstd` feature that datafusion requests. `--features stable` is unaffected. Removing this fully requires upstream work in DataFusion.
+- `cloud-storage` feature pulls `ring` (C + assembly) via `object_store 0.13.2`. Upstream blocker: object_store uses `ring::{hmac, digest, signature, rand}` directly and exposes `ring::error` types in its public API, so neither `rustls-rustcrypto` nor feature toggles can eliminate it. Default build is unaffected.
+
+### Testing & Quality
+
+- **1809 tests passing** (nextest, `--all-features`) and **117 doc tests passing**
+- Zero clippy warnings with `-D warnings`
+- Rustdoc builds cleanly with `-D warnings`
+
 ## [0.3.0] - 2026-03-27
 
 ### Breaking Changes

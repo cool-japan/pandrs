@@ -2,10 +2,14 @@
 
 ## Current Release
 
-**Version:** 0.3.0
+**Version:** 0.3.1
 **Release Date:** March 2026
 **Status:** Production Ready - Enterprise-Grade Release
-**Test Coverage:** 1794 tests passing (nextest) + 128 doc tests, zero clippy warnings
+**Test Coverage:** 1809 tests passing (nextest) + 117 doc tests, zero clippy warnings
+
+### Acknowledged upstream Pure Rust tech debt (feature-gated; default build unaffected)
+- `parquet` / `distributed` / `flight` pull `flate2`/`zstd`/`lz4_flex`/`snap`/`bzip2`/`brotli`/`miniz_oxide` via upstream arrow/parquet/datafusion/async-compression.
+- `cloud-storage` pulls `ring` (C+asm) via `object_store 0.13.2` — upstream uses `ring::{hmac,digest,signature,rand}` directly and exposes `ring::error` in public API (see `/tmp/pandrs_rustls_phase2_report.md`).
 
 ## Completed Features (v0.1.0)
 
@@ -328,6 +332,14 @@
 - [x] Removed SQL dependencies for Pure Rust compliance (no C/Fortran deps)
 - [x] Dependency upgrades (parquet/arrow 58.1, datafusion 53.0, cranelift 0.130)
 
+### v0.3.1 - Quality & Pure Rust Polish (April 2026) ✓
+- [x] Fix broken intra-doc link in `src/io/excel.rs` (private module reference)
+- [x] Replace `calamine` + `simple_excel_writer` with OxiARC-backed xlsx (Pure Rust policy)
+- [x] Remove -sys crate violations (Pure Rust policy follow-on)
+- [x] All 1809 tests passing, 117 doc tests passing
+- [x] Zero clippy warnings (including with `-D warnings`)
+- [x] Rustdoc builds cleanly with `-D warnings`
+
 ### v1.0.0 - Production Release (Q2 2026)
 - [x] Full pandas API compatibility (Complete - 100%)
   - [x] Core functional methods (assign, pipe, isin, apply)
@@ -441,7 +453,7 @@ We welcome contributions in the following areas:
 ## Testing & Quality
 
 ### Current Status
-- 1794 tests passing (nextest) + 128 doc tests
+- 1809 tests passing (nextest) + 117 doc tests
 - Comprehensive property-based testing
 - Continuous integration with GitHub Actions
 - Regular performance regression testing
@@ -461,7 +473,7 @@ We welcome contributions in the following areas:
 4. Gather user feedback
 
 ### Release Criteria
-- [x] All tests passing (1794 nextest + 128 doc tests)
+- [x] All tests passing (1809 nextest + 117 doc tests)
 - [x] No critical bugs
 - [x] Documentation complete
 - [x] Performance benchmarks met
@@ -483,5 +495,5 @@ We welcome contributions in the following areas:
 
 ---
 
-Last Updated: 2026-03-27
+Last Updated: 2026-04-19
 Maintainer: COOLJAPAN OU (Team Kitasan)

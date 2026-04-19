@@ -90,9 +90,8 @@
 #![allow(clippy::needless_lifetimes)]
 
 // Crates that use macros
-#[macro_use]
-#[cfg(feature = "excel")]
-extern crate simple_excel_writer;
+// NOTE: `simple_excel_writer` has been removed (Pure Rust policy). xlsx is
+// now handled via `oxiarc-archive` + `quick-xml` through `crate::io::xlsx`.
 
 /// Core module with fundamental data structures and traits.
 ///

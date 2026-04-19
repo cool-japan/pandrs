@@ -53,6 +53,10 @@ pub mod csv;
 #[cfg(feature = "excel")]
 pub mod excel;
 
+// Pure Rust xlsx (OOXML SpreadsheetML) implementation powering `excel`.
+#[cfg(feature = "excel")]
+pub(crate) mod xlsx;
+
 /// Format trait definitions for extensible I/O.
 ///
 /// Defines traits and types for implementing custom file format handlers.
