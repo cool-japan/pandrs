@@ -2,7 +2,7 @@
 
 use pandrs::error::Result;
 use pandrs::{DataFrame, Series, TTestResult};
-use rand::{Rng, RngExt};
+use scirs2_core::random::{Rng, RngExt};
 
 #[allow(clippy::result_large_err)]
 fn main() -> Result<()> {
@@ -127,7 +127,7 @@ fn regression_example() -> Result<()> {
 
     // Dependent variable (y = 2*x1 + 1.5*x2 + 3 + noise)
     let mut y_values = Vec::with_capacity(10);
-    let mut rng = rand::rng();
+    let mut rng = scirs2_core::random::rng();
 
     for i in 0..10 {
         let noise = rng.random_range(-1.0..1.0);

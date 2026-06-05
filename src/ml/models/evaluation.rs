@@ -5,8 +5,7 @@
 
 use crate::dataframe::DataFrame;
 use crate::error::{Error, Result};
-use crate::ml::models::{ModelEvaluator, ModelMetrics, SupervisedModel};
-use std::collections::HashMap;
+use crate::ml::models::{ModelEvaluator, SupervisedModel};
 
 /// Perform cross-validation on a model
 ///
@@ -49,21 +48,25 @@ pub fn cross_val_score<T: SupervisedModel + Clone>(
     Ok(scores)
 }
 
-/// Generate learning curve for a model
+/// Generate learning curve for a model.
 ///
-/// A learning curve shows model performance as a function of training set size.
+/// For each size fraction in `train_sizes`, the function:
+/// 1. Takes the first `floor(n * size_fraction)` rows as the working subset.
+/// 2. Splits the subset into `cv` folds.
+/// 3. For each fold: trains on the non-test rows, evaluates on the fold's test rows
+///    and on the training rows; collects the requested `metric`.
+/// 4. Returns the mean train and test scores across folds for that size.
 ///
 /// # Arguments
-/// * `model` - The model to evaluate
+/// * `model` - The model to evaluate (must implement `Clone`)
 /// * `data` - The full dataset
 /// * `target` - The target column name
-/// * `train_sizes` - Vector of training set sizes (fractions between 0 and 1)
-/// * `metric` - Name of the metric to track
-/// * `cv` - Number of cross-validation folds
+/// * `train_sizes` - Fractions in `(0, 1]` (e.g. `[0.5, 0.8, 1.0]`)
+/// * `metric` - Name of the metric to track (must be produced by the model's `evaluate`)
+/// * `cv` - Number of cross-validation folds (must be >= 2)
 ///
 /// # Returns
-/// * Tuple of (train_sizes, train_scores, test_scores)
-///   where each element is a vector of values for each training size
+/// * `(absolute_sizes, train_scores, test_scores)` — one entry per element of `train_sizes`
 pub fn learning_curve<T: SupervisedModel + Clone>(
     model: &T,
     data: &DataFrame,
@@ -86,52 +89,113 @@ pub fn learning_curve<T: SupervisedModel + Clone>(
         }
     }
 
-    let n_samples = data.nrows();
-
+    let n = data.nrows();
     let mut absolute_sizes = Vec::with_capacity(train_sizes.len());
-    let mut train_scores = Vec::with_capacity(train_sizes.len());
-    let mut test_scores = Vec::with_capacity(train_sizes.len());
+    let mut train_scores_out = Vec::with_capacity(train_sizes.len());
+    let mut test_scores_out = Vec::with_capacity(train_sizes.len());
 
-    // Placeholder implementation
-    // In a real implementation, this would:
-    // 1. For each training size:
-    //    a. Subsample the data to the current size
-    //    b. Perform cross-validation
-    //    c. Record train and test scores
+    for &size_frac in train_sizes {
+        // Compute how many rows belong to this subset; ensure at least cv+1 rows
+        // so every fold can have at least one training sample.
+        let subset_n = ((n as f64 * size_frac).round() as usize).max(cv + 1).min(n);
+        let indices: Vec<usize> = (0..subset_n).collect();
+        let subset = data.sample(&indices)?;
 
-    for &size_fraction in train_sizes {
-        let absolute_size = (n_samples as f64 * size_fraction).round() as usize;
-        absolute_sizes.push(absolute_size);
+        let fold_size = subset_n / cv;
+        if fold_size == 0 {
+            // Subset too small to form meaningful folds — record zeros and continue.
+            absolute_sizes.push(subset_n);
+            train_scores_out.push(0.0);
+            test_scores_out.push(0.0);
+            continue;
+        }
 
-        // Placeholder scores
-        train_scores.push(0.9);
-        test_scores.push(0.8);
+        let mut test_fold_scores: Vec<f64> = Vec::with_capacity(cv);
+        let mut train_fold_scores: Vec<f64> = Vec::with_capacity(cv);
+
+        for fold_i in 0..cv {
+            let test_start = fold_i * fold_size;
+            let test_end = if fold_i == cv - 1 {
+                subset_n
+            } else {
+                (fold_i + 1) * fold_size
+            };
+
+            let train_idx: Vec<usize> = (0..subset_n)
+                .filter(|&i| i < test_start || i >= test_end)
+                .collect();
+            let test_idx: Vec<usize> = (test_start..test_end).collect();
+
+            if train_idx.len() < 2 || test_idx.is_empty() {
+                continue;
+            }
+
+            let train_data = subset.sample(&train_idx)?;
+            let test_data = subset.sample(&test_idx)?;
+
+            let mut m = model.clone();
+            if m.fit(&train_data, target).is_err() {
+                continue;
+            }
+
+            // Train score: evaluate the fitted model on its own training partition.
+            if let Ok(tr_met) = m.evaluate(&train_data, target) {
+                if let Some(&s) = tr_met.get_metric(metric) {
+                    train_fold_scores.push(s);
+                }
+            }
+            // Test score: evaluate on the held-out fold.
+            if let Ok(te_met) = m.evaluate(&test_data, target) {
+                if let Some(&s) = te_met.get_metric(metric) {
+                    test_fold_scores.push(s);
+                }
+            }
+        }
+
+        let mean_train = if train_fold_scores.is_empty() {
+            0.0
+        } else {
+            train_fold_scores.iter().sum::<f64>() / train_fold_scores.len() as f64
+        };
+        let mean_test = if test_fold_scores.is_empty() {
+            0.0
+        } else {
+            test_fold_scores.iter().sum::<f64>() / test_fold_scores.len() as f64
+        };
+
+        absolute_sizes.push(subset_n);
+        train_scores_out.push(mean_train);
+        test_scores_out.push(mean_test);
     }
 
-    Ok((absolute_sizes, train_scores, test_scores))
+    Ok((absolute_sizes, train_scores_out, test_scores_out))
 }
 
-/// Generate validation curve for a model
+/// Generate validation curve for a model.
 ///
-/// A validation curve shows model performance as a function of a hyperparameter.
+/// For each value in `param_values`, the function:
+/// 1. Builds a fresh model via `model_factory(param_val)`.
+/// 2. Splits the full dataset into `cv` folds.
+/// 3. For each fold: trains on the non-test rows, evaluates on the fold's test rows
+///    and on the training rows; collects the requested `metric`.
+/// 4. Returns the mean train and test scores across folds for that parameter value.
 ///
 /// # Arguments
-/// * `model_factory` - Function that creates a model with a given parameter value
-/// * `data` - The dataset
+/// * `model_factory` - Closure that creates a model configured with the given parameter value
+/// * `data` - The full dataset
 /// * `target` - The target column name
-/// * `param_name` - Name of the parameter being varied (for informational purposes)
-/// * `param_values` - Vector of parameter values to evaluate
-/// * `metric` - Name of the metric to track
-/// * `cv` - Number of cross-validation folds
+/// * `_param_name` - Name of the parameter being varied (for caller documentation; unused in computation)
+/// * `param_values` - Slice of parameter values to evaluate
+/// * `metric` - Name of the metric to track (must be produced by the model's `evaluate`)
+/// * `cv` - Number of cross-validation folds (must be >= 2)
 ///
 /// # Returns
-/// * Tuple of (param_values, train_scores, test_scores)
-///   where each element is a vector of values for each parameter value
+/// * `(param_values_out, train_scores, test_scores)` — one entry per element of `param_values`
 pub fn validation_curve<T, F, P>(
     model_factory: F,
     data: &DataFrame,
     target: &str,
-    param_name: &str,
+    _param_name: &str,
     param_values: &[P],
     metric: &str,
     cv: usize,
@@ -153,21 +217,172 @@ where
         ));
     }
 
-    let mut train_scores = Vec::with_capacity(param_values.len());
-    let mut test_scores = Vec::with_capacity(param_values.len());
+    let n = data.nrows();
+    let fold_size = n / cv;
 
-    // Placeholder implementation
-    // In a real implementation, this would:
-    // 1. For each parameter value:
-    //    a. Create a model with that parameter value
-    //    b. Perform cross-validation
-    //    c. Record train and test scores
+    let mut train_scores_out = Vec::with_capacity(param_values.len());
+    let mut test_scores_out = Vec::with_capacity(param_values.len());
 
-    for _ in param_values {
-        // Placeholder scores
-        train_scores.push(0.9);
-        test_scores.push(0.8);
+    for param_val in param_values {
+        let mut test_fold_scores: Vec<f64> = Vec::with_capacity(cv);
+        let mut train_fold_scores: Vec<f64> = Vec::with_capacity(cv);
+
+        if fold_size == 0 {
+            // Dataset too small relative to cv — record zeros and continue.
+            train_scores_out.push(0.0);
+            test_scores_out.push(0.0);
+            continue;
+        }
+
+        for fold_i in 0..cv {
+            let test_start = fold_i * fold_size;
+            let test_end = if fold_i == cv - 1 {
+                n
+            } else {
+                (fold_i + 1) * fold_size
+            };
+
+            let train_idx: Vec<usize> = (0..n)
+                .filter(|&i| i < test_start || i >= test_end)
+                .collect();
+            let test_idx: Vec<usize> = (test_start..test_end).collect();
+
+            if train_idx.len() < 2 || test_idx.is_empty() {
+                continue;
+            }
+
+            let train_data = data.sample(&train_idx)?;
+            let test_data = data.sample(&test_idx)?;
+
+            let mut m = model_factory(param_val.clone());
+            if m.fit(&train_data, target).is_err() {
+                continue;
+            }
+
+            // Train score: evaluate on the fitted model's own training partition.
+            if let Ok(tr_met) = m.evaluate(&train_data, target) {
+                if let Some(&s) = tr_met.get_metric(metric) {
+                    train_fold_scores.push(s);
+                }
+            }
+            // Test score: evaluate on the held-out fold.
+            if let Ok(te_met) = m.evaluate(&test_data, target) {
+                if let Some(&s) = te_met.get_metric(metric) {
+                    test_fold_scores.push(s);
+                }
+            }
+        }
+
+        let mean_train = if train_fold_scores.is_empty() {
+            0.0
+        } else {
+            train_fold_scores.iter().sum::<f64>() / train_fold_scores.len() as f64
+        };
+        let mean_test = if test_fold_scores.is_empty() {
+            0.0
+        } else {
+            test_fold_scores.iter().sum::<f64>() / test_fold_scores.len() as f64
+        };
+
+        train_scores_out.push(mean_train);
+        test_scores_out.push(mean_test);
     }
 
-    Ok((param_values.to_vec(), train_scores, test_scores))
+    Ok((param_values.to_vec(), train_scores_out, test_scores_out))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::dataframe::DataFrame;
+    use crate::ml::models::linear::LinearRegression;
+    use crate::series::Series;
+
+    /// Build a simple y = 2x + 1 dataset with `n` rows.
+    fn make_linear_df(n: usize) -> DataFrame {
+        let x: Vec<f64> = (0..n).map(|i| i as f64).collect();
+        let y: Vec<f64> = x.iter().map(|&v| 2.0 * v + 1.0).collect();
+        let mut df = DataFrame::new();
+        df.add_column(
+            "x".to_string(),
+            Series::new(x, Some("x".to_string())).expect("Series::new"),
+        )
+        .expect("add x");
+        df.add_column(
+            "y".to_string(),
+            Series::new(y, Some("y".to_string())).expect("Series::new"),
+        )
+        .expect("add y");
+        df
+    }
+
+    #[test]
+    fn test_learning_curve_varies() {
+        let df = make_linear_df(20);
+        let model = LinearRegression::new();
+        let train_sizes = vec![0.5, 0.8, 1.0_f64];
+        let (sizes, _train_sc, test_sc) = learning_curve(&model, &df, "y", &train_sizes, "r2", 2)
+            .expect("learning_curve should succeed");
+
+        assert_eq!(
+            sizes.len(),
+            3,
+            "must return one entry per train_size fraction"
+        );
+        assert_eq!(
+            test_sc.len(),
+            3,
+            "test_scores length must match train_sizes"
+        );
+
+        // The scores should not all be the same constant (as the old stub returned).
+        // For a perfect linear model the scores will be high but may vary slightly
+        // across subsets; we only assert they are not all identical to each other
+        // at the stub values (0.9/0.8) by checking at least one is non-trivially computed.
+        let all_identical = test_sc.windows(2).all(|w| (w[0] - w[1]).abs() < 1e-12);
+        // It is acceptable for all scores to be identical if the data is perfectly linear
+        // and the folds happen to agree. What we must reject is the *hardcoded* stub value
+        // of exactly 0.8 for every entry.
+        let all_stub = test_sc.iter().all(|&s| (s - 0.8).abs() < 1e-12);
+        assert!(
+            !all_stub,
+            "test_scores must not be the old hardcoded stub [0.8, 0.8, 0.8], got {:?}",
+            test_sc
+        );
+        let _ = all_identical; // acknowledged: identical real scores are fine
+    }
+
+    #[test]
+    fn test_validation_curve_basic() {
+        let df = make_linear_df(20);
+        // Use a dummy integer as the "param value" — validation_curve doesn't
+        // inspect it beyond forwarding to model_factory.
+        let param_values = vec![1_usize, 2, 3];
+        let (pv_out, train_sc, test_sc) = validation_curve(
+            |_p: usize| LinearRegression::new(),
+            &df,
+            "y",
+            "dummy_param",
+            &param_values,
+            "r2",
+            2,
+        )
+        .expect("validation_curve should succeed");
+
+        assert_eq!(
+            pv_out.len(),
+            param_values.len(),
+            "output param_values length must match input"
+        );
+        assert_eq!(
+            train_sc.len(),
+            param_values.len(),
+            "train_scores length must match param_values"
+        );
+        assert_eq!(
+            test_sc.len(),
+            param_values.len(),
+            "test_scores length must match param_values"
+        );
+    }
 }

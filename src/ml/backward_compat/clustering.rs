@@ -6,10 +6,7 @@ use crate::optimized::{OptimizedDataFrame, ColumnView};
 use crate::error::{Result, Error};
 use crate::ml::pipeline::Transformer;
 use crate::column::{Float64Column, Column, ColumnTrait};
-use rand::Rng;
-use rand::SeedableRng;
-use rand::rngs::StdRng;
-use crate::utils::rand_compat::GenRangeCompat;
+use scirs2_core::random::{Rng, RngExt, SeedableRng, rngs::StdRng};
 use std::collections::{HashMap, HashSet};
 
 /// K-Means clustering algorithm
@@ -88,11 +85,11 @@ impl KMeans {
         
         let mut rng = match self.random_seed {
             Some(seed) => StdRng::seed_from_u64(seed),
-            None => StdRng::seed_from_u64(rand::random()),
+            None => StdRng::seed_from_u64(scirs2_core::random::random()),
         };
-        
+
         // Select the first centroid randomly
-        let first_idx = rng.gen_range(0..n_samples);
+        let first_idx = rng.random_range(0..n_samples);
         let mut centroids = vec![data[first_idx].clone()];
         
         // Select the remaining k-1 centroids
@@ -114,7 +111,7 @@ impl KMeans {
             
             // Select the next centroid with probability proportional to squared distance
             let mut cumsum = 0.0;
-            let threshold = rng.gen_range(0.0..sum_distances);
+            let threshold = rng.random_range(0.0..sum_distances);
             
             for (i, &dist) in distances.iter().enumerate() {
                 cumsum += dist;

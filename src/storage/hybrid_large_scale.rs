@@ -377,7 +377,7 @@ impl TierManager {
     }
 
     pub fn store_data(&mut self, data: DataChunk) -> Result<DataId> {
-        let data_id = DataId(rand::random::<u64>());
+        let data_id = DataId(scirs2_core::random::random::<u64>());
         let initial_tier = self.determine_initial_tier(&data)?;
 
         // Store in the determined tier

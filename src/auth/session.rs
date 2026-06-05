@@ -324,9 +324,9 @@ impl SessionContext {
 
 /// Generate a unique session ID
 fn generate_session_id() -> String {
-    use rand::Rng;
+    use scirs2_core::random::Rng;
     let mut bytes = [0u8; 32];
-    rand::rng().fill_bytes(&mut bytes);
+    scirs2_core::random::rng().fill_bytes(&mut bytes);
     format!(
         "sess_{}",
         bytes

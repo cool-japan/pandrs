@@ -679,7 +679,7 @@ impl MigrationPlanBuilder {
 }
 
 /// Current version constant
-pub const CURRENT_VERSION: &str = "0.3.0";
+pub const CURRENT_VERSION: &str = "0.4.1";
 
 #[cfg(test)]
 mod tests {

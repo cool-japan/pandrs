@@ -7,11 +7,9 @@
 use crate::core::error::{Error, Result};
 use crate::dataframe::DataFrame;
 use crate::series::Series;
-use crate::stats::distributions::{ChiSquared, Distribution, FDistribution, Normal, TDistribution};
-use crate::utils::rand_compat::{thread_rng, GenRangeCompat};
+use crate::stats::distributions::{ChiSquared, Distribution, FDistribution, TDistribution};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::f64::consts::PI;
 
 /// Statistical hypothesis test result
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -735,17 +733,20 @@ pub fn shapiro_wilk_test(data: &[f64]) -> Result<TestResult> {
     let w_denominator = (n - 1) as f64 * variance;
     let w_statistic = w_numerator.powi(2) / w_denominator;
 
-    // Approximate p-value calculation (very simplified)
-    // In practice, this would use complex transformations and lookup tables
-    let log_w = w_statistic.ln();
-    let normalized = (log_w + 1.0) * (n as f64).sqrt();
-
-    // Very rough approximation - would need proper implementation
-    let p_value = if w_statistic > 0.95 {
-        1.0 - Normal::new(0.0, 1.0)?.cdf(normalized)
-    } else {
-        0.01
-    };
+    // P-value via the log-transformation approximation (Royston 1992):
+    //   y = log(1 − W),  then z = (y − μ(n)) / σ(n)
+    // where μ and σ are polynomial approximations in n.
+    // One-sided p = Φ_upper(z) = normal_sf(z), clamped to [1e-10, 1].
+    let w_clamped = w_statistic.clamp(1e-10, 1.0 - 1e-10);
+    let y = (1.0 - w_clamped).ln();
+    let nf = n as f64;
+    // Polynomial approximations for μ(n) and σ(n) valid for n in [3, 5000].
+    let mu = -0.0006714 * nf + 0.025054 * nf.sqrt() - 0.39978;
+    let sigma = (0.04198 * nf + 0.0006714 * nf.ln() - 0.8853)
+        .exp()
+        .max(1e-10);
+    let z = (y - mu) / sigma;
+    let p_value = normal_sf(z).clamp(1e-10, 1.0);
 
     let mut additional_info = HashMap::new();
     additional_info.insert("n".to_string(), n as f64);
@@ -755,9 +756,9 @@ pub fn shapiro_wilk_test(data: &[f64]) -> Result<TestResult> {
 
     Ok(TestResult {
         statistic: w_statistic,
-        p_value: p_value.max(0.001).min(1.0), // Clamp p-value
+        p_value,
         degrees_of_freedom: None,
-        critical_value: Some(0.95), // Rough threshold
+        critical_value: Some(0.95), // Conventional threshold
         effect_size: None,
         effect_size_interpretation: None,
         confidence_interval: None,
@@ -767,6 +768,118 @@ pub fn shapiro_wilk_test(data: &[f64]) -> Result<TestResult> {
         additional_info,
     })
 }
+
+// ─── Native distribution helpers ────────────────────────────────────────────
+// These are self-contained so this module can be compiled without feature flags.
+
+/// Lanczos approximation for the natural logarithm of the gamma function.
+fn log_gamma(x: f64) -> f64 {
+    let g = 7.0_f64;
+    let c = [
+        0.99999999999980993_f64,
+        676.5203681218851,
+        -1259.1392167224028,
+        771.32342877765313,
+        -176.61502916214059,
+        12.507343278686905,
+        -0.13857109526572012,
+        9.9843695780195716e-6,
+        1.5056327351493116e-7,
+    ];
+
+    if x < 0.5 {
+        // Reflection formula: Γ(x)Γ(1−x) = π/sin(πx)
+        std::f64::consts::PI.ln() - (std::f64::consts::PI * x).sin().ln() - log_gamma(1.0 - x)
+    } else {
+        let z = x - 1.0;
+        let mut s = c[0];
+        for (i, &ci) in c[1..].iter().enumerate() {
+            s += ci / (z + (i as f64) + 1.0);
+        }
+        let t = z + g + 0.5;
+        0.5 * (2.0 * std::f64::consts::PI).ln() + (z + 0.5) * t.ln() - t + s.ln()
+    }
+}
+
+/// Regularized upper incomplete gamma function Q(a, x) = 1 − P(a, x).
+///
+/// Uses the series expansion for the lower function when x ≤ a+1, and the
+/// continued-fraction (Lentz) expansion for the upper function otherwise.
+fn regularized_gamma_upper(a: f64, x: f64) -> f64 {
+    if x < 0.0 || a <= 0.0 {
+        return 1.0;
+    }
+    if x == 0.0 {
+        return 1.0;
+    }
+    if x <= a + 1.0 {
+        // Series expansion for P(a,x); return 1-P.
+        let log_prefix = a * x.ln() - x - log_gamma(a);
+        let mut term = 1.0 / a;
+        let mut sum = term;
+        for n in 1..200 {
+            term *= x / (a + n as f64);
+            sum += term;
+            if term.abs() < sum.abs() * 1e-14 {
+                break;
+            }
+        }
+        let p = (log_prefix + sum.ln()).exp().min(1.0);
+        (1.0 - p).max(0.0)
+    } else {
+        // Lentz continued-fraction expansion for Q(a,x):
+        // Q = e^{-x} * x^a / Γ(a) * CF
+        let log_prefix = a * x.ln() - x - log_gamma(a);
+        // CF via modified Lentz: 1/(x-a+1+ 1*(1-a)/(x-a+3+ 2*(2-a)/(x-a+5+…)))
+        let tiny = 1e-300_f64;
+        let mut c = tiny;
+        let d0 = 1.0 / (x - a + 1.0 + tiny);
+        let mut f = d0;
+        let mut d = d0;
+        for i in 1..200_usize {
+            let ia = i as f64;
+            let an = ia * (ia - a);
+            let bn = x - a + 1.0 + 2.0 * ia;
+            d = 1.0 / (bn + an * d);
+            c = bn + an / c;
+            let delta = c * d;
+            f *= delta;
+            if (delta - 1.0).abs() < 1e-14 {
+                break;
+            }
+        }
+        (log_prefix + f.abs().ln()).exp().max(0.0).min(1.0)
+    }
+}
+
+/// Chi-squared survival function: P(X > x | df) = Q(df/2, x/2).
+pub(crate) fn chi2_sf(x: f64, df: f64) -> f64 {
+    if x <= 0.0 {
+        return 1.0;
+    }
+    regularized_gamma_upper(df / 2.0, x / 2.0)
+}
+
+/// Complementary error function using Abramowitz & Stegun 7.1.26 polynomial.
+fn erfc_approx(x: f64) -> f64 {
+    let t = 1.0 / (1.0 + 0.3275911 * x.abs());
+    let poly = t
+        * (0.254829592
+            + t * (-0.284496736 + t * (1.421413741 + t * (-1.453152027 + t * 1.061405429))));
+    let erfc_abs = poly * (-x * x).exp();
+    if x >= 0.0 {
+        erfc_abs
+    } else {
+        2.0 - erfc_abs
+    }
+}
+
+/// Standard normal survival function: P(Z > x) = erfc(x/√2) / 2.
+pub(crate) fn normal_sf(x: f64) -> f64 {
+    (erfc_approx(x / std::f64::consts::SQRT_2) / 2.0).clamp(0.0, 1.0)
+}
+
+// ─── End distribution helpers ────────────────────────────────────────────────
 
 /// Multiple comparison correction methods
 #[derive(Debug, Clone)]

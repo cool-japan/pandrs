@@ -32,7 +32,7 @@ mod tests {
 
     #[test]
     fn test_array1_to_series() {
-        use ndarray::array;
+        use scirs2_core::ndarray::array;
         let arr = array![10.0f64, 20.0, 30.0];
         let series = array1_to_series(&arr, Some("result".to_string())).expect("ok");
         assert_eq!(series.len(), 3);
@@ -83,7 +83,7 @@ mod tests {
 
     #[test]
     fn test_array2_to_dataframe() {
-        use ndarray::array;
+        use scirs2_core::ndarray::array;
         let arr = array![[1.0f64, 2.0], [3.0, 4.0], [5.0, 6.0]];
         let df =
             array2_to_dataframe(&arr, vec!["a".to_string(), "b".to_string()]).expect("to df ok");
@@ -144,7 +144,7 @@ mod tests {
 
     #[test]
     fn test_from_ndarray_ext() {
-        use ndarray::array;
+        use scirs2_core::ndarray::array;
         let arr = array![[1.0f64, 2.0], [3.0, 4.0]];
         let df = DataFrame::from_ndarray(&arr, vec!["x".to_string(), "y".to_string()]).expect("ok");
         assert_eq!(df.row_count(), 2);
@@ -421,6 +421,270 @@ mod tests {
 
         let pca = df.scirs2_pca(1).expect("pca ext ok");
         assert_eq!(pca.explained_variance.len(), 1);
+    }
+
+    // -----------------------------------------------------------------------
+    // New stats tests: Spearman, covariance, paired ttest, chi2, shapiro, KS
+    // -----------------------------------------------------------------------
+
+    fn make_three_col_df() -> DataFrame {
+        let mut df = DataFrame::new();
+        df.add_column(
+            "a".to_string(),
+            Series::new(vec![1.0f64, 2.0, 3.0, 4.0, 5.0], Some("a".to_string())).expect("ok"),
+        )
+        .expect("ok");
+        df.add_column(
+            "b".to_string(),
+            Series::new(vec![2.0f64, 4.0, 6.0, 8.0, 10.0], Some("b".to_string())).expect("ok"),
+        )
+        .expect("ok");
+        df.add_column(
+            "c".to_string(),
+            Series::new(vec![5.0f64, 3.0, 1.0, 7.0, 9.0], Some("c".to_string())).expect("ok"),
+        )
+        .expect("ok");
+        df
+    }
+
+    #[test]
+    fn test_spearman_correlation_matrix() {
+        let df = make_three_col_df();
+        let corr = SciRS2Stats::spearman_correlation_matrix(&df, &["a", "b", "c"])
+            .expect("spearman corr ok");
+        assert!(corr.contains_column("column"));
+        assert!(corr.contains_column("a"));
+        assert!(corr.contains_column("b"));
+        assert!(corr.contains_column("c"));
+        assert_eq!(corr.row_count(), 3);
+
+        // Diagonal elements must be 1.0
+        let a_col = corr.get_column_numeric_values("a").expect("ok");
+        assert!(
+            (a_col[0] - 1.0).abs() < 1e-6,
+            "spearman corr(a,a) should be 1.0, got {}",
+            a_col[0]
+        );
+
+        // a and b have perfect monotone relationship → rho = 1
+        let b_col = corr.get_column_numeric_values("b").expect("ok");
+        assert!(
+            (b_col[0] - 1.0).abs() < 1e-6,
+            "spearman corr(a,b) should be 1.0, got {}",
+            b_col[0]
+        );
+    }
+
+    #[test]
+    fn test_spearman_corr_ext() {
+        let df = make_three_col_df();
+        let corr = df.scirs2_spearman_corr().expect("spearman ext ok");
+        assert!(corr.contains_column("column"));
+        assert_eq!(corr.row_count(), 3);
+    }
+
+    #[test]
+    fn test_covariance_matrix() {
+        let df = make_three_col_df();
+        let cov = SciRS2Stats::covariance_matrix(&df, &["a", "b"]).expect("covariance_matrix ok");
+        assert!(cov.contains_column("column"));
+        assert!(cov.contains_column("a"));
+        assert!(cov.contains_column("b"));
+        assert_eq!(cov.row_count(), 2);
+
+        // cov(a, a) = var(a) = 2.5 for [1,2,3,4,5] with ddof=1
+        let a_col = cov.get_column_numeric_values("a").expect("ok");
+        assert!(
+            (a_col[0] - 2.5).abs() < 1e-6,
+            "var(a) should be 2.5, got {}",
+            a_col[0]
+        );
+    }
+
+    #[test]
+    fn test_cov_ext() {
+        let df = make_three_col_df();
+        let cov = df.scirs2_cov().expect("cov ext ok");
+        assert!(cov.contains_column("column"));
+    }
+
+    #[test]
+    fn test_ttest_paired() {
+        // Groups with a clear paired difference
+        let before = vec![100.0f64, 102.0, 98.0, 105.0, 99.0];
+        let after = vec![90.0f64, 95.0, 89.0, 96.0, 91.0];
+        let result = SciRS2Stats::ttest_paired(&before, &after).expect("ttest_paired ok");
+        // Mean difference is 9-10 points; should be highly significant
+        assert!(
+            result.statistic > 0.0,
+            "t-stat should be positive (before > after)"
+        );
+        assert!(
+            result.p_value < 0.05,
+            "paired ttest should be significant, p={}",
+            result.p_value
+        );
+        assert!(result.df > 0.0);
+    }
+
+    #[test]
+    fn test_chi2_goodness_of_fit() {
+        // Uniform expected: observed roughly uniform → high p-value
+        let observed = vec![10.0f64, 11.0, 9.0, 10.0, 10.0];
+        let expected = vec![10.0f64, 10.0, 10.0, 10.0, 10.0];
+        let result = SciRS2Stats::chi2_goodness_of_fit(&observed, &expected).expect("chi2_gof ok");
+        assert!(result.statistic >= 0.0);
+        assert!(result.p_value >= 0.0 && result.p_value <= 1.0);
+        assert_eq!(result.dof, 4); // k-1
+    }
+
+    #[test]
+    fn test_shapiro_wilk_on_normal_data() {
+        // Near-normal data: should have high p-value (fail to reject normality)
+        let data = vec![
+            -0.20f64, 0.10, -0.10, 0.20, -0.30, 0.30, 0.00, -0.15, 0.15, 0.05,
+        ];
+        let result = SciRS2Stats::shapiro_wilk_test(&data).expect("shapiro_wilk ok");
+        assert!(
+            result.statistic > 0.0 && result.statistic <= 1.0,
+            "W should be in (0, 1], got {}",
+            result.statistic
+        );
+        assert!(
+            result.p_value >= 0.0 && result.p_value <= 1.0,
+            "p_value out of range: {}",
+            result.p_value
+        );
+        // Normal-looking data should not be rejected at 0.05 level
+        assert!(
+            result.is_normal,
+            "Near-normal data should not be rejected by Shapiro-Wilk, p={}",
+            result.p_value
+        );
+    }
+
+    #[test]
+    fn test_ks_two_sample() {
+        // Two samples from the same linear spacing → should not be rejected
+        let data1: Vec<f64> = (0..20).map(|i| i as f64 * 0.1).collect();
+        let data2: Vec<f64> = (0..20).map(|i| i as f64 * 0.1 + 0.01).collect();
+        let result = SciRS2Stats::ks_two_sample(&data1, &data2).expect("ks_2samp ok");
+        assert!(result.statistic >= 0.0);
+        assert!(result.p_value >= 0.0 && result.p_value <= 1.0);
+    }
+
+    // -----------------------------------------------------------------------
+    // New linalg tests: QR, matrix_rank
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_qr_decomposition() {
+        // Q * R should reconstruct A
+        let mut df = DataFrame::new();
+        df.add_column(
+            "c0".to_string(),
+            Series::new(vec![1.0f64, 3.0, 2.0], Some("c0".to_string())).expect("ok"),
+        )
+        .expect("ok");
+        df.add_column(
+            "c1".to_string(),
+            Series::new(vec![2.0f64, 4.0, 1.0], Some("c1".to_string())).expect("ok"),
+        )
+        .expect("ok");
+
+        let qr_res = SciRS2LinAlg::qr(&df).expect("qr ok");
+        assert!(qr_res.q.row_count() > 0);
+        assert!(qr_res.r.row_count() > 0);
+
+        // Q * R should approximately equal the original A
+        let qr_product = SciRS2LinAlg::matmul(&qr_res.q, &qr_res.r).expect("Q*R matmul ok");
+        assert_eq!(qr_product.row_count(), 3);
+        assert_eq!(qr_product.column_count(), 2);
+
+        let orig_c0 = df.get_column_numeric_values("c0").expect("ok");
+        let prod_c0 = qr_product.get_column_numeric_values("c0").expect("ok");
+        for (a, b) in orig_c0.iter().zip(prod_c0.iter()) {
+            assert!(
+                (a - b).abs() < 1e-8,
+                "Q*R ≈ A mismatch in c0: {} vs {}",
+                a,
+                b
+            );
+        }
+    }
+
+    #[test]
+    fn test_qr_ext() {
+        let mut df = DataFrame::new();
+        df.add_column(
+            "c0".to_string(),
+            Series::new(vec![1.0f64, 2.0], Some("c0".to_string())).expect("ok"),
+        )
+        .expect("ok");
+        df.add_column(
+            "c1".to_string(),
+            Series::new(vec![3.0f64, 4.0], Some("c1".to_string())).expect("ok"),
+        )
+        .expect("ok");
+
+        let qr_res = df.scirs2_qr().expect("qr ext ok");
+        assert!(qr_res.q.row_count() > 0);
+    }
+
+    #[test]
+    fn test_matrix_rank_full() {
+        // Identity matrix has full rank = 2
+        let mut df = DataFrame::new();
+        df.add_column(
+            "c0".to_string(),
+            Series::new(vec![1.0f64, 0.0], Some("c0".to_string())).expect("ok"),
+        )
+        .expect("ok");
+        df.add_column(
+            "c1".to_string(),
+            Series::new(vec![0.0f64, 1.0], Some("c1".to_string())).expect("ok"),
+        )
+        .expect("ok");
+
+        let rank = SciRS2LinAlg::matrix_rank(&df).expect("matrix_rank ok");
+        assert_eq!(rank, 2, "Identity 2×2 should have rank 2");
+    }
+
+    #[test]
+    fn test_matrix_rank_deficient() {
+        // Rank-1 matrix: second row = first row
+        let mut df = DataFrame::new();
+        df.add_column(
+            "c0".to_string(),
+            Series::new(vec![1.0f64, 2.0], Some("c0".to_string())).expect("ok"),
+        )
+        .expect("ok");
+        df.add_column(
+            "c1".to_string(),
+            Series::new(vec![2.0f64, 4.0], Some("c1".to_string())).expect("ok"),
+        )
+        .expect("ok");
+
+        let rank = SciRS2LinAlg::matrix_rank(&df).expect("matrix_rank rank-deficient ok");
+        assert_eq!(rank, 1, "Rank-deficient 2×2 should have rank 1");
+    }
+
+    #[test]
+    fn test_matrix_rank_ext() {
+        let mut df = DataFrame::new();
+        df.add_column(
+            "c0".to_string(),
+            Series::new(vec![1.0f64, 0.0], Some("c0".to_string())).expect("ok"),
+        )
+        .expect("ok");
+        df.add_column(
+            "c1".to_string(),
+            Series::new(vec![0.0f64, 1.0], Some("c1".to_string())).expect("ok"),
+        )
+        .expect("ok");
+
+        let rank = df.scirs2_matrix_rank().expect("matrix_rank ext ok");
+        assert_eq!(rank, 2);
     }
 }
 

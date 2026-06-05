@@ -97,12 +97,29 @@ fn test_get_level_values() {
 
     let multi_idx = StringMultiIndex::from_tuples(tuples, None).unwrap();
 
-    // Get values at each level
+    // Get values at each level — get_level_values now returns Vec<Option<T>>
+    // since -1 codes (missing values) are representable; non-missing rows yield Some(val).
     let level0 = multi_idx.get_level_values(0).unwrap();
     let level1 = multi_idx.get_level_values(1).unwrap();
 
-    assert_eq!(level0, ["A", "A", "B", "B"]);
-    assert_eq!(level1, ["1", "2", "1", "2"]);
+    assert_eq!(
+        level0,
+        vec![
+            Some("A".to_string()),
+            Some("A".to_string()),
+            Some("B".to_string()),
+            Some("B".to_string()),
+        ]
+    );
+    assert_eq!(
+        level1,
+        vec![
+            Some("1".to_string()),
+            Some("2".to_string()),
+            Some("1".to_string()),
+            Some("2".to_string()),
+        ]
+    );
 }
 
 #[test]
@@ -129,7 +146,8 @@ fn test_swaplevel() {
     // Verify that the same information is retained after swapping
     assert_eq!(swapped.len(), 4);
 
-    // Check swapped levels
+    // Check swapped levels — get_level_values returns Vec<Option<T>>;
+    // since from_tuples never produces -1 codes, all entries are Some-wrapped.
     let orig_level0 = multi_idx.get_level_values(0).unwrap();
     let orig_level1 = multi_idx.get_level_values(1).unwrap();
 

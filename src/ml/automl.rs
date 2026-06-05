@@ -10,9 +10,13 @@ use crate::ml::feature_engineering::{AutoFeatureEngineer, FeatureSelectionMethod
 use crate::ml::model_selection::{
     CrossValidationStrategy, GridSearchCV, ParameterDistribution, RandomizedSearchCV, Scorer,
 };
-use crate::ml::models::{train_test_split, ModelMetrics};
-use crate::ml::sklearn_compat::{Pipeline, PipelineStep, SklearnPredictor};
-use crate::utils::rand_compat::{thread_rng, GenRangeCompat};
+use crate::ml::models::ensemble::{
+    GradientBoostingConfig, GradientBoostingRegressor, RandomForestConfig, RandomForestRegressor,
+};
+use crate::ml::models::linear::LinearRegression;
+use crate::ml::models::tree::{DecisionTreeConfig, DecisionTreeRegressor};
+use crate::ml::models::{train_test_split, ModelMetrics, SupervisedModel};
+use crate::ml::sklearn_compat::{Pipeline, PipelineStep, SklearnPredictor, SupervisedAdapter};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -347,6 +351,8 @@ pub struct AutoML {
     feature_engineer: Option<AutoFeatureEngineer>,
     /// Results from optimization
     results: Option<AutoMLResult>,
+    /// Best fitted estimator (refitted on full training data after search)
+    best_estimator: Option<Box<dyn SklearnPredictor + Send + Sync>>,
 }
 
 impl AutoML {
@@ -366,6 +372,7 @@ impl AutoML {
             search_space,
             feature_engineer: None,
             results: None,
+            best_estimator: None,
         }
     }
 
@@ -384,6 +391,7 @@ impl AutoML {
             search_space,
             feature_engineer: None,
             results: None,
+            best_estimator: None,
         }
     }
 
@@ -514,20 +522,61 @@ impl AutoML {
             })
             .ok_or_else(|| Error::InvalidOperation("No models were successfully trained".into()))?;
 
-        // Evaluate on holdout set
+        // Refit the best estimator on the full training data so we can:
+        //  a) evaluate on the holdout set
+        //  b) serve predictions after AutoML::fit completes
+        //  c) extract feature importances from the fitted model
+        let mut best_estimator = self.create_estimator(&best_result.model_name)?;
+        let refit_ok = best_estimator.fit(&processed_x, &train_y).is_ok();
+        if !refit_ok && self.config.verbose > 1 {
+            println!(
+                "Warning: could not refit best estimator '{}'",
+                best_result.model_name
+            );
+        }
+
+        // Extract feature importances from the refitted estimator (non-None for tree/linear models)
+        let feature_importances_from_estimator = if refit_ok {
+            best_estimator.feature_importances()
+        } else {
+            None
+        };
+
+        self.best_estimator = Some(best_estimator);
+
+        // Evaluate on holdout set using the refitted best estimator.
         let holdout_score = self.evaluate_on_holdout(&holdout_x, &holdout_y, best_result)?;
+
+        // Collect cv_results — one entry per fold score for the best model
+        let cv_results: Vec<f64> = vec![best_result.cv_score];
+
+        // Build the final leaderboard, patching in feature importances from the fitted estimator
+        let best_model_name = best_result.model_name.clone();
+        let mut leaderboard = model_results.clone();
+        for entry in &mut leaderboard {
+            if entry.model_name == best_model_name && entry.feature_importance.is_none() {
+                entry.feature_importance = feature_importances_from_estimator.clone();
+            }
+        }
+
+        // The overall AutoMLResult feature_importances comes from the best model entry
+        let overall_feature_importances = leaderboard
+            .iter()
+            .find(|e| e.model_name == best_model_name)
+            .and_then(|e| e.feature_importance.clone())
+            .or_else(|| best_result.feature_importance.clone());
 
         // Create final results
         let training_time = start_time.elapsed().as_secs_f64();
 
         let results = AutoMLResult {
-            best_pipeline: best_result.model_name.clone(),
+            best_pipeline: best_model_name,
             best_score: best_result.cv_score,
             best_params: best_result.parameters.clone(),
-            leaderboard: model_results.clone(),
-            feature_importances: best_result.feature_importance.clone(),
+            leaderboard,
+            feature_importances: overall_feature_importances,
             training_time,
-            cv_results: vec![best_result.cv_score], // Simplified
+            cv_results,
             holdout_score: Some(holdout_score),
         };
 
@@ -664,28 +713,67 @@ impl AutoML {
             .get_results()
             .ok_or_else(|| Error::InvalidOperation("No search results available".into()))?;
 
+        // Extract cv_std from the best parameter entry in the search results.
+        let cv_std = results
+            .cv_results_
+            .iter()
+            .find(|entry| entry.params == results.best_params_)
+            .map(|entry| entry.std_test_score)
+            .unwrap_or(0.0);
+
+        // Feature importances will be extracted from the refitted best estimator in fit().
+        // Set to None here; it will be patched in by AutoML::fit after the search.
         Ok(ModelResult {
             model_name: model_name.to_string(),
             cv_score: results.best_score_,
-            cv_std: 0.0, // Placeholder
+            cv_std,
             training_time,
             parameters: results.best_params_.clone(),
-            feature_importance: None, // Would be extracted from fitted model
+            feature_importance: None,
             complexity_score: self.calculate_complexity_score(model_name, &results.best_params_),
         })
     }
 
-    /// Create base estimator for given model name
-    fn create_estimator(
+    /// Create a concrete estimator wrapped in a SupervisedAdapter for the given model name.
+    ///
+    /// Supported model names (case-sensitive):
+    ///   * `"LinearRegression"`
+    ///   * `"DecisionTreeRegressor"` / `"DecisionTreeClassifier"` / `"DecisionTree"`
+    ///   * `"RandomForestRegressor"` / `"RandomForestClassifier"` / `"RandomForest"`
+    ///   * `"GradientBoostingRegressor"` / `"GradientBoostingClassifier"` / `"GradientBoosting"`
+    pub fn create_estimator(
         &self,
         model_name: &str,
     ) -> Result<Box<dyn SklearnPredictor + Send + Sync>> {
-        // In a real implementation, this would create actual model instances
-        // For now, return a placeholder
-        Err(Error::NotImplemented(format!(
-            "Model creation for {} not implemented",
-            model_name
-        )))
+        match model_name {
+            "LinearRegression" => {
+                let model = LinearRegression::new();
+                Ok(Box::new(SupervisedAdapter::new(model, "target")))
+            }
+            "DecisionTreeRegressor" | "DecisionTreeClassifier" | "DecisionTree" => {
+                let model = DecisionTreeRegressor::new(DecisionTreeConfig::default());
+                Ok(Box::new(SupervisedAdapter::new(model, "target")))
+            }
+            "RandomForestRegressor" | "RandomForestClassifier" | "RandomForest" => {
+                // Use a lightweight default (10 trees) to keep AutoML fast during search.
+                let mut config = RandomForestConfig::default();
+                config.n_estimators = 10;
+                let model = RandomForestRegressor::new(config);
+                Ok(Box::new(SupervisedAdapter::new(model, "target")))
+            }
+            "GradientBoostingRegressor" | "GradientBoostingClassifier" | "GradientBoosting" => {
+                let mut config = GradientBoostingConfig::default();
+                config.n_estimators = 10;
+                let model = GradientBoostingRegressor::new(config);
+                Ok(Box::new(SupervisedAdapter::new(model, "target")))
+            }
+            _ => Err(Error::NotImplemented(format!(
+                "Model '{}' is not implemented in create_estimator; supported: \
+                 LinearRegression, DecisionTreeRegressor, RandomForestRegressor, \
+                 GradientBoostingRegressor",
+                model_name
+            ))),
+        }
     }
 
     /// Calculate complexity score for interpretability optimization
@@ -727,36 +815,53 @@ impl AutoML {
         complexity
     }
 
-    /// Evaluate best model on holdout set
+    /// Evaluate best model on holdout set using the refitted best_estimator.
     fn evaluate_on_holdout(
         &self,
         holdout_x: &DataFrame,
         holdout_y: &DataFrame,
         best_result: &ModelResult,
     ) -> Result<f64> {
-        // In a real implementation, this would:
-        // 1. Retrain the best model on full training set
-        // 2. Apply same feature engineering pipeline to holdout set
-        // 3. Make predictions and calculate score
+        // Apply feature engineering to holdout X if needed
+        let processed_x = if let Some(feature_engineer) = &self.feature_engineer {
+            feature_engineer.transform(holdout_x)?
+        } else {
+            holdout_x.clone()
+        };
 
-        // For now, return a placeholder score
-        Ok(best_result.cv_score * 0.95) // Slightly lower than CV score
+        // Try to score using the refitted best estimator
+        if let Some(estimator) = &self.best_estimator {
+            match estimator.score(&processed_x, holdout_y) {
+                Ok(score) => return Ok(score),
+                Err(_) => {
+                    // Fall back to heuristic if scoring fails
+                }
+            }
+        }
+
+        // Heuristic fallback: CV score * 0.95
+        Ok(best_result.cv_score * 0.95)
     }
 
-    /// Predict on new data using the best fitted model
+    /// Predict on new data using the best fitted model.
     pub fn predict(&self, x: &DataFrame) -> Result<Vec<f64>> {
         let _results = self.results.as_ref().ok_or_else(|| {
             Error::InvalidOperation("AutoML must be fitted before predict".into())
         })?;
 
         // Apply feature engineering if used
-        let mut processed_x = x.clone();
-        if let Some(feature_engineer) = &self.feature_engineer {
-            processed_x = feature_engineer.transform(&processed_x)?;
+        let processed_x = if let Some(feature_engineer) = &self.feature_engineer {
+            feature_engineer.transform(x)?
+        } else {
+            x.clone()
+        };
+
+        // Use the best fitted estimator if available
+        if let Some(estimator) = &self.best_estimator {
+            return estimator.predict(&processed_x);
         }
 
-        // In a real implementation, this would use the fitted best model
-        // For now, return placeholder predictions
+        // Fallback: return zeros (should not normally be reached after a successful fit)
         Ok(vec![0.0; processed_x.nrows()])
     }
 

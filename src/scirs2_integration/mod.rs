@@ -25,10 +25,12 @@ pub mod stats;
 
 // Re-export key types at module level
 #[cfg(feature = "scirs2")]
-pub use stats::{AnovaResult, PcaResult, SciRS2Stats, TTestResult};
+pub use stats::{
+    AnovaResult, Chi2TestResult, NormalityTestResult, PcaResult, SciRS2Stats, TTestResult,
+};
 
 #[cfg(feature = "scirs2")]
-pub use linalg::{EigResult, SciRS2LinAlg, SvdResult};
+pub use linalg::{EigResult, LstsqDataFrameResult, LuResult, QrResult, SciRS2LinAlg, SvdResult};
 
 #[cfg(feature = "scirs2")]
 pub use dataframe_ext::SciRS2Ext;

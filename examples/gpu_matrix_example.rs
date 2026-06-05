@@ -11,13 +11,13 @@
 //!   cargo run --example gpu_matrix_example
 
 #[cfg(cuda_available)]
-use ndarray::{arr2, Array2};
-#[cfg(cuda_available)]
 use pandrs::error::Result;
 #[cfg(cuda_available)]
 use pandrs::gpu::operations::{GpuMatrix, GpuVector};
 #[cfg(cuda_available)]
 use pandrs::gpu::{get_gpu_manager, init_gpu, init_gpu_with_config, GpuConfig, GpuError};
+#[cfg(cuda_available)]
+use scirs2_core::ndarray::{arr2, Array2};
 #[cfg(cuda_available)]
 use std::time::Instant;
 

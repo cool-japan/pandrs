@@ -149,8 +149,8 @@ fn main() -> Result<(), Box<dyn Error>> {
 // Function to generate a large DataFrame
 #[allow(clippy::result_large_err)]
 fn generate_large_dataframe(rows: usize) -> Result<OptimizedDataFrame, Box<dyn Error>> {
-    use rand::rngs::StdRng;
-    use rand::{Rng, RngExt, SeedableRng};
+    use scirs2_core::random::rngs::StdRng;
+    use scirs2_core::random::{Rng, RngExt, SeedableRng};
 
     let mut rng = StdRng::seed_from_u64(42); // Fixed seed for reproducibility
 

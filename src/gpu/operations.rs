@@ -3,8 +3,8 @@
 //! This module provides the core logic for GPU-accelerated operations, with
 //! implementations that can use CUDA when available or fall back to CPU processing.
 
-use ndarray::{Array, Array1, Array2, Axis};
 use rayon::prelude::*;
+use scirs2_core::ndarray::{Array, Array1, Array2, Axis};
 use std::sync::Arc;
 
 use crate::error::{Error, Result};

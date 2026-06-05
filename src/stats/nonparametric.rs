@@ -6,7 +6,7 @@
 use crate::core::error::{Error, Result};
 use crate::stats::distributions::{ChiSquared, Distribution, Normal};
 use crate::stats::hypothesis::{AlternativeHypothesis, EffectSize, TestResult};
-use crate::utils::rand_compat::{thread_rng, GenRangeCompat};
+use scirs2_core::random::{rng, RngExt};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -586,7 +586,7 @@ where
         ));
     }
 
-    let mut rng = thread_rng();
+    let mut rng = rng();
     let mut bootstrap_stats = Vec::with_capacity(n_bootstrap);
 
     // Generate bootstrap samples
@@ -595,7 +595,7 @@ where
 
         // Sample with replacement
         for _ in 0..data.len() {
-            let idx = rng.gen_range(0..data.len());
+            let idx = rng.random_range(0..data.len());
             bootstrap_sample.push(data[idx]);
         }
 
@@ -646,7 +646,7 @@ where
 
     let n1 = group1.len();
     let n2 = group2.len();
-    let mut rng = thread_rng();
+    let mut rng = rng();
 
     // Generate permutation distribution
     let mut permutation_stats = Vec::with_capacity(n_permutations);
@@ -655,7 +655,7 @@ where
         // Randomly shuffle combined data
         let mut shuffled = combined_data.clone();
         for i in (1..shuffled.len()).rev() {
-            let j = rng.gen_range(0..=i);
+            let j = rng.random_range(0..=i);
             shuffled.swap(i, j);
         }
 

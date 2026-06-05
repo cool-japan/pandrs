@@ -666,3 +666,327 @@ fn test_ml_pipeline_integration() {
 
     println!("✅ Advanced ML integration test completed successfully");
 }
+
+// ─── Track C Stub 1 tests ───────────────────────────────────────────────────
+
+/// PIECE B: `create_estimator` must return Ok for LinearRegression
+#[test]
+fn test_create_estimator_linear_regression() {
+    let automl = AutoML::new();
+    let estimator = automl.create_estimator("LinearRegression");
+    assert!(
+        estimator.is_ok(),
+        "create_estimator('LinearRegression') should return Ok"
+    );
+}
+
+/// PIECE B: `create_estimator` must return Ok for all supported model names
+#[test]
+fn test_create_estimator_all_supported() {
+    let automl = AutoML::new();
+
+    let names = [
+        "LinearRegression",
+        "DecisionTreeRegressor",
+        "DecisionTreeClassifier",
+        "DecisionTree",
+        "RandomForestRegressor",
+        "RandomForestClassifier",
+        "RandomForest",
+        "GradientBoostingRegressor",
+        "GradientBoostingClassifier",
+        "GradientBoosting",
+    ];
+    for name in &names {
+        let result = automl.create_estimator(name);
+        assert!(
+            result.is_ok(),
+            "create_estimator('{}') should return Ok, got: {:?}",
+            name,
+            result.err()
+        );
+    }
+}
+
+/// PIECE B: `create_estimator` must return Err for unknown model names
+#[test]
+fn test_create_estimator_unknown() {
+    let automl = AutoML::new();
+    let result = automl.create_estimator("UnknownModel123");
+    assert!(
+        result.is_err(),
+        "create_estimator with unknown model should return Err"
+    );
+}
+
+/// PIECE A: SupervisedAdapter<LinearRegression> — fit then predict
+#[test]
+fn test_supervised_adapter_fit_predict() {
+    use pandrs::ml::models::linear::LinearRegression;
+    use pandrs::ml::SupervisedAdapter;
+
+    // Toy dataset: y = 2*x + 1
+    let mut x = DataFrame::new();
+    x.add_column(
+        "x".to_string(),
+        Series::new(
+            vec![1.0f64, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0],
+            Some("x".to_string()),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+
+    let mut y = DataFrame::new();
+    y.add_column(
+        "target".to_string(),
+        Series::new(
+            vec![3.0f64, 5.0, 7.0, 9.0, 11.0, 13.0, 15.0, 17.0, 19.0, 21.0],
+            Some("target".to_string()),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+
+    let mut adapter = SupervisedAdapter::new(LinearRegression::new(), "target");
+
+    adapter.fit(&x, &y).expect("fit should succeed");
+
+    let preds = adapter.predict(&x).expect("predict should succeed");
+    assert_eq!(
+        preds.len(),
+        x.nrows(),
+        "predict should return same number of rows as input"
+    );
+
+    // Check predictions are close to ground truth (y = 2x + 1)
+    for (i, (&pred, expected)) in preds
+        .iter()
+        .zip([3.0, 5.0, 7.0, 9.0, 11.0, 13.0, 15.0, 17.0, 19.0, 21.0].iter())
+        .enumerate()
+    {
+        assert!(
+            (pred - expected).abs() < 1.0,
+            "Prediction {} should be close to {}, got {}",
+            i,
+            expected,
+            pred
+        );
+    }
+}
+
+/// PIECE A: SupervisedAdapter score method
+#[test]
+fn test_supervised_adapter_score() {
+    use pandrs::ml::models::linear::LinearRegression;
+    use pandrs::ml::SupervisedAdapter;
+
+    let mut x = DataFrame::new();
+    x.add_column(
+        "feature".to_string(),
+        Series::new(
+            vec![1.0f64, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0],
+            Some("feature".to_string()),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+
+    let mut y = DataFrame::new();
+    y.add_column(
+        "target".to_string(),
+        Series::new(
+            vec![2.0f64, 4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0],
+            Some("target".to_string()),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+
+    let mut adapter = SupervisedAdapter::new(LinearRegression::new(), "target");
+    adapter.fit(&x, &y).expect("fit should succeed");
+
+    let score = adapter.score(&x, &y).expect("score should succeed");
+    assert!(
+        score > 0.9,
+        "R² score should be high for a linear dataset, got {}",
+        score
+    );
+}
+
+/// PIECE C: RandomizedSearchCV with real LinearRegression estimator
+#[test]
+fn test_randomized_search_cv_real() {
+    use pandrs::ml::models::linear::LinearRegression;
+    use pandrs::ml::SupervisedAdapter;
+
+    // Create dataset: y = 3*x1 + 2*x2 + noise (features are NOT collinear)
+    let n = 20usize;
+    let x1: Vec<f64> = (1..=n as i64).map(|i| i as f64).collect();
+    // x2 is independent of x1 (alternating pattern)
+    let x2: Vec<f64> = (1..=n as i64)
+        .map(|i| {
+            if i % 2 == 0 {
+                i as f64 * 2.0
+            } else {
+                -(i as f64)
+            }
+        })
+        .collect();
+    let y_vals: Vec<f64> = x1
+        .iter()
+        .zip(x2.iter())
+        .map(|(&a, &b)| 3.0 * a + 2.0 * b + 1.0)
+        .collect();
+
+    let mut x = DataFrame::new();
+    x.add_column(
+        "x1".to_string(),
+        Series::new(x1, Some("x1".to_string())).unwrap(),
+    )
+    .unwrap();
+    x.add_column(
+        "x2".to_string(),
+        Series::new(x2, Some("x2".to_string())).unwrap(),
+    )
+    .unwrap();
+
+    let mut y = DataFrame::new();
+    y.add_column(
+        "target".to_string(),
+        Series::new(y_vals, Some("target".to_string())).unwrap(),
+    )
+    .unwrap();
+
+    let estimator: Box<dyn pandrs::ml::SklearnPredictor + Send + Sync> =
+        Box::new(SupervisedAdapter::new(LinearRegression::new(), "target"));
+
+    let mut param_distributions = HashMap::new();
+    param_distributions.insert(
+        "fit_intercept".to_string(),
+        ParameterDistribution::Choice(vec!["true".to_string(), "false".to_string()]),
+    );
+
+    let mut search = RandomizedSearchCV::new(estimator, param_distributions, 3)
+        .with_cv(CrossValidationStrategy::KFold {
+            n_splits: 3,
+            shuffle: false,
+            random_state: Some(42),
+        })
+        .with_scoring(Scorer::R2);
+
+    search
+        .fit(&x, &y)
+        .expect("RandomizedSearchCV::fit should succeed");
+
+    let results = search.get_results().expect("Results should be available");
+
+    // Best score should be finite and reasonable for a linear model
+    assert!(
+        results.best_score_.is_finite(),
+        "best_score_ should be finite, got {}",
+        results.best_score_
+    );
+
+    // cv_results should not be empty
+    assert!(
+        !results.cv_results_.is_empty(),
+        "cv_results_ should not be empty"
+    );
+}
+
+/// PIECE D / end-to-end: AutoML with LinearRegression whitelist
+///
+/// Verifies that `cv_std` is finite and `feature_importances` is Some after a full run.
+#[test]
+fn test_automl_end_to_end_linear() {
+    // Build a dataset with non-collinear features: y = 2*x1 + x2
+    // x1 is sequential, x2 is an independent pattern so XᵀX is invertible
+    let n = 30usize;
+    let x1: Vec<f64> = (1..=n as i64).map(|i| i as f64).collect();
+    // x2 is independently drawn (not a linear function of x1)
+    let x2: Vec<f64> = (1..=n as i64)
+        .map(|i| ((i as f64 * 1.3 + 7.0) % 13.0) + 1.0)
+        .collect();
+    let y_vals: Vec<f64> = x1
+        .iter()
+        .zip(x2.iter())
+        .map(|(&a, &b)| 2.0 * a + b)
+        .collect();
+
+    let mut x = DataFrame::new();
+    x.add_column(
+        "x1".to_string(),
+        Series::new(x1, Some("x1".to_string())).unwrap(),
+    )
+    .unwrap();
+    x.add_column(
+        "x2".to_string(),
+        Series::new(x2, Some("x2".to_string())).unwrap(),
+    )
+    .unwrap();
+
+    let mut y_df = DataFrame::new();
+    y_df.add_column(
+        "target".to_string(),
+        Series::new(y_vals, Some("target".to_string())).unwrap(),
+    )
+    .unwrap();
+
+    let config = AutoMLConfig {
+        task_type: TaskType::Regression,
+        max_models: Some(2),
+        model_whitelist: Some(vec!["LinearRegression".to_string()]),
+        feature_engineering: false, // disable to keep the test fast
+        feature_selection: false,
+        ensemble_methods: false,
+        verbose: 0,
+        cv_strategy: CrossValidationStrategy::KFold {
+            n_splits: 3,
+            shuffle: false,
+            random_state: Some(42),
+        },
+        scoring: Scorer::R2,
+        time_limit: None,
+        random_state: Some(42),
+        optimize_for_interpretability: false,
+        memory_limit: None,
+        model_blacklist: None,
+    };
+
+    let mut automl = AutoML::with_config(config);
+    automl.fit(&x, &y_df).expect("AutoML::fit should succeed");
+
+    let results = automl
+        .get_results()
+        .expect("Results should be available after fit");
+
+    // Best model should be LinearRegression
+    assert_eq!(results.best_pipeline, "LinearRegression");
+
+    // Leaderboard should have at least one entry
+    assert!(
+        !results.leaderboard.is_empty(),
+        "Leaderboard should not be empty"
+    );
+
+    // cv_std should be finite (not the placeholder 0.0 from stubs)
+    let best = &results.leaderboard[0];
+    assert!(
+        best.cv_std.is_finite(),
+        "cv_std should be a finite number, got {}",
+        best.cv_std
+    );
+
+    // feature_importance should be Some for LinearRegression
+    assert!(
+        best.feature_importance.is_some(),
+        "LinearRegression should have feature importances"
+    );
+
+    // holdout_score should be set
+    assert!(
+        results.holdout_score.is_some(),
+        "holdout_score should be Some after full AutoML fit"
+    );
+}

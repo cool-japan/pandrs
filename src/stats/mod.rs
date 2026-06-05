@@ -534,31 +534,26 @@ pub fn normalized_mutual_info(df: &DataFrame, col1: &str, col2: &str) -> Result<
     categorical::dataframe_normalized_mutual_information(df, col1, col2)
 }
 
-// TODO: Re-export functions once they are implemented
-// For now, we'll comment these out since the implementation files might have been reorganized
-
-// Descriptive statistics functions
-// pub use descriptive::variance;
-// pub use descriptive::std_dev;
-// pub use descriptive::quantile;
+// Descriptive statistics functions (thin wrappers over descriptive module)
+pub use descriptive::quantile;
+pub use descriptive::std_dev;
+pub use descriptive::variance;
 // Use advanced descriptive module for correlation matrix
 pub use advanced_descriptive::correlation_matrix;
 
-// Inference statistics functions
-// pub use inference::one_sample_ttest;
-// pub use inference::paired_ttest;
+// Sample skewness and excess kurtosis (always-on, no scirs2 required)
+pub use advanced_descriptive::{kurtosis_excess, skewness};
 
-// Regression functions - using existing functions instead
+// Inference statistics functions are re-exported via hypothesis module below.
+
+// Regression functions
 pub use regression::linear_regression as simple_linear_regression;
-// pub use regression::polynomial_regression;
-// pub use regression::residual_diagnostics;
+// polynomial_regression and residual_diagnostics require oversized work – deferred.
 
-// Sampling functions - existing implementation
+// Sampling functions
 pub use sampling::stratified_sample_impl as stratified_sample;
-// pub use sampling::bootstrap_confidence_interval;
-// pub use sampling::systematic_sample;
-// pub use sampling::weighted_sample;
-// pub use sampling::bootstrap_standard_error;
+// bootstrap_confidence_interval is re-exported via nonparametric module below.
+// systematic_sample and weighted_sample require oversized work – deferred.
 
 pub use categorical::entropy;
 pub use categorical::frequency_distribution;
@@ -664,19 +659,56 @@ impl StatisticalAnalyzer {
         }
     }
 
-    /// Perform one-way ANOVA by groups
-    /// TODO: Fix string data extraction from Series
+    /// Perform one-way ANOVA (or Kruskal-Wallis) by groups
+    ///
+    /// Groups the numeric `value_column` by the unique values in `group_column` and
+    /// tests whether the group means differ significantly.
+    ///
+    /// * `parametric = true`  → one-way ANOVA (assumes normality)
+    /// * `parametric = false` → Kruskal-Wallis test (non-parametric)
     pub fn anova_by_group(
         &self,
-        _df: &DataFrame,
-        _value_column: &str,
-        _group_column: &str,
-        _parametric: bool,
+        df: &DataFrame,
+        value_column: &str,
+        group_column: &str,
+        parametric: bool,
     ) -> Result<HypothesisTestResult> {
-        // Temporarily disabled due to Series API changes
-        Err(Error::NotImplemented(
-            "ANOVA by group temporarily disabled due to Series API changes".into(),
-        ))
+        // Extract numeric values and group labels in one pass
+        let values = df.get_column_numeric_values(value_column)?;
+        let labels = df.get_column_string_values(group_column)?;
+
+        if values.len() != labels.len() {
+            return Err(Error::InvalidValue(
+                "value_column and group_column must have the same length".into(),
+            ));
+        }
+
+        // Collect per-group values
+        let mut group_map: std::collections::HashMap<String, Vec<f64>> =
+            std::collections::HashMap::new();
+        for (label, value) in labels.into_iter().zip(values.into_iter()) {
+            group_map.entry(label).or_default().push(value);
+        }
+
+        if group_map.len() < 2 {
+            return Err(Error::InvalidValue(
+                "At least two distinct groups are required for group-based ANOVA".into(),
+            ));
+        }
+
+        // Build slices in a deterministic order for reproducible results
+        let mut sorted_keys: Vec<String> = group_map.keys().cloned().collect();
+        sorted_keys.sort();
+
+        let group_vecs: Vec<Vec<f64>> = sorted_keys.iter().map(|k| group_map[k].clone()).collect();
+
+        let group_slices: Vec<&[f64]> = group_vecs.iter().map(|v| v.as_slice()).collect();
+
+        if parametric {
+            one_way_anova(&group_slices)
+        } else {
+            kruskal_wallis_test(&group_slices)
+        }
     }
 
     /// Generate correlation matrix for multiple columns

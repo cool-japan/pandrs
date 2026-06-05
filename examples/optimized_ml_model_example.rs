@@ -15,9 +15,9 @@ use pandrs::ml::models::{LinearRegression, LogisticRegression};
 #[cfg(feature = "optimized")]
 use pandrs::OptimizedDataFrame;
 #[cfg(feature = "optimized")]
-use rand::Rng;
+use scirs2_core::random::Rng;
 #[cfg(feature = "optimized")]
-use rand::RngExt;
+use scirs2_core::random::RngExt;
 
 #[cfg(not(feature = "optimized"))]
 fn main() {
@@ -276,7 +276,7 @@ fn model_persistence_example() -> Result<(), PandRSError> {
 // Generate regression data
 #[allow(clippy::result_large_err)]
 fn create_regression_data() -> Result<OptimizedDataFrame> {
-    let mut rng = rand::rng();
+    let mut rng = scirs2_core::random::rng();
 
     // Generate 100 rows of data
     let n = 100;
@@ -318,7 +318,7 @@ fn create_regression_data() -> Result<OptimizedDataFrame> {
 // Generate classification data
 #[allow(clippy::result_large_err)]
 fn create_classification_data() -> Result<OptimizedDataFrame> {
-    let mut rng = rand::rng();
+    let mut rng = scirs2_core::random::rng();
 
     // Generate 100 rows of data
     let n = 100;

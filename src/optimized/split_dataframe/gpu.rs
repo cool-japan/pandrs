@@ -3,7 +3,7 @@
 //! This module provides GPU acceleration capabilities for the OptimizedDataFrame
 //! implementation, enabling high-performance computation for large datasets.
 
-use ndarray::{Array1, Array2};
+use scirs2_core::ndarray::{Array1, Array2};
 use std::sync::Arc;
 
 use crate::column::Column;

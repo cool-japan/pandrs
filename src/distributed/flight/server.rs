@@ -259,13 +259,55 @@ impl FlightService for PandRsFlightServiceImpl {
     }
 
     // ------------------------------------------------------------------
-    // PollFlightInfo – poll a long-running query (not implemented)
+    // PollFlightInfo – poll a long-running query
+    //
+    // We model all registered datasets as immediately available (progress=1.0).
+    // If the descriptor names a dataset that is not registered we return
+    // not_found rather than a pending response.
     // ------------------------------------------------------------------
     async fn poll_flight_info(
         &self,
-        _request: Request<FlightDescriptor>,
+        request: Request<FlightDescriptor>,
     ) -> std::result::Result<Response<PollInfo>, Status> {
-        Err(Status::unimplemented("PollFlightInfo is not implemented"))
+        let descriptor = request.into_inner();
+        let name = descriptor.path.first().cloned().unwrap_or_default();
+
+        // Check if the dataset is registered; return not_found if absent.
+        let batch_opt = self
+            .registry
+            .get(&name)
+            .map_err(|e| Status::internal(e.to_string()))?;
+
+        let _batch = batch_opt
+            .ok_or_else(|| Status::not_found(format!("Dataset '{name}' not registered")))?;
+
+        // Build a FlightInfo for the registered dataset.
+        let ticket_bytes = bytes::Bytes::from(name.as_bytes().to_vec());
+        let endpoint = arrow_flight::FlightEndpoint {
+            ticket: Some(Ticket {
+                ticket: ticket_bytes,
+            }),
+            location: vec![],
+            expiration_time: None,
+            app_metadata: bytes::Bytes::new(),
+        };
+        let flight_info = FlightInfo {
+            schema: bytes::Bytes::new(),
+            flight_descriptor: Some(descriptor),
+            endpoint: vec![endpoint],
+            total_records: -1,
+            total_bytes: -1,
+            ordered: false,
+            app_metadata: bytes::Bytes::new(),
+        };
+
+        Ok(Response::new(PollInfo {
+            info: Some(flight_info),
+            flight_descriptor: None,
+            // progress=Some(1.0) signals the query is complete.
+            progress: Some(1.0),
+            expiration_time: None,
+        }))
     }
 
     // ------------------------------------------------------------------
@@ -361,33 +403,108 @@ impl FlightService for PandRsFlightServiceImpl {
     }
 
     // ------------------------------------------------------------------
-    // DoExchange – bidirectional exchange (not implemented)
+    // DoExchange – bidirectional passthrough echo.
+    //
+    // Each FlightData message received from the client is forwarded as-is
+    // back to the client (with the flight_descriptor cleared on messages
+    // after the first to avoid confusing downstream Arrow Flight readers).
     // ------------------------------------------------------------------
     async fn do_exchange(
         &self,
-        _request: Request<Streaming<FlightData>>,
+        request: Request<Streaming<FlightData>>,
     ) -> std::result::Result<Response<Self::DoExchangeStream>, Status> {
-        Err(Status::unimplemented("DoExchange is not implemented"))
+        use futures::StreamExt;
+
+        let mut in_stream = request.into_inner();
+        let mut echo_messages: Vec<std::result::Result<FlightData, Status>> = Vec::new();
+        let mut first = true;
+
+        while let Some(msg_result) = in_stream.next().await {
+            match msg_result {
+                Ok(mut flight_data) => {
+                    // Strip the descriptor from all but the first message so that the
+                    // echoed stream is a valid Arrow IPC data stream.
+                    if !first {
+                        flight_data.flight_descriptor = None;
+                    }
+                    first = false;
+                    echo_messages.push(Ok(flight_data));
+                }
+                Err(e) => {
+                    echo_messages.push(Err(Status::internal(e.to_string())));
+                }
+            }
+        }
+
+        let stream = futures::stream::iter(echo_messages);
+        Ok(Response::new(Box::pin(stream)))
     }
 
     // ------------------------------------------------------------------
-    // DoAction – generic action (not implemented)
+    // DoAction – named action dispatcher.
+    //
+    // Supported actions:
+    //   "healthcheck"   – returns a single Result with body b"ok"
+    //   "list_datasets" – returns one Result per registered dataset name
+    //
+    // All other action types return Status::unimplemented.
     // ------------------------------------------------------------------
     async fn do_action(
         &self,
-        _request: Request<Action>,
+        request: Request<Action>,
     ) -> std::result::Result<Response<Self::DoActionStream>, Status> {
-        Err(Status::unimplemented("DoAction is not implemented"))
+        let action = request.into_inner();
+        let action_type = action.r#type.as_str();
+
+        match action_type {
+            "healthcheck" => {
+                let result = arrow_flight::Result {
+                    body: bytes::Bytes::from_static(b"ok"),
+                };
+                let stream =
+                    futures::stream::once(
+                        async move { Ok::<arrow_flight::Result, Status>(result) },
+                    );
+                Ok(Response::new(Box::pin(stream)))
+            }
+            "list_datasets" => {
+                let names = self
+                    .registry
+                    .list()
+                    .map_err(|e| Status::internal(e.to_string()))?;
+                let results: Vec<std::result::Result<arrow_flight::Result, Status>> = names
+                    .into_iter()
+                    .map(|name| {
+                        Ok(arrow_flight::Result {
+                            body: bytes::Bytes::from(name.into_bytes()),
+                        })
+                    })
+                    .collect();
+                let stream = futures::stream::iter(results);
+                Ok(Response::new(Box::pin(stream)))
+            }
+            other => Err(Status::unimplemented(format!("Unknown action: '{other}'"))),
+        }
     }
 
     // ------------------------------------------------------------------
-    // ListActions
+    // ListActions – advertise the actions handled by DoAction.
     // ------------------------------------------------------------------
     async fn list_actions(
         &self,
         _request: Request<Empty>,
     ) -> std::result::Result<Response<Self::ListActionsStream>, Status> {
-        let stream = futures::stream::empty::<std::result::Result<ActionType, Status>>();
+        let actions: Vec<std::result::Result<ActionType, Status>> = vec![
+            Ok(ActionType {
+                r#type: "healthcheck".to_string(),
+                description: "Returns 'ok' to signal the server is alive".to_string(),
+            }),
+            Ok(ActionType {
+                r#type: "list_datasets".to_string(),
+                description: "Returns the names of all registered datasets".to_string(),
+            }),
+        ];
+        let stream = futures::stream::iter(actions);
         Ok(Response::new(Box::pin(stream)))
     }
 }

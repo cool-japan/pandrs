@@ -5,6 +5,123 @@ All notable changes to PandRS will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-06-05
+
+### Fixed — ML/Statistical Correctness (replacing fabricated results with real algorithms)
+
+- **`PCA` (always-compiled)**: Replaced zero-component stub with real Jacobi rotation eigendecomposition. `fit` now computes covariance matrix, decomposes it, stores real principal components and explained variance ratios. `transform` now correctly projects onto components (was: read String columns and rename). `evaluate` now returns real reconstruction MSE.
+- **`TSNE` (always-compiled)**: Replaced all-zeros embedding with real t-SNE — perplexity-tuned high-D affinities, symmetrised P matrix, Student-t Q kernel, gradient descent with momentum and early exaggeration.
+- **`DBSCAN::fit`**: Replaced all-zeros stub with real density-based clustering — ε-neighborhood queries, core-point detection, BFS region-growing, noise labelling (−1). Supports Euclidean/Manhattan/Cosine metrics.
+- **`AgglomerativeClustering::fit`**: Replaced all-zeros stub with real bottom-up hierarchical clustering. All four linkage variants (Single/Complete/Average/Ward) over a precomputed pairwise distance matrix.
+- **`compute_silhouette`**: Replaced hardcoded `0.75` with real mean silhouette coefficient (a = mean intra-cluster dist, b = min mean nearest-cluster dist).
+- **`LogisticRegression::fit`**: Replaced zero-coefficient stub with real IRLS (Iteratively Reweighted Least Squares) with L2 regularisation, honoring `max_iter`/`tol`/`c`/`fit_intercept`.
+- **`LogisticRegression::predict`**: Real sigmoid threshold at 0.5.
+- **`LogisticRegression::predict_proba`**: Real sigmoid probabilities.
+- **`LogisticRegression::evaluate`**: Real confusion-matrix metrics (accuracy/precision/recall/F1) — was hardcoded `accuracy=0.85`.
+- **`LogisticRegression::cross_validate`**: Real k-fold CV — was hardcoded.
+- **`LinearRegression::cross_validate`**: Real k-fold CV — was hardcoded `r2=0.8`.
+- **`IsolationForest::fit`/`predict`/`decision_function`**: Replaced RNG-fabricated scores with real isolation trees (random feature/value splits, path-length scores, `2^(-E[h]/c(n))` anomaly score, contamination-percentile labels).
+- **`LocalOutlierFactor::fit`**: Replaced no-op stub with real LOF (k-NN, k-distances, reachability distances, LRD ratio, contamination threshold).
+- **`OneClassSVM::fit`/`transform`**: Replaced RNG-fabricated scores with real SVDD kernel-distance scoring (RBF kernel, data-centered kernel distance).
+- **`Scorer::RocAuc`**: Replaced hardcoded `0.75` with real AUC via Mann-Whitney U rank-based formula (ties handled correctly; perfect = 1.0, random = 0.5).
+- **`SelectKBest::chi2_scores`**: Replaced all-`1.0` placeholder with real χ² contingency table statistic.
+- **`SelectKBest::mutual_info_scores`**: Replaced all-`0.5` placeholder with real histogram-based mutual information.
+- **`HyperparameterGrid::parameter_combinations`**: Replaced single-combo stub with real Cartesian product.
+- **`GridSearchCV::fit`**: Replaced hardcoded `best_score=0.9` with real k-fold CV scoring via `cross_validate`.
+- **`RandomizedSearchCV::fit`** (models/selection): Same — real CV with random subset of param combinations.
+- **`learning_curve`**: Replaced hardcoded `0.9/0.8` with real per-size-fraction k-fold CV.
+- **`validation_curve`**: Replaced hardcoded `0.9/0.8` with real per-param-value k-fold CV.
+- **`select_features`**: All four strategies now data-dependent — `RecursiveElimination` (iterative OLS RFE), `L1Based` (coefficient ranking), `TreeBased` (variance × correlation), `MutualInformation` (histogram MI).
+- **`create_scaler`**: `RobustScaler` (real median/IQR), `QuantileTransformer` (real rank-based normalization), `PowerTransformer` (real Yeo-Johnson with optimal λ) now returned instead of silently substituting `StandardScaler`.
+- **Statistical p-values** (`stats/hypothesis.rs`, `time_series/stats.rs`): Added native `chi2_sf` (regularised incomplete gamma via Lanczos + Lentz continued fraction) and `normal_sf` (erfc approximation). Replaced binary-threshold p-values in Ljung-Box, Box-Pierce, Breusch-Godfrey, Friedman, and Kruskal-Wallis tests with real χ²-distributed p-values. Fixed Kruskal-Wallis to compute its own H statistic instead of forwarding Friedman's. Improved Shapiro-Wilk p-value approximation via Royston log-transform. Removed erroneous `× 0.95` scaling in Phillips-Perron test.
+
+### Added
+
+- `examples/ml_real_algorithms_example.rs` — end-to-end demo of PCA, DBSCAN, LogisticRegression, IsolationForest, LOF, and AgglomerativeClustering on synthetic data with correctness assertions.
+- `IsolationForest.labels` field (public) — populated with `−1`/`1` labels after `fit`.
+- `LocalOutlierFactor.labels` field — same.
+- `OneClassSVM.labels` field — same.
+- **SciRS2-Core policy compliance**: `scirs2-core` is now a non-optional core dependency
+  with the `random` feature enabled. All direct `rand`/`ndarray` usages in production
+  code have been migrated to `scirs2_core::random` and `scirs2_core::ndarray`, and the
+  `rand_compat.rs` shim module has been retired. The `rand` and `ndarray` crates are
+  no longer direct dependencies of pandrs (they remain transitive via scirs2-core).
+  Migration covers GPU acceleration code in `src/gpu/` and `src/temporal/gpu.rs`.
+- **Expanded SciRS2 stats integration** (`scirs2` feature):
+  - Correlation: Spearman rank correlation matrix, sample covariance matrix
+  - Hypothesis tests: paired t-test (`ttest_paired`), chi-square goodness-of-fit
+    (`chi2_goodness_of_fit`), chi-square independence (`chi2_independence`),
+    Mann-Whitney U (`mann_whitney_u`), Wilcoxon signed-rank (`wilcoxon_signed_rank`),
+    Kruskal-Wallis (`kruskal_wallis`), Shapiro-Wilk normality test (`shapiro_wilk_test`),
+    KS two-sample test (`ks_two_sample`)
+  - New result types: `Chi2TestResult`, `NormalityTestResult`
+- **Expanded SciRS2 linalg integration** (`scirs2` feature):
+  - QR decomposition (`qr`), Cholesky decomposition (`cholesky`), LU decomposition (`lu`)
+  - Least-squares solve (`lstsq`), pseudoinverse (`pinv`)
+  - Matrix norm (`matrix_norm`), numerical rank (`matrix_rank`), condition number (`condition_number`)
+  - New result types: `QrResult`, `LuResult`, `LstsqDataFrameResult`
+- **`SciRS2Ext` DataFrame trait** extended with: `scirs2_spearman_corr`, `scirs2_cov`,
+  `scirs2_qr`, `scirs2_lstsq`, `scirs2_matrix_rank`, `scirs2_condition_number`
+- **Descriptive statistics**: `skewness` and `kurtosis_excess` free functions added to
+  `stats::descriptive`, available without the `scirs2` feature
+- **MultiIndex missing-value support**: `index::MultiIndex` now accepts `code == -1`
+  (pandas-style NA sentinel) in the constructor. `get_level_values()` returns
+  `Vec<Option<T>>` (None for -1 codes). New `get_tuple_opt()` method provides
+  tuple access with per-level Option wrapping.
+- **Model serving `load_model`**: `InMemoryModelRegistry::load_model` now returns
+  `Arc<dyn ModelServing>` (previously `NotImplemented`). Storage changed from
+  `Box` to `Arc` enabling reference-counted sharing. `update_metadata` also implemented.
+- **JIT expression tree execution**: `execute_expression_tree` now implements a full
+  recursive interpreter covering all `ExpressionNode` variants (Constant, Variable,
+  BinaryOp, UnaryOp, Reduction, Conditional, FunctionCall, ArrayAccess) with
+  scalar-broadcast semantics. `apply` in `JitOptimizedDataFrame` delegates to the
+  inner DataFrame (un-accelerated fallback).
+- **AutoML `create_estimator`**: Now instantiates real `SupervisedAdapter<M>` wrappers
+  for LinearRegression, DecisionTree, RandomForest, and GradientBoosting. The new
+  `SupervisedAdapter` bridges `SupervisedModel` to the `SklearnPredictor` interface.
+- **`RandomizedSearchCV::fit`**: Implemented real k-fold cross-validation (was a
+  `best_score_: 0.8` placeholder). Reports genuine `best_params_`, `best_score_`,
+  `std_test_score`, and `cv_results_`.
+- **`examples/scirs2_integration_example.rs`**: New example demonstrating correlation,
+  statistical tests, PCA, and linear algebra via the `SciRS2Ext` trait.
+- **Descriptive statistics — variance, std dev, quantile, ANOVA by group**:
+  `stats::descriptive` gains `variance(data, ddof)`, `std_dev(data, ddof)`,
+  `quantile(data, q)` (linear-interpolation, NumPy-compatible), and
+  `anova_by_group(values, groups)` for one-way ANOVA F-statistic computation.
+  All are available without the `scirs2` feature.
+- **Expanded Arrow data types support** (`distributed` feature): `ArrowConverter`
+  now handles `Int8`, `Int16`, `Int32`, `UInt8`, `UInt16`, `UInt32`, `UInt64`,
+  `Float32`, `LargeUtf8`, `Binary`, `Date32`, `Date64`, `Timestamp`,
+  `Duration`, `List`, `LargeList`, `FixedSizeList`, `Struct`, and `Dictionary`
+  Arrow data types.
+- **Parquet read/write in local filesystem connector** (`distributed` feature):
+  `LocalConnector` implements Parquet read and write via the local filesystem,
+  enabling `read_parquet` / `write_parquet` on `LocalConnector` instances.
+- **Flight server dataset handling** (`flight` feature): Updated Flight server
+  methods for more robust dataset loading and publishing.
+
+### Fixed
+
+- Fixed `oxiarc-core` version resolution: bumped from `0.2.6` to `0.2.8` in Cargo.lock
+  so that `oxiarc-lz4 0.2.8` and `oxiarc-zstd 0.2.8` (pulled transitively via
+  `scirs2-core 0.4.4`) compile correctly.
+- Removed dead `src/index_impl/` directory (was never declared as a module; code was
+  unreachable).
+- Deleted dead `IndexedRandom` imports from `ml/clustering/mod.rs` and `stats/gpu.rs`
+  (trait is not re-exported by `scirs2_core::random`; imports were unused).
+- Fixed metric locking deadlock/race in real-time analytics and streaming:
+  `src/arrow_integration.rs`, `src/distributed/core/dataframe.rs`, and
+  `src/distributed/engines/datafusion/mod.rs` now acquire metric locks correctly.
+  Associated streaming test (`tests/streaming_test.rs`) updated accordingly.
+
+### Changed
+
+- `scirs2` feature definition no longer enables `dep:scirs2-core` (it is always-on)
+  or `dep:ndarray` (ndarray is now accessed via `scirs2_core::ndarray`).
+- `cuda` feature no longer enables `dep:ndarray` (same reason).
+- Updated SciRS2 dependencies to version 0.4.4 (from 0.4.3).
+- `oxiarc-archive` updated to 0.3.2.
+
 ## [0.3.2] - 2026-04-19
 
 ### Changed

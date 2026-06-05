@@ -554,9 +554,9 @@ impl ScopedApiKey {
 
 /// Generate an API key
 fn generate_api_key(prefix: &str) -> String {
-    use rand::Rng;
+    use scirs2_core::random::Rng;
     let mut bytes = [0u8; 32];
-    rand::rng().fill_bytes(&mut bytes);
+    scirs2_core::random::rng().fill_bytes(&mut bytes);
     format!(
         "{}_{}",
         prefix,
@@ -569,9 +569,9 @@ fn generate_api_key(prefix: &str) -> String {
 
 /// Generate a key ID
 fn generate_key_id() -> String {
-    use rand::Rng;
+    use scirs2_core::random::Rng;
     let mut bytes = [0u8; 16];
-    rand::rng().fill_bytes(&mut bytes);
+    scirs2_core::random::rng().fill_bytes(&mut bytes);
     format!(
         "key_{}",
         bytes

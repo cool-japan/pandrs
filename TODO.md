@@ -2,10 +2,10 @@
 
 ## Current Release
 
-**Version:** 0.3.2
-**Release Date:** April 2026
-**Status:** Production Ready - Enterprise-Grade Release
-**Test Coverage:** 1818 tests passing (nextest) + 118 doc tests, zero clippy warnings
+**Version:** 0.4.0
+**Release Date:** June 2026
+**Status:** Production Ready — Full SciRS2-Core Integration Release
+**Test Coverage:** 1893 tests passing (nextest, scirs2 features), zero clippy warnings
 
 ### Acknowledged upstream Pure Rust tech debt (feature-gated; default build unaffected)
 - `parquet` / `distributed` / `flight` pull `flate2`/`zstd`/`lz4_flex`/`snap`/`bzip2`/`brotli`/`miniz_oxide` via upstream arrow/parquet/datafusion/async-compression.
@@ -327,7 +327,7 @@
 - [x] DataFrame schema evolution and migration tools
 - [x] Plugin system for custom data sources and transforms
 - [ ] Automated performance regression testing in CI
-- [ ] Full SciRS2-Core integration for scientific computing
+- [x] Full SciRS2-Core integration for scientific computing ✓
 - [x] Arrow Flight RPC support for distributed data transfer
 - [x] Removed SQL dependencies for Pure Rust compliance (no C/Fortran deps)
 - [x] Dependency upgrades (parquet/arrow 58.1, datafusion 53.0, cranelift 0.130)
@@ -349,6 +349,48 @@
 - [x] Add prelude module for convenient access to core types
 - [x] All 1818 tests passing (nextest) + 118 doc tests
 - [x] Zero clippy warnings, clean rustdoc with -D warnings
+
+### v0.4.0 - Full SciRS2-Core Integration (May 2026) ✓
+- [x] SciRS2-Core policy compliance: all `rand`/`ndarray` direct deps routed through `scirs2_core::random` / `scirs2_core::ndarray`; `rand_compat` shim retired; direct `rand`/`ndarray` deps removed from pandrs crate
+- [x] Expanded scirs2 stats: Spearman/Kendall correlation, covariance matrix, paired t-test, chi-square, Mann-Whitney, Wilcoxon, Kruskal-Wallis, Shapiro-Wilk, KS two-sample
+- [x] Expanded scirs2 linalg: QR, Cholesky, LU, lstsq, pinv, matrix_norm, matrix_rank, condition_number
+- [x] `SciRS2Ext` DataFrame trait extended with 6 new ergonomic methods
+- [x] `skewness` and `kurtosis_excess` free functions (no scirs2 feature required)
+- [x] MultiIndex missing-value support (code == -1 pandas NA sentinel)
+- [x] Model serving `load_model` fully implemented via `Arc<dyn ModelServing>`
+- [x] JIT expression tree real recursive interpreter (all ExpressionNode variants)
+- [x] AutoML `create_estimator` instantiates real `SupervisedAdapter<M>` wrappers
+- [x] `RandomizedSearchCV::fit` implements real k-fold cross-validation
+- [x] Dead `src/index_impl/` directory removed
+- [x] 16 `.disabled`/`.bak` example files removed
+- [x] Fixed oxiarc-core version conflict blocking scirs2 feature compilation
+- [x] `examples/scirs2_integration_example.rs` added
+- [x] 1771+ tests passing (nextest, scirs2 feature)
+
+### v0.4.1 - ML/Statistical Correctness (May 2026) ✓
+- [x] PCA: real Jacobi eigendecomposition + correct transform (was: zeros + String-column rename)
+- [x] t-SNE: real gradient descent with perplexity tuning + momentum (was: all-zeros embedding)
+- [x] DBSCAN: real density clustering with BFS region-growing + noise labelling (was: all zeros)
+- [x] AgglomerativeClustering: real bottom-up hierarchical clustering, all 4 linkage variants (was: all zeros)
+- [x] silhouette score: real mean a/b coefficient (was: hardcoded 0.75)
+- [x] LogisticRegression: real IRLS training + sigmoid predict/proba + real metrics (was: all zeros)
+- [x] LinearRegression::cross_validate: real k-fold (was: hardcoded r2=0.8)
+- [x] IsolationForest: real isolation trees with path-length scoring (was: RNG-fabricated)
+- [x] LocalOutlierFactor: real k-NN LOF algorithm (was: no-op)
+- [x] OneClassSVM: real SVDD kernel-distance scoring (was: RNG-fabricated)
+- [x] RocAuc scorer: real Mann-Whitney AUC (was: hardcoded 0.75)
+- [x] chi2_scores / mutual_info_scores: real χ² and histogram-based MI (was: all 1.0 / all 0.5)
+- [x] HyperparameterGrid::parameter_combinations: real Cartesian product (was: one combo)
+- [x] GridSearchCV/RandomizedSearchCV (models/selection): real k-fold CV scoring (was: hardcoded 0.9)
+- [x] RandomizedSearchCV (model_selection): real k-fold CV with populated cv_results_ (was: empty Vec)
+- [x] learning_curve / validation_curve: real per-size/per-param k-fold CV (was: hardcoded 0.9/0.8)
+- [x] select_features: all 4 strategies data-dependent (RecursiveElimination/L1Based/TreeBased/MutualInformation)
+- [x] RobustScaler/QuantileTransformer/PowerTransformer: real implementations (was: silent StandardScaler)
+- [x] Statistical p-values: real chi2_sf + normal_sf; Ljung-Box/Box-Pierce/Breusch-Godfrey/Friedman/KW use χ² distribution (was: binary thresholds)
+- [x] Shapiro-Wilk p-value: Royston log-transform approximation (was: binary threshold)
+- [x] Kruskal-Wallis: computes own H statistic instead of forwarding Friedman (was: wrong)
+- [x] examples/ml_real_algorithms_example.rs added (PCA/DBSCAN/LogisticRegression/IsolationForest/LOF/AgglomerativeClustering)
+- [x] 1800+ tests passing (all-safe feature)
 
 ### v1.0.0 - Production Release (Q2 2026)
 - [ ] Full pandas API compatibility (Complete - 100%)

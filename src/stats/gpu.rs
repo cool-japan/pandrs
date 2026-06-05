@@ -8,8 +8,7 @@ use crate::error::{Error, Result};
 use crate::gpu::operations::{GpuMatrix, GpuVector};
 use crate::gpu::{get_gpu_manager, init_gpu, GpuError};
 use crate::stats::DescriptiveStats;
-use ndarray::{Array1, Array2};
-use rand::prelude::IndexedRandom;
+use scirs2_core::ndarray::{Array1, Array2};
 use std::collections::HashMap;
 
 /// Compute correlation matrix using GPU acceleration when available
@@ -386,7 +385,7 @@ fn ensure_gpu_available() -> Result<()> {
 /// ```
 /// use pandrs::stats::gpu;
 /// use pandrs::gpu::init_gpu;
-/// use ndarray::Array2;
+/// use scirs2_core::ndarray::Array2;
 ///
 /// // Initialize GPU
 /// init_gpu().expect("operation should succeed");
@@ -515,7 +514,7 @@ pub fn linear_regression(
 /// ```
 /// use pandrs::stats::gpu;
 /// use pandrs::gpu::init_gpu;
-/// use ndarray::Array2;
+/// use scirs2_core::ndarray::Array2;
 ///
 /// // Initialize GPU
 /// init_gpu().expect("operation should succeed");
@@ -599,7 +598,7 @@ pub fn feature_importance(x: &Array2<f64>, y: &[f64]) -> Result<HashMap<usize, f
 /// ```
 /// use pandrs::stats::gpu;
 /// use pandrs::gpu::init_gpu;
-/// use ndarray::Array2;
+/// use scirs2_core::ndarray::Array2;
 ///
 /// // Initialize GPU
 /// init_gpu().expect("operation should succeed");
@@ -642,8 +641,8 @@ pub fn kmeans(
     let mut centroids = Array2::zeros((k, n_cols));
 
     // Select k random rows from data as initial centroids
-    use rand::seq::SliceRandom;
-    let mut rng = rand::rng();
+    use scirs2_core::rand_prelude::IndexedRandom;
+    let mut rng = scirs2_core::random::rng();
     let all_indices: Vec<usize> = (0..n_rows).collect();
 
     // Sample without replacement
@@ -710,7 +709,7 @@ pub fn kmeans(
                 }
             } else {
                 // Handle empty cluster by assigning a random point
-                let random_idx = (rand::random::<f64>() * n_rows as f64) as usize;
+                let random_idx = (scirs2_core::random::random::<f64>() * n_rows as f64) as usize;
                 for j in 0..n_cols {
                     new_centroids[[c, j]] = data[[random_idx, j]];
                 }

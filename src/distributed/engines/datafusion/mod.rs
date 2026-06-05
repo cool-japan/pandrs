@@ -92,30 +92,40 @@ pub struct DataFusionContext {
 impl DataFusionContext {
     /// Creates a new DataFusion context
     pub fn new(config: &DistributedConfig) -> Self {
+        use datafusion::execution::runtime_env::RuntimeEnvBuilder;
+
         // Create DataFusion configuration
         let mut df_config = datafusion::execution::context::SessionConfig::new();
 
         // Set concurrency
         df_config = df_config.with_target_partitions(config.concurrency());
 
-        // Set memory limit if provided
-        // TODO: Update for DataFusion API changes
-        // if let Some(limit) = config.memory_limit() {
-        //     df_config = df_config.with_mem_limit(limit);
-        // }
+        // TODO(datafusion-53): config.enable_optimization() / config.optimizer_rules() are not
+        // yet wired through.  The rule names returned by optimizer_rules() (e.g. "filter_pushdown",
+        // "projection_pushdown") do not map 1-to-1 to DataFusion 53's
+        // `datafusion.optimizer.*` config keys exposed via
+        // `df_config.options_mut().set(key, value)`.  A translation table is needed before
+        // these can be applied; tracked as a follow-up improvement.
 
-        // Set optimization options
-        // TODO: Update for DataFusion API changes
-        // if config.enable_optimization() {
-        //     for (rule, value) in config.optimizer_rules() {
-        //         if let Ok(bool_value) = value.parse::<bool>() {
-        //             df_config = df_config.set_bool_var(rule, bool_value);
-        //         }
-        //     }
-        // }
+        // Build a RuntimeEnv with an optional memory limit.
+        // The DataFusion 40+ API uses RuntimeEnvBuilder::with_memory_limit
+        // (replaces the removed SessionConfig::with_mem_limit).
+        let runtime_env = if let Some(limit) = config.memory_limit() {
+            RuntimeEnvBuilder::new()
+                .with_memory_limit(limit, 1.0)
+                .build_arc()
+                .unwrap_or_else(|_| {
+                    std::sync::Arc::new(datafusion::execution::runtime_env::RuntimeEnv::default())
+                })
+        } else {
+            std::sync::Arc::new(datafusion::execution::runtime_env::RuntimeEnv::default())
+        };
 
-        // Create DataFusion context
-        let context = datafusion::execution::context::SessionContext::new_with_config(df_config);
+        // Create DataFusion context with runtime
+        let context = datafusion::execution::context::SessionContext::new_with_config_rt(
+            df_config,
+            runtime_env,
+        );
 
         Self {
             context,
@@ -473,9 +483,68 @@ impl DataFusionContext {
                 Operation::Distinct => {
                     sql = sql.replace("SELECT", "SELECT DISTINCT");
                 }
-                _ => {
-                    // For now, ignore unsupported operations
-                    // TODO: Implement remaining operations
+                // GroupBy{} is the struct form of Aggregate() — generate the same SQL.
+                Operation::GroupBy { keys, aggregates } => {
+                    let agg_exprs: Vec<String> = aggregates
+                        .iter()
+                        .map(|agg| {
+                            let func_upper = agg.function.to_uppercase();
+                            let func_lower = agg.function.to_lowercase();
+                            format!(
+                                "{}({}) as {}_{}",
+                                func_upper, agg.column, func_lower, agg.column
+                            )
+                        })
+                        .collect();
+
+                    if !keys.is_empty() {
+                        let group_columns = keys.join(", ");
+                        sql = format!(
+                            "SELECT {}, {} FROM ({}) GROUP BY {}",
+                            group_columns,
+                            agg_exprs.join(", "),
+                            sql,
+                            group_columns
+                        );
+                    } else {
+                        sql = format!("SELECT {} FROM ({})", agg_exprs.join(", "), sql);
+                    }
+                }
+                // Window functions: emit the expressions as a subquery.
+                // A full implementation would parse and translate each window
+                // expression; for now we forward the raw strings verbatim.
+                Operation::Window(exprs) => {
+                    if !exprs.is_empty() {
+                        let window_list = exprs.join(", ");
+                        sql = format!("SELECT *, {} FROM ({})", window_list, sql);
+                    }
+                }
+                // Project adds computed columns to the SELECT list.
+                Operation::Project(projections) => {
+                    let proj_list: Vec<String> = projections
+                        .iter()
+                        .map(|(alias, expr)| format!("{} AS {}", expr, alias))
+                        .collect();
+                    if !proj_list.is_empty() {
+                        sql = format!("SELECT *, {} FROM ({})", proj_list.join(", "), sql);
+                    }
+                }
+                // Set operations wrap both sides as sub-selects.
+                Operation::Union(other) => {
+                    sql = format!("({}) UNION ALL (SELECT * FROM {})", sql, other);
+                }
+                Operation::Intersect(other) => {
+                    sql = format!("({}) INTERSECT (SELECT * FROM {})", sql, other);
+                }
+                Operation::Except(other) => {
+                    sql = format!("({}) EXCEPT (SELECT * FROM {})", sql, other);
+                }
+                // Custom operations are not translatable to SQL; return an error.
+                Operation::Custom { name, .. } => {
+                    return Err(Error::InvalidOperation(format!(
+                        "Custom operation '{}' cannot be translated to SQL",
+                        name
+                    )));
                 }
             }
         }

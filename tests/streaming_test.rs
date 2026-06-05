@@ -208,7 +208,7 @@ fn test_real_time_analytics() -> Result<()> {
     thread::sleep(Duration::from_millis(100));
 
     // Check metrics
-    let current_metrics = metrics.lock().unwrap().clone();
+    let current_metrics = metrics.lock().unwrap_or_else(|e| e.into_inner()).clone();
 
     // We should have some metrics
     assert!(!current_metrics.is_empty());

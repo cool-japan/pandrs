@@ -3,7 +3,7 @@
 //! This module provides utilities for benchmarking GPU acceleration performance
 //! and comparing it with CPU performance.
 
-use ndarray::{Array1, Array2};
+use scirs2_core::ndarray::{Array1, Array2};
 use std::collections::HashMap;
 use std::fmt;
 use std::time::{Duration, Instant};

@@ -630,8 +630,8 @@ impl PandasCompatExt for DataFrame {
         Ok(df)
     }
     fn sample(&self, n: usize, replace: bool) -> Result<DataFrame> {
-        use rand::seq::SliceRandom;
-        use rand::{Rng, RngExt};
+        use scirs2_core::random::SliceRandom;
+        use scirs2_core::random::{Rng, RngExt};
         let n_rows = self.row_count();
         if n_rows == 0 {
             return Ok(DataFrame::new());
@@ -646,7 +646,7 @@ impl PandasCompatExt for DataFrame {
                 ),
             );
         }
-        let mut rng = rand::rng();
+        let mut rng = scirs2_core::random::rng();
         let indices: Vec<usize> = if replace {
             (0..n).map(|_| rng.random_range(0..n_rows)).collect()
         } else {

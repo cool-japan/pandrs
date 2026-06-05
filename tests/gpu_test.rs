@@ -6,7 +6,6 @@
 
 #[cfg(cuda_available)]
 mod tests {
-    use ndarray::{Array1, Array2};
     use pandrs::{
         dataframe::gpu::DataFrameGpuExt,
         gpu::{
@@ -16,6 +15,7 @@ mod tests {
         },
         DataFrame, Series,
     };
+    use scirs2_core::ndarray::{Array1, Array2};
 
     #[test]
     fn test_gpu_initialization() {

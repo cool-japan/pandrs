@@ -108,7 +108,7 @@ pub use model_selection::{
 
 pub use sklearn_compat::{
     MinMaxScalerCompat, Pipeline as SklearnPipeline, PipelineStep, SklearnEstimator,
-    SklearnPredictor, SklearnTransformer, StandardScalerCompat,
+    SklearnPredictor, SklearnTransformer, StandardScalerCompat, SupervisedAdapter,
 };
 
 // Re-export model serving capabilities

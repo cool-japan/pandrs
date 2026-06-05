@@ -446,9 +446,9 @@ struct CredentialFileData {
 
 /// Generate random bytes for salt/IV generation
 fn generate_random_bytes(len: usize) -> Vec<u8> {
-    use rand::Rng;
+    use scirs2_core::random::Rng;
     let mut bytes = vec![0u8; len];
-    rand::rng().fill_bytes(&mut bytes);
+    scirs2_core::random::rng().fill_bytes(&mut bytes);
     bytes
 }
 

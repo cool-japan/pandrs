@@ -11,9 +11,9 @@ use pandrs::optimized::OptimizedDataFrame;
 #[cfg(feature = "optimized")]
 use pandrs::{DataFrame, PandRSError, Series};
 #[cfg(feature = "optimized")]
-use rand::Rng;
+use scirs2_core::random::Rng;
 #[cfg(feature = "optimized")]
-use rand::RngExt;
+use scirs2_core::random::RngExt;
 
 #[cfg(not(feature = "optimized"))]
 fn main() {
@@ -67,7 +67,7 @@ fn main() -> Result<(), PandRSError> {
     // 3. Handle Missing Values
     // Add missing values to sample data
     let na_df = df.clone();
-    let mut rng = rand::rng();
+    let mut rng = scirs2_core::random::rng();
     let _n_rows = na_df.row_count();
 
     // Create DataFrame with NA values
@@ -177,7 +177,7 @@ fn main() -> Result<(), PandRSError> {
 // Create sample data
 #[allow(clippy::result_large_err)]
 fn create_sample_data() -> Result<DataFrame, PandRSError> {
-    let mut rng = rand::rng();
+    let mut rng = scirs2_core::random::rng();
 
     // Generate data with 50 rows
     let n = 50;

@@ -6,10 +6,7 @@ use crate::optimized::{OptimizedDataFrame, ColumnView};
 use crate::column::{Float64Column, Int64Column, Column, ColumnTrait};
 use crate::error::{Result, Error};
 use crate::ml::pipeline::Transformer;
-use rand::Rng;
-use rand::SeedableRng;
-use rand::rngs::StdRng;
-use crate::utils::rand_compat::GenRangeCompat;
+use scirs2_core::random::{Rng, RngExt, SeedableRng, rngs::StdRng};
 use std::collections::{HashMap, HashSet};
 
 /// Isolation Forest anomaly detection algorithm
@@ -142,7 +139,7 @@ impl IsolationForest {
         if sampled_features.is_empty() {
             // Select at least one feature
             return Some(Box::new(ITreeNode {
-                split_feature: Some(rng.gen_range(0..n_features)),
+                split_feature: Some(rng.random_range(0..n_features)),
                 split_threshold: Some(rng.random()),
                 left: None,
                 right: None,
@@ -152,7 +149,7 @@ impl IsolationForest {
         }
         
         // Randomly select feature and threshold
-        let split_feature = sampled_features[rng.gen_range(0..sampled_features.len())];
+        let split_feature = sampled_features[rng.random_range(0..sampled_features.len())];
         
         // Find min and max values of the selected feature
         let min_val = indices.iter().map(|&i| data[i][split_feature]).fold(f64::INFINITY, f64::min);
@@ -321,7 +318,7 @@ impl Transformer for IsolationForest {
         // Initialize random number generator
         let mut rng = match self.random_seed {
             Some(seed) => StdRng::seed_from_u64(seed),
-            None => StdRng::seed_from_u64(rand::random()),
+            None => StdRng::seed_from_u64(scirs2_core::random::random()),
         };
         
         // Determine subsampling size
@@ -341,7 +338,7 @@ impl Transformer for IsolationForest {
             
             // Shuffle indices
             for i in (1..indices.len()).rev() {
-                let j = rng.gen_range(0..=i);
+                let j = rng.random_range(0..=i);
                 indices.swap(i, j);
             }
             

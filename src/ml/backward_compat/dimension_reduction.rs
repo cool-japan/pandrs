@@ -8,9 +8,7 @@ use crate::column::ColumnTrait;
 use crate::error::{Result, Error};
 use crate::ml::pipeline::Transformer;
 use std::collections::HashMap;
-use rand::Rng;
-use rand::SeedableRng;
-use crate::utils::rand_compat::GenRangeCompat;
+use scirs2_core::random::{Rng, RngExt, SeedableRng};
 
 /// Principal Component Analysis (PCA) implementation
 #[derive(Debug)]
@@ -668,11 +666,11 @@ impl Transformer for TSNE {
         self.embedding = match self.init {
             TSNEInit::Random => {
                 // Random initialization
-                let mut rng = rand::rngs::StdRng::seed_from_u64(rand::random());
+                let mut rng = rand::rngs::StdRng::seed_from_u64(scirs2_core::random::random());
                 (0..n_samples)
                     .map(|_| {
                         (0..self.n_components)
-                            .map(|_| 1e-4 * rng.gen_range(-1.0..1.0))
+                            .map(|_| 1e-4 * rng.random_range(-1.0..1.0))
                             .collect()
                     })
                     .collect()

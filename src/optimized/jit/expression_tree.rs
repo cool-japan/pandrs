@@ -846,12 +846,72 @@ impl ExpressionTree {
                 l_val / r_val
             }
             BinaryOperator::Power => l_val.powf(r_val),
-            _ => {
-                return Err(Error::NotImplemented(format!(
-                    "Constant evaluation for {:?}",
-                    operator
-                )))
+            BinaryOperator::Modulo => {
+                if r_val == 0.0 {
+                    f64::NAN
+                } else {
+                    l_val % r_val
+                }
             }
+            BinaryOperator::Equal => {
+                if (l_val - r_val).abs() < f64::EPSILON {
+                    1.0
+                } else {
+                    0.0
+                }
+            }
+            BinaryOperator::NotEqual => {
+                if (l_val - r_val).abs() >= f64::EPSILON {
+                    1.0
+                } else {
+                    0.0
+                }
+            }
+            BinaryOperator::LessThan => {
+                if l_val < r_val {
+                    1.0
+                } else {
+                    0.0
+                }
+            }
+            BinaryOperator::LessThanOrEqual => {
+                if l_val <= r_val {
+                    1.0
+                } else {
+                    0.0
+                }
+            }
+            BinaryOperator::GreaterThan => {
+                if l_val > r_val {
+                    1.0
+                } else {
+                    0.0
+                }
+            }
+            BinaryOperator::GreaterThanOrEqual => {
+                if l_val >= r_val {
+                    1.0
+                } else {
+                    0.0
+                }
+            }
+            BinaryOperator::LogicalAnd => {
+                if l_val != 0.0 && r_val != 0.0 {
+                    1.0
+                } else {
+                    0.0
+                }
+            }
+            BinaryOperator::LogicalOr => {
+                if l_val != 0.0 || r_val != 0.0 {
+                    1.0
+                } else {
+                    0.0
+                }
+            }
+            BinaryOperator::BitwiseAnd => (l_val as i64 & r_val as i64) as f64,
+            BinaryOperator::BitwiseOr => (l_val as i64 | r_val as i64) as f64,
+            BinaryOperator::BitwiseXor => (l_val as i64 ^ r_val as i64) as f64,
         };
 
         Ok(NumericValue::F64(result))
@@ -891,12 +951,14 @@ impl ExpressionTree {
             UnaryOperator::Floor => val.floor(),
             UnaryOperator::Ceil => val.ceil(),
             UnaryOperator::Round => val.round(),
-            _ => {
-                return Err(Error::NotImplemented(format!(
-                    "Constant evaluation for {:?}",
-                    operator
-                )))
+            UnaryOperator::LogicalNot => {
+                if val == 0.0 {
+                    1.0
+                } else {
+                    0.0
+                }
             }
+            UnaryOperator::BitwiseNot => !(val as i64) as f64,
         };
 
         Ok(NumericValue::F64(result))

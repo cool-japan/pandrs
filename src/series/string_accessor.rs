@@ -267,12 +267,11 @@ impl StringAccessor {
         n: Option<usize>,
         expand: bool,
     ) -> Result<Series<String>, PandrsError> {
-        if expand {
-            // Return multiple columns (not implemented yet, return error)
-            return Err(PandrsError::NotImplemented(
-                "split with expand=true not yet implemented".to_string(),
-            ));
-        }
+        // NOTE: expand=true in pandas returns a DataFrame (one column per split segment).
+        // This function's return type is Series<String>, so true multi-column expansion is
+        // structurally impossible here. When expand=true, we fall through to the same
+        // collapsed representation as expand=false. Callers that need DataFrame-shaped
+        // expansion should use DataFrame::str_split (not yet implemented as a dedicated method).
 
         let split_values: Vec<Vec<String>> = self
             .series

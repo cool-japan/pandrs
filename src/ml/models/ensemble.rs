@@ -363,7 +363,7 @@ impl ModelEvaluator for RandomForestClassifier {
 }
 
 /// Random Forest Regressor
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct RandomForestRegressor {
     config: RandomForestConfig,
     trees: Vec<DecisionTreeRegressor>,
@@ -635,7 +635,7 @@ impl Default for GradientBoostingConfigBuilder {
 }
 
 /// Gradient Boosting Regressor
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct GradientBoostingRegressor {
     config: GradientBoostingConfig,
     trees: Vec<DecisionTreeRegressor>,

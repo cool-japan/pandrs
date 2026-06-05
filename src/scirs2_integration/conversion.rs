@@ -3,9 +3,9 @@
 //! All functions in this module are gated behind the `scirs2` feature flag.
 
 #[cfg(feature = "scirs2")]
-use ndarray::{Array1, Array2};
-#[cfg(feature = "scirs2")]
 use scirs2_core::error::CoreError;
+#[cfg(feature = "scirs2")]
+use scirs2_core::ndarray::{Array1, Array2};
 
 #[cfg(feature = "scirs2")]
 use crate::core::error::{Error, Result};

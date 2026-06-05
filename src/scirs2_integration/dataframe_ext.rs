@@ -5,7 +5,7 @@
 //! DataFrames convenient access to SciRS2-backed operations.
 
 #[cfg(feature = "scirs2")]
-use ndarray::Array2;
+use scirs2_core::ndarray::Array2;
 
 #[cfg(feature = "scirs2")]
 use crate::core::error::Result;
@@ -13,6 +13,8 @@ use crate::core::error::Result;
 use crate::dataframe::DataFrame;
 #[cfg(feature = "scirs2")]
 use crate::scirs2_integration::conversion::{array2_to_dataframe, dataframe_to_array2};
+#[cfg(feature = "scirs2")]
+use crate::scirs2_integration::linalg::{LstsqDataFrameResult, QrResult, SciRS2LinAlg};
 #[cfg(feature = "scirs2")]
 use crate::scirs2_integration::stats::{PcaResult, SciRS2Stats};
 
@@ -108,6 +110,60 @@ pub trait SciRS2Ext {
     /// decomposition fails.
     #[cfg(feature = "scirs2")]
     fn scirs2_pca(&self, n_components: usize) -> Result<PcaResult>;
+
+    /// Compute the Spearman rank correlation matrix for all numeric columns.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if there are fewer than 2 numeric columns or the
+    /// computation fails.
+    #[cfg(feature = "scirs2")]
+    fn scirs2_spearman_corr(&self) -> Result<DataFrame>;
+
+    /// Compute the sample covariance matrix for all numeric columns.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if there are fewer than 2 numeric columns or the
+    /// computation fails.
+    #[cfg(feature = "scirs2")]
+    fn scirs2_cov(&self) -> Result<DataFrame>;
+
+    /// Compute the QR decomposition of all numeric columns.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the DataFrame is empty or the decomposition fails.
+    #[cfg(feature = "scirs2")]
+    fn scirs2_qr(&self) -> Result<QrResult>;
+
+    /// Solve the least-squares problem `min ||self * X - b||` for each column of `b`.
+    ///
+    /// # Arguments
+    ///
+    /// * `b` - Right-hand side DataFrame (must have the same number of rows as `self`)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the dimensions are incompatible or the solve fails.
+    #[cfg(feature = "scirs2")]
+    fn scirs2_lstsq(&self, b: &DataFrame) -> Result<LstsqDataFrameResult>;
+
+    /// Compute the numerical rank of all numeric columns using SVD.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the DataFrame is empty or the SVD fails.
+    #[cfg(feature = "scirs2")]
+    fn scirs2_matrix_rank(&self) -> Result<usize>;
+
+    /// Compute the 2-norm condition number of the numeric DataFrame.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the DataFrame is not square or the computation fails.
+    #[cfg(feature = "scirs2")]
+    fn scirs2_condition_number(&self) -> Result<f64>;
 }
 
 #[cfg(feature = "scirs2")]
@@ -171,5 +227,55 @@ impl SciRS2Ext for DataFrame {
         }
 
         SciRS2Stats::pca(self, &numeric_cols, n_components)
+    }
+
+    fn scirs2_spearman_corr(&self) -> Result<DataFrame> {
+        let all_cols = self.column_names();
+        let numeric_cols: Vec<&str> = all_cols
+            .iter()
+            .filter(|col_name| self.get_column_numeric_values(col_name).is_ok())
+            .map(|s| s.as_str())
+            .collect();
+
+        if numeric_cols.len() < 2 {
+            return Err(crate::core::error::Error::InvalidInput(
+                "Spearman correlation matrix requires at least 2 numeric columns".to_string(),
+            ));
+        }
+
+        SciRS2Stats::spearman_correlation_matrix(self, &numeric_cols)
+    }
+
+    fn scirs2_cov(&self) -> Result<DataFrame> {
+        let all_cols = self.column_names();
+        let numeric_cols: Vec<&str> = all_cols
+            .iter()
+            .filter(|col_name| self.get_column_numeric_values(col_name).is_ok())
+            .map(|s| s.as_str())
+            .collect();
+
+        if numeric_cols.len() < 2 {
+            return Err(crate::core::error::Error::InvalidInput(
+                "Covariance matrix requires at least 2 numeric columns".to_string(),
+            ));
+        }
+
+        SciRS2Stats::covariance_matrix(self, &numeric_cols)
+    }
+
+    fn scirs2_qr(&self) -> Result<QrResult> {
+        SciRS2LinAlg::qr(self)
+    }
+
+    fn scirs2_lstsq(&self, b: &DataFrame) -> Result<LstsqDataFrameResult> {
+        SciRS2LinAlg::lstsq(self, b)
+    }
+
+    fn scirs2_matrix_rank(&self) -> Result<usize> {
+        SciRS2LinAlg::matrix_rank(self)
+    }
+
+    fn scirs2_condition_number(&self) -> Result<f64> {
+        SciRS2LinAlg::condition_number(self)
     }
 }

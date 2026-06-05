@@ -523,6 +523,78 @@ pub fn covariance_matrix(data: &[Vec<f64>]) -> Result<Vec<Vec<f64>>> {
     Ok(cov_matrix)
 }
 
+/// Compute sample skewness using Fisher's definition (unbiased).
+///
+/// Formula: n / ((n-1) * (n-2)) * sum((xi - mean)^3 / std^3)
+///
+/// # Errors
+///
+/// Returns an error if `data` has fewer than 3 elements or zero variance.
+pub fn skewness(data: &[f64]) -> Result<f64> {
+    let n = data.len();
+    if n < 3 {
+        return Err(Error::InvalidValue(
+            "Skewness requires at least 3 data points".into(),
+        ));
+    }
+
+    let n_f = n as f64;
+    let mean = data.iter().sum::<f64>() / n_f;
+    let variance = data.iter().map(|&x| (x - mean).powi(2)).sum::<f64>() / (n_f - 1.0);
+    let std = variance.sqrt();
+
+    if std < 1e-14 {
+        return Err(Error::InvalidValue(
+            "Skewness is undefined when standard deviation is zero".into(),
+        ));
+    }
+
+    let cubic_sum = data
+        .iter()
+        .map(|&x| ((x - mean) / std).powi(3))
+        .sum::<f64>();
+
+    Ok((n_f / ((n_f - 1.0) * (n_f - 2.0))) * cubic_sum)
+}
+
+/// Compute excess kurtosis using Fisher's definition (unbiased, -3 adjusted).
+///
+/// Formula:
+/// `n*(n+1)/((n-1)*(n-2)*(n-3)) * sum(((xi-mean)/std)^4) - 3*(n-1)^2/((n-2)*(n-3))`
+///
+/// # Errors
+///
+/// Returns an error if `data` has fewer than 4 elements or zero variance.
+pub fn kurtosis_excess(data: &[f64]) -> Result<f64> {
+    let n = data.len();
+    if n < 4 {
+        return Err(Error::InvalidValue(
+            "Excess kurtosis requires at least 4 data points".into(),
+        ));
+    }
+
+    let n_f = n as f64;
+    let mean = data.iter().sum::<f64>() / n_f;
+    let variance = data.iter().map(|&x| (x - mean).powi(2)).sum::<f64>() / (n_f - 1.0);
+    let std = variance.sqrt();
+
+    if std < 1e-14 {
+        return Err(Error::InvalidValue(
+            "Excess kurtosis is undefined when standard deviation is zero".into(),
+        ));
+    }
+
+    let quartic_sum = data
+        .iter()
+        .map(|&x| ((x - mean) / std).powi(4))
+        .sum::<f64>();
+
+    let k4_term = (n_f * (n_f + 1.0)) / ((n_f - 1.0) * (n_f - 2.0) * (n_f - 3.0)) * quartic_sum;
+    let bias_correction = (3.0 * (n_f - 1.0).powi(2)) / ((n_f - 2.0) * (n_f - 3.0));
+
+    Ok(k4_term - bias_correction)
+}
+
 /// Summary statistics for grouped data
 #[derive(Debug, Clone)]
 pub struct GroupedStatistics {
@@ -603,6 +675,61 @@ pub fn describe_by_groups(values: &[f64], groups: &[String]) -> Result<GroupedSt
         within_group_variance,
         f_statistic,
     })
+}
+
+/// Calculate sample variance of the data
+///
+/// `ddof` is the delta degrees of freedom. Use `ddof = 1` for the unbiased
+/// sample variance (Bessel's correction), and `ddof = 0` for the population
+/// variance.
+pub fn variance(data: &[f64], ddof: usize) -> Result<f64> {
+    if data.is_empty() {
+        return Err(Error::InvalidValue(
+            "Variance calculation requires non-empty data".into(),
+        ));
+    }
+    let n = data.len();
+    if n <= ddof {
+        return Err(Error::InvalidValue(format!(
+            "Need more than {} data point(s) for ddof={}",
+            ddof, ddof
+        )));
+    }
+    let mean = data.iter().sum::<f64>() / n as f64;
+    let sum_sq = data.iter().map(|&x| (x - mean).powi(2)).sum::<f64>();
+    Ok(sum_sq / (n - ddof) as f64)
+}
+
+/// Calculate sample standard deviation of the data
+///
+/// `ddof` is the delta degrees of freedom. Use `ddof = 1` for the unbiased
+/// sample standard deviation (Bessel's correction), and `ddof = 0` for the
+/// population standard deviation.
+pub fn std_dev(data: &[f64], ddof: usize) -> Result<f64> {
+    let var = variance(data, ddof)?;
+    Ok(var.sqrt())
+}
+
+/// Calculate a quantile of the data
+///
+/// `q` must be in `[0.0, 1.0]`. This is the inverse of the empirical CDF
+/// using linear interpolation (identical to NumPy's `percentile` with
+/// `method="linear"`).
+pub fn quantile(data: &[f64], q: f64) -> Result<f64> {
+    if data.is_empty() {
+        return Err(Error::InvalidValue(
+            "Quantile calculation requires non-empty data".into(),
+        ));
+    }
+    if !(0.0..=1.0).contains(&q) {
+        return Err(Error::InvalidValue(
+            "Quantile q must be in the range [0.0, 1.0]".into(),
+        ));
+    }
+    let mut sorted = data.to_vec();
+    sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    // Convert to the 0-100 range used by `percentile`
+    percentile(&sorted, q * 100.0)
 }
 
 #[cfg(test)]
@@ -697,5 +824,46 @@ mod tests {
 
         let spearman = spearman_correlation(&x, &y).expect("operation should succeed");
         assert!((spearman - 1.0).abs() < 1e-10); // Perfect rank correlation
+    }
+
+    #[test]
+    fn test_variance() {
+        let data = vec![2.0, 4.0, 4.0, 4.0, 5.0, 5.0, 7.0, 9.0];
+        // Sample variance (ddof=1): known value for this dataset is 4.571...
+        let var = variance(&data, 1).expect("operation should succeed");
+        assert!((var - 4.571_428_571_428_571).abs() < 1e-9);
+
+        // Population variance (ddof=0): sum_sq / n
+        let pop_var = variance(&data, 0).expect("operation should succeed");
+        assert!((pop_var - 4.0).abs() < 1e-10);
+
+        // Error on empty data
+        assert!(variance(&[], 1).is_err());
+        // Error when n <= ddof
+        assert!(variance(&[1.0], 1).is_err());
+    }
+
+    #[test]
+    fn test_std_dev() {
+        let data = vec![2.0, 4.0, 4.0, 4.0, 5.0, 5.0, 7.0, 9.0];
+        let std = std_dev(&data, 1).expect("operation should succeed");
+        assert!((std - 4.571_428_571_428_571_f64.sqrt()).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_quantile() {
+        let data = vec![1.0, 2.0, 3.0, 4.0, 5.0];
+        // Median
+        let med = quantile(&data, 0.5).expect("operation should succeed");
+        assert!((med - 3.0).abs() < 1e-10);
+        // 0th percentile = min
+        let min = quantile(&data, 0.0).expect("operation should succeed");
+        assert!((min - 1.0).abs() < 1e-10);
+        // 100th percentile = max
+        let max = quantile(&data, 1.0).expect("operation should succeed");
+        assert!((max - 5.0).abs() < 1e-10);
+        // Error on out-of-range q
+        assert!(quantile(&data, 1.5).is_err());
+        assert!(quantile(&data, -0.1).is_err());
     }
 }

@@ -6,9 +6,15 @@
 
 #[cfg(feature = "distributed")]
 use arrow::{
-    array::{Array, ArrayRef, BooleanArray, Float64Array, Int64Array, StringArray},
+    array::{
+        Array, ArrayRef, BinaryArray, BooleanArray, Date32Array, Date64Array, Decimal128Array,
+        Float32Array, Float64Array, Int16Array, Int32Array, Int64Array, Int8Array,
+        LargeBinaryArray, LargeStringArray, StringArray, Time32SecondArray, Time64MicrosecondArray,
+        TimestampMicrosecondArray, TimestampMillisecondArray, TimestampNanosecondArray,
+        TimestampSecondArray, UInt16Array, UInt32Array, UInt64Array, UInt8Array,
+    },
     compute,
-    datatypes::{DataType, Field, Schema, SchemaRef},
+    datatypes::{DataType, Field, Schema, SchemaRef, TimeUnit},
     record_batch::RecordBatch,
 };
 
@@ -153,6 +159,105 @@ impl ArrowConverter {
                     .collect();
                 Ok(Arc::new(StringArray::from(values)))
             }
+            DataType::Int8 => {
+                let values: Vec<Option<i8>> = (0..row_count).map(|i| Some(i as i8)).collect();
+                Ok(Arc::new(Int8Array::from(values)))
+            }
+            DataType::Int16 => {
+                let values: Vec<Option<i16>> = (0..row_count).map(|i| Some(i as i16)).collect();
+                Ok(Arc::new(Int16Array::from(values)))
+            }
+            DataType::Int32 => {
+                let values: Vec<Option<i32>> = (0..row_count).map(|i| Some(i as i32)).collect();
+                Ok(Arc::new(Int32Array::from(values)))
+            }
+            DataType::UInt8 => {
+                let values: Vec<Option<u8>> = (0..row_count).map(|i| Some(i as u8)).collect();
+                Ok(Arc::new(UInt8Array::from(values)))
+            }
+            DataType::UInt16 => {
+                let values: Vec<Option<u16>> = (0..row_count).map(|i| Some(i as u16)).collect();
+                Ok(Arc::new(UInt16Array::from(values)))
+            }
+            DataType::UInt32 => {
+                let values: Vec<Option<u32>> = (0..row_count).map(|i| Some(i as u32)).collect();
+                Ok(Arc::new(UInt32Array::from(values)))
+            }
+            DataType::UInt64 => {
+                let values: Vec<Option<u64>> = (0..row_count).map(|i| Some(i as u64)).collect();
+                Ok(Arc::new(UInt64Array::from(values)))
+            }
+            DataType::Float32 => {
+                let values: Vec<Option<f32>> =
+                    (0..row_count).map(|i| Some(i as f32 * 1.5)).collect();
+                Ok(Arc::new(Float32Array::from(values)))
+            }
+            DataType::LargeUtf8 => {
+                let values: Vec<Option<String>> = (0..row_count)
+                    .map(|i| Some(format!("large_value_{}", i)))
+                    .collect();
+                Ok(Arc::new(LargeStringArray::from(values)))
+            }
+            DataType::Binary => {
+                let values: Vec<Option<Vec<u8>>> = (0..row_count)
+                    .map(|i| Some(format!("bin_{}", i).into_bytes()))
+                    .collect();
+                let refs: Vec<Option<&[u8]>> =
+                    values.iter().map(|v| v.as_deref()).collect::<Vec<_>>();
+                Ok(Arc::new(BinaryArray::from(refs)))
+            }
+            DataType::Date32 => {
+                let values: Vec<Option<i32>> = (0..row_count).map(|i| Some(i as i32)).collect();
+                Ok(Arc::new(Date32Array::from(values)))
+            }
+            DataType::Date64 => {
+                let values: Vec<Option<i64>> = (0..row_count).map(|i| Some(i as i64)).collect();
+                Ok(Arc::new(Date64Array::from(values)))
+            }
+            DataType::Timestamp(TimeUnit::Microsecond, _) => {
+                let values: Vec<Option<i64>> = (0..row_count).map(|i| Some(i as i64)).collect();
+                Ok(Arc::new(TimestampMicrosecondArray::from(values)))
+            }
+            DataType::Timestamp(TimeUnit::Second, _) => {
+                let values: Vec<Option<i64>> = (0..row_count).map(|i| Some(i as i64)).collect();
+                Ok(Arc::new(TimestampSecondArray::from(values)))
+            }
+            DataType::Timestamp(TimeUnit::Millisecond, _) => {
+                let values: Vec<Option<i64>> = (0..row_count).map(|i| Some(i as i64)).collect();
+                Ok(Arc::new(TimestampMillisecondArray::from(values)))
+            }
+            DataType::Timestamp(TimeUnit::Nanosecond, _) => {
+                let values: Vec<Option<i64>> = (0..row_count).map(|i| Some(i as i64)).collect();
+                Ok(Arc::new(TimestampNanosecondArray::from(values)))
+            }
+            DataType::Time32(TimeUnit::Second) => {
+                let values: Vec<Option<i32>> = (0..row_count).map(|i| Some(i as i32)).collect();
+                Ok(Arc::new(Time32SecondArray::from(values)))
+            }
+            DataType::Time64(TimeUnit::Microsecond) => {
+                let values: Vec<Option<i64>> = (0..row_count).map(|i| Some(i as i64)).collect();
+                Ok(Arc::new(Time64MicrosecondArray::from(values)))
+            }
+            DataType::Decimal128(precision, scale) => {
+                let values: Vec<Option<i128>> = (0..row_count).map(|i| Some(i as i128)).collect();
+                Ok(Arc::new(
+                    Decimal128Array::from(values)
+                        .with_precision_and_scale(*precision, *scale)
+                        .map_err(|e| {
+                            Error::InvalidOperation(format!(
+                                "Decimal128 precision/scale error: {}",
+                                e
+                            ))
+                        })?,
+                ))
+            }
+            DataType::LargeBinary => {
+                let values: Vec<Option<Vec<u8>>> = (0..row_count)
+                    .map(|i| Some(format!("lbin_{}", i).into_bytes()))
+                    .collect();
+                let refs: Vec<Option<&[u8]>> = values.iter().map(|v| v.as_deref()).collect();
+                Ok(Arc::new(LargeBinaryArray::from(refs)))
+            }
             _ => Err(Error::NotImplemented(format!(
                 "Arrow type {:?} not yet supported",
                 arrow_type
@@ -238,6 +343,362 @@ impl ArrowConverter {
                     })
                     .collect();
 
+                Series::new(values, Some(column_name.to_string()))
+            }
+            DataType::Int8 => {
+                let arr = array.as_any().downcast_ref::<Int8Array>().ok_or_else(|| {
+                    Error::InvalidOperation("Failed to downcast to Int8Array".into())
+                })?;
+                let values: Vec<String> = (0..arr.len())
+                    .map(|i| {
+                        if arr.is_null(i) {
+                            "null".to_string()
+                        } else {
+                            arr.value(i).to_string()
+                        }
+                    })
+                    .collect();
+                Series::new(values, Some(column_name.to_string()))
+            }
+            DataType::Int16 => {
+                let arr = array.as_any().downcast_ref::<Int16Array>().ok_or_else(|| {
+                    Error::InvalidOperation("Failed to downcast to Int16Array".into())
+                })?;
+                let values: Vec<String> = (0..arr.len())
+                    .map(|i| {
+                        if arr.is_null(i) {
+                            "null".to_string()
+                        } else {
+                            arr.value(i).to_string()
+                        }
+                    })
+                    .collect();
+                Series::new(values, Some(column_name.to_string()))
+            }
+            DataType::Int32 => {
+                let arr = array.as_any().downcast_ref::<Int32Array>().ok_or_else(|| {
+                    Error::InvalidOperation("Failed to downcast to Int32Array".into())
+                })?;
+                let values: Vec<String> = (0..arr.len())
+                    .map(|i| {
+                        if arr.is_null(i) {
+                            "null".to_string()
+                        } else {
+                            arr.value(i).to_string()
+                        }
+                    })
+                    .collect();
+                Series::new(values, Some(column_name.to_string()))
+            }
+            DataType::UInt8 => {
+                let arr = array.as_any().downcast_ref::<UInt8Array>().ok_or_else(|| {
+                    Error::InvalidOperation("Failed to downcast to UInt8Array".into())
+                })?;
+                let values: Vec<String> = (0..arr.len())
+                    .map(|i| {
+                        if arr.is_null(i) {
+                            "null".to_string()
+                        } else {
+                            arr.value(i).to_string()
+                        }
+                    })
+                    .collect();
+                Series::new(values, Some(column_name.to_string()))
+            }
+            DataType::UInt16 => {
+                let arr = array
+                    .as_any()
+                    .downcast_ref::<UInt16Array>()
+                    .ok_or_else(|| {
+                        Error::InvalidOperation("Failed to downcast to UInt16Array".into())
+                    })?;
+                let values: Vec<String> = (0..arr.len())
+                    .map(|i| {
+                        if arr.is_null(i) {
+                            "null".to_string()
+                        } else {
+                            arr.value(i).to_string()
+                        }
+                    })
+                    .collect();
+                Series::new(values, Some(column_name.to_string()))
+            }
+            DataType::UInt32 => {
+                let arr = array
+                    .as_any()
+                    .downcast_ref::<UInt32Array>()
+                    .ok_or_else(|| {
+                        Error::InvalidOperation("Failed to downcast to UInt32Array".into())
+                    })?;
+                let values: Vec<String> = (0..arr.len())
+                    .map(|i| {
+                        if arr.is_null(i) {
+                            "null".to_string()
+                        } else {
+                            arr.value(i).to_string()
+                        }
+                    })
+                    .collect();
+                Series::new(values, Some(column_name.to_string()))
+            }
+            DataType::UInt64 => {
+                let arr = array
+                    .as_any()
+                    .downcast_ref::<UInt64Array>()
+                    .ok_or_else(|| {
+                        Error::InvalidOperation("Failed to downcast to UInt64Array".into())
+                    })?;
+                let values: Vec<String> = (0..arr.len())
+                    .map(|i| {
+                        if arr.is_null(i) {
+                            "null".to_string()
+                        } else {
+                            arr.value(i).to_string()
+                        }
+                    })
+                    .collect();
+                Series::new(values, Some(column_name.to_string()))
+            }
+            DataType::Float32 => {
+                let arr = array
+                    .as_any()
+                    .downcast_ref::<Float32Array>()
+                    .ok_or_else(|| {
+                        Error::InvalidOperation("Failed to downcast to Float32Array".into())
+                    })?;
+                let values: Vec<String> = (0..arr.len())
+                    .map(|i| {
+                        if arr.is_null(i) {
+                            "null".to_string()
+                        } else {
+                            arr.value(i).to_string()
+                        }
+                    })
+                    .collect();
+                Series::new(values, Some(column_name.to_string()))
+            }
+            DataType::LargeUtf8 => {
+                let arr = array
+                    .as_any()
+                    .downcast_ref::<LargeStringArray>()
+                    .ok_or_else(|| {
+                        Error::InvalidOperation("Failed to downcast to LargeStringArray".into())
+                    })?;
+                let values: Vec<String> = (0..arr.len())
+                    .map(|i| {
+                        if arr.is_null(i) {
+                            "null".to_string()
+                        } else {
+                            arr.value(i).to_string()
+                        }
+                    })
+                    .collect();
+                Series::new(values, Some(column_name.to_string()))
+            }
+            DataType::Binary => {
+                let arr = array
+                    .as_any()
+                    .downcast_ref::<BinaryArray>()
+                    .ok_or_else(|| {
+                        Error::InvalidOperation("Failed to downcast to BinaryArray".into())
+                    })?;
+                let values: Vec<String> = (0..arr.len())
+                    .map(|i| {
+                        if arr.is_null(i) {
+                            "null".to_string()
+                        } else {
+                            format!("{:?}", arr.value(i))
+                        }
+                    })
+                    .collect();
+                Series::new(values, Some(column_name.to_string()))
+            }
+            DataType::Date32 => {
+                let arr = array
+                    .as_any()
+                    .downcast_ref::<Date32Array>()
+                    .ok_or_else(|| {
+                        Error::InvalidOperation("Failed to downcast to Date32Array".into())
+                    })?;
+                let values: Vec<String> = (0..arr.len())
+                    .map(|i| {
+                        if arr.is_null(i) {
+                            "null".to_string()
+                        } else {
+                            arr.value(i).to_string()
+                        }
+                    })
+                    .collect();
+                Series::new(values, Some(column_name.to_string()))
+            }
+            DataType::Date64 => {
+                let arr = array
+                    .as_any()
+                    .downcast_ref::<Date64Array>()
+                    .ok_or_else(|| {
+                        Error::InvalidOperation("Failed to downcast to Date64Array".into())
+                    })?;
+                let values: Vec<String> = (0..arr.len())
+                    .map(|i| {
+                        if arr.is_null(i) {
+                            "null".to_string()
+                        } else {
+                            arr.value(i).to_string()
+                        }
+                    })
+                    .collect();
+                Series::new(values, Some(column_name.to_string()))
+            }
+            DataType::Timestamp(TimeUnit::Microsecond, _) => {
+                let arr = array
+                    .as_any()
+                    .downcast_ref::<TimestampMicrosecondArray>()
+                    .ok_or_else(|| {
+                        Error::InvalidOperation(
+                            "Failed to downcast to TimestampMicrosecondArray".into(),
+                        )
+                    })?;
+                let values: Vec<String> = (0..arr.len())
+                    .map(|i| {
+                        if arr.is_null(i) {
+                            "null".to_string()
+                        } else {
+                            arr.value(i).to_string()
+                        }
+                    })
+                    .collect();
+                Series::new(values, Some(column_name.to_string()))
+            }
+            DataType::Timestamp(TimeUnit::Second, _) => {
+                let arr = array
+                    .as_any()
+                    .downcast_ref::<TimestampSecondArray>()
+                    .ok_or_else(|| {
+                        Error::InvalidOperation("Failed to downcast to TimestampSecondArray".into())
+                    })?;
+                let values: Vec<String> = (0..arr.len())
+                    .map(|i| {
+                        if arr.is_null(i) {
+                            "null".to_string()
+                        } else {
+                            arr.value(i).to_string()
+                        }
+                    })
+                    .collect();
+                Series::new(values, Some(column_name.to_string()))
+            }
+            DataType::Timestamp(TimeUnit::Millisecond, _) => {
+                let arr = array
+                    .as_any()
+                    .downcast_ref::<TimestampMillisecondArray>()
+                    .ok_or_else(|| {
+                        Error::InvalidOperation(
+                            "Failed to downcast to TimestampMillisecondArray".into(),
+                        )
+                    })?;
+                let values: Vec<String> = (0..arr.len())
+                    .map(|i| {
+                        if arr.is_null(i) {
+                            "null".to_string()
+                        } else {
+                            arr.value(i).to_string()
+                        }
+                    })
+                    .collect();
+                Series::new(values, Some(column_name.to_string()))
+            }
+            DataType::Timestamp(TimeUnit::Nanosecond, _) => {
+                let arr = array
+                    .as_any()
+                    .downcast_ref::<TimestampNanosecondArray>()
+                    .ok_or_else(|| {
+                        Error::InvalidOperation(
+                            "Failed to downcast to TimestampNanosecondArray".into(),
+                        )
+                    })?;
+                let values: Vec<String> = (0..arr.len())
+                    .map(|i| {
+                        if arr.is_null(i) {
+                            "null".to_string()
+                        } else {
+                            arr.value(i).to_string()
+                        }
+                    })
+                    .collect();
+                Series::new(values, Some(column_name.to_string()))
+            }
+            DataType::Time32(TimeUnit::Second) => {
+                let arr = array
+                    .as_any()
+                    .downcast_ref::<Time32SecondArray>()
+                    .ok_or_else(|| {
+                        Error::InvalidOperation("Failed to downcast to Time32SecondArray".into())
+                    })?;
+                let values: Vec<String> = (0..arr.len())
+                    .map(|i| {
+                        if arr.is_null(i) {
+                            "null".to_string()
+                        } else {
+                            arr.value(i).to_string()
+                        }
+                    })
+                    .collect();
+                Series::new(values, Some(column_name.to_string()))
+            }
+            DataType::Time64(TimeUnit::Microsecond) => {
+                let arr = array
+                    .as_any()
+                    .downcast_ref::<Time64MicrosecondArray>()
+                    .ok_or_else(|| {
+                        Error::InvalidOperation(
+                            "Failed to downcast to Time64MicrosecondArray".into(),
+                        )
+                    })?;
+                let values: Vec<String> = (0..arr.len())
+                    .map(|i| {
+                        if arr.is_null(i) {
+                            "null".to_string()
+                        } else {
+                            arr.value(i).to_string()
+                        }
+                    })
+                    .collect();
+                Series::new(values, Some(column_name.to_string()))
+            }
+            DataType::Decimal128(_, _) => {
+                let arr = array
+                    .as_any()
+                    .downcast_ref::<Decimal128Array>()
+                    .ok_or_else(|| {
+                        Error::InvalidOperation("Failed to downcast to Decimal128Array".into())
+                    })?;
+                let values: Vec<String> = (0..arr.len())
+                    .map(|i| {
+                        if arr.is_null(i) {
+                            "null".to_string()
+                        } else {
+                            arr.value(i).to_string()
+                        }
+                    })
+                    .collect();
+                Series::new(values, Some(column_name.to_string()))
+            }
+            DataType::LargeBinary => {
+                let arr = array
+                    .as_any()
+                    .downcast_ref::<LargeBinaryArray>()
+                    .ok_or_else(|| {
+                        Error::InvalidOperation("Failed to downcast to LargeBinaryArray".into())
+                    })?;
+                let values: Vec<String> = (0..arr.len())
+                    .map(|i| {
+                        if arr.is_null(i) {
+                            "null".to_string()
+                        } else {
+                            format!("{:?}", arr.value(i))
+                        }
+                    })
+                    .collect();
                 Series::new(values, Some(column_name.to_string()))
             }
             _ => Err(Error::NotImplemented(format!(

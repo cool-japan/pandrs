@@ -432,14 +432,32 @@ impl DistributedDataFrame {
         self.pending_operations.push(operation);
     }
 
-    /// Execute an operation immediately
+    /// Execute an operation immediately using the execution context.
+    ///
+    /// Locks the shared context, executes the given plan, and returns a new
+    /// `DistributedDataFrame` whose `current_result` holds the output.
+    /// The `_inputs` slice is reserved for future multi-input join operations
+    /// and is intentionally unused for now.
     pub fn execute_operation(
         &self,
-        _operation: ExecutionPlan,
+        operation: ExecutionPlan,
         _inputs: Vec<String>,
     ) -> Result<Self> {
-        // TODO: Implement operation execution
-        Ok(self.clone())
+        let mut context = lock_safe!(self.context, "distributed dataframe execute_operation lock")?;
+
+        let result = context.execute_plan(operation)?;
+
+        let new_id = format!("{}_op", self.id);
+
+        Ok(Self {
+            config: self.config.clone(),
+            engine: self.engine.clone(),
+            context: self.context.clone(),
+            current_result: Some(result),
+            id: new_id,
+            lazy: self.lazy,
+            pending_operations: Vec::new(),
+        })
     }
 }
 

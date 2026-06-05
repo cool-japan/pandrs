@@ -3,7 +3,7 @@ members = ["py_bindings"]
 resolver = "2"
 
 [workspace.package]
-version = "0.3.2"
+version = "0.4.0"
 edition = "2021"
 rust-version = "1.70.0"
 authors = ["COOLJAPAN OU (Team Kitasan)"]
@@ -67,7 +67,7 @@ arrow = { version = "58.1.0", default-features = false, features = [
 ] }  # For Arrow format support (aligned with datafusion 52.x)
 
 # Excel support (Pure Rust - COOLJAPAN Policy)
-oxiarc-archive = "0.2.6"  # Pure Rust ZIP for xlsx
+oxiarc-archive = "0.3.2"  # Pure Rust ZIP for xlsx
 quick-xml = "0.39.2"  # XML parsing for xlsx
 
 # WebAssembly support
@@ -84,9 +84,9 @@ half = "2.7.1"  # Half-precision floating point support
 ndarray = "0.17.2"  # N-dimensional arrays (root/default; py_bindings pins 0.16.1 inline)
 
 # SciRS2 ecosystem integration
-scirs2-core = { version = "0.4.2", features = ["validation", "parallel"] }
-scirs2-stats = "0.4.2"
-scirs2-linalg = "0.4.2"
+scirs2-core = { version = "0.5.0", features = ["validation", "parallel", "random"] }
+scirs2-stats = "0.5.0"
+scirs2-linalg = "0.5.0"
 
 # Distributed processing support - downgraded for chrono compatibility
 # Pure Rust policy: default-features = false drops the `compression` feature, which
@@ -168,7 +168,6 @@ serde_yaml.workspace = true
 toml.workspace = true
 thiserror.workspace = true
 csv.workspace = true
-rand.workspace = true
 chrono-tz.workspace = true
 num_cpus.workspace = true
 textplots = { workspace = true, optional = true }
@@ -193,8 +192,7 @@ js-sys = { workspace = true, optional = true }
 web-sys = { workspace = true, optional = true }
 plotters-canvas = { workspace = true, optional = true }
 half = { workspace = true, optional = true }
-ndarray = { workspace = true, optional = true }
-scirs2-core = { workspace = true, optional = true }
+scirs2-core = { workspace = true }
 scirs2-stats = { workspace = true, optional = true }
 scirs2-linalg = { workspace = true, optional = true }
 datafusion = { workspace = true, optional = true }
@@ -221,8 +219,8 @@ optimized = []  # Flag for optimized implementation
 jit = ["cranelift", "cranelift-module", "cranelift-jit", "cranelift-frontend", "cranelift-native", "target-lexicon"]  # Just-In-Time compilation support
 backward_compat = []  # Backward compatibility for older APIs
 wasm = ["wasm-bindgen", "js-sys", "web-sys", "plotters-canvas", "visualization"]  # WebAssembly support
-cuda = ["cudarc", "half", "dep:ndarray"]  # CUDA support (requires CUDA toolkit)
-scirs2 = ["dep:scirs2-core", "dep:scirs2-stats", "dep:scirs2-linalg", "dep:ndarray"]  # SciRS2 scientific computing integration
+cuda = ["cudarc", "half"]  # CUDA support (requires CUDA toolkit; uses scirs2_core::ndarray)
+scirs2 = ["dep:scirs2-stats", "dep:scirs2-linalg"]  # SciRS2 scientific computing integration (scirs2-core is always-on)
 # Pure Rust policy note: pulls async-compression -> bzip2/brotli and arrow/parquet -> flate2/zstd/lz4_flex/snap transitively (upstream, feature-gated).
 distributed = ["datafusion", "uuid", "dep:arrow", "dep:parquet", "dep:futures"]  # Distributed processing support
 # Pure Rust policy note: pulls async-compression -> bzip2/brotli transitively (upstream, feature-gated).
@@ -256,6 +254,7 @@ flight = ["dep:arrow-flight", "dep:tonic", "dep:prost", "dep:arrow", "dep:tokio"
 [dev-dependencies]
 criterion.workspace = true
 tokio.workspace = true  # Async runtime for integration tests
+rand.workspace = true
 
 [[bench]]
 name = "comprehensive_benchmark"

@@ -2,8 +2,8 @@
 
 use crate::dataframe::DataFrame;
 use crate::error::{Error, Result};
-use rand::prelude::*;
-use rand::RngExt;
+use scirs2_core::random::RngExt;
+use scirs2_core::random::SliceRandom;
 use std::collections::HashMap;
 
 /// Internal implementation for sampling from DataFrame
@@ -29,7 +29,7 @@ pub(crate) fn sample_impl(df: &DataFrame, fraction: f64, replace: bool) -> Resul
     }
 
     // Use seeded random number generator (for reproducibility)
-    let mut rng = rand::rng();
+    let mut rng = scirs2_core::random::rng();
 
     // Generate indices
     let indices = if replace {
@@ -81,7 +81,7 @@ pub(crate) fn bootstrap_impl(data: &[f64], n_samples: usize) -> Result<Vec<Vec<f
     }
 
     let n = data.len();
-    let mut rng = rand::rng();
+    let mut rng = scirs2_core::random::rng();
     let mut result = Vec::with_capacity(n_samples);
 
     for _ in 0..n_samples {
@@ -152,7 +152,7 @@ pub fn stratified_sample_impl(
             continue;
         }
 
-        let mut rng = rand::rng();
+        let mut rng = scirs2_core::random::rng();
 
         if replace {
             // Sampling with replacement

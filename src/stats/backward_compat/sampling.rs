@@ -5,10 +5,8 @@
 
 use crate::error::{Result, Error};
 use crate::dataframe::DataFrame;
-use rand::Rng;
-use rand::seq::SliceRandom;
-// Import compatibility utils
-use crate::utils::rand_compat::{thread_rng, GenRangeCompat};
+use scirs2_core::random::{Rng, RngExt, rng};
+use scirs2_core::random::SliceRandom;
 use std::collections::HashMap;
 
 /// Internal implementation for sampling DataFrame rows
@@ -30,12 +28,12 @@ pub(crate) fn sample_impl(
     
     // Generate random indices
     let mut indices = Vec::with_capacity(sample_size);
-    let mut rng = thread_rng();
+    let mut rng = rng();
     
     if replace {
         // Sampling with replacement
         for _ in 0..sample_size {
-            indices.push(rng.gen_range(0..n_rows));
+            indices.push(rng.random_range(0..n_rows));
         }
     } else {
         // Sampling without replacement
@@ -81,7 +79,7 @@ pub(crate) fn bootstrap_impl(
     }
     
     let n = data.len();
-    let mut rng = thread_rng();
+    let mut rng = rng();
     let mut bootstrap_samples = Vec::with_capacity(n_samples);
     
     for _ in 0..n_samples {
@@ -89,7 +87,7 @@ pub(crate) fn bootstrap_impl(
         let mut sample = Vec::with_capacity(n);
         
         for _ in 0..n {
-            let idx = rng.gen_range(0..n);
+            let idx = rng.random_range(0..n);
             sample.push(data[idx]);
         }
         
@@ -161,7 +159,7 @@ pub fn stratified_sample(
     
     // Sample from each stratum
     let mut all_sampled_indices = Vec::new();
-    let mut rng = thread_rng();
+    let mut rng = rng();
     
     for (stratum, indices) in strata_indices {
         // Skip if no fraction specified for this stratum
@@ -187,7 +185,7 @@ pub fn stratified_sample(
         if replace {
             // Sampling with replacement
             for _ in 0..sample_size {
-                let idx = indices[rng.gen_range(0..n_rows)];
+                let idx = indices[rng.random_range(0..n_rows)];
                 all_sampled_indices.push(idx);
             }
         } else {
@@ -412,7 +410,7 @@ pub fn weighted_sample<T: Clone>(
         *last = 1.0;
     }
     
-    let mut rng = thread_rng();
+    let mut rng = rng();
     let mut sample = Vec::with_capacity(size);
     let mut used_indices = std::collections::HashSet::new();
     
@@ -423,7 +421,7 @@ pub fn weighted_sample<T: Clone>(
             break;
         }
         
-        let r = rng.gen::<f64>(); // Random number between 0 and 1
+        let r = rng.random::<f64>(); // Random number between 0 and 1
         
         // Find the index where r falls in the cumulative weights
         let mut selected_idx = 0;

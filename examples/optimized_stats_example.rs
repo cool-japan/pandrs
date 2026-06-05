@@ -3,7 +3,7 @@
 
 use pandrs::error::Result;
 use pandrs::{LazyFrame, OptimizedDataFrame, TTestResult};
-use rand::{rng, Rng, RngExt};
+use scirs2_core::random::{rng, Rng, RngExt};
 
 #[allow(clippy::result_large_err)]
 fn main() -> Result<()> {

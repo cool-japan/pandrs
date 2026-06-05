@@ -3,7 +3,7 @@
 //! This module provides functionality to distribute computations across multiple GPU devices
 //! for improved performance and memory capacity.
 
-use ndarray::{s, Array1, Array2, Axis};
+use scirs2_core::ndarray::{s, Array1, Array2, Axis};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
 
@@ -464,7 +464,7 @@ impl Clone for MultiGpuManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ndarray::Array2;
+    use scirs2_core::ndarray::Array2;
 
     #[test]
     fn test_multi_gpu_manager_creation() {

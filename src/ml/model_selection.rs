@@ -7,7 +7,7 @@ use crate::core::error::{Error, Result};
 use crate::dataframe::DataFrame;
 use crate::ml::models::{train_test_split, ModelMetrics};
 use crate::ml::sklearn_compat::{SklearnEstimator, SklearnPredictor, SklearnTransformer};
-use crate::utils::rand_compat::{thread_rng, GenRangeCompat};
+use scirs2_core::random::{Rng, RngExt};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
@@ -209,18 +209,64 @@ impl Scorer {
                 })
             }
             Scorer::RocAuc => {
-                // Simplified ROC AUC calculation
-                // In a full implementation, this would use the trapezoidal rule
+                // AUC via rank-sum / Mann-Whitney U statistic (O(n log n), handles ties).
+                //
+                // Algorithm:
+                //   1. Sort by predicted score descending.
+                //   2. Process the sorted list in *tied groups* (same score value).
+                //      Within a tied group, every positive–negative pair contributes 0.5
+                //      (expected rank for tied items), while positives ahead of negatives
+                //      contribute 1.0 and negatives ahead of positives contribute 0.0.
+                //   3. AUC = total_contribution / (n_pos * n_neg).
+
                 let mut sorted_pairs: Vec<(f64, f64)> = y_true
                     .iter()
                     .zip(y_pred.iter())
                     .map(|(&y_t, &y_p)| (y_p, y_t))
                     .collect();
                 sorted_pairs
-                    .sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+                    .sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
 
-                // Simplified AUC calculation (placeholder)
-                Ok(0.75) // Return placeholder value
+                let n_pos: f64 = y_true.iter().filter(|&&y| y > 0.5).count() as f64;
+                let n_neg = y_true.len() as f64 - n_pos;
+
+                // Degenerate case: only one class present — return random-classifier baseline
+                if n_pos == 0.0 || n_neg == 0.0 {
+                    return Ok(0.5);
+                }
+
+                // Walk sorted pairs, processing tied score groups together.
+                // For each group: n_pos_before * n_neg_group + 0.5 * n_pos_group * n_neg_group
+                let mut auc = 0.0f64;
+                let mut positives_before = 0.0f64; // positives in all preceding (higher) groups
+                let n = sorted_pairs.len();
+                let mut i = 0usize;
+                while i < n {
+                    let current_score = sorted_pairs[i].0;
+                    // Collect all items in this tied group
+                    let group_start = i;
+                    while i < n
+                        && (sorted_pairs[i].0 - current_score).abs()
+                            < f64::EPSILON * current_score.abs().max(1.0)
+                    {
+                        i += 1;
+                    }
+                    // Count positives and negatives in this group
+                    let group_pos: f64 = sorted_pairs[group_start..i]
+                        .iter()
+                        .filter(|&&(_, label)| label > 0.5)
+                        .count() as f64;
+                    let group_neg: f64 = sorted_pairs[group_start..i]
+                        .iter()
+                        .filter(|&&(_, label)| label <= 0.5)
+                        .count() as f64;
+
+                    // Each negative in this group is beaten by all positives before this group,
+                    // and tied with all positives in this same group (contributes 0.5 each).
+                    auc += positives_before * group_neg + 0.5 * group_pos * group_neg;
+                    positives_before += group_pos;
+                }
+                Ok(auc / (n_pos * n_neg))
             }
             Scorer::Custom(func) => Ok(func(y_true, y_pred)),
         }
@@ -247,33 +293,32 @@ pub enum ParameterDistribution {
 impl ParameterDistribution {
     /// Sample a value from this distribution
     pub fn sample(&self) -> String {
-        let mut rng = thread_rng();
+        let mut rng = scirs2_core::random::rng();
 
         match self {
             ParameterDistribution::UniformInt { low, high } => {
-                rng.gen_range(*low..=*high).to_string()
+                rng.random_range(*low..=*high).to_string()
             }
             ParameterDistribution::UniformFloat { low, high } => {
-                rng.gen_range(*low..=*high).to_string()
+                rng.random_range(*low..=*high).to_string()
             }
             ParameterDistribution::LogUniform { low, high } => {
                 let log_low = low.ln();
                 let log_high = high.ln();
-                let log_val = rng.gen_range(log_low..=log_high);
+                let log_val = rng.random_range(log_low..=log_high);
                 log_val.exp().to_string()
             }
             ParameterDistribution::Choice(choices) => {
                 if choices.is_empty() {
                     "".to_string()
                 } else {
-                    let idx = rng.gen_range(0..choices.len());
+                    let idx = rng.random_range(0..choices.len());
                     choices[idx].clone()
                 }
             }
             ParameterDistribution::Normal { mean, std } => {
-                // Box-Muller transform for normal distribution
-                let u1: f64 = rng.gen_range(0.0..1.0);
-                let u2: f64 = rng.gen_range(0.0..1.0);
+                let u1: f64 = rng.random_range(1e-300_f64..1.0_f64);
+                let u2: f64 = rng.random::<f64>();
                 let z = (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos();
                 (mean + std * z).to_string()
             }
@@ -680,18 +725,136 @@ impl RandomizedSearchCV {
             );
         }
 
-        // Use same implementation as GridSearchCV for the actual fitting
-        // This would be refactored to share code in a real implementation
+        let n_splits = match &self.cv {
+            CrossValidationStrategy::KFold { n_splits, .. } => *n_splits,
+            CrossValidationStrategy::StratifiedKFold { n_splits, .. } => *n_splits,
+            CrossValidationStrategy::LeaveOneOut => x.nrows(),
+            CrossValidationStrategy::TimeSeriesSplit { n_splits, .. } => *n_splits,
+        };
 
-        // For now, create placeholder results
+        let mut cv_results = Vec::new();
+        let mut best_score = f64::NEG_INFINITY;
+        let mut best_params = HashMap::new();
+
+        for (combo_idx, params) in param_combinations.iter().enumerate() {
+            let mut fold_scores = Vec::new();
+            let mut fit_times = Vec::new();
+            let mut score_times = Vec::new();
+
+            for fold in 0..n_splits {
+                let fold_size = x.nrows() / n_splits;
+                let test_start = fold * fold_size;
+                let test_end = if fold == n_splits - 1 {
+                    x.nrows()
+                } else {
+                    (fold + 1) * fold_size
+                };
+
+                if fold_size == 0 || test_start >= x.nrows() {
+                    continue;
+                }
+
+                let train_indices: Vec<usize> = (0..x.nrows())
+                    .filter(|&i| i < test_start || i >= test_end)
+                    .collect();
+                let test_indices: Vec<usize> = (test_start..test_end).collect();
+
+                if train_indices.len() < 2 || test_indices.is_empty() {
+                    continue;
+                }
+
+                let train_x = x.sample(&train_indices)?;
+                let test_x = x.sample(&test_indices)?;
+                let train_y = y.sample(&train_indices)?;
+                let test_y = y.sample(&test_indices)?;
+
+                let mut estimator_clone = self.create_estimator_clone();
+                if estimator_clone.set_params(params.clone()).is_err() {
+                    continue;
+                }
+
+                let fit_start = Instant::now();
+                if estimator_clone.fit(&train_x, &train_y).is_err() {
+                    continue;
+                }
+                let fit_time = fit_start.elapsed().as_secs_f64();
+
+                let score_start = Instant::now();
+                let predictions = match estimator_clone.predict(&test_x) {
+                    Ok(p) => p,
+                    Err(_) => continue,
+                };
+                let score_time = score_start.elapsed().as_secs_f64();
+
+                let target_col_name = test_y.column_names().into_iter().next().unwrap_or_default();
+                if let Ok(y_col) = test_y.get_column::<f64>(&target_col_name) {
+                    if let Ok(y_true) = y_col.as_f64() {
+                        if let Ok(score) = self.scoring.score(&y_true, &predictions) {
+                            fold_scores.push(score);
+                            fit_times.push(fit_time);
+                            score_times.push(score_time);
+                        }
+                    }
+                }
+            }
+
+            if fold_scores.is_empty() {
+                continue;
+            }
+
+            let mean_score = fold_scores.iter().sum::<f64>() / fold_scores.len() as f64;
+            let variance = fold_scores
+                .iter()
+                .map(|&s| (s - mean_score).powi(2))
+                .sum::<f64>()
+                / fold_scores.len() as f64;
+            let std_score = variance.sqrt();
+            let mean_fit_time = fit_times.iter().sum::<f64>() / fit_times.len() as f64;
+            let mean_score_time = score_times.iter().sum::<f64>() / score_times.len() as f64;
+
+            if mean_score > best_score {
+                best_score = mean_score;
+                best_params = params.clone();
+            }
+
+            cv_results.push(SearchResultEntry {
+                params: params.clone(),
+                mean_test_score: mean_score,
+                std_test_score: std_score,
+                test_scores: fold_scores,
+                mean_fit_time,
+                mean_score_time,
+                rank: combo_idx + 1,
+            });
+        }
+
+        // Sort by score and assign ranks
+        cv_results.sort_by(|a, b| {
+            b.mean_test_score
+                .partial_cmp(&a.mean_test_score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        for (i, entry) in cv_results.iter_mut().enumerate() {
+            entry.rank = i + 1;
+        }
+
         self.results_ = Some(SearchResults {
-            best_params_: HashMap::new(),
-            best_score_: 0.8,
+            best_params_: best_params,
+            best_score_: if best_score.is_finite() {
+                best_score
+            } else {
+                0.0
+            },
             best_estimator_: None,
-            cv_results_: Vec::new(),
+            cv_results_: cv_results,
         });
 
         Ok(())
+    }
+
+    /// Create a clone of the estimator for cross-validation
+    fn create_estimator_clone(&self) -> Box<dyn SklearnPredictor + Send + Sync> {
+        self.estimator.clone_predictor()
     }
 
     /// Get the search results
@@ -839,31 +1002,214 @@ impl SelectKBest {
         Ok(scores)
     }
 
-    /// Calculate Chi-square scores
+    /// Calculate Chi-square scores between each feature and the target using contingency tables.
+    ///
+    /// Features are binned into equal-width bins; the chi-square statistic measures how
+    /// non-uniform the distribution of classes is across bins.
     fn chi2_scores(&self, x: &DataFrame, y: &DataFrame) -> Result<Vec<f64>> {
-        // Simplified Chi-square calculation
-        // In a real implementation, this would calculate proper Chi-square statistics
+        // Obtain target column (first column of y)
+        let target_name = y
+            .column_names()
+            .into_iter()
+            .next()
+            .ok_or_else(|| Error::InvalidInput("y DataFrame has no columns".into()))?;
+        let target_col = y
+            .get_column::<f64>(&target_name)
+            .map_err(|_| Error::InvalidInput("Target column must be numeric".into()))?;
+        let target_vals = target_col
+            .as_f64()
+            .map_err(|_| Error::InvalidInput("Target values must be numeric".into()))?;
+
+        // Collect unique integer class labels (round to nearest int)
+        let mut classes: Vec<i64> = target_vals
+            .iter()
+            .map(|&v| v.round() as i64)
+            .collect::<std::collections::HashSet<_>>()
+            .into_iter()
+            .collect();
+        classes.sort();
+        let n_classes = classes.len();
+
         let feature_names = x.column_names();
         let mut scores = Vec::with_capacity(feature_names.len());
 
-        for _ in &feature_names {
-            // Placeholder score
-            scores.push(1.0);
+        for feat_name in &feature_names {
+            let feat_col = match x.get_column::<f64>(feat_name) {
+                Ok(c) => c,
+                Err(_) => {
+                    scores.push(0.0);
+                    continue;
+                }
+            };
+            let feat_vals = feat_col.as_f64()?;
+            let n = feat_vals.len();
+
+            // Determine bin boundaries (5 equal-width bins)
+            let n_bins = 5usize;
+            let feat_min = feat_vals.iter().cloned().fold(f64::INFINITY, f64::min);
+            let feat_max = feat_vals.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+            let range = feat_max - feat_min;
+            let bin_width = if range.abs() < 1e-10 {
+                1.0
+            } else {
+                range / n_bins as f64
+            };
+
+            // Build contingency table: rows = bins, cols = classes
+            let mut contingency = vec![vec![0usize; n_classes]; n_bins];
+            let mut row_totals = vec![0usize; n_bins];
+            let mut col_totals = vec![0usize; n_classes];
+
+            for (&fv, &tv) in feat_vals.iter().zip(target_vals.iter()) {
+                let bin_idx = if range.abs() < 1e-10 {
+                    0
+                } else {
+                    (((fv - feat_min) / bin_width) as usize).min(n_bins - 1)
+                };
+                let class_idx = classes.binary_search(&(tv.round() as i64)).unwrap_or(0);
+                contingency[bin_idx][class_idx] += 1;
+                row_totals[bin_idx] += 1;
+                col_totals[class_idx] += 1;
+            }
+
+            // χ² = Σ (O - E)² / E,  E = row_total * col_total / n
+            let mut chi2 = 0.0f64;
+            let n_f = n as f64;
+            for r in 0..n_bins {
+                for c in 0..n_classes {
+                    let observed = contingency[r][c] as f64;
+                    let expected = (row_totals[r] as f64 * col_totals[c] as f64) / n_f.max(1.0);
+                    let e = expected.max(1e-10);
+                    chi2 += (observed - e).powi(2) / e;
+                }
+            }
+            scores.push(chi2);
         }
 
         Ok(scores)
     }
 
-    /// Calculate mutual information scores
+    /// Calculate mutual information I(X; Y) via histogram-based estimation.
+    ///
+    /// Uses equal-width bins for both X and Y.  MI is guaranteed non-negative by
+    /// clamping the result to 0.
     fn mutual_info_scores(&self, x: &DataFrame, y: &DataFrame) -> Result<Vec<f64>> {
-        // Simplified mutual information calculation
-        // In a real implementation, this would calculate proper mutual information
+        // Obtain target column
+        let target_name = y
+            .column_names()
+            .into_iter()
+            .next()
+            .ok_or_else(|| Error::InvalidInput("y DataFrame has no columns".into()))?;
+        let target_col = y
+            .get_column::<f64>(&target_name)
+            .map_err(|_| Error::InvalidInput("Target column must be numeric".into()))?;
+        let target_vals = target_col
+            .as_f64()
+            .map_err(|_| Error::InvalidInput("Target values must be numeric".into()))?;
+        let n = target_vals.len();
+
+        // Discretize Y into bins: prefer unique values when there are few, else sqrt(n) bins
+        let y_min = target_vals.iter().cloned().fold(f64::INFINITY, f64::min);
+        let y_max = target_vals
+            .iter()
+            .cloned()
+            .fold(f64::NEG_INFINITY, f64::max);
+        let y_range = y_max - y_min;
+
+        let n_y_bins = if y_range.abs() < 1e-10 {
+            1usize
+        } else {
+            let n_unique = target_vals
+                .iter()
+                .map(|&v| (v * 1000.0) as i64)
+                .collect::<std::collections::HashSet<_>>()
+                .len();
+            if n_unique <= 10 {
+                n_unique
+            } else {
+                ((n as f64).sqrt() as usize).max(2)
+            }
+        };
+        let y_bin_width = if n_y_bins == 1 || y_range.abs() < 1e-10 {
+            1.0
+        } else {
+            y_range / n_y_bins as f64
+        };
+
+        let y_bins: Vec<usize> = target_vals
+            .iter()
+            .map(|&v| {
+                if n_y_bins == 1 {
+                    0
+                } else {
+                    (((v - y_min) / y_bin_width) as usize).min(n_y_bins - 1)
+                }
+            })
+            .collect();
+
+        // Number of X bins: max(5, floor(sqrt(n)))
+        let n_x_bins = ((n as f64).sqrt() as usize).max(5);
+
         let feature_names = x.column_names();
         let mut scores = Vec::with_capacity(feature_names.len());
 
-        for _ in &feature_names {
-            // Placeholder score
-            scores.push(0.5);
+        for feat_name in &feature_names {
+            let feat_col = match x.get_column::<f64>(feat_name) {
+                Ok(c) => c,
+                Err(_) => {
+                    scores.push(0.0);
+                    continue;
+                }
+            };
+            let feat_vals = feat_col.as_f64()?;
+            let x_min = feat_vals.iter().cloned().fold(f64::INFINITY, f64::min);
+            let x_max = feat_vals.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+            let x_range = x_max - x_min;
+            let x_bin_width = if x_range.abs() < 1e-10 {
+                1.0
+            } else {
+                x_range / n_x_bins as f64
+            };
+
+            let x_bins_vec: Vec<usize> = feat_vals
+                .iter()
+                .map(|&v| {
+                    if x_range.abs() < 1e-10 {
+                        0
+                    } else {
+                        (((v - x_min) / x_bin_width) as usize).min(n_x_bins - 1)
+                    }
+                })
+                .collect();
+
+            // Accumulate joint and marginal counts
+            let mut joint = vec![0u64; n_x_bins * n_y_bins];
+            let mut px = vec![0u64; n_x_bins];
+            let mut py = vec![0u64; n_y_bins];
+
+            for (&xi, &yi) in x_bins_vec.iter().zip(y_bins.iter()) {
+                joint[xi * n_y_bins + yi] += 1;
+                px[xi] += 1;
+                py[yi] += 1;
+            }
+
+            // MI = Σ P(x,y) * ln( P(x,y) / (P(x)*P(y)) )
+            let n_f = n as f64;
+            let mut mi = 0.0f64;
+            for xi in 0..n_x_bins {
+                for yi in 0..n_y_bins {
+                    let count_xy = joint[xi * n_y_bins + yi];
+                    if count_xy == 0 {
+                        continue;
+                    }
+                    let pxy = count_xy as f64 / n_f;
+                    let px_v = px[xi] as f64 / n_f;
+                    let py_v = py[yi] as f64 / n_f;
+                    mi += pxy * (pxy / (px_v * py_v)).ln();
+                }
+            }
+            // MI is theoretically non-negative; clamp floating-point noise
+            scores.push(mi.max(0.0));
         }
 
         Ok(scores)
@@ -1003,5 +1349,138 @@ mod tests {
 
         // Should select 2 features
         assert_eq!(selected.column_names().len(), 2);
+    }
+
+    // ── ROC AUC tests ────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_roc_auc_perfect() {
+        // Perfect ranking: all positives have strictly higher scores than all negatives
+        let y_true = vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0];
+        let y_pred = vec![0.1, 0.2, 0.3, 0.7, 0.8, 0.9];
+        let scorer = Scorer::RocAuc;
+        let auc = scorer.score(&y_true, &y_pred).expect("should compute AUC");
+        assert!(
+            (auc - 1.0).abs() < 1e-9,
+            "Expected AUC = 1.0 for perfect ranking, got {auc}"
+        );
+    }
+
+    #[test]
+    fn test_roc_auc_random() {
+        // Tied scores between one positive and one negative → AUC = 0.5
+        let y_true = vec![0.0, 1.0];
+        let y_pred = vec![0.5, 0.5];
+        let scorer = Scorer::RocAuc;
+        let auc = scorer.score(&y_true, &y_pred).expect("should compute AUC");
+        assert!(
+            (auc - 0.5).abs() < 1e-9,
+            "Expected AUC = 0.5 for tied scores, got {auc}"
+        );
+    }
+
+    #[test]
+    fn test_roc_auc_inverted() {
+        // Worst-case ranking: all positives have strictly lower scores than all negatives
+        let y_true = vec![1.0, 1.0, 1.0, 0.0, 0.0, 0.0];
+        let y_pred = vec![0.1, 0.2, 0.3, 0.7, 0.8, 0.9];
+        let scorer = Scorer::RocAuc;
+        let auc = scorer.score(&y_true, &y_pred).expect("should compute AUC");
+        assert!(
+            auc.abs() < 1e-9,
+            "Expected AUC = 0.0 for inverted ranking, got {auc}"
+        );
+    }
+
+    // ── Chi-square tests ──────────────────────────────────────────────────────
+
+    #[test]
+    fn test_chi2_scores_correlated() {
+        // feature1 is perfectly correlated to the target (target * 2);
+        // feature2 is a constant — its chi2 score should be zero.
+        let n = 20usize;
+        let target_vals: Vec<f64> = (0..n).map(|i| (i % 2) as f64).collect(); // alternating 0/1
+        let feat1_vals: Vec<f64> = target_vals.iter().map(|&v| v * 2.0).collect();
+        let feat2_vals: Vec<f64> = vec![1.0; n]; // constant
+
+        let mut x = DataFrame::new();
+        x.add_column(
+            "feature1".to_string(),
+            Series::new(feat1_vals, Some("feature1".to_string()))
+                .expect("series creation should succeed"),
+        )
+        .expect("add column should succeed");
+        x.add_column(
+            "feature2".to_string(),
+            Series::new(feat2_vals, Some("feature2".to_string()))
+                .expect("series creation should succeed"),
+        )
+        .expect("add column should succeed");
+
+        let mut y = DataFrame::new();
+        y.add_column(
+            "target".to_string(),
+            Series::new(target_vals, Some("target".to_string()))
+                .expect("series creation should succeed"),
+        )
+        .expect("add column should succeed");
+
+        let selector = SelectKBest::new(ScoreFunction::Chi2, 1);
+        let scores = selector.chi2_scores(&x, &y).expect("chi2 should succeed");
+        assert_eq!(scores.len(), 2);
+        // Correlated feature must score higher than constant feature
+        assert!(
+            scores[0] > scores[1],
+            "Correlated feature chi2 ({}) should exceed constant feature chi2 ({})",
+            scores[0],
+            scores[1]
+        );
+    }
+
+    // ── Mutual information tests ──────────────────────────────────────────────
+
+    #[test]
+    fn test_mutual_info_scores_vary() {
+        // feature1 is perfectly correlated to target; feature2 is constant.
+        // MI(feature1, target) should be strictly greater than MI(feature2, target).
+        let n = 30usize;
+        let target_vals: Vec<f64> = (0..n).map(|i| (i % 3) as f64).collect(); // classes 0/1/2
+        let feat1_vals: Vec<f64> = target_vals.clone(); // perfect correlation
+        let feat2_vals: Vec<f64> = vec![0.0; n]; // constant — zero MI
+
+        let mut x = DataFrame::new();
+        x.add_column(
+            "correlated".to_string(),
+            Series::new(feat1_vals, Some("correlated".to_string()))
+                .expect("series creation should succeed"),
+        )
+        .expect("add column should succeed");
+        x.add_column(
+            "constant".to_string(),
+            Series::new(feat2_vals, Some("constant".to_string()))
+                .expect("series creation should succeed"),
+        )
+        .expect("add column should succeed");
+
+        let mut y = DataFrame::new();
+        y.add_column(
+            "target".to_string(),
+            Series::new(target_vals, Some("target".to_string()))
+                .expect("series creation should succeed"),
+        )
+        .expect("add column should succeed");
+
+        let selector = SelectKBest::new(ScoreFunction::MutualInfoClassification, 1);
+        let scores = selector
+            .mutual_info_scores(&x, &y)
+            .expect("mutual info should succeed");
+        assert_eq!(scores.len(), 2);
+        // Correlated feature must have strictly higher MI than constant feature
+        assert!(
+            scores[0] > scores[1],
+            "Correlated feature MI ({}) should exceed constant feature MI ({})",
+            scores[0],
+            scores[1]
+        );
     }
 }

@@ -13,7 +13,6 @@ use pandrs::stats::{
         correlation_matrix, covariance_matrix, describe, pearson_correlation, percentile,
         spearman_correlation,
     },
-
     bootstrap_confidence_interval,
     chi_square_test_independence,
     correlation_test,
@@ -21,6 +20,7 @@ use pandrs::stats::{
     independent_ttest,
     kruskal_wallis_test,
     ks_two_sample_test,
+    kurtosis_excess,
     // Non-parametric tests
     mann_whitney_u_advanced as mann_whitney_u_test,
     // Hypothesis testing
@@ -31,6 +31,8 @@ use pandrs::stats::{
 
     runs_test,
     shapiro_wilk_test,
+    skewness,
+
     wilcoxon_signed_rank_test,
     AlternativeHypothesis,
     Binomial,
@@ -552,6 +554,100 @@ fn test_statistical_consistency() {
 }
 
 #[test]
+fn test_statistical_analyzer_anova_by_group_parametric() {
+    use pandrs::stats::StatisticalAnalyzer;
+
+    let mut df = DataFrame::new();
+    // Two groups: A = [10, 11, 12], B = [20, 21, 22]  — clearly different means
+    df.add_column(
+        "value".to_string(),
+        Series::new(vec![10.0_f64, 11.0, 12.0, 20.0, 21.0, 22.0], None)
+            .expect("test: series creation should succeed"),
+    )
+    .expect("test: add_column should succeed");
+    df.add_column(
+        "group".to_string(),
+        Series::new(
+            vec![
+                "A".to_string(),
+                "A".to_string(),
+                "A".to_string(),
+                "B".to_string(),
+                "B".to_string(),
+                "B".to_string(),
+            ],
+            None,
+        )
+        .expect("test: series creation should succeed"),
+    )
+    .expect("test: add_column should succeed");
+
+    let analyzer = StatisticalAnalyzer::new();
+    let result = analyzer
+        .anova_by_group(&df, "value", "group", true)
+        .expect("anova_by_group (parametric) should succeed");
+
+    // With groups means 11 vs 21 the F-statistic should be very large (≈150)
+    assert!(
+        result.statistic > 10.0,
+        "F-statistic should be >> 1 for clearly different groups, got {}",
+        result.statistic
+    );
+    // The test_name should identify the test performed
+    assert_eq!(result.test_name, "One-way ANOVA");
+    // Effect size (eta-squared) should be close to 1 for very clearly different groups
+    if let Some(effect) = result.effect_size {
+        assert!(
+            effect > 0.9,
+            "Eta-squared should be close to 1 for clearly different groups, got {}",
+            effect
+        );
+    }
+}
+
+#[test]
+fn test_statistical_analyzer_anova_by_group_nonparametric() {
+    use pandrs::stats::StatisticalAnalyzer;
+
+    let mut df = DataFrame::new();
+    df.add_column(
+        "score".to_string(),
+        Series::new(vec![1.0_f64, 2.0, 3.0, 8.0, 9.0, 10.0], None)
+            .expect("test: series creation should succeed"),
+    )
+    .expect("test: add_column should succeed");
+    df.add_column(
+        "cat".to_string(),
+        Series::new(
+            vec![
+                "low".to_string(),
+                "low".to_string(),
+                "low".to_string(),
+                "high".to_string(),
+                "high".to_string(),
+                "high".to_string(),
+            ],
+            None,
+        )
+        .expect("test: series creation should succeed"),
+    )
+    .expect("test: add_column should succeed");
+
+    let analyzer = StatisticalAnalyzer::new();
+    let result = analyzer
+        .anova_by_group(&df, "score", "cat", false)
+        .expect("anova_by_group (non-parametric) should succeed");
+
+    assert_eq!(result.test_name, "Kruskal-Wallis test");
+    // H-statistic should be large for clearly different groups (low=[1,2,3], high=[8,9,10])
+    assert!(
+        result.statistic > 3.0,
+        "H-statistic should be substantial for clearly different groups, got {}",
+        result.statistic
+    );
+}
+
+#[test]
 fn test_effect_size_interpretations() {
     use pandrs::stats::hypothesis::EffectSize;
 
@@ -584,4 +680,74 @@ fn test_effect_size_interpretations() {
 
     let large_eta = EffectSize::EtaSquared(0.1);
     assert_eq!(large_eta.interpretation(), "Large");
+}
+
+// -----------------------------------------------------------------------
+// Skewness and excess kurtosis tests (always-on, no scirs2 required)
+// -----------------------------------------------------------------------
+
+#[test]
+fn test_skewness_symmetric() {
+    // Symmetric distribution: [1, 2, 3, 4, 5] → skewness ≈ 0
+    let data = vec![1.0f64, 2.0, 3.0, 4.0, 5.0];
+    let sk = skewness(&data).expect("skewness ok");
+    assert!(
+        sk.abs() < 1e-6,
+        "symmetric data skewness should be ~0, got {}",
+        sk
+    );
+}
+
+#[test]
+fn test_skewness_right_skewed() {
+    // Right-skewed: long tail to the right
+    let data = vec![1.0f64, 1.0, 1.0, 2.0, 10.0];
+    let sk = skewness(&data).expect("skewness ok");
+    assert!(
+        sk > 0.0,
+        "right-skewed data should have positive skewness, got {}",
+        sk
+    );
+}
+
+#[test]
+fn test_skewness_error_small_n() {
+    let data = vec![1.0f64, 2.0]; // fewer than 3
+    assert!(
+        skewness(&data).is_err(),
+        "skewness requires at least 3 data points"
+    );
+}
+
+#[test]
+fn test_kurtosis_excess_normal() {
+    // For a symmetric dataset the excess kurtosis should be finite
+    let data = vec![1.0f64, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
+    let kurt = kurtosis_excess(&data).expect("kurtosis_excess ok");
+    // Fisher's excess kurtosis of uniform-ish data is negative
+    assert!(kurt.is_finite(), "kurtosis_excess should be finite");
+}
+
+#[test]
+fn test_kurtosis_excess_heavy_tails() {
+    // Leptokurtic (heavy tails): data with extreme outliers → positive excess kurtosis
+    let mut data = vec![0.0f64; 20];
+    // Replace two elements with extremes
+    data[0] = 100.0;
+    data[19] = -100.0;
+    let kurt = kurtosis_excess(&data).expect("kurtosis_excess ok");
+    assert!(
+        kurt > 0.0,
+        "heavy-tailed data should have positive excess kurtosis, got {}",
+        kurt
+    );
+}
+
+#[test]
+fn test_kurtosis_excess_error_small_n() {
+    let data = vec![1.0f64, 2.0, 3.0]; // fewer than 4
+    assert!(
+        kurtosis_excess(&data).is_err(),
+        "kurtosis_excess requires at least 4 data points"
+    );
 }

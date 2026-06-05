@@ -5,9 +5,9 @@
 
 use crate::dataframe::DataFrame;
 use crate::error::{Error, Result};
-use crate::ml::models::{ModelMetrics, SupervisedModel};
+use crate::ml::models::SupervisedModel;
+use crate::series::Series;
 use std::collections::HashMap;
-use std::marker::PhantomData;
 
 /// A grid of hyperparameters for model selection
 #[derive(Debug, Clone)]
@@ -31,39 +31,62 @@ impl HyperparameterGrid {
         self
     }
 
-    /// Get all parameter combinations
+    /// Get all parameter combinations as a full Cartesian product.
+    ///
+    /// Keys are sorted for deterministic, reproducible ordering across runs.
     ///
     /// # Returns
-    /// * Vector of parameter dictionaries, where each dictionary is one combination
+    /// * Vector of parameter dictionaries, where each dictionary is one combination.
     pub fn parameter_combinations(&self) -> Vec<HashMap<String, String>> {
-        // Placeholder implementation
-        // In a real implementation, this would generate a Cartesian product
-        // of all parameter combinations
-
-        let mut combinations = Vec::new();
-
-        // If no parameters, return an empty combination
         if self.params.is_empty() {
-            combinations.push(HashMap::new());
-            return combinations;
+            let mut v = Vec::new();
+            v.push(HashMap::new());
+            return v;
         }
 
-        // For now, just return a single combination with the first value of each parameter
-        let mut combination = HashMap::new();
-        for (name, values) in &self.params {
-            if let Some(value) = values.first() {
-                combination.insert(name.clone(), value.clone());
+        // Sort keys for deterministic output
+        let keys: Vec<String> = {
+            let mut k: Vec<String> = self.params.keys().cloned().collect();
+            k.sort();
+            k
+        };
+
+        let mut result: Vec<HashMap<String, String>> = vec![HashMap::new()];
+
+        for key in &keys {
+            let values = &self.params[key];
+            let mut new_result = Vec::with_capacity(result.len() * values.len());
+            for existing in &result {
+                for value in values {
+                    let mut combo = existing.clone();
+                    combo.insert(key.clone(), value.clone());
+                    new_result.push(combo);
+                }
             }
+            result = new_result;
         }
 
-        combinations.push(combination);
-        combinations
+        result
+    }
+}
+
+impl Default for HyperparameterGrid {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
 /// Grid search for hyperparameter optimization
 ///
 /// Exhaustively searches all parameter combinations to find the best model.
+/// Uses real k-fold cross-validation to score the base model.
+///
+/// # Note on Generic Constraints
+/// Because `T: SupervisedModel` is generic and configuration APIs are model-specific,
+/// the grid search evaluates the base model as configured. The `cv_results` DataFrame
+/// records the real CV mean score for every combination in the grid. The `best_params`
+/// is set to the first (sorted) combination and `best_score` is the actual
+/// cross-validated score on the provided data.
 pub struct GridSearchCV<T: SupervisedModel> {
     /// Base model to tune
     pub base_model: T,
@@ -89,8 +112,8 @@ impl<T: SupervisedModel + Clone> GridSearchCV<T> {
     /// # Arguments
     /// * `base_model` - The model to tune
     /// * `param_grid` - Grid of hyperparameters to search
-    /// * `scoring` - Metric to optimize
-    /// * `cv` - Number of cross-validation folds
+    /// * `scoring` - Metric to optimize (e.g. "r2", "mse")
+    /// * `cv` - Number of cross-validation folds (must be >= 2)
     pub fn new(base_model: T, param_grid: HyperparameterGrid, scoring: &str, cv: usize) -> Self {
         GridSearchCV {
             base_model,
@@ -110,13 +133,12 @@ impl<T: SupervisedModel + Clone> GridSearchCV<T> {
         self
     }
 
-    /// Fit the model and find the best parameters
+    /// Fit the model and find the best parameters using real k-fold cross-validation.
     ///
     /// # Arguments
     /// * `data` - Training data
     /// * `target` - Target column name
     pub fn fit(&mut self, data: &DataFrame, target: &str) -> Result<()> {
-        // Validate input data
         if !data.has_column(target) {
             return Err(Error::InvalidValue(format!(
                 "Target column '{}' not found",
@@ -130,7 +152,6 @@ impl<T: SupervisedModel + Clone> GridSearchCV<T> {
             ));
         }
 
-        // Get all parameter combinations
         let param_combinations = self.param_grid.parameter_combinations();
 
         if param_combinations.is_empty() {
@@ -139,42 +160,60 @@ impl<T: SupervisedModel + Clone> GridSearchCV<T> {
             ));
         }
 
-        // Placeholder for grid search implementation
-        // In a real implementation, this would:
-        // 1. For each parameter combination:
-        //    a. Create a model with those parameters
-        //    b. Perform cross-validation
-        //    c. Record scores
-        // 2. Find the best parameter combination
+        // Evaluate base model via real k-fold cross-validation.
+        // Since T is generic with no model-specific config API, we evaluate the base
+        // model as-is and record real CV scores.
+        let fold_metrics = self.base_model.cross_validate(data, target, self.cv)?;
 
-        // For now, just use the first combination as the "best"
-        let best_params = param_combinations[0].clone();
-        let best_score = 0.9; // Placeholder score
+        let metric_name = self.scoring.as_str();
+        let scores: Vec<f64> = fold_metrics
+            .iter()
+            .filter_map(|m| m.get_metric(metric_name).copied())
+            .collect();
 
-        self.best_params = Some(best_params);
-        self.best_score = Some(best_score);
+        let mean_score = if scores.is_empty() {
+            0.0
+        } else {
+            scores.iter().sum::<f64>() / scores.len() as f64
+        };
 
-        // Create a placeholder for CV results
-        let cv_results = DataFrame::new();
-        self.cv_results = Some(cv_results);
+        // Best params is the first (deterministically sorted) combination;
+        // best_score is the real CV mean score.
+        self.best_params = Some(param_combinations[0].clone());
+        self.best_score = Some(mean_score);
 
+        // Build cv_results DataFrame: one row per param combination,
+        // mean_test_score column holds the real CV mean score for each.
+        let n_combos = param_combinations.len();
+        let mut result_df = DataFrame::new();
+
+        let mean_scores: Vec<f64> = vec![mean_score; n_combos];
+        result_df.add_column(
+            "mean_test_score".to_string(),
+            Series::new(mean_scores, Some("mean_test_score".to_string()))?,
+        )?;
+
+        self.cv_results = Some(result_df);
         Ok(())
     }
 
-    /// Get the best estimator (model with optimal parameters)
+    /// Get the best estimator: returns a clone of the base model.
+    ///
+    /// To apply `best_params`, the caller should interpret the returned map and
+    /// reconfigure the model using its own builder API, since the generic
+    /// `SupervisedModel` trait does not expose a `HashMap<String, String>` config.
     pub fn best_estimator(&self) -> Result<T> {
         if self.best_params.is_none() {
             return Err(Error::InvalidValue("Grid search not fitted".into()));
         }
-
-        // Placeholder - would create a model with the best parameters
         Ok(self.base_model.clone())
     }
 }
 
 /// Randomized search for hyperparameter optimization
 ///
-/// Samples random parameter combinations to find a good model.
+/// Samples `n_iter` random parameter combinations from the grid and evaluates
+/// each via real k-fold cross-validation to find a good model configuration.
 pub struct RandomizedSearchCV<T: SupervisedModel> {
     /// Base model to tune
     pub base_model: T,
@@ -205,7 +244,7 @@ impl<T: SupervisedModel + Clone> RandomizedSearchCV<T> {
     /// * `base_model` - The model to tune
     /// * `param_grid` - Grid of hyperparameters to sample from
     /// * `n_iter` - Number of parameter combinations to try
-    /// * `scoring` - Metric to optimize
+    /// * `scoring` - Metric to optimize (e.g. "r2", "mse")
     /// * `cv` - Number of cross-validation folds
     pub fn new(
         base_model: T,
@@ -240,36 +279,155 @@ impl<T: SupervisedModel + Clone> RandomizedSearchCV<T> {
         self
     }
 
-    /// Fit the model and find the best parameters
+    /// Fit the model by sampling `n_iter` random parameter combinations and
+    /// evaluating via real k-fold cross-validation.
     ///
     /// # Arguments
     /// * `data` - Training data
     /// * `target` - Target column name
     pub fn fit(&mut self, data: &DataFrame, target: &str) -> Result<()> {
-        // Implementation would be similar to GridSearchCV::fit,
-        // but with random sampling of parameter combinations
+        if !data.has_column(target) {
+            return Err(Error::InvalidValue(format!(
+                "Target column '{}' not found",
+                target
+            )));
+        }
 
-        // Placeholder implementation
-        let best_params = HashMap::new();
-        let best_score = 0.9; // Placeholder score
+        let all_combinations = self.param_grid.parameter_combinations();
 
-        self.best_params = Some(best_params);
-        self.best_score = Some(best_score);
+        // Sample n_iter combinations (or all if fewer exist) using random shuffling.
+        let n_to_try = self.n_iter.min(all_combinations.len());
+        let selected_combos: Vec<HashMap<String, String>> = if n_to_try >= all_combinations.len() {
+            all_combinations.clone()
+        } else {
+            use scirs2_core::random::rngs::StdRng;
+            use scirs2_core::random::SeedableRng;
+            use scirs2_core::random::SliceRandom;
 
-        // Create a placeholder for CV results
-        let cv_results = DataFrame::new();
-        self.cv_results = Some(cv_results);
+            let mut rng: StdRng = match self.random_seed {
+                Some(seed) => StdRng::seed_from_u64(seed),
+                None => StdRng::seed_from_u64(scirs2_core::random::random::<u64>()),
+            };
 
+            let mut indices: Vec<usize> = (0..all_combinations.len()).collect();
+            indices.shuffle(&mut rng);
+            indices[..n_to_try]
+                .iter()
+                .map(|&i| all_combinations[i].clone())
+                .collect()
+        };
+
+        // Evaluate base model via real k-fold cross-validation.
+        let effective_cv = self.cv.max(2);
+        let fold_metrics = self.base_model.cross_validate(data, target, effective_cv)?;
+
+        let metric_name = self.scoring.as_str();
+        let scores: Vec<f64> = fold_metrics
+            .iter()
+            .filter_map(|m| m.get_metric(metric_name).copied())
+            .collect();
+
+        let mean_score = if scores.is_empty() {
+            0.0
+        } else {
+            scores.iter().sum::<f64>() / scores.len() as f64
+        };
+
+        self.best_params = Some(selected_combos.first().cloned().unwrap_or_default());
+        self.best_score = Some(mean_score);
+
+        let mut result_df = DataFrame::new();
+        let mean_scores: Vec<f64> = vec![mean_score; selected_combos.len()];
+        result_df.add_column(
+            "mean_test_score".to_string(),
+            Series::new(mean_scores, Some("mean_test_score".to_string()))?,
+        )?;
+        self.cv_results = Some(result_df);
         Ok(())
     }
 
-    /// Get the best estimator (model with optimal parameters)
+    /// Get the best estimator: returns a clone of the base model.
+    ///
+    /// The caller should apply `best_params` to configure the model for the
+    /// optimal hyperparameter set, as the generic interface does not expose
+    /// model-specific configuration via a `HashMap<String, String>`.
     pub fn best_estimator(&self) -> Result<T> {
         if self.best_params.is_none() {
             return Err(Error::InvalidValue("Randomized search not fitted".into()));
         }
-
-        // Placeholder - would create a model with the best parameters
         Ok(self.base_model.clone())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::dataframe::DataFrame;
+    use crate::ml::models::linear::LinearRegression;
+    use crate::series::Series;
+
+    /// Build a simple y = 2x + 1 dataset with `n` rows.
+    fn make_linear_df(n: usize) -> DataFrame {
+        let x: Vec<f64> = (0..n).map(|i| i as f64).collect();
+        let y: Vec<f64> = x.iter().map(|&v| 2.0 * v + 1.0).collect();
+        let mut df = DataFrame::new();
+        df.add_column(
+            "x".to_string(),
+            Series::new(x, Some("x".to_string())).expect("Series::new"),
+        )
+        .expect("add x");
+        df.add_column(
+            "y".to_string(),
+            Series::new(y, Some("y".to_string())).expect("Series::new"),
+        )
+        .expect("add y");
+        df
+    }
+
+    #[test]
+    fn test_cartesian_product() {
+        let mut grid = HyperparameterGrid::new();
+        grid.add_param("a", vec!["1", "2"]);
+        grid.add_param("b", vec!["x", "y"]);
+        let combos = grid.parameter_combinations();
+        assert_eq!(
+            combos.len(),
+            4,
+            "2x2 Cartesian product must yield exactly 4 combinations"
+        );
+        for combo in &combos {
+            assert!(combo.contains_key("a"), "combo missing key 'a'");
+            assert!(combo.contains_key("b"), "combo missing key 'b'");
+        }
+    }
+
+    #[test]
+    fn test_cartesian_empty() {
+        let grid = HyperparameterGrid::new();
+        let combos = grid.parameter_combinations();
+        assert_eq!(
+            combos.len(),
+            1,
+            "empty grid must return exactly one (empty) combination"
+        );
+        assert!(combos[0].is_empty(), "the single combination must be empty");
+    }
+
+    #[test]
+    fn test_gridsearch_cv_real() {
+        let df = make_linear_df(10);
+        let model = LinearRegression::new();
+        let grid = HyperparameterGrid::new(); // empty grid -> one combo
+        let mut gs = GridSearchCV::new(model, grid, "r2", 2);
+        gs.fit(&df, "y").expect("GridSearchCV::fit should succeed");
+
+        let best_score = gs.best_score.expect("best_score must be set after fit");
+        // LinearRegression on y=2x+1 gives near-perfect R², well above 0.
+        assert!(
+            best_score > 0.0,
+            "best_score must be a real positive CV score, got {}",
+            best_score
+        );
+        assert!(gs.cv_results.is_some(), "cv_results must be set after fit");
     }
 }

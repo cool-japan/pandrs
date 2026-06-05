@@ -14,6 +14,168 @@ use std::fmt;
 use std::sync::Arc;
 use std::time::Instant;
 
+/// Adapter that bridges SupervisedModel (fit by target column name) into SklearnPredictor
+/// (fit by separate X and Y DataFrames).
+///
+/// This adapter merges the X and Y DataFrames before calling `SupervisedModel::fit`, and
+/// implements the full `SklearnPredictor` interface including `score`, `set_params`, and
+/// `feature_importances` delegation.
+#[derive(Debug, Clone)]
+pub struct SupervisedAdapter<M: SupervisedModel + Clone + Send + Sync + fmt::Debug> {
+    /// Wrapped model
+    model: M,
+    /// Name of the target column (used when merging X+Y DataFrames)
+    target_col: String,
+}
+
+impl<M: SupervisedModel + Clone + Send + Sync + fmt::Debug> SupervisedAdapter<M> {
+    /// Create a new adapter wrapping the given model.
+    ///
+    /// `target_col` is the column name that will be used for the target when the X and Y
+    /// DataFrames are merged during `fit`.  It must match the column name present in the Y
+    /// DataFrame passed to `SklearnPredictor::fit`.
+    pub fn new(model: M, target_col: &str) -> Self {
+        Self {
+            model,
+            target_col: target_col.to_string(),
+        }
+    }
+
+    /// Compute R² score from two slices — 1 – SS_res / SS_tot.
+    fn r2_score_slices(y_true: &[f64], y_pred: &[f64]) -> f64 {
+        if y_true.is_empty() {
+            return 0.0;
+        }
+        let mean_y = y_true.iter().sum::<f64>() / y_true.len() as f64;
+        let ss_tot: f64 = y_true.iter().map(|&y| (y - mean_y).powi(2)).sum();
+        let ss_res: f64 = y_true
+            .iter()
+            .zip(y_pred.iter())
+            .map(|(&y_t, &y_p)| (y_t - y_p).powi(2))
+            .sum();
+        if ss_tot == 0.0 {
+            if ss_res == 0.0 {
+                1.0
+            } else {
+                0.0
+            }
+        } else {
+            1.0 - ss_res / ss_tot
+        }
+    }
+
+    /// Merge the feature DataFrame `x` with the target DataFrame `y` into one combined
+    /// DataFrame, with the target column named `self.target_col`.  The target column is
+    /// added last so that `SupervisedModel::fit` can identify it by name.
+    fn merge_x_y(&self, x: &DataFrame, y: &DataFrame) -> Result<DataFrame> {
+        let mut merged = DataFrame::new();
+
+        // Copy all feature columns from X
+        for col_name in x.column_names() {
+            let col = x.get_column::<f64>(&col_name)?;
+            merged.add_column(col_name.clone(), col.clone())?;
+        }
+
+        // Locate target column in Y (prefer self.target_col name, fall back to first column)
+        let y_col_name = if y.has_column(&self.target_col) {
+            self.target_col.clone()
+        } else {
+            y.column_names()
+                .into_iter()
+                .next()
+                .ok_or_else(|| Error::InvalidValue("Y DataFrame has no columns".into()))?
+        };
+
+        let y_col = y.get_column::<f64>(&y_col_name)?;
+
+        // Add target column with the canonical target_col name, unless X already contains it.
+        if !merged.has_column(&self.target_col) {
+            merged.add_column(self.target_col.clone(), y_col.clone())?;
+        } else if !merged.has_column(&y_col_name) {
+            // X already occupies self.target_col — fall back to the original y column name.
+            merged.add_column(y_col_name.clone(), y_col.clone())?;
+        }
+
+        Ok(merged)
+    }
+}
+
+impl<M: SupervisedModel + Clone + Send + Sync + fmt::Debug + 'static> SklearnEstimator
+    for SupervisedAdapter<M>
+{
+    fn get_params(&self) -> HashMap<String, String> {
+        let mut params = HashMap::new();
+        params.insert("target_col".to_string(), self.target_col.clone());
+        params
+    }
+
+    /// Best-effort parameter setting.  Unknown keys are silently ignored so that
+    /// hyperparameter search loops do not fail when they pass model-internal param names
+    /// through the generic `set_params` interface.
+    fn set_params(&mut self, params: HashMap<String, String>) -> Result<()> {
+        for (key, value) in &params {
+            match key.as_str() {
+                "target_col" => {
+                    self.target_col = value.clone();
+                }
+                _ => {
+                    // Silently ignore unknown hyperparameter keys.
+                    // Concrete model types do not expose a set_params method through
+                    // SupervisedModel, so per-trial hyperparameter tuning must be handled
+                    // by constructing fresh model instances (see AutoML::create_estimator).
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn get_feature_names_out(&self, input_features: Option<&[String]>) -> Option<Vec<String>> {
+        input_features.map(|f| f.to_vec())
+    }
+}
+
+impl<M: SupervisedModel + Clone + Send + Sync + fmt::Debug + 'static> SklearnPredictor
+    for SupervisedAdapter<M>
+{
+    /// Fit the wrapped SupervisedModel by merging X and Y into a single DataFrame.
+    fn fit(&mut self, x: &DataFrame, y: &DataFrame) -> Result<()> {
+        let merged = self.merge_x_y(x, y)?;
+        self.model.fit(&merged, &self.target_col)
+    }
+
+    /// Delegate predictions to the wrapped model, passing only the feature columns.
+    fn predict(&self, x: &DataFrame) -> Result<Vec<f64>> {
+        self.model.predict(x)
+    }
+
+    /// Score by computing R² (coefficient of determination) on the test set.
+    fn score(&self, x: &DataFrame, y: &DataFrame) -> Result<f64> {
+        let predictions = self.predict(x)?;
+
+        // Extract true values from y
+        let y_col_name = if y.has_column(&self.target_col) {
+            self.target_col.clone()
+        } else {
+            y.column_names()
+                .into_iter()
+                .next()
+                .ok_or_else(|| Error::InvalidValue("Y DataFrame has no columns".into()))?
+        };
+        let y_col = y.get_column::<f64>(&y_col_name)?;
+        let y_true = y_col.as_f64()?;
+
+        Ok(Self::r2_score_slices(&y_true, &predictions))
+    }
+
+    fn feature_importances(&self) -> Option<HashMap<String, f64>> {
+        self.model.feature_importances()
+    }
+
+    fn clone_predictor(&self) -> Box<dyn SklearnPredictor + Send + Sync> {
+        Box::new(self.clone())
+    }
+}
+
 /// Trait for all scikit-learn compatible estimators
 pub trait SklearnEstimator: fmt::Debug {
     /// Get parameters of the estimator
@@ -66,6 +228,14 @@ pub trait SklearnPredictor: SklearnEstimator {
 
     /// Score the model on test data
     fn score(&self, x: &DataFrame, y: &DataFrame) -> Result<f64>;
+
+    /// Get feature importances (if supported by the underlying model).
+    ///
+    /// Returns `None` if the model type does not support feature importances, or if the
+    /// model has not been fitted yet.
+    fn feature_importances(&self) -> Option<HashMap<String, f64>> {
+        None
+    }
 
     /// Create a clone of this predictor for cross-validation
     fn clone_predictor(&self) -> Box<dyn SklearnPredictor + Send + Sync>;

@@ -637,8 +637,8 @@ pub(super) fn replace_numeric(
 }
 
 pub(super) fn sample(df: &DataFrame, n: usize, replace: bool) -> Result<DataFrame> {
-    use rand::seq::SliceRandom;
-    use rand::{Rng, RngExt};
+    use scirs2_core::random::SliceRandom;
+    use scirs2_core::random::{Rng, RngExt};
     let n_rows = df.row_count();
     if n_rows == 0 {
         return Ok(DataFrame::new());
@@ -649,7 +649,7 @@ pub(super) fn sample(df: &DataFrame, n: usize, replace: bool) -> Result<DataFram
             n, n_rows
         )));
     }
-    let mut rng = rand::rng();
+    let mut rng = scirs2_core::random::rng();
     let indices: Vec<usize> = if replace {
         (0..n).map(|_| rng.random_range(0..n_rows)).collect()
     } else {

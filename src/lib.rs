@@ -76,7 +76,7 @@
 //!
 //! ## Version
 //!
-//! Current version: 0.3.2
+//! Current version: 0.4.1
 
 // Disable specific warnings
 #![allow(clippy::all)]

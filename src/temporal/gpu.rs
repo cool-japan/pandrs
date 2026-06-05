@@ -4,7 +4,7 @@
 //! such as moving averages, rolling windows, and resampling functions.
 
 use chrono::{DateTime, Duration, Utc};
-use ndarray::{Array1, Array2, Axis};
+use scirs2_core::ndarray::{Array1, Array2, Axis};
 use std::fmt;
 use std::fmt::Debug;
 use std::time::Instant;

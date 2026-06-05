@@ -6,7 +6,7 @@
 
 use crate::core::error::{Error, Result};
 use crate::lock_safe;
-use crate::utils::rand_compat::{thread_rng, GenRangeCompat};
+use scirs2_core::random::{rng, RngExt};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -368,7 +368,7 @@ impl RetryMechanism {
         // Add jitter if enabled
         if self.config.jitter {
             let jitter_amount = (base_delay as f64 * 0.1) as u64;
-            let jitter = thread_rng().gen_range(0..=jitter_amount);
+            let jitter = rng().random_range(0..=jitter_amount);
             base_delay + jitter
         } else {
             base_delay

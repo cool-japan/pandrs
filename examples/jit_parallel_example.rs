@@ -5,7 +5,7 @@
 //!
 //! Run with: cargo run --example jit_parallel_example --features jit --release
 
-use rand::{Rng, RngExt};
+use scirs2_core::random::{Rng, RngExt};
 use std::error::Error;
 use std::time::{Duration, Instant};
 
@@ -65,7 +65,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 // Generate random floating-point data
 fn generate_random_data(size: usize) -> Vec<f64> {
     println!("Generating {size} random values...");
-    let mut rng = rand::rng();
+    let mut rng = scirs2_core::random::rng();
     let result = (0..size).map(|_| rng.random_range(0.0..100.0)).collect();
     println!("Data generation complete.");
     result

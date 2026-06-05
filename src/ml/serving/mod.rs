@@ -303,7 +303,7 @@ impl ModelServingFactory {
         registry: &dyn registry::ModelRegistry,
         model_name: &str,
         version: Option<&str>,
-    ) -> Result<Box<dyn ModelServing>> {
+    ) -> Result<std::sync::Arc<dyn ModelServing>> {
         let model_version = version.unwrap_or("latest");
         registry.load_model(model_name, model_version)
     }

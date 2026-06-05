@@ -118,20 +118,15 @@ impl Partition {
 }
 
 impl PartitionMetadata {
-    /// Creates metadata from a RecordBatch
+    /// Creates metadata from a RecordBatch, computing per-column statistics.
     #[cfg(feature = "distributed")]
     pub fn from_record_batch(batch: &arrow::record_batch::RecordBatch) -> Self {
         let row_count = batch.num_rows();
         let memory_usage = estimate_batch_memory_usage(batch);
-        let column_names = batch
-            .schema()
-            .fields()
-            .iter()
-            .map(|f| f.name().clone())
-            .collect();
+        let schema = batch.schema();
+        let column_names: Vec<String> = schema.fields().iter().map(|f| f.name().clone()).collect();
 
-        // TODO: Calculate detailed statistics when needed
-        let statistics = None;
+        let statistics = Some(compute_batch_statistics(batch));
 
         Self {
             row_count,
@@ -268,4 +263,173 @@ fn estimate_batch_memory_usage(batch: &arrow::record_batch::RecordBatch) -> usiz
     total_size += 100 * batch.num_columns();
 
     total_size
+}
+
+/// Compute per-column statistics from a RecordBatch.
+///
+/// For numeric columns (Int8/16/32/64, UInt8/16/32/64, Float32/Float64) the
+/// min and max values are extracted as strings.  For all other data types the
+/// column is treated as opaque and only the null count is recorded.
+#[cfg(feature = "distributed")]
+fn compute_batch_statistics(batch: &arrow::record_batch::RecordBatch) -> PartitionStatistics {
+    use arrow::array::{
+        Array as ArrowArray, Float32Array, Float64Array, Int16Array, Int32Array, Int64Array,
+        Int8Array, UInt16Array, UInt32Array, UInt64Array, UInt8Array,
+    };
+    use arrow::datatypes::DataType;
+
+    let schema = batch.schema();
+    let mut column_statistics = Vec::with_capacity(batch.num_columns());
+
+    for (col_idx, field) in schema.fields().iter().enumerate() {
+        let array = batch.column(col_idx);
+        let null_count = array.null_count();
+        let data_type = format!("{:?}", field.data_type());
+
+        // Extract min/max for numeric columns
+        let (min_value, max_value) = match field.data_type() {
+            DataType::Float64 => {
+                if let Some(arr) = array.as_any().downcast_ref::<Float64Array>() {
+                    let (min, max) = arr
+                        .iter()
+                        .flatten()
+                        .fold((f64::INFINITY, f64::NEG_INFINITY), |(mn, mx), v| {
+                            (mn.min(v), mx.max(v))
+                        });
+                    if min.is_finite() {
+                        (Some(min.to_string()), Some(max.to_string()))
+                    } else {
+                        (None, None)
+                    }
+                } else {
+                    (None, None)
+                }
+            }
+            DataType::Float32 => {
+                if let Some(arr) = array.as_any().downcast_ref::<Float32Array>() {
+                    let (min, max) = arr
+                        .iter()
+                        .flatten()
+                        .fold((f32::INFINITY, f32::NEG_INFINITY), |(mn, mx), v| {
+                            (mn.min(v), mx.max(v))
+                        });
+                    if min.is_finite() {
+                        (Some(min.to_string()), Some(max.to_string()))
+                    } else {
+                        (None, None)
+                    }
+                } else {
+                    (None, None)
+                }
+            }
+            DataType::Int64 => {
+                if let Some(arr) = array.as_any().downcast_ref::<Int64Array>() {
+                    let vals: Vec<i64> = arr.iter().flatten().collect();
+                    if let (Some(&mn), Some(&mx)) = (vals.iter().min(), vals.iter().max()) {
+                        (Some(mn.to_string()), Some(mx.to_string()))
+                    } else {
+                        (None, None)
+                    }
+                } else {
+                    (None, None)
+                }
+            }
+            DataType::Int32 => {
+                if let Some(arr) = array.as_any().downcast_ref::<Int32Array>() {
+                    let vals: Vec<i32> = arr.iter().flatten().collect();
+                    if let (Some(&mn), Some(&mx)) = (vals.iter().min(), vals.iter().max()) {
+                        (Some(mn.to_string()), Some(mx.to_string()))
+                    } else {
+                        (None, None)
+                    }
+                } else {
+                    (None, None)
+                }
+            }
+            DataType::Int16 => {
+                if let Some(arr) = array.as_any().downcast_ref::<Int16Array>() {
+                    let vals: Vec<i16> = arr.iter().flatten().collect();
+                    if let (Some(&mn), Some(&mx)) = (vals.iter().min(), vals.iter().max()) {
+                        (Some(mn.to_string()), Some(mx.to_string()))
+                    } else {
+                        (None, None)
+                    }
+                } else {
+                    (None, None)
+                }
+            }
+            DataType::Int8 => {
+                if let Some(arr) = array.as_any().downcast_ref::<Int8Array>() {
+                    let vals: Vec<i8> = arr.iter().flatten().collect();
+                    if let (Some(&mn), Some(&mx)) = (vals.iter().min(), vals.iter().max()) {
+                        (Some(mn.to_string()), Some(mx.to_string()))
+                    } else {
+                        (None, None)
+                    }
+                } else {
+                    (None, None)
+                }
+            }
+            DataType::UInt64 => {
+                if let Some(arr) = array.as_any().downcast_ref::<UInt64Array>() {
+                    let vals: Vec<u64> = arr.iter().flatten().collect();
+                    if let (Some(&mn), Some(&mx)) = (vals.iter().min(), vals.iter().max()) {
+                        (Some(mn.to_string()), Some(mx.to_string()))
+                    } else {
+                        (None, None)
+                    }
+                } else {
+                    (None, None)
+                }
+            }
+            DataType::UInt32 => {
+                if let Some(arr) = array.as_any().downcast_ref::<UInt32Array>() {
+                    let vals: Vec<u32> = arr.iter().flatten().collect();
+                    if let (Some(&mn), Some(&mx)) = (vals.iter().min(), vals.iter().max()) {
+                        (Some(mn.to_string()), Some(mx.to_string()))
+                    } else {
+                        (None, None)
+                    }
+                } else {
+                    (None, None)
+                }
+            }
+            DataType::UInt16 => {
+                if let Some(arr) = array.as_any().downcast_ref::<UInt16Array>() {
+                    let vals: Vec<u16> = arr.iter().flatten().collect();
+                    if let (Some(&mn), Some(&mx)) = (vals.iter().min(), vals.iter().max()) {
+                        (Some(mn.to_string()), Some(mx.to_string()))
+                    } else {
+                        (None, None)
+                    }
+                } else {
+                    (None, None)
+                }
+            }
+            DataType::UInt8 => {
+                if let Some(arr) = array.as_any().downcast_ref::<UInt8Array>() {
+                    let vals: Vec<u8> = arr.iter().flatten().collect();
+                    if let (Some(&mn), Some(&mx)) = (vals.iter().min(), vals.iter().max()) {
+                        (Some(mn.to_string()), Some(mx.to_string()))
+                    } else {
+                        (None, None)
+                    }
+                } else {
+                    (None, None)
+                }
+            }
+            _ => (None, None),
+        };
+
+        column_statistics.push(ColumnStatistics {
+            name: field.name().clone(),
+            data_type,
+            min_value,
+            max_value,
+            null_count,
+            distinct_count: None, // Exact count requires a hash-set scan; deferred
+        });
+    }
+
+    PartitionStatistics { column_statistics }
 }

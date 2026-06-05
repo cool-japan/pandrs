@@ -733,8 +733,7 @@ impl AdvancedIndexingExt for DataFrame {
     }
 
     fn sample(&self, n: usize) -> Result<DataFrame> {
-        use rand::rng;
-        use rand::seq::SliceRandom;
+        use scirs2_core::random::SliceRandom;
 
         let row_count = self.row_count();
         if n >= row_count {
@@ -742,7 +741,7 @@ impl AdvancedIndexingExt for DataFrame {
         }
 
         let mut indices: Vec<usize> = (0..row_count).collect();
-        indices.shuffle(&mut rng());
+        indices.shuffle(&mut scirs2_core::random::rng());
         indices.truncate(n);
 
         let iloc = self.iloc();

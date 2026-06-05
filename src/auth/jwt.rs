@@ -30,9 +30,9 @@ pub struct JwtConfig {
 
 impl Default for JwtConfig {
     fn default() -> Self {
-        use rand::Rng;
+        use scirs2_core::random::Rng;
         let mut secret = vec![0u8; 64];
-        rand::rng().fill_bytes(&mut secret);
+        scirs2_core::random::rng().fill_bytes(&mut secret);
 
         JwtConfig {
             secret_key: secret,

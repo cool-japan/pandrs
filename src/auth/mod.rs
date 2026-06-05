@@ -949,17 +949,17 @@ pub struct RefreshToken {
 
 /// Generate a unique token ID
 fn generate_token_id() -> String {
-    use rand::Rng;
+    use scirs2_core::random::Rng;
     let mut bytes = [0u8; 32];
-    rand::rng().fill_bytes(&mut bytes);
+    scirs2_core::random::rng().fill_bytes(&mut bytes);
     bytes.iter().map(|b| format!("{:02x}", b)).collect()
 }
 
 /// Generate an API key
 fn generate_api_key() -> String {
-    use rand::Rng;
+    use scirs2_core::random::Rng;
     let mut bytes = [0u8; 32];
-    rand::rng().fill_bytes(&mut bytes);
+    scirs2_core::random::rng().fill_bytes(&mut bytes);
     format!(
         "pk_{}",
         bytes
@@ -972,11 +972,11 @@ fn generate_api_key() -> String {
 /// Hash password using PBKDF2
 fn hash_password(password: &str) -> String {
     use pbkdf2::pbkdf2_hmac;
-    use rand::Rng;
+    use scirs2_core::random::Rng;
     use sha2::Sha256;
 
     let mut salt = [0u8; 16];
-    rand::rng().fill_bytes(&mut salt);
+    scirs2_core::random::rng().fill_bytes(&mut salt);
 
     let mut hash = [0u8; 32];
     pbkdf2_hmac::<Sha256>(password.as_bytes(), &salt, 100_000, &mut hash);

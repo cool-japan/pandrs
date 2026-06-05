@@ -6,9 +6,6 @@ use pandrs::streaming::{
     StreamConnector, StreamProcessor, StreamRecord,
 };
 #[cfg(feature = "streaming")]
-#[allow(clippy::single_component_path_imports)]
-use rand;
-#[cfg(feature = "streaming")]
 use std::collections::HashMap;
 #[cfg(feature = "streaming")]
 use std::thread;
@@ -224,7 +221,7 @@ fn realtime_analytics_example() -> Result<()> {
             // Simulate temperatures with some noise
             let base_temp = 20.0 + (i as f64 / 10.0).sin() * 5.0;
             // Using the rand crate for random numbers
-            let noise = rand::random::<f64>() * 2.0 - 1.0;
+            let noise = scirs2_core::random::random::<f64>() * 2.0 - 1.0;
             let temp = base_temp + noise;
 
             let fields = HashMap::from([
@@ -246,7 +243,7 @@ fn realtime_analytics_example() -> Result<()> {
     // Monitor metrics
     let start = Instant::now();
     while start.elapsed() < Duration::from_millis(2500) {
-        let current = metrics.lock().unwrap().clone();
+        let current = metrics.lock().unwrap_or_else(|e| e.into_inner()).clone();
 
         if !current.is_empty() {
             println!("Real-time metrics:");

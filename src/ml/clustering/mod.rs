@@ -9,13 +9,12 @@ use crate::dataframe::DataFrame;
 use crate::ml::models::ModelEvaluator;
 use crate::ml::models::ModelMetrics;
 use crate::ml::models::UnsupervisedModel;
-use rand::prelude::IndexedRandom;
-use rand::rngs::StdRng;
-use rand::seq::SliceRandom;
-use rand::Rng;
-use rand::RngExt;
-use rand::SeedableRng;
-use std::collections::{HashMap, HashSet};
+use scirs2_core::random::rngs::StdRng;
+use scirs2_core::random::Rng;
+use scirs2_core::random::RngExt;
+use scirs2_core::random::SeedableRng;
+use scirs2_core::random::SliceRandom;
+use std::collections::{HashMap, HashSet, VecDeque};
 
 /// Linkage method for hierarchical clustering
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -211,15 +210,11 @@ impl UnsupervisedModel for KMeans {
 
         // Initialize centroids (randomly select k samples)
         // A real implementation would use k-means++ or similar
-        use rand::rngs::StdRng;
-        use rand::seq::SliceRandom;
-        use rand::SeedableRng;
-
         let mut rng = match self.random_seed {
             Some(seed) => StdRng::seed_from_u64(seed),
             None => {
                 let mut seed_bytes = [0u8; 32];
-                rand::rng().fill_bytes(&mut seed_bytes);
+                scirs2_core::random::rng().fill_bytes(&mut seed_bytes);
                 StdRng::from_seed(seed_bytes)
             }
         };
@@ -432,10 +427,13 @@ impl ModelEvaluator for KMeans {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Distance helpers
+// ---------------------------------------------------------------------------
+
 /// Calculate Euclidean distance between two vectors
 fn euclidean_distance(a: &[f64], b: &[f64]) -> f64 {
     assert_eq!(a.len(), b.len(), "Vectors must have the same length");
-
     a.iter()
         .zip(b.iter())
         .map(|(&x, &y)| (x - y).powi(2))
@@ -443,17 +441,197 @@ fn euclidean_distance(a: &[f64], b: &[f64]) -> f64 {
         .sqrt()
 }
 
-/// Compute silhouette score (placeholder implementation)
+/// Calculate Manhattan distance between two vectors
+fn manhattan_distance(a: &[f64], b: &[f64]) -> f64 {
+    assert_eq!(a.len(), b.len(), "Vectors must have the same length");
+    a.iter().zip(b.iter()).map(|(&x, &y)| (x - y).abs()).sum()
+}
+
+/// Calculate Cosine distance between two vectors (1 - cosine_similarity)
+fn cosine_distance(a: &[f64], b: &[f64]) -> f64 {
+    assert_eq!(a.len(), b.len(), "Vectors must have the same length");
+    let dot: f64 = a.iter().zip(b.iter()).map(|(&x, &y)| x * y).sum();
+    let norm_a: f64 = a.iter().map(|&x| x * x).sum::<f64>().sqrt();
+    let norm_b: f64 = b.iter().map(|&x| x * x).sum::<f64>().sqrt();
+    if norm_a == 0.0 || norm_b == 0.0 {
+        return 1.0;
+    }
+    let similarity = dot / (norm_a * norm_b);
+    // Clamp to [-1,1] to guard against floating-point rounding
+    1.0 - similarity.clamp(-1.0, 1.0)
+}
+
+/// Dispatch distance computation according to the chosen metric
+fn compute_distance(a: &[f64], b: &[f64], metric: DistanceMetric) -> f64 {
+    match metric {
+        DistanceMetric::Euclidean => euclidean_distance(a, b),
+        DistanceMetric::Manhattan => manhattan_distance(a, b),
+        DistanceMetric::Cosine => cosine_distance(a, b),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Feature extraction helper
+// ---------------------------------------------------------------------------
+
+/// Extract feature matrix from a DataFrame given optional column names.
+/// If `feature_columns` is None, all columns in the frame are used.
+fn extract_features(
+    data: &DataFrame,
+    feature_columns: &Option<Vec<String>>,
+) -> Result<(Vec<Vec<f64>>, Vec<String>)> {
+    let columns: Vec<String> = match feature_columns {
+        Some(cols) => cols.clone(),
+        None => data.column_names(),
+    };
+
+    let n_samples = data.nrows();
+    let mut feature_data: Vec<Vec<f64>> = vec![Vec::with_capacity(columns.len()); n_samples];
+
+    for col_name in &columns {
+        match data.get_column::<f64>(col_name) {
+            Ok(col) => {
+                let values = col.values();
+                for (row_idx, row) in feature_data.iter_mut().enumerate() {
+                    if row_idx < values.len() {
+                        row.push(values[row_idx]);
+                    } else {
+                        return Err(Error::IndexOutOfBounds {
+                            index: row_idx,
+                            size: values.len(),
+                        });
+                    }
+                }
+            }
+            Err(_) => {
+                return Err(Error::InvalidInput(format!(
+                    "Column {} is not numeric",
+                    col_name
+                )));
+            }
+        }
+    }
+
+    Ok((feature_data, columns))
+}
+
+// ---------------------------------------------------------------------------
+// Silhouette coefficient
+// ---------------------------------------------------------------------------
+
+/// Compute the mean silhouette coefficient.
+///
+/// For each point *i* with cluster label *c_i*:
+///   a_i = mean intra-cluster distance to all other points in c_i
+///   b_i = min over clusters k ≠ c_i of mean distance to all points in k
+///   s_i = (b_i − a_i) / max(a_i, b_i)   (0 if singleton cluster)
+///
+/// Returns the mean of all s_i values.  Returns 0.0 if fewer than 2 clusters
+/// are present or if all points belong to a single cluster.
 fn compute_silhouette(
     data: &DataFrame,
     labels: &[usize],
-    centroids: &[Vec<f64>],
+    _centroids: &[Vec<f64>],
     feature_columns: &Option<Vec<String>>,
 ) -> Result<f64> {
-    // A real implementation would compute the actual silhouette score
-    // This is a placeholder returning a random value between 0 and 1
-    Ok(0.75)
+    if labels.is_empty() {
+        return Ok(0.0);
+    }
+
+    // Determine the set of active cluster ids (exclude noise sentinel u32::MAX)
+    let cluster_ids: HashSet<usize> = labels.iter().cloned().collect();
+    let n_clusters = cluster_ids.len();
+    if n_clusters < 2 {
+        return Ok(0.0);
+    }
+
+    let (feature_data, _) = extract_features(data, feature_columns)?;
+    let n_samples = feature_data.len();
+
+    if n_samples != labels.len() {
+        return Err(Error::InvalidValue(
+            "labels length does not match data row count".into(),
+        ));
+    }
+
+    // Build a map: cluster_id -> list of point indices
+    let mut cluster_members: HashMap<usize, Vec<usize>> = HashMap::new();
+    for (i, &lbl) in labels.iter().enumerate() {
+        cluster_members.entry(lbl).or_default().push(i);
+    }
+
+    let mut silhouette_sum = 0.0;
+    let mut count = 0usize;
+
+    for i in 0..n_samples {
+        let c_i = labels[i];
+        let members_ci = &cluster_members[&c_i];
+
+        // a_i: mean distance to other points in same cluster
+        let a_i = if members_ci.len() <= 1 {
+            // Singleton — s_i = 0 by definition
+            0.0
+        } else {
+            let sum: f64 = members_ci
+                .iter()
+                .filter(|&&j| j != i)
+                .map(|&j| euclidean_distance(&feature_data[i], &feature_data[j]))
+                .sum();
+            sum / (members_ci.len() - 1) as f64
+        };
+
+        if members_ci.len() <= 1 {
+            // Singleton contributes 0
+            silhouette_sum += 0.0;
+            count += 1;
+            continue;
+        }
+
+        // b_i: min mean distance over all other clusters
+        let mut b_i = f64::MAX;
+        for (&other_cluster, other_members) in &cluster_members {
+            if other_cluster == c_i {
+                continue;
+            }
+            if other_members.is_empty() {
+                continue;
+            }
+            let mean_dist: f64 = other_members
+                .iter()
+                .map(|&j| euclidean_distance(&feature_data[i], &feature_data[j]))
+                .sum::<f64>()
+                / other_members.len() as f64;
+            if mean_dist < b_i {
+                b_i = mean_dist;
+            }
+        }
+
+        let s_i = if b_i == f64::MAX {
+            // No other cluster found (degenerate case)
+            0.0
+        } else {
+            let denom = a_i.max(b_i);
+            if denom == 0.0 {
+                0.0
+            } else {
+                (b_i - a_i) / denom
+            }
+        };
+
+        silhouette_sum += s_i;
+        count += 1;
+    }
+
+    if count == 0 {
+        return Ok(0.0);
+    }
+
+    Ok(silhouette_sum / count as f64)
 }
+
+// ---------------------------------------------------------------------------
+// Agglomerative Hierarchical Clustering
+// ---------------------------------------------------------------------------
 
 /// Agglomerative hierarchical clustering
 #[derive(Debug, Clone)]
@@ -503,9 +681,86 @@ impl AgglomerativeClustering {
 
 impl UnsupervisedModel for AgglomerativeClustering {
     fn fit(&mut self, data: &DataFrame) -> Result<()> {
-        // Placeholder implementation
-        let n_samples = data.nrows();
-        self.labels = Some(vec![0; n_samples]);
+        let (feature_data, used_columns) = extract_features(data, &self.feature_columns)?;
+        let n_samples = feature_data.len();
+
+        if n_samples == 0 {
+            return Err(Error::InvalidValue("Empty dataset".into()));
+        }
+
+        let target_clusters = self.n_clusters.min(n_samples);
+
+        // Precompute full pairwise distance matrix
+        let mut dist_matrix: Vec<Vec<f64>> = vec![vec![0.0; n_samples]; n_samples];
+        for i in 0..n_samples {
+            for j in (i + 1)..n_samples {
+                let d = compute_distance(&feature_data[i], &feature_data[j], self.metric);
+                dist_matrix[i][j] = d;
+                dist_matrix[j][i] = d;
+            }
+        }
+
+        // Each point starts in its own cluster; we represent clusters as sets of
+        // original point indices.
+        let mut clusters: Vec<Option<Vec<usize>>> = (0..n_samples).map(|i| Some(vec![i])).collect();
+        // Track which cluster slots are active
+        let mut active: Vec<usize> = (0..n_samples).collect();
+
+        while active.len() > target_clusters {
+            // Find the two active clusters with the smallest linkage distance
+            let mut best_dist = f64::MAX;
+            let mut best_a = 0usize;
+            let mut best_b = 0usize;
+
+            for ai in 0..active.len() {
+                for bi in (ai + 1)..active.len() {
+                    let idx_a = active[ai];
+                    let idx_b = active[bi];
+                    let pts_a = clusters[idx_a]
+                        .as_ref()
+                        .expect("active cluster slot is always Some");
+                    let pts_b = clusters[idx_b]
+                        .as_ref()
+                        .expect("active cluster slot is always Some");
+
+                    let d =
+                        linkage_distance(pts_a, pts_b, &dist_matrix, &feature_data, self.linkage);
+
+                    if d < best_dist {
+                        best_dist = d;
+                        best_a = idx_a;
+                        best_b = idx_b;
+                    }
+                }
+            }
+
+            // Merge cluster best_b into cluster best_a
+            let pts_b = clusters[best_b]
+                .take()
+                .expect("active cluster slot is always Some");
+            let pts_a = clusters[best_a]
+                .as_mut()
+                .expect("active cluster slot is always Some");
+            pts_a.extend(pts_b);
+
+            // Remove best_b from the active list
+            active.retain(|&idx| idx != best_b);
+        }
+
+        // Assign final integer labels (0 .. target_clusters-1)
+        let mut labels = vec![0usize; n_samples];
+        for (cluster_label, &slot) in active.iter().enumerate() {
+            for &pt in clusters[slot]
+                .as_ref()
+                .expect("active cluster slot is always Some")
+            {
+                labels[pt] = cluster_label;
+            }
+        }
+
+        self.labels = Some(labels);
+        self.feature_columns = Some(used_columns);
+
         Ok(())
     }
 
@@ -517,10 +772,104 @@ impl UnsupervisedModel for AgglomerativeClustering {
     }
 }
 
+/// Compute inter-cluster linkage distance according to the requested criterion.
+fn linkage_distance(
+    pts_a: &[usize],
+    pts_b: &[usize],
+    dist_matrix: &[Vec<f64>],
+    feature_data: &[Vec<f64>],
+    linkage: Linkage,
+) -> f64 {
+    match linkage {
+        Linkage::Single => {
+            // min over all cross pairs
+            let mut min_d = f64::MAX;
+            for &i in pts_a {
+                for &j in pts_b {
+                    let d = dist_matrix[i][j];
+                    if d < min_d {
+                        min_d = d;
+                    }
+                }
+            }
+            min_d
+        }
+        Linkage::Complete => {
+            // max over all cross pairs
+            let mut max_d: f64 = 0.0;
+            for &i in pts_a {
+                for &j in pts_b {
+                    let d = dist_matrix[i][j];
+                    if d > max_d {
+                        max_d = d;
+                    }
+                }
+            }
+            max_d
+        }
+        Linkage::Average => {
+            // mean over all cross pairs
+            let mut sum = 0.0;
+            let count = pts_a.len() * pts_b.len();
+            for &i in pts_a {
+                for &j in pts_b {
+                    sum += dist_matrix[i][j];
+                }
+            }
+            if count == 0 {
+                0.0
+            } else {
+                sum / count as f64
+            }
+        }
+        Linkage::Ward => {
+            // Ward's criterion: Δvariance = (n_a * n_b / (n_a + n_b)) * ||centroid_a - centroid_b||²
+            let n_a = pts_a.len();
+            let n_b = pts_b.len();
+            if n_a == 0 || n_b == 0 {
+                return 0.0;
+            }
+            let n_features = feature_data[0].len();
+            let mut centroid_a = vec![0.0f64; n_features];
+            let mut centroid_b = vec![0.0f64; n_features];
+            for &i in pts_a {
+                for (k, val) in centroid_a.iter_mut().enumerate() {
+                    *val += feature_data[i][k];
+                }
+            }
+            for &j in pts_b {
+                for (k, val) in centroid_b.iter_mut().enumerate() {
+                    *val += feature_data[j][k];
+                }
+            }
+            for val in centroid_a.iter_mut() {
+                *val /= n_a as f64;
+            }
+            for val in centroid_b.iter_mut() {
+                *val /= n_b as f64;
+            }
+            let sq_dist: f64 = centroid_a
+                .iter()
+                .zip(centroid_b.iter())
+                .map(|(&x, &y)| (x - y).powi(2))
+                .sum();
+            (n_a as f64 * n_b as f64 / (n_a + n_b) as f64) * sq_dist
+        }
+    }
+}
+
 impl ModelEvaluator for AgglomerativeClustering {
-    fn evaluate(&self, _test_data: &DataFrame, _test_target: &str) -> Result<ModelMetrics> {
+    fn evaluate(&self, test_data: &DataFrame, _test_target: &str) -> Result<ModelMetrics> {
         let mut metrics = ModelMetrics::new();
-        metrics.add_metric("placeholder", 0.0);
+
+        if let Some(labels) = &self.labels {
+            // Build dummy centroids vector (silhouette ignores centroids, uses labels only)
+            let dummy_centroids: Vec<Vec<f64>> = Vec::new();
+            let silhouette =
+                compute_silhouette(test_data, labels, &dummy_centroids, &self.feature_columns)?;
+            metrics.add_metric("silhouette_score", silhouette);
+        }
+
         Ok(metrics)
     }
 
@@ -535,6 +884,10 @@ impl ModelEvaluator for AgglomerativeClustering {
         ))
     }
 }
+
+// ---------------------------------------------------------------------------
+// DBSCAN
+// ---------------------------------------------------------------------------
 
 /// Density-Based Spatial Clustering of Applications with Noise (DBSCAN)
 #[derive(Debug, Clone)]
@@ -578,9 +931,80 @@ impl DBSCAN {
 
 impl UnsupervisedModel for DBSCAN {
     fn fit(&mut self, data: &DataFrame) -> Result<()> {
-        // Placeholder implementation
-        let n_samples = data.nrows();
-        self.labels = Some(vec![0; n_samples]);
+        let (feature_data, used_columns) = extract_features(data, &self.feature_columns)?;
+        let n_samples = feature_data.len();
+
+        if n_samples == 0 {
+            self.labels = Some(Vec::new());
+            self.feature_columns = Some(used_columns);
+            return Ok(());
+        }
+
+        // Precompute pairwise distances
+        let mut dist_matrix: Vec<Vec<f64>> = vec![vec![0.0; n_samples]; n_samples];
+        for i in 0..n_samples {
+            for j in (i + 1)..n_samples {
+                let d = compute_distance(&feature_data[i], &feature_data[j], self.metric);
+                dist_matrix[i][j] = d;
+                dist_matrix[j][i] = d;
+            }
+        }
+
+        // For each point determine its eps-neighborhood
+        let mut neighborhoods: Vec<Vec<usize>> = Vec::with_capacity(n_samples);
+        for i in 0..n_samples {
+            let nbrs: Vec<usize> = (0..n_samples)
+                .filter(|&j| j != i && dist_matrix[i][j] <= self.eps)
+                .collect();
+            neighborhoods.push(nbrs);
+        }
+
+        // -1 = unvisited; label assignment happens during BFS
+        let mut labels: Vec<i32> = vec![-1; n_samples];
+        let mut cluster_id: i32 = -1;
+
+        for i in 0..n_samples {
+            // Already visited
+            if labels[i] != -1 {
+                continue;
+            }
+
+            // Check if core point
+            if neighborhoods[i].len() < self.min_samples {
+                // Mark as noise for now (may be updated later as border point)
+                labels[i] = -1;
+                continue;
+            }
+
+            // Start a new cluster
+            cluster_id += 1;
+            labels[i] = cluster_id;
+
+            // BFS expansion
+            let mut queue: VecDeque<usize> = neighborhoods[i].iter().cloned().collect();
+            while let Some(q) = queue.pop_front() {
+                if labels[q] == -1 {
+                    // Was noise — promote to border point of this cluster
+                    labels[q] = cluster_id;
+                } else {
+                    // Already assigned to a cluster — skip
+                    continue;
+                }
+
+                // If q is itself a core point, expand its neighborhood
+                if neighborhoods[q].len() >= self.min_samples {
+                    for &nbr in &neighborhoods[q] {
+                        if labels[nbr] == -1 {
+                            queue.push_back(nbr);
+                        }
+                    }
+                }
+            }
+        }
+
+        self.labels = Some(labels);
+        self.feature_columns = Some(used_columns);
+
         Ok(())
     }
 
@@ -593,9 +1017,66 @@ impl UnsupervisedModel for DBSCAN {
 }
 
 impl ModelEvaluator for DBSCAN {
-    fn evaluate(&self, _test_data: &DataFrame, _test_target: &str) -> Result<ModelMetrics> {
+    fn evaluate(&self, test_data: &DataFrame, _test_target: &str) -> Result<ModelMetrics> {
         let mut metrics = ModelMetrics::new();
-        metrics.add_metric("placeholder", 0.0);
+
+        if let Some(i32_labels) = &self.labels {
+            // Convert i32 labels to usize labels for silhouette, skipping noise points (-1).
+            // Noise points are excluded from the silhouette computation entirely.
+            //
+            // Build a sub-set of the data without noise points, then compute silhouette.
+            // Because compute_silhouette receives the full DataFrame we instead remap
+            // non-noise cluster ids to contiguous usize and pass ALL labels, but noise
+            // points will end up in a "cluster" keyed by usize::MAX, which we handle by
+            // not counting singletons in the silhouette computation.  The cleaner
+            // approach is to derive usize labels for silhouette and pass only non-noise
+            // rows — but since compute_silhouette takes a &DataFrame we use an
+            // alternative: map -1 to a unique large id so all "noise" points share one
+            // cluster, then let compute_silhouette handle it (it will give that cluster
+            // s_i ≈ 0 since noise points are far from each other).
+            //
+            // Simplest correct approach: compute silhouette only on non-noise points by
+            // building a temporary in-memory Vec and calling the inner silhouette logic
+            // directly rather than through the DataFrame wrapper.
+            let non_noise: Vec<(usize, usize)> = i32_labels
+                .iter()
+                .enumerate()
+                .filter(|(_, &lbl)| lbl >= 0)
+                .map(|(i, &lbl)| (i, lbl as usize))
+                .collect();
+
+            if non_noise.len() >= 2 {
+                let (feature_data, _) = extract_features(test_data, &self.feature_columns)?;
+                // Re-index to contiguous labels starting from 0
+                let mut label_remap: HashMap<usize, usize> = HashMap::new();
+                let mut next_id = 0usize;
+                let mut subset_labels: Vec<usize> = Vec::with_capacity(non_noise.len());
+                let mut subset_data: Vec<Vec<f64>> = Vec::with_capacity(non_noise.len());
+
+                for (orig_idx, orig_lbl) in &non_noise {
+                    let new_lbl = *label_remap.entry(*orig_lbl).or_insert_with(|| {
+                        let id = next_id;
+                        next_id += 1;
+                        id
+                    });
+                    subset_labels.push(new_lbl);
+                    if *orig_idx < feature_data.len() {
+                        subset_data.push(feature_data[*orig_idx].clone());
+                    }
+                }
+
+                let n_unique = label_remap.len();
+                if n_unique >= 2 && !subset_data.is_empty() {
+                    let silhouette = compute_silhouette_raw(&subset_data, &subset_labels, n_unique);
+                    metrics.add_metric("silhouette_score", silhouette);
+                } else {
+                    metrics.add_metric("silhouette_score", 0.0);
+                }
+            } else {
+                metrics.add_metric("silhouette_score", 0.0);
+            }
+        }
+
         Ok(metrics)
     }
 
@@ -611,5 +1092,262 @@ impl ModelEvaluator for DBSCAN {
     }
 }
 
-// Re-exports - remove self references to avoid duplicate definitions
-// These types are already defined in this module, so no need to re-export
+// ---------------------------------------------------------------------------
+// Raw silhouette (works directly on a feature matrix, no DataFrame required)
+// ---------------------------------------------------------------------------
+
+/// Compute silhouette coefficient directly from a feature matrix and label vector.
+/// `n_clusters` is the number of distinct cluster ids (0 .. n_clusters-1).
+fn compute_silhouette_raw(feature_data: &[Vec<f64>], labels: &[usize], n_clusters: usize) -> f64 {
+    if n_clusters < 2 || labels.is_empty() {
+        return 0.0;
+    }
+
+    let n_samples = feature_data.len();
+    // Build cluster membership map
+    let mut cluster_members: Vec<Vec<usize>> = vec![Vec::new(); n_clusters];
+    for (i, &lbl) in labels.iter().enumerate() {
+        if lbl < n_clusters {
+            cluster_members[lbl].push(i);
+        }
+    }
+
+    let mut silhouette_sum = 0.0;
+    let mut count = 0usize;
+
+    for i in 0..n_samples {
+        let c_i = labels[i];
+        if c_i >= n_clusters {
+            continue;
+        }
+        let members_ci = &cluster_members[c_i];
+
+        let a_i = if members_ci.len() <= 1 {
+            0.0
+        } else {
+            let sum: f64 = members_ci
+                .iter()
+                .filter(|&&j| j != i)
+                .map(|&j| euclidean_distance(&feature_data[i], &feature_data[j]))
+                .sum();
+            sum / (members_ci.len() - 1) as f64
+        };
+
+        if members_ci.len() <= 1 {
+            silhouette_sum += 0.0;
+            count += 1;
+            continue;
+        }
+
+        let mut b_i = f64::MAX;
+        for k in 0..n_clusters {
+            if k == c_i {
+                continue;
+            }
+            let other = &cluster_members[k];
+            if other.is_empty() {
+                continue;
+            }
+            let mean_d: f64 = other
+                .iter()
+                .map(|&j| euclidean_distance(&feature_data[i], &feature_data[j]))
+                .sum::<f64>()
+                / other.len() as f64;
+            if mean_d < b_i {
+                b_i = mean_d;
+            }
+        }
+
+        let s_i = if b_i == f64::MAX {
+            0.0
+        } else {
+            let denom = a_i.max(b_i);
+            if denom == 0.0 {
+                0.0
+            } else {
+                (b_i - a_i) / denom
+            }
+        };
+
+        silhouette_sum += s_i;
+        count += 1;
+    }
+
+    if count == 0 {
+        0.0
+    } else {
+        silhouette_sum / count as f64
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::dataframe::DataFrame;
+    use crate::series::Series;
+
+    /// Build a DataFrame from two equal-length column slices
+    fn make_df(xs: &[f64], ys: &[f64]) -> DataFrame {
+        let mut df = DataFrame::new();
+        df.add_column(
+            "x".to_string(),
+            Series::new(xs.to_vec(), Some("x".to_string())).unwrap(),
+        )
+        .unwrap();
+        df.add_column(
+            "y".to_string(),
+            Series::new(ys.to_vec(), Some("y".to_string())).unwrap(),
+        )
+        .unwrap();
+        df
+    }
+
+    // -----------------------------------------------------------------------
+    // DBSCAN tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_dbscan_two_blobs() {
+        // Two well-separated blobs: 5 points near (0,0) and 5 near (10,10)
+        let xs = [0.1, -0.1, 0.2, -0.2, 0.0, 9.9, 10.1, 9.8, 10.2, 10.0];
+        let ys = [0.1, -0.1, -0.2, 0.2, 0.0, 9.9, 10.1, 10.2, 9.8, 10.0];
+        let df = make_df(&xs, &ys);
+
+        let mut dbscan = DBSCAN::new(2.0, 2).with_columns(vec!["x".to_string(), "y".to_string()]);
+        dbscan.fit(&df).unwrap();
+
+        let labels = dbscan.labels.as_ref().unwrap();
+        assert_eq!(labels.len(), 10);
+
+        // All points should be assigned (no noise)
+        assert!(
+            labels.iter().all(|&l| l >= 0),
+            "Expected no noise points, got: {:?}",
+            labels
+        );
+
+        // Exactly 2 clusters (max label == 1 when cluster ids are 0 and 1)
+        let max_label = *labels.iter().max().unwrap();
+        assert_eq!(
+            max_label, 1,
+            "Expected exactly 2 clusters, got max label = {}",
+            max_label
+        );
+    }
+
+    #[test]
+    fn test_dbscan_noise() {
+        // A tight cluster of 4 points plus 3 clear outliers
+        let xs = [0.0, 0.1, -0.1, 0.05, 100.0, -100.0, 50.0];
+        let ys = [0.0, 0.1, -0.1, 0.05, 100.0, -100.0, 50.0];
+        let df = make_df(&xs, &ys);
+
+        let mut dbscan = DBSCAN::new(1.0, 2).with_columns(vec!["x".to_string(), "y".to_string()]);
+        dbscan.fit(&df).unwrap();
+
+        let labels = dbscan.labels.as_ref().unwrap();
+        assert_eq!(labels.len(), 7);
+
+        // At least one noise point (-1) must exist
+        assert!(
+            labels.iter().any(|&l| l == -1),
+            "Expected at least one noise point, got: {:?}",
+            labels
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Agglomerative tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_agglomerative_two_blobs() {
+        // Two well-separated blobs
+        let xs = [0.1, -0.1, 0.2, -0.2, 0.0, 9.9, 10.1, 9.8, 10.2, 10.0];
+        let ys = [0.1, -0.1, -0.2, 0.2, 0.0, 9.9, 10.1, 10.2, 9.8, 10.0];
+        let df = make_df(&xs, &ys);
+
+        let mut agg =
+            AgglomerativeClustering::new(2).with_columns(vec!["x".to_string(), "y".to_string()]);
+        agg.fit(&df).unwrap();
+
+        let labels = agg.labels.as_ref().unwrap();
+        assert_eq!(labels.len(), 10);
+
+        // Exactly 2 distinct labels, both in range [0, 2)
+        let unique: HashSet<usize> = labels.iter().cloned().collect();
+        assert_eq!(
+            unique.len(),
+            2,
+            "Expected exactly 2 distinct cluster labels, got: {:?}",
+            unique
+        );
+        assert!(
+            unique.iter().all(|&l| l < 2),
+            "Labels out of range: {:?}",
+            unique
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Silhouette tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_silhouette_perfect() {
+        // Two clusters with near-perfect separation
+        let xs: Vec<f64> = [
+            0.0, 0.05, -0.05, 0.02, -0.02, 100.0, 100.05, 99.95, 100.02, 99.98,
+        ]
+        .to_vec();
+        let ys: Vec<f64> = [
+            0.0, 0.05, -0.05, -0.02, 0.02, 100.0, 100.05, 99.95, 99.98, 100.02,
+        ]
+        .to_vec();
+        let df = make_df(&xs, &ys);
+
+        // Labels: first 5 → cluster 0, last 5 → cluster 1
+        let labels: Vec<usize> = [0, 0, 0, 0, 0, 1, 1, 1, 1, 1].to_vec();
+        let dummy_centroids: Vec<Vec<f64>> = Vec::new();
+        let feature_cols = Some(vec!["x".to_string(), "y".to_string()]);
+
+        let score = compute_silhouette(&df, &labels, &dummy_centroids, &feature_cols).unwrap();
+        assert!(
+            score > 0.8,
+            "Expected silhouette score > 0.8 for perfect separation, got {}",
+            score
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // KMeans silhouette via evaluate()
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_kmeans_silhouette_evaluates() {
+        // Two well-separated blobs
+        let xs = [0.1_f64, -0.1, 0.2, -0.2, 0.0, 9.9, 10.1, 9.8, 10.2, 10.0];
+        let ys = [0.1_f64, -0.1, -0.2, 0.2, 0.0, 9.9, 10.1, 10.2, 9.8, 10.0];
+        let df = make_df(&xs, &ys);
+
+        let mut km = KMeans::new(2)
+            .random_seed(42)
+            .with_columns(vec!["x".to_string(), "y".to_string()]);
+        km.fit(&df).unwrap();
+
+        let metrics = km.evaluate(&df, "").unwrap();
+        let score = metrics
+            .get_metric("silhouette_score")
+            .copied()
+            .unwrap_or(0.0);
+        assert!(
+            score > 0.8,
+            "Expected KMeans silhouette > 0.8 for well-separated blobs, got {}",
+            score
+        );
+    }
+}

@@ -6,9 +6,10 @@
 use crate::core::error::{Error, Result};
 use crate::dataframe::DataFrame;
 use crate::ml::model_selection::{ScoreFunction, SelectKBest};
+use crate::ml::models::linear::LinearRegression;
+use crate::ml::models::SupervisedModel;
 use crate::ml::sklearn_compat::{SklearnEstimator, SklearnTransformer};
 use crate::series::Series;
-use crate::utils::rand_compat::{thread_rng, GenRangeCompat};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -258,6 +259,292 @@ impl FeatureScaler for MinMaxScaler {
                 .map(|&x| min + ((x - feature_min) / feature_range) * range)
                 .collect())
         }
+    }
+}
+
+/// Robust scaler using median and interquartile range (IQR)
+///
+/// Centers data around the median and scales by the IQR, making it robust
+/// to outliers. Transform: `(x - median) / IQR`.
+#[derive(Debug, Clone)]
+pub struct RobustScaler {
+    median: Option<f64>,
+    iqr: Option<f64>,
+}
+
+impl RobustScaler {
+    pub fn new() -> Self {
+        RobustScaler {
+            median: None,
+            iqr: None,
+        }
+    }
+}
+
+impl FeatureScaler for RobustScaler {
+    fn fit(&mut self, data: &[f64]) -> Result<()> {
+        if data.is_empty() {
+            return Err(Error::InvalidValue("Cannot fit on empty data".into()));
+        }
+        let mut sorted = data.to_vec();
+        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        let n = sorted.len();
+
+        // Compute median
+        let median = if n % 2 == 0 {
+            (sorted[n / 2 - 1] + sorted[n / 2]) / 2.0
+        } else {
+            sorted[n / 2]
+        };
+
+        // Compute Q1 (25th percentile) and Q3 (75th percentile)
+        // Using linear interpolation for accurate quantile computation
+        let q1 = {
+            let pos = 0.25 * (n - 1) as f64;
+            let lo = pos.floor() as usize;
+            let hi = pos.ceil() as usize;
+            let frac = pos - lo as f64;
+            sorted[lo] + frac * (sorted[hi] - sorted[lo])
+        };
+        let q3 = {
+            let pos = 0.75 * (n - 1) as f64;
+            let lo = pos.floor() as usize;
+            let hi = pos.ceil() as usize;
+            let frac = pos - lo as f64;
+            sorted[lo] + frac * (sorted[hi] - sorted[lo])
+        };
+        let iqr = (q3 - q1).max(1e-10);
+
+        self.median = Some(median);
+        self.iqr = Some(iqr);
+        Ok(())
+    }
+
+    fn transform(&self, data: &[f64]) -> Result<Vec<f64>> {
+        let median = self
+            .median
+            .ok_or_else(|| Error::InvalidOperation("RobustScaler not fitted".into()))?;
+        let iqr = self
+            .iqr
+            .ok_or_else(|| Error::InvalidOperation("RobustScaler not fitted".into()))?;
+        Ok(data.iter().map(|&x| (x - median) / iqr).collect())
+    }
+
+    fn inverse_transform(&self, data: &[f64]) -> Result<Vec<f64>> {
+        let median = self
+            .median
+            .ok_or_else(|| Error::InvalidOperation("RobustScaler not fitted".into()))?;
+        let iqr = self
+            .iqr
+            .ok_or_else(|| Error::InvalidOperation("RobustScaler not fitted".into()))?;
+        Ok(data.iter().map(|&x| x * iqr + median).collect())
+    }
+}
+
+/// Quantile transformer that maps feature values to a uniform `[0,1]` distribution
+///
+/// Uses rank-based normalization: each value is mapped to its empirical quantile
+/// in the training data using linear interpolation between stored training values.
+#[derive(Debug, Clone)]
+pub struct QuantileTransformer {
+    /// Sorted training values used as reference quantiles
+    reference_values: Option<Vec<f64>>,
+}
+
+impl QuantileTransformer {
+    pub fn new() -> Self {
+        QuantileTransformer {
+            reference_values: None,
+        }
+    }
+
+    /// Linearly interpolate the quantile rank of `x` relative to sorted `reference`
+    fn interpolate_quantile(x: f64, reference: &[f64]) -> f64 {
+        let n = reference.len();
+        if n == 0 {
+            return 0.5;
+        }
+        if x <= reference[0] {
+            return 0.0;
+        }
+        if x >= reference[n - 1] {
+            return 1.0;
+        }
+        // Binary search for insertion point
+        let pos = reference.partition_point(|&v| v <= x);
+        // pos is the index where x would be inserted: reference[pos-1] <= x < reference[pos]
+        let lo = pos.saturating_sub(1);
+        let hi = pos.min(n - 1);
+        if reference[hi] == reference[lo] {
+            return lo as f64 / (n - 1) as f64;
+        }
+        let t = (x - reference[lo]) / (reference[hi] - reference[lo]);
+        let q_lo = lo as f64 / (n - 1) as f64;
+        let q_hi = hi as f64 / (n - 1) as f64;
+        q_lo + t * (q_hi - q_lo)
+    }
+
+    /// Invert a quantile value back to a data value using reference distribution
+    fn inverse_quantile(q: f64, reference: &[f64]) -> f64 {
+        let n = reference.len();
+        if n == 0 {
+            return 0.0;
+        }
+        let q = q.clamp(0.0, 1.0);
+        let pos = q * (n - 1) as f64;
+        let lo = pos.floor() as usize;
+        let hi = (pos.ceil() as usize).min(n - 1);
+        let frac = pos - lo as f64;
+        reference[lo] + frac * (reference[hi] - reference[lo])
+    }
+}
+
+impl FeatureScaler for QuantileTransformer {
+    fn fit(&mut self, data: &[f64]) -> Result<()> {
+        if data.is_empty() {
+            return Err(Error::InvalidValue("Cannot fit on empty data".into()));
+        }
+        let mut sorted = data.to_vec();
+        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        self.reference_values = Some(sorted);
+        Ok(())
+    }
+
+    fn transform(&self, data: &[f64]) -> Result<Vec<f64>> {
+        let reference = self
+            .reference_values
+            .as_ref()
+            .ok_or_else(|| Error::InvalidOperation("QuantileTransformer not fitted".into()))?;
+        Ok(data
+            .iter()
+            .map(|&x| Self::interpolate_quantile(x, reference))
+            .collect())
+    }
+
+    fn inverse_transform(&self, data: &[f64]) -> Result<Vec<f64>> {
+        let reference = self
+            .reference_values
+            .as_ref()
+            .ok_or_else(|| Error::InvalidOperation("QuantileTransformer not fitted".into()))?;
+        Ok(data
+            .iter()
+            .map(|&q| Self::inverse_quantile(q, reference))
+            .collect())
+    }
+}
+
+/// Power transformer using the Yeo-Johnson transformation
+///
+/// Applies the Yeo-Johnson power transform to make the distribution more
+/// Gaussian-like. The optimal lambda parameter is chosen by scanning a grid
+/// of lambda values and selecting the one that minimizes |skewness|.
+///
+/// Yeo-Johnson transform for lambda != 0, x >= 0: ((x + 1)^lambda - 1) / lambda
+/// Yeo-Johnson transform for lambda == 0, x >= 0: ln(x + 1)
+/// Yeo-Johnson transform for lambda != 2, x < 0:  -((-x + 1)^(2-lambda) - 1) / (2 - lambda)
+/// Yeo-Johnson transform for lambda == 2, x < 0:  -ln(-x + 1)
+#[derive(Debug, Clone)]
+pub struct PowerTransformer {
+    lambda: Option<f64>,
+}
+
+impl PowerTransformer {
+    pub fn new() -> Self {
+        PowerTransformer { lambda: None }
+    }
+
+    /// Apply the Yeo-Johnson transform to a single value given lambda
+    fn yeo_johnson(x: f64, lambda: f64) -> f64 {
+        if x >= 0.0 {
+            if (lambda - 0.0).abs() < 1e-10 {
+                (x + 1.0_f64).ln()
+            } else {
+                ((x + 1.0_f64).powf(lambda) - 1.0) / lambda
+            }
+        } else if (lambda - 2.0).abs() < 1e-10 {
+            -(-x + 1.0_f64).ln()
+        } else {
+            -((-x + 1.0_f64).powf(2.0 - lambda) - 1.0) / (2.0 - lambda)
+        }
+    }
+
+    /// Compute skewness of a vector (used to pick optimal lambda)
+    fn skewness(vals: &[f64]) -> f64 {
+        let n = vals.len() as f64;
+        if n < 3.0 {
+            return 0.0;
+        }
+        let mean = vals.iter().sum::<f64>() / n;
+        let m2 = vals.iter().map(|&v| (v - mean).powi(2)).sum::<f64>() / n;
+        let m3 = vals.iter().map(|&v| (v - mean).powi(3)).sum::<f64>() / n;
+        let std = m2.sqrt();
+        if std < 1e-10 {
+            0.0
+        } else {
+            m3 / std.powi(3)
+        }
+    }
+
+    /// Inverse Yeo-Johnson: recover x from transformed value y given lambda
+    fn yeo_johnson_inverse(y: f64, lambda: f64) -> f64 {
+        if y >= 0.0 {
+            if (lambda - 0.0).abs() < 1e-10 {
+                y.exp() - 1.0
+            } else {
+                (y * lambda + 1.0).powf(1.0 / lambda) - 1.0
+            }
+        } else if (lambda - 2.0).abs() < 1e-10 {
+            1.0 - (-y).exp()
+        } else {
+            let two_minus_lambda = 2.0 - lambda;
+            1.0 - (-y * two_minus_lambda + 1.0).powf(1.0 / two_minus_lambda)
+        }
+    }
+}
+
+impl FeatureScaler for PowerTransformer {
+    fn fit(&mut self, data: &[f64]) -> Result<()> {
+        if data.is_empty() {
+            return Err(Error::InvalidValue("Cannot fit on empty data".into()));
+        }
+        // Grid search over lambda in [-2, 2] with step 0.25 to minimize |skewness|
+        let candidates: Vec<f64> = (-8..=8).map(|i| i as f64 * 0.25).collect();
+        let mut best_lambda = 0.0_f64;
+        let mut best_skew_abs = f64::INFINITY;
+
+        for &lambda in &candidates {
+            let transformed: Vec<f64> =
+                data.iter().map(|&x| Self::yeo_johnson(x, lambda)).collect();
+            // Skip if any non-finite values (happens with extreme lambdas)
+            if transformed.iter().any(|v| !v.is_finite()) {
+                continue;
+            }
+            let skew = Self::skewness(&transformed).abs();
+            if skew < best_skew_abs {
+                best_skew_abs = skew;
+                best_lambda = lambda;
+            }
+        }
+
+        self.lambda = Some(best_lambda);
+        Ok(())
+    }
+
+    fn transform(&self, data: &[f64]) -> Result<Vec<f64>> {
+        let lambda = self
+            .lambda
+            .ok_or_else(|| Error::InvalidOperation("PowerTransformer not fitted".into()))?;
+        Ok(data.iter().map(|&x| Self::yeo_johnson(x, lambda)).collect())
+    }
+
+    fn inverse_transform(&self, data: &[f64]) -> Result<Vec<f64>> {
+        let lambda = self
+            .lambda
+            .ok_or_else(|| Error::InvalidOperation("PowerTransformer not fitted".into()))?;
+        Ok(data
+            .iter()
+            .map(|&y| Self::yeo_johnson_inverse(y, lambda))
+            .collect())
     }
 }
 
@@ -777,25 +1064,319 @@ impl AutoFeatureEngineer {
                 self.select_by_variance_threshold(x, *threshold)?
             }
             FeatureSelectionMethod::RecursiveElimination => {
-                // Placeholder for RFE implementation
-                (0..n_features.min(10)).collect()
+                let k = self.n_features_to_select.unwrap_or(n_features.min(10));
+                self.select_recursive_elimination(x, y, k)?
             }
             FeatureSelectionMethod::L1Based => {
-                // Placeholder for L1-based selection
-                (0..n_features.min(15)).collect()
+                let k = self.n_features_to_select.unwrap_or(n_features.min(15));
+                self.select_l1_based(x, y, k)?
             }
             FeatureSelectionMethod::TreeBased => {
-                // Placeholder for tree-based selection
-                (0..n_features.min(12)).collect()
+                let k = self.n_features_to_select.unwrap_or(n_features.min(12));
+                self.select_tree_based(x, y, k)?
             }
             FeatureSelectionMethod::MutualInformation => {
-                // Placeholder for mutual information selection
-                (0..n_features.min(18)).collect()
+                let k = self.n_features_to_select.unwrap_or(n_features.min(18));
+                self.select_mutual_information(x, y, k)?
             }
             FeatureSelectionMethod::Custom(func) => func(x, y)?,
         };
 
         Ok(selected_indices)
+    }
+
+    /// Recursive Feature Elimination (RFE): iteratively removes the feature
+    /// with the smallest absolute LinearRegression coefficient until `k` remain.
+    fn select_recursive_elimination(
+        &self,
+        x: &DataFrame,
+        y: &DataFrame,
+        k: usize,
+    ) -> Result<Vec<usize>> {
+        let feature_names = x.column_names();
+        let n_features = feature_names.len();
+        let k = k.min(n_features).max(1);
+
+        // Extract target column from y (use first column)
+        let y_col_names = y.column_names();
+        if y_col_names.is_empty() {
+            return Err(Error::InvalidValue(
+                "Target DataFrame has no columns".into(),
+            ));
+        }
+        let target_col_name = &y_col_names[0];
+        let target_col = y.get_column::<f64>(target_col_name)?;
+        let target_vals = target_col.as_f64()?.to_vec();
+
+        // Track which original feature indices are still active (by position in feature_names)
+        let mut active_indices: Vec<usize> = (0..n_features).collect();
+
+        while active_indices.len() > k {
+            // Build a temporary DataFrame with active features + target
+            let mut train_df = DataFrame::new();
+            for &idx in &active_indices {
+                let fname = &feature_names[idx];
+                let col = x.get_column::<f64>(fname)?;
+                train_df.add_column(fname.clone(), col.clone())?;
+            }
+            train_df.add_column(
+                target_col_name.clone(),
+                Series::new(target_vals.clone(), Some(target_col_name.clone()))?,
+            )?;
+
+            // Fit LinearRegression on the current active feature subset
+            let mut lr = LinearRegression::new();
+            match lr.fit(&train_df, target_col_name) {
+                Ok(()) => {}
+                Err(_) => {
+                    // If fit fails (e.g., singular matrix), just drop the last active feature
+                    active_indices.pop();
+                    continue;
+                }
+            }
+
+            let coefs = lr.coefficients.as_ref().ok_or_else(|| {
+                Error::InvalidOperation("LinearRegression fit produced no coefficients".into())
+            })?;
+
+            // Find the active feature with the smallest |coefficient|
+            let mut min_importance = f64::INFINITY;
+            let mut min_pos = 0usize; // position in active_indices to remove
+
+            for (pos, &orig_idx) in active_indices.iter().enumerate() {
+                let fname = &feature_names[orig_idx];
+                let importance = coefs.get(fname).map(|c| c.abs()).unwrap_or(0.0);
+                if importance < min_importance {
+                    min_importance = importance;
+                    min_pos = pos;
+                }
+            }
+
+            active_indices.remove(min_pos);
+        }
+
+        active_indices.sort_unstable();
+        Ok(active_indices)
+    }
+
+    /// L1-Based selection: fit LinearRegression on all features at once, then
+    /// select the `k` features with the largest |coefficient| (Lasso approximation).
+    fn select_l1_based(&self, x: &DataFrame, y: &DataFrame, k: usize) -> Result<Vec<usize>> {
+        let feature_names = x.column_names();
+        let n_features = feature_names.len();
+        let k = k.min(n_features).max(1);
+
+        // Build training DataFrame
+        let y_col_names = y.column_names();
+        if y_col_names.is_empty() {
+            return Err(Error::InvalidValue(
+                "Target DataFrame has no columns".into(),
+            ));
+        }
+        let target_col_name = &y_col_names[0];
+        let target_col = y.get_column::<f64>(target_col_name)?;
+        let target_vals = target_col.as_f64()?.to_vec();
+
+        let mut train_df = x.clone();
+        train_df.add_column(
+            target_col_name.clone(),
+            Series::new(target_vals, Some(target_col_name.clone()))?,
+        )?;
+
+        // Fit a single LinearRegression on all features
+        let mut lr = LinearRegression::new();
+        lr.fit(&train_df, target_col_name).map_err(|e| {
+            Error::Computation(format!("L1Based feature selection: fit failed: {}", e))
+        })?;
+
+        let coefs = lr.coefficients.as_ref().ok_or_else(|| {
+            Error::InvalidOperation("LinearRegression fit produced no coefficients".into())
+        })?;
+
+        // Compute |coef| / sum(|coef|) importance per feature
+        let importances: Vec<f64> = feature_names
+            .iter()
+            .map(|name| coefs.get(name).map(|c| c.abs()).unwrap_or(0.0))
+            .collect();
+
+        let total: f64 = importances.iter().sum();
+        let importances: Vec<f64> = if total > 1e-10 {
+            importances.iter().map(|&v| v / total).collect()
+        } else {
+            importances
+        };
+
+        // Sort feature indices by importance descending, take top-k
+        let mut indexed: Vec<(usize, f64)> = importances.into_iter().enumerate().collect();
+        indexed.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        let mut selected: Vec<usize> = indexed.into_iter().take(k).map(|(i, _)| i).collect();
+        selected.sort_unstable();
+        Ok(selected)
+    }
+
+    /// Tree-Based approximation: rank features by variance × |correlation with target|.
+    ///
+    /// This approximates tree-based feature importance without requiring a decision
+    /// tree implementation. High-variance features that strongly correlate with the
+    /// target receive the highest scores.
+    fn select_tree_based(&self, x: &DataFrame, y: &DataFrame, k: usize) -> Result<Vec<usize>> {
+        let feature_names = x.column_names();
+        let n_features = feature_names.len();
+        let k = k.min(n_features).max(1);
+
+        let y_col_names = y.column_names();
+        if y_col_names.is_empty() {
+            return Err(Error::InvalidValue(
+                "Target DataFrame has no columns".into(),
+            ));
+        }
+        let target_col_name = &y_col_names[0];
+        let target_col = y.get_column::<f64>(target_col_name)?;
+        let target_vals = target_col.as_f64()?;
+
+        let n = target_vals.len() as f64;
+        let target_mean = target_vals.iter().sum::<f64>() / n;
+
+        let mut scores: Vec<f64> = Vec::with_capacity(n_features);
+
+        for feat_name in &feature_names {
+            let col = x.get_column::<f64>(feat_name)?;
+            let feat_vals = col.as_f64()?;
+
+            if feat_vals.len() != target_vals.len() {
+                scores.push(0.0);
+                continue;
+            }
+
+            let feat_mean = feat_vals.iter().sum::<f64>() / n;
+
+            // Variance of the feature
+            let variance = feat_vals
+                .iter()
+                .map(|&v| (v - feat_mean).powi(2))
+                .sum::<f64>()
+                / n;
+
+            // Pearson correlation with target
+            let mut sum_xy = 0.0_f64;
+            let mut sum_xx = 0.0_f64;
+            let mut sum_yy = 0.0_f64;
+            for (&fv, &tv) in feat_vals.iter().zip(target_vals.iter()) {
+                let dx = fv - feat_mean;
+                let dy = tv - target_mean;
+                sum_xy += dx * dy;
+                sum_xx += dx * dx;
+                sum_yy += dy * dy;
+            }
+            let corr = if sum_xx > 1e-10 && sum_yy > 1e-10 {
+                (sum_xy / (sum_xx * sum_yy).sqrt()).abs()
+            } else {
+                0.0
+            };
+
+            scores.push(variance * corr);
+        }
+
+        // Select top-k indices by score descending
+        let mut indexed: Vec<(usize, f64)> = scores.into_iter().enumerate().collect();
+        indexed.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        let mut selected: Vec<usize> = indexed.into_iter().take(k).map(|(i, _)| i).collect();
+        selected.sort_unstable();
+        Ok(selected)
+    }
+
+    /// Mutual Information selection: estimate MI between each feature and the target
+    /// using histogram-based density estimation, then select top-k features.
+    ///
+    /// Bins are computed per-feature using the Sturges rule: k = ceil(log2(n) + 1).
+    fn select_mutual_information(
+        &self,
+        x: &DataFrame,
+        y: &DataFrame,
+        k: usize,
+    ) -> Result<Vec<usize>> {
+        let feature_names = x.column_names();
+        let n_features = feature_names.len();
+        let k = k.min(n_features).max(1);
+
+        let y_col_names = y.column_names();
+        if y_col_names.is_empty() {
+            return Err(Error::InvalidValue(
+                "Target DataFrame has no columns".into(),
+            ));
+        }
+        let target_col_name = &y_col_names[0];
+        let target_col = y.get_column::<f64>(target_col_name)?;
+        let target_vals = target_col.as_f64()?;
+
+        let n = target_vals.len();
+        if n == 0 {
+            return Ok((0..k).collect());
+        }
+
+        // Sturges rule for number of histogram bins
+        let n_bins = ((n as f64).log2().ceil() as usize + 1).max(2).min(50);
+
+        let mut mi_scores: Vec<f64> = Vec::with_capacity(n_features);
+
+        // Precompute target histogram range
+        let t_min = target_vals.iter().cloned().fold(f64::INFINITY, f64::min);
+        let t_max = target_vals
+            .iter()
+            .cloned()
+            .fold(f64::NEG_INFINITY, f64::max);
+        let t_range = (t_max - t_min).max(1e-10);
+
+        for feat_name in &feature_names {
+            let col = x.get_column::<f64>(feat_name)?;
+            let feat_vals = col.as_f64()?;
+
+            if feat_vals.len() != n {
+                mi_scores.push(0.0);
+                continue;
+            }
+
+            let f_min = feat_vals.iter().cloned().fold(f64::INFINITY, f64::min);
+            let f_max = feat_vals.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+            let f_range = (f_max - f_min).max(1e-10);
+
+            // Build 2D joint histogram: n_bins × n_bins
+            let mut joint_hist = vec![vec![0usize; n_bins]; n_bins];
+            let mut feat_hist = vec![0usize; n_bins];
+            let mut target_hist = vec![0usize; n_bins];
+
+            for (&fv, &tv) in feat_vals.iter().zip(target_vals.iter()) {
+                let fi = (((fv - f_min) / f_range) * (n_bins as f64 - 1.0)).floor() as usize;
+                let ti = (((tv - t_min) / t_range) * (n_bins as f64 - 1.0)).floor() as usize;
+                let fi = fi.min(n_bins - 1);
+                let ti = ti.min(n_bins - 1);
+                joint_hist[fi][ti] += 1;
+                feat_hist[fi] += 1;
+                target_hist[ti] += 1;
+            }
+
+            // Compute MI = sum p(x,y) * log(p(x,y) / (p(x) * p(y)))
+            let n_f = n as f64;
+            let mut mi = 0.0_f64;
+            for fi in 0..n_bins {
+                for ti in 0..n_bins {
+                    let pxy = joint_hist[fi][ti] as f64 / n_f;
+                    let px = feat_hist[fi] as f64 / n_f;
+                    let py = target_hist[ti] as f64 / n_f;
+                    if pxy > 1e-12 && px > 1e-12 && py > 1e-12 {
+                        mi += pxy * (pxy / (px * py)).ln();
+                    }
+                }
+            }
+            mi_scores.push(mi.max(0.0));
+        }
+
+        // Select top-k by MI score descending
+        let mut indexed: Vec<(usize, f64)> = mi_scores.into_iter().enumerate().collect();
+        indexed.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        let mut selected: Vec<usize> = indexed.into_iter().take(k).map(|(i, _)| i).collect();
+        selected.sort_unstable();
+        Ok(selected)
     }
 
     /// Select features by variance threshold
@@ -828,9 +1409,9 @@ impl AutoFeatureEngineer {
         match self.scaling_method {
             ScalingMethod::StandardScaler => Box::new(StandardScaler::new()),
             ScalingMethod::MinMaxScaler => Box::new(MinMaxScaler::new()),
-            ScalingMethod::RobustScaler => Box::new(StandardScaler::new()), // Placeholder
-            ScalingMethod::QuantileTransformer => Box::new(StandardScaler::new()), // Placeholder
-            ScalingMethod::PowerTransformer => Box::new(StandardScaler::new()), // Placeholder
+            ScalingMethod::RobustScaler => Box::new(RobustScaler::new()),
+            ScalingMethod::QuantileTransformer => Box::new(QuantileTransformer::new()),
+            ScalingMethod::PowerTransformer => Box::new(PowerTransformer::new()),
             ScalingMethod::None => Box::new(StandardScaler::new()),
         }
     }
@@ -958,5 +1539,169 @@ mod tests {
             .calculate_aggregation(&values, &AggregationFunction::Max)
             .expect("operation should succeed");
         assert!((max - 5.0).abs() < 1e-10);
+    }
+
+    /// Build a test DataFrame with named f64 columns
+    fn make_df(cols: &[(&str, Vec<f64>)]) -> DataFrame {
+        let mut df = DataFrame::new();
+        for (name, vals) in cols {
+            df.add_column(
+                name.to_string(),
+                Series::new(vals.clone(), Some(name.to_string()))
+                    .expect("series creation should succeed"),
+            )
+            .expect("add_column should succeed");
+        }
+        df
+    }
+
+    #[test]
+    fn test_recursive_elimination_selects_k() {
+        // feature0 = 2 * target (highly important), features 1-4 = noise-like constants/small
+        let target: Vec<f64> = (1..=20).map(|i| i as f64).collect();
+        let feat0: Vec<f64> = target.iter().map(|&t| 2.0 * t).collect();
+        let feat1: Vec<f64> = (1..=20).map(|i| (i as f64 * 0.01).sin()).collect();
+        let feat2: Vec<f64> = vec![0.1; 20];
+        let feat3: Vec<f64> = vec![0.2; 20];
+        let feat4: Vec<f64> = vec![0.3; 20];
+
+        let x = make_df(&[
+            ("feat0", feat0),
+            ("feat1", feat1),
+            ("feat2", feat2),
+            ("feat3", feat3),
+            ("feat4", feat4),
+        ]);
+        let y = make_df(&[("target", target)]);
+
+        let mut engineer = AutoFeatureEngineer::new()
+            .with_selection(FeatureSelectionMethod::RecursiveElimination, Some(2))
+            .without_scaling();
+        // Disable auto feature generation to keep the feature set small
+        engineer.generate_polynomial = false;
+        engineer.generate_interactions = false;
+        engineer.generate_aggregations = false;
+
+        engineer.fit(&x, Some(&y)).expect("fit should succeed");
+        let selected = engineer
+            .get_selected_features()
+            .expect("selected features should exist");
+
+        // feature0 (index 0) should be among the top-2 selected
+        assert!(
+            selected.contains(&0),
+            "feat0 (index 0) should be selected; got {:?}",
+            selected
+        );
+        assert_eq!(selected.len(), 2, "should select exactly 2 features");
+    }
+
+    #[test]
+    fn test_l1_based_selects_k() {
+        // All features are non-constant, non-collinear to avoid singular matrix
+        // feat0 = 3 * target (dominant), others are orthogonal-ish patterns
+        let target: Vec<f64> = (1..=20).map(|i| i as f64).collect();
+        let feat0: Vec<f64> = target.iter().map(|&t| 3.0 * t).collect();
+        let feat1: Vec<f64> = (1..=20)
+            .map(|i| (i as f64 * 0.3).sin() + i as f64 * 0.001)
+            .collect();
+        let feat2: Vec<f64> = (1..=20)
+            .map(|i| (i as f64 * 0.7).cos() * 0.1 + i as f64 * 0.002)
+            .collect();
+        let feat3: Vec<f64> = (1..=20)
+            .map(|i| (i as f64 * 1.1).sin() * 0.05 - i as f64 * 0.0005)
+            .collect();
+        let feat4: Vec<f64> = (1..=20)
+            .map(|i| (i as f64 * 1.5).cos() * 0.02 + i as f64 * 0.0001)
+            .collect();
+
+        let x = make_df(&[
+            ("feat0", feat0),
+            ("feat1", feat1),
+            ("feat2", feat2),
+            ("feat3", feat3),
+            ("feat4", feat4),
+        ]);
+        let y = make_df(&[("target", target)]);
+
+        let mut engineer = AutoFeatureEngineer::new()
+            .with_selection(FeatureSelectionMethod::L1Based, Some(2))
+            .without_scaling();
+        engineer.generate_polynomial = false;
+        engineer.generate_interactions = false;
+        engineer.generate_aggregations = false;
+
+        engineer.fit(&x, Some(&y)).expect("fit should succeed");
+        let selected = engineer
+            .get_selected_features()
+            .expect("selected features should exist");
+
+        assert!(
+            selected.contains(&0),
+            "feat0 should be selected by L1Based; got {:?}",
+            selected
+        );
+        assert_eq!(selected.len(), 2);
+    }
+
+    #[test]
+    fn test_robust_scaler_median_zero() {
+        let mut scaler = RobustScaler::new();
+        let data = vec![1.0, 2.0, 3.0, 4.0, 5.0];
+
+        scaler.fit(&data).expect("fit should succeed");
+        let transformed = scaler.transform(&data).expect("transform should succeed");
+
+        // median of [1,2,3,4,5] is 3; after subtracting median the middle element maps to 0
+        let middle = transformed[2]; // was 3.0, should be (3-3)/IQR = 0.0
+        assert!(
+            middle.abs() < 1e-10,
+            "median element should transform to 0.0, got {}",
+            middle
+        );
+
+        // Round-trip: inverse_transform should recover original values
+        let recovered = scaler
+            .inverse_transform(&transformed)
+            .expect("inverse_transform should succeed");
+        for (orig, rec) in data.iter().zip(recovered.iter()) {
+            assert!(
+                (orig - rec).abs() < 1e-10,
+                "inverse transform should recover {}, got {}",
+                orig,
+                rec
+            );
+        }
+    }
+
+    #[test]
+    fn test_mutual_info_selection() {
+        // feat0 = constant (zero MI), feat1 = perfectly correlated with target (high MI)
+        let target: Vec<f64> = (1..=30).map(|i| i as f64).collect();
+        let feat0: Vec<f64> = vec![5.0; 30]; // constant → zero variance → zero MI
+        let feat1: Vec<f64> = target.iter().map(|&t| t * 2.0 + 1.0).collect();
+
+        let x = make_df(&[("constant", feat0), ("correlated", feat1)]);
+        let y = make_df(&[("target", target)]);
+
+        let mut engineer = AutoFeatureEngineer::new()
+            .with_selection(FeatureSelectionMethod::MutualInformation, Some(1))
+            .without_scaling();
+        engineer.generate_polynomial = false;
+        engineer.generate_interactions = false;
+        engineer.generate_aggregations = false;
+
+        engineer.fit(&x, Some(&y)).expect("fit should succeed");
+        let selected = engineer
+            .get_selected_features()
+            .expect("selected features should exist");
+
+        // The correlated feature (index 1) should be preferred over the constant (index 0)
+        assert!(
+            selected.contains(&1),
+            "correlated feature (index 1) should be selected; got {:?}",
+            selected
+        );
+        assert_eq!(selected.len(), 1);
     }
 }

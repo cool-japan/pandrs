@@ -319,8 +319,8 @@ impl OptimizedDataFrame {
     /// This function has the same signature as the one in the data operations module,
     /// so the actual implementation is provided as `sample_rows`.
     pub fn sample_rows(&self, n: usize, replace: bool, seed: Option<u64>) -> Result<Self> {
-        use rand::rngs::StdRng;
-        use rand::{seq::SliceRandom, Rng, RngExt, SeedableRng};
+        use scirs2_core::random::rngs::StdRng;
+        use scirs2_core::random::{Rng, RngExt, SeedableRng, SliceRandom};
 
         if self.row_count == 0 {
             return Ok(Self::new());
@@ -334,7 +334,7 @@ impl OptimizedDataFrame {
         } else {
             // API changed due to dependency updates, so using a method to generate seed
             let mut seed_bytes = [0u8; 32];
-            rand::rng().fill_bytes(&mut seed_bytes);
+            scirs2_core::random::rng().fill_bytes(&mut seed_bytes);
             StdRng::from_seed(seed_bytes)
         };
 

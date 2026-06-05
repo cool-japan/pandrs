@@ -798,17 +798,17 @@ impl OAuthClient {
 
 /// Generate a state parameter for CSRF protection
 fn generate_state() -> String {
-    use rand::Rng;
+    use scirs2_core::random::Rng;
     let mut bytes = [0u8; 16];
-    rand::rng().fill_bytes(&mut bytes);
+    scirs2_core::random::rng().fill_bytes(&mut bytes);
     bytes.iter().map(|b| format!("{:02x}", b)).collect()
 }
 
 /// Generate PKCE code verifier and challenge pair
 fn generate_pkce_pair() -> (String, String) {
-    use rand::Rng;
+    use scirs2_core::random::Rng;
     let mut bytes = [0u8; 32];
-    rand::rng().fill_bytes(&mut bytes);
+    scirs2_core::random::rng().fill_bytes(&mut bytes);
 
     // URL-safe base64 encoding for verifier
     let verifier = bytes
@@ -855,17 +855,17 @@ fn compute_code_challenge(verifier: &str) -> String {
 
 /// Generate authorization code
 fn generate_authorization_code() -> String {
-    use rand::Rng;
+    use scirs2_core::random::Rng;
     let mut bytes = [0u8; 32];
-    rand::rng().fill_bytes(&mut bytes);
+    scirs2_core::random::rng().fill_bytes(&mut bytes);
     bytes.iter().map(|b| format!("{:02x}", b)).collect()
 }
 
 /// Generate access token
 fn generate_access_token() -> String {
-    use rand::Rng;
+    use scirs2_core::random::Rng;
     let mut bytes = [0u8; 32];
-    rand::rng().fill_bytes(&mut bytes);
+    scirs2_core::random::rng().fill_bytes(&mut bytes);
     format!(
         "at_{}",
         bytes
@@ -877,9 +877,9 @@ fn generate_access_token() -> String {
 
 /// Generate refresh token
 fn generate_refresh_token() -> String {
-    use rand::Rng;
+    use scirs2_core::random::Rng;
     let mut bytes = [0u8; 32];
-    rand::rng().fill_bytes(&mut bytes);
+    scirs2_core::random::rng().fill_bytes(&mut bytes);
     format!(
         "rt_{}",
         bytes

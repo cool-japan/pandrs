@@ -11,8 +11,6 @@
 //!   cargo run --example gpu_stats_example
 
 #[cfg(cuda_available)]
-use ndarray::{Array1, Array2};
-#[cfg(cuda_available)]
 use pandrs::error::Result;
 #[cfg(cuda_available)]
 use pandrs::gpu::operations::{GpuMatrix, GpuVector};
@@ -22,6 +20,8 @@ use pandrs::gpu::{get_gpu_manager, init_gpu, GpuConfig, GpuManager};
 use pandrs::DataFrame;
 #[cfg(cuda_available)]
 use pandrs::Series;
+#[cfg(cuda_available)]
+use scirs2_core::ndarray::{Array1, Array2};
 #[cfg(cuda_available)]
 use std::time::Instant;
 

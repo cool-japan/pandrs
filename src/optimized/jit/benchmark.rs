@@ -7,7 +7,7 @@
 use std::time::{Duration, Instant};
 use std::fmt;
 
-use rand::RngExt;
+use scirs2_core::random::RngExt;
 use super::jit_core::{JitCompilable, JitFunction};
 
 /// Result of a benchmark run
@@ -141,7 +141,7 @@ where
             
             let input_gen = move || {
                 // Generate random data
-                let mut rng = rand::rng();
+                let mut rng = scirs2_core::random::rng();
                 (0..size).map(|_| rng.random_range(0.0..100.0)).collect::<Vec<f64>>()
             };
             

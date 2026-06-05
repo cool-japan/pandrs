@@ -3,15 +3,15 @@
 [![Crate](https://img.shields.io/crates/v/pandrs.svg)](https://crates.io/crates/pandrs)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 [![Documentation](https://docs.rs/pandrs/badge.svg)](https://docs.rs/pandrs)
-![Tests](https://img.shields.io/badge/tests-1818%20passing-brightgreen.svg)
+![Tests](https://img.shields.io/badge/tests-1893%20passing-brightgreen.svg)
 
 A high-performance DataFrame library for Rust, providing pandas-like API with advanced features including SIMD optimization, parallel processing, and distributed computing capabilities.
 
-> **Version 0.3.2 - April 2026**: PandRS is under active development with ongoing quality improvements. With **1818 tests passing**, a Cargo virtual workspace consolidating ~55 shared dependencies, a new prelude module, and NASeries.shift() with pandas semantics, PandRS delivers a robust pandas-like experience for Rust developers.
+> **Version 0.4.0 - June 2026**: ML/stats correctness release — real PCA (Jacobi eigendecomposition), DBSCAN, AgglomerativeClustering, LogisticRegression (IRLS), IsolationForest, LOF, OneClassSVM, RocAuc, chi²/MI scores, RobustScaler, QuantileTransformer, PowerTransformer, real GridSearch/RandomizedSearch CV, learning/validation curves, real χ²-distributed p-values for Ljung-Box/Friedman/KW/Box-Pierce. **1893 tests passing** across feature sets.
 
 ## Code Quality Highlights
 
-**Comprehensive Testing**: 1818 tests passing (nextest) + 118 doc tests with extensive coverage
+**Comprehensive Testing**: 1893 tests passing (nextest) + 118 doc tests with extensive coverage
 **Active Development**: Ongoing improvements to error handling and code quality (629 Rust files across src/, tests/, examples/, and benches/, 248,775 lines of code)
 **Production-Ready Error Handling**: Established error handling patterns with descriptive messages
 
@@ -235,7 +235,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-pandrs = "0.3.2"
+pandrs = "0.4.0"
 ```
 
 ### Feature Flags
@@ -244,7 +244,7 @@ Enable additional functionality with feature flags:
 
 ```toml
 [dependencies]
-pandrs = { version = "0.3.2", features = ["optimized"] }
+pandrs = { version = "0.4.0", features = ["optimized"] }
 ```
 
 Available features:

@@ -8,7 +8,7 @@ use crate::gpu::operations::{GpuMatrix, GpuVector};
 use crate::gpu::{get_gpu_manager, GpuError};
 use crate::ml::metrics::regression::{mean_squared_error, r2_score};
 use crate::stats::LinearRegressionResult;
-use ndarray::{s, Array1, Array2, Axis};
+use scirs2_core::ndarray::{s, Array1, Array2, Axis};
 use std::time::Instant;
 
 /// GPU-accelerated linear regression
@@ -273,7 +273,7 @@ fn kmeans_gpu(
                 }
             } else {
                 // If a cluster is empty, reinitialize its centroid
-                let random_idx = rand::random::<f64>() as usize % n_samples;
+                let random_idx = scirs2_core::random::random::<f64>() as usize % n_samples;
                 for j in 0..n_features {
                     new_centroids[[c, j]] = data[[random_idx, j]];
                 }
@@ -377,7 +377,7 @@ fn kmeans_cpu(
                 }
             } else {
                 // If a cluster is empty, reinitialize its centroid
-                let random_idx = rand::random::<f64>() as usize % n_samples;
+                let random_idx = scirs2_core::random::random::<f64>() as usize % n_samples;
                 for j in 0..n_features {
                     new_centroids[[c, j]] = data[[random_idx, j]];
                 }

@@ -9,9 +9,9 @@ use pandrs::stats;
 #[cfg(feature = "optimized")]
 use pandrs::*;
 #[cfg(feature = "optimized")]
-use rand::Rng;
+use scirs2_core::random::Rng;
 #[cfg(feature = "optimized")]
-use rand::RngExt;
+use scirs2_core::random::RngExt;
 
 // Example code to demonstrate a pipeline that only supports OptimizedDataFrame
 // with a simple example using a regular DataFrame
@@ -105,7 +105,7 @@ fn main() -> Result<()> {
 // Create sample data
 #[allow(clippy::result_large_err)]
 fn create_sample_data() -> Result<DataFrame> {
-    let mut rng = rand::rng();
+    let mut rng = scirs2_core::random::rng();
 
     // Generate 10 rows of data
     let n = 10;

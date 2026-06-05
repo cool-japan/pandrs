@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 /// Model registry trait for managing models
 pub trait ModelRegistry {
@@ -20,7 +21,7 @@ pub trait ModelRegistry {
     fn register_model(&mut self, model: Box<dyn ModelServing>) -> Result<()>;
 
     /// Load a model by name and version
-    fn load_model(&self, name: &str, version: &str) -> Result<Box<dyn ModelServing>>;
+    fn load_model(&self, name: &str, version: &str) -> Result<Arc<dyn ModelServing>>;
 
     /// List all available models
     fn list_models(&self) -> Result<Vec<ModelRegistryEntry>>;
@@ -73,9 +74,12 @@ pub struct ModelRegistryEntry {
 }
 
 /// In-memory model registry implementation
+///
+/// Models are stored behind `Arc<dyn ModelServing>` so that `load_model` can hand
+/// out clones of the shared pointer without requiring `ModelServing: Clone`.
 pub struct InMemoryModelRegistry {
     /// Stored models indexed by name and version
-    models: HashMap<String, HashMap<String, Box<dyn ModelServing>>>,
+    models: HashMap<String, HashMap<String, Arc<dyn ModelServing>>>,
     /// Model registry entries
     entries: HashMap<String, ModelRegistryEntry>,
     /// Default versions for each model
@@ -152,11 +156,13 @@ impl ModelRegistry for InMemoryModelRegistry {
             )));
         }
 
-        // Store model
+        // Convert Box -> Arc so the stored value is cheaply shareable via load_model.
+        let arc_model: Arc<dyn ModelServing> = Arc::from(model);
+
         self.models
             .entry(name.clone())
             .or_insert_with(HashMap::new)
-            .insert(version.clone(), model);
+            .insert(version.clone(), arc_model);
 
         // Update registry entry
         self.update_entry(&name, &version, &metadata);
@@ -164,7 +170,7 @@ impl ModelRegistry for InMemoryModelRegistry {
         Ok(())
     }
 
-    fn load_model(&self, name: &str, version: &str) -> Result<Box<dyn ModelServing>> {
+    fn load_model(&self, name: &str, version: &str) -> Result<Arc<dyn ModelServing>> {
         let resolved_version = if version == "latest" {
             self.get_latest_version(name)?
         } else if version == "default" {
@@ -176,21 +182,13 @@ impl ModelRegistry for InMemoryModelRegistry {
         self.models
             .get(name)
             .and_then(|versions| versions.get(&resolved_version))
+            .map(|arc_model| Arc::clone(arc_model))
             .ok_or_else(|| {
                 Error::KeyNotFound(format!(
                     "Model '{}' version '{}' not found",
                     name, resolved_version
                 ))
             })
-            .map(|_| {
-                // NOTE: This is a limitation of the in-memory registry
-                // We cannot return a reference to the boxed trait object
-                // In a real implementation, we would need to implement Clone for ModelServing
-                // or use Arc<dyn ModelServing>
-                return Err(Error::NotImplemented(
-                    "Loading models from in-memory registry requires cloning support".to_string(),
-                ));
-            })?
     }
 
     fn list_models(&self) -> Result<Vec<ModelRegistryEntry>> {
@@ -270,13 +268,42 @@ impl ModelRegistry for InMemoryModelRegistry {
         &mut self,
         name: &str,
         version: &str,
-        metadata: ModelMetadata,
+        new_metadata: ModelMetadata,
     ) -> Result<()> {
-        // For in-memory registry, we cannot update the metadata of existing models
-        // since ModelServing trait doesn't provide a mutable metadata interface
-        Err(Error::NotImplemented(
-            "Updating metadata for in-memory models is not supported".to_string(),
-        ))
+        // Retrieve the existing Arc to read its current serializable representation.
+        let existing_arc = self
+            .models
+            .get(name)
+            .and_then(|versions| versions.get(version))
+            .cloned()
+            .ok_or_else(|| {
+                Error::KeyNotFound(format!("Model '{}' version '{}' not found", name, version))
+            })?;
+
+        // Reconstruct a SerializableModel from the existing model's metadata, then
+        // overlay the new metadata and re-wrap as a fresh GenericServingModel.
+        use crate::ml::serving::serialization::GenericServingModel;
+        let mut serializable = SerializableModel {
+            metadata: existing_arc.get_metadata().clone(),
+            parameters: std::collections::HashMap::new(),
+            model_data: serde_json::json!({}),
+            preprocessing: None,
+            config: existing_arc.info().configuration,
+        };
+        serializable.metadata = new_metadata.clone();
+
+        let rebuilt: Arc<dyn ModelServing> =
+            Arc::new(GenericServingModel::from_serializable(serializable)?);
+
+        // Replace the stored Arc in-place (same name + version key).
+        if let Some(versions) = self.models.get_mut(name) {
+            versions.insert(version.to_string(), rebuilt);
+        }
+
+        // Refresh the registry entry description / timestamps.
+        self.update_entry(name, version, &new_metadata);
+
+        Ok(())
     }
 
     fn exists(&self, name: &str, version: &str) -> bool {
@@ -474,7 +501,7 @@ impl ModelRegistry for FileSystemModelRegistry {
         Ok(())
     }
 
-    fn load_model(&self, name: &str, version: &str) -> Result<Box<dyn ModelServing>> {
+    fn load_model(&self, name: &str, version: &str) -> Result<Arc<dyn ModelServing>> {
         let resolved_version = if version == "latest" {
             self.get_latest_version(name)?
         } else if version == "default" {
@@ -492,7 +519,10 @@ impl ModelRegistry for FileSystemModelRegistry {
             )));
         }
 
-        ModelSerializationFactory::auto_detect_and_load(&model_file)
+        // Deserialize from disk then wrap in Arc so the call site gets an owned,
+        // cheaply-cloneable handle rather than an exclusive Box.
+        let boxed = ModelSerializationFactory::auto_detect_and_load(&model_file)?;
+        Ok(Arc::from(boxed))
     }
 
     fn list_models(&self) -> Result<Vec<ModelRegistryEntry>> {
@@ -733,5 +763,66 @@ mod tests {
         assert_eq!(entry.name, "test_model");
         assert_eq!(entry.versions.len(), 2);
         assert_eq!(entry.latest_version, Some("1.1.0".to_string()));
+    }
+
+    /// Verifies that a model registered with InMemoryModelRegistry can be subsequently
+    /// loaded via load_model, and that the returned Arc<dyn ModelServing> carries the
+    /// correct metadata fields.
+    #[test]
+    fn test_in_memory_registry_load_model() {
+        use crate::ml::serving::serialization::{GenericServingModel, SerializableModel};
+        use crate::ml::serving::{ModelMetadata, ModelServing};
+        use std::collections::HashMap;
+
+        // Build a minimal SerializableModel and wrap it in GenericServingModel.
+        let metadata = ModelMetadata {
+            name: "test_model".to_string(),
+            version: "1.0.0".to_string(),
+            model_type: "linear_regression".to_string(),
+            feature_names: vec!["x1".to_string(), "x2".to_string()],
+            target_name: Some("y".to_string()),
+            description: "Unit-test model for load_model".to_string(),
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            metrics: HashMap::new(),
+            metadata: HashMap::new(),
+        };
+
+        let serializable = SerializableModel {
+            metadata,
+            parameters: HashMap::new(),
+            model_data: serde_json::json!({}),
+            preprocessing: None,
+            config: HashMap::new(),
+        };
+
+        let generic_model = GenericServingModel::from_serializable(serializable)
+            .expect("model creation must succeed");
+        let boxed: Box<dyn ModelServing> = Box::new(generic_model);
+
+        // Register and immediately load.
+        let mut registry = InMemoryModelRegistry::new();
+        registry
+            .register_model(boxed)
+            .expect("register_model must succeed");
+
+        // load_model must succeed and return an Arc with the correct metadata.
+        let loaded = registry
+            .load_model("test_model", "1.0.0")
+            .expect("load_model must succeed for a registered model");
+
+        let returned_meta = loaded.get_metadata();
+        assert_eq!(returned_meta.name, "test_model");
+        assert_eq!(returned_meta.version, "1.0.0");
+        assert_eq!(returned_meta.model_type, "linear_regression");
+        assert_eq!(returned_meta.description, "Unit-test model for load_model");
+
+        // Confirm the registry entry is consistent.
+        assert!(registry.exists("test_model", "1.0.0"));
+        let meta_from_registry = registry
+            .get_metadata("test_model", "1.0.0")
+            .expect("get_metadata must succeed");
+        assert_eq!(meta_from_registry.name, "test_model");
+        assert_eq!(meta_from_registry.version, "1.0.0");
     }
 }

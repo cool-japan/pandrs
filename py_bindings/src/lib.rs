@@ -36,7 +36,7 @@ fn pandrs(m: &Bound<'_, PyModule>) -> PyResult<()> {
     py_gpu::register(m)?;
 
     // Add module version
-    m.setattr("__version__", "0.3.0")?;
+    m.setattr("__version__", "0.4.1")?;
 
     Ok(())
 }

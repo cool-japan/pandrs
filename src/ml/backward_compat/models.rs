@@ -9,8 +9,7 @@ use crate::column::{Float64Column, Column, ColumnTrait};
 use crate::dataframe::DataValue;
 use crate::stats;
 use std::collections::HashMap;
-use rand::Rng;
-use crate::utils::rand_compat::GenRangeCompat;
+use scirs2_core::random::{Rng, RngExt, SeedableRng, rngs::StdRng};
 
 /// Trait common to supervised learning models
 pub trait SupervisedModel {
@@ -690,8 +689,7 @@ impl LogisticRegression {
 /// Model selection module - train/test split and cross-validation
 pub mod model_selection {
     use std::marker::PhantomData;
-    use rand::{Rng, SeedableRng};
-    use rand::rngs::StdRng;
+    use scirs2_core::random::{Rng, RngExt, SeedableRng, rngs::StdRng};
     use crate::optimized::OptimizedDataFrame;
     use crate::error::{Result, Error};
     use crate::column::{Column, ColumnTrait, Float64Column};
@@ -725,12 +723,12 @@ pub mod model_selection {
         // Shuffle randomly
         let mut rng = match random_state {
             Some(seed) => StdRng::seed_from_u64(seed),
-            None => StdRng::seed_from_u64(rand::random()),
+            None => StdRng::seed_from_u64(scirs2_core::random::random()),
         };
         
         // Shuffle using Fisher-Yates algorithm
         for i in (1..indices.len()).rev() {
-            let j = rng.gen_range(0..=i);
+            let j = rng.random_range(0..=i);
             indices.swap(i, j);
         }
         
@@ -1059,12 +1057,12 @@ pub mod model_selection {
         // Shuffle randomly
         let mut rng = match random_state {
             Some(seed) => StdRng::seed_from_u64(seed),
-            None => StdRng::seed_from_u64(rand::random()),
+            None => StdRng::seed_from_u64(scirs2_core::random::random()),
         };
         
         // Shuffle using Fisher-Yates algorithm
         for i in (1..indices.len()).rev() {
-            let j = rng.gen_range(0..=i);
+            let j = rng.random_range(0..=i);
             indices.swap(i, j);
         }
         

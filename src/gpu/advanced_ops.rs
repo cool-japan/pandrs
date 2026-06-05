@@ -6,7 +6,7 @@
 //! - Matrix inversion using GPU solvers
 //! - Advanced statistical operations
 
-use ndarray::{s, Array1, Array2, Axis};
+use scirs2_core::ndarray::{s, Array1, Array2, Axis};
 use std::sync::Arc;
 
 use crate::error::{Error, Result};
@@ -545,7 +545,7 @@ fn student_t_cdf(t: f64, df: f64) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ndarray::Array2;
+    use scirs2_core::ndarray::Array2;
 
     #[test]
     fn test_gpu_qr_decomposition() {

@@ -9,13 +9,13 @@ use pandrs::optimized::convert;
 #[cfg(feature = "optimized")]
 use pandrs::optimized::OptimizedDataFrame;
 #[cfg(feature = "optimized")]
-use rand::rngs::StdRng;
+use scirs2_core::random::rngs::StdRng;
 #[cfg(feature = "optimized")]
-use rand::Rng;
+use scirs2_core::random::Rng;
 #[cfg(feature = "optimized")]
-use rand::RngExt;
+use scirs2_core::random::RngExt;
 #[cfg(feature = "optimized")]
-use rand::SeedableRng;
+use scirs2_core::random::SeedableRng;
 
 #[cfg(not(feature = "optimized"))]
 fn main() {

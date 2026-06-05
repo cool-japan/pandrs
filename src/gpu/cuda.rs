@@ -3,7 +3,7 @@
 //! This module provides CUDA implementations of GPU operations used in the operations module.
 //! It's only compiled when the 'cuda' feature is enabled.
 
-use ndarray::{Array1, Array2};
+use scirs2_core::ndarray::{Array1, Array2};
 use std::ptr;
 use std::sync::Arc;
 
