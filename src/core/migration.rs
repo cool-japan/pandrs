@@ -5,7 +5,6 @@
 //! and unified memory management systems.
 
 use crate::core::error::{Error, Result};
-use crate::dataframe::DataFrame;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
@@ -429,6 +428,7 @@ pub struct MigrationExecutor {
     /// Migration context
     context: MigrationContext,
     /// Migration validators
+    #[allow(dead_code)] // reserved for future use
     validators: Vec<Box<dyn MigrationValidator>>,
 }
 

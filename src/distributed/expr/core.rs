@@ -179,7 +179,12 @@ impl fmt::Display for UnaryOperator {
 impl fmt::Display for Expr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Column(name) => write!(f, "{}", name),
+            // Column references are rendered as double-quoted identifiers with
+            // embedded quotes doubled. This is what makes the typed expression
+            // API safe to splice into SQL: a column literally named
+            // `x"; DROP TABLE t; --` becomes the quoted identifier
+            // `"x""; DROP TABLE t; --"` rather than executable SQL.
+            Self::Column(name) => write!(f, "\"{}\"", name.replace('"', "\"\"")),
             Self::Literal(value) => write!(f, "{}", value),
             Self::BinaryOp { left, op, right } => {
                 write!(f, "({} {} {})", left, op, right)

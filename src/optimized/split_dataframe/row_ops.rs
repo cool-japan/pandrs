@@ -1,18 +1,16 @@
 //! Row operations functionality for OptimizedDataFrame
 
-use rayon::prelude::*;
-use std::collections::HashMap;
-
 use super::core::OptimizedDataFrame;
-use super::data_ops; // Reference to data operations module
-use crate::column::{BooleanColumn, Column, ColumnTrait, Float64Column, Int64Column, StringColumn};
+use super::select::take_rows;
+use crate::column::{Column, ColumnTrait};
 use crate::error::{Error, Result};
-use crate::index::{DataFrameIndex, IndexTrait};
 
 impl OptimizedDataFrame {
     /// Filter rows (as a new DataFrame)
     ///
     /// Extracts only rows where the value in the condition column (boolean type) is true.
+    /// NULL and `false` are both treated as "not selected", and the values of the
+    /// surviving rows keep their NULL status.
     ///
     /// # Arguments
     /// * `condition_column` - Name of the boolean column to use as filter condition
@@ -42,86 +40,7 @@ impl OptimizedDataFrame {
                 }
             }
 
-            // Create a new DataFrame
-            let mut result = Self::new();
-
-            // Filter each column
-            for (i, name) in self.column_names.iter().enumerate() {
-                let column = &self.columns[i];
-
-                let filtered_column = match column {
-                    Column::Int64(col) => {
-                        let mut filtered_data = Vec::with_capacity(indices.len());
-                        for &idx in &indices {
-                            if let Ok(Some(val)) = col.get(idx) {
-                                filtered_data.push(val);
-                            } else {
-                                filtered_data.push(0); // Default value
-                            }
-                        }
-                        Column::Int64(Int64Column::new(filtered_data))
-                    }
-                    Column::Float64(col) => {
-                        let mut filtered_data = Vec::with_capacity(indices.len());
-                        for &idx in &indices {
-                            if let Ok(Some(val)) = col.get(idx) {
-                                filtered_data.push(val);
-                            } else {
-                                filtered_data.push(0.0); // Default value
-                            }
-                        }
-                        Column::Float64(Float64Column::new(filtered_data))
-                    }
-                    Column::String(col) => {
-                        let mut filtered_data = Vec::with_capacity(indices.len());
-                        for &idx in &indices {
-                            if let Ok(Some(val)) = col.get(idx) {
-                                filtered_data.push(val.to_string());
-                            } else {
-                                filtered_data.push(String::new()); // Default value
-                            }
-                        }
-                        Column::String(StringColumn::new(filtered_data))
-                    }
-                    Column::Boolean(col) => {
-                        let mut filtered_data = Vec::with_capacity(indices.len());
-                        for &idx in &indices {
-                            if let Ok(Some(val)) = col.get(idx) {
-                                filtered_data.push(val);
-                            } else {
-                                filtered_data.push(false); // Default value
-                            }
-                        }
-                        Column::Boolean(BooleanColumn::new(filtered_data))
-                    }
-                };
-
-                result.add_column(name.clone(), filtered_column)?;
-            }
-
-            // Process the index
-            if let Some(ref idx) = self.index {
-                if let DataFrameIndex::Simple(ref simple_idx) = idx {
-                    let mut new_index_values = Vec::with_capacity(indices.len());
-
-                    for &old_idx in &indices {
-                        if old_idx < simple_idx.len() {
-                            let value = simple_idx
-                                .get_value(old_idx)
-                                .map(|s| s.to_string())
-                                .unwrap_or_else(|| old_idx.to_string());
-                            new_index_values.push(value);
-                        } else {
-                            new_index_values.push(old_idx.to_string());
-                        }
-                    }
-
-                    let new_index = crate::index::Index::new(new_index_values)?;
-                    result.set_index_from_simple_index(new_index)?;
-                }
-            }
-
-            Ok(result)
+            take_rows(self, &indices)
         } else {
             Err(Error::ColumnTypeMismatch {
                 name: condition_column.to_string(),
@@ -143,131 +62,7 @@ impl OptimizedDataFrame {
     /// This function has the same signature as the one in the data operations module,
     /// so the actual implementation is provided as `filter_rows_by_indices`.
     pub fn filter_rows_by_indices(&self, indices: &[usize]) -> Result<Self> {
-        // Use parallel processing
-        use rayon::prelude::*;
-
-        let mut result = Self::new();
-
-        // Filter each column in parallel
-        let column_results: Result<Vec<(String, Column)>> = self
-            .column_names
-            .par_iter()
-            .map(|name| {
-                let i = self.column_indices[name];
-                let column = &self.columns[i];
-
-                let filtered_column = match column {
-                    Column::Int64(col) => {
-                        let filtered_data: Vec<i64> = indices
-                            .iter()
-                            .filter_map(|&idx| {
-                                if idx < col.len() {
-                                    if let Ok(Some(val)) = col.get(idx) {
-                                        Some(val)
-                                    } else {
-                                        Some(0) // Default value
-                                    }
-                                } else {
-                                    None
-                                }
-                            })
-                            .collect();
-                        Column::Int64(Int64Column::new(filtered_data))
-                    }
-                    Column::Float64(col) => {
-                        let filtered_data: Vec<f64> = indices
-                            .iter()
-                            .filter_map(|&idx| {
-                                if idx < col.len() {
-                                    if let Ok(Some(val)) = col.get(idx) {
-                                        Some(val)
-                                    } else {
-                                        Some(0.0) // Default value
-                                    }
-                                } else {
-                                    None
-                                }
-                            })
-                            .collect();
-                        Column::Float64(Float64Column::new(filtered_data))
-                    }
-                    Column::String(col) => {
-                        let filtered_data: Vec<String> = indices
-                            .iter()
-                            .filter_map(|&idx| {
-                                if idx < col.len() {
-                                    if let Ok(Some(val)) = col.get(idx) {
-                                        Some(val.to_string())
-                                    } else {
-                                        Some(String::new()) // Default value
-                                    }
-                                } else {
-                                    None
-                                }
-                            })
-                            .collect();
-                        Column::String(StringColumn::new(filtered_data))
-                    }
-                    Column::Boolean(col) => {
-                        let filtered_data: Vec<bool> = indices
-                            .iter()
-                            .filter_map(|&idx| {
-                                if idx < col.len() {
-                                    if let Ok(Some(val)) = col.get(idx) {
-                                        Some(val)
-                                    } else {
-                                        Some(false) // Default value
-                                    }
-                                } else {
-                                    None
-                                }
-                            })
-                            .collect();
-                        Column::Boolean(BooleanColumn::new(filtered_data))
-                    }
-                };
-
-                Ok((name.clone(), filtered_column))
-            })
-            .collect();
-
-        // Process results
-        let columns = column_results?;
-        for (name, column) in columns {
-            result.add_column(name, column)?;
-        }
-
-        // Process the index
-        if let Some(ref idx) = self.index {
-            if let DataFrameIndex::Simple(ref simple_idx) = idx {
-                let valid_indices: Vec<usize> = indices
-                    .iter()
-                    .filter(|&&i| i < self.row_count)
-                    .cloned()
-                    .collect();
-
-                if !valid_indices.is_empty() {
-                    let mut new_index_values = Vec::with_capacity(valid_indices.len());
-
-                    for &old_idx in &valid_indices {
-                        if old_idx < simple_idx.len() {
-                            let value = simple_idx
-                                .get_value(old_idx)
-                                .map(|s| s.to_string())
-                                .unwrap_or_else(|| old_idx.to_string());
-                            new_index_values.push(value);
-                        } else {
-                            new_index_values.push(old_idx.to_string());
-                        }
-                    }
-
-                    let new_index = crate::index::Index::new(new_index_values)?;
-                    result.set_index_from_simple_index(new_index)?;
-                }
-            }
-        }
-
-        Ok(result)
+        take_rows(self, indices)
     }
 
     /// Get the first n rows

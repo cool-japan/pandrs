@@ -2,9 +2,9 @@
 //!
 //! Provides configurable alerts based on metric thresholds.
 
-use super::{Dashboard, MetricStats, OperationCategory};
+use super::{Dashboard, OperationCategory};
 use std::collections::HashMap;
-use std::sync::{Arc, RwLock};
+use std::sync::RwLock;
 use std::time::{Duration, Instant};
 
 /// Alert severity levels

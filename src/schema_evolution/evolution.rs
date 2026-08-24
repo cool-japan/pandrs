@@ -173,10 +173,99 @@ impl SchemaChange {
     pub fn is_breaking(&self) -> bool {
         match self {
             SchemaChange::RemoveColumn { .. } => true,
+            // A rename breaks anything (code, downstream schemas, saved
+            // queries) that still refers to the old column name -- it is
+            // not a purely additive change even though no data is lost.
+            SchemaChange::RenameColumn { .. } => true,
             SchemaChange::ChangeType { .. } => true,
             SchemaChange::SetNullable { nullable, .. } => !nullable, // Making non-nullable is breaking
             SchemaChange::AddConstraint { .. } => true,
+            // Adding a column is only safe for existing rows if a value can
+            // be materialised for them: nullable columns get NA/a default,
+            // but a *required* column with no default has nothing to put in
+            // rows that predate the migration.
+            SchemaChange::AddColumn { schema, .. } => {
+                !schema.nullable && schema.default_value.is_none()
+            }
             _ => false,
+        }
+    }
+
+    /// Returns the inverse of this change, if one can be computed generically.
+    ///
+    /// Only changes that carry enough information to undo themselves have an
+    /// inverse (e.g. a rename can be reversed because both names are known).
+    /// Changes that discard information needed to reconstruct the prior state
+    /// (e.g. removing a column: its original [`ColumnSchema`] is not part of
+    /// `RemoveColumn`) return `Err` naming what's missing, rather than
+    /// fabricating a plausible-looking but wrong inverse.
+    pub fn inverse(&self) -> Result<SchemaChange, String> {
+        match self {
+            SchemaChange::AddColumn { schema, .. } => Ok(SchemaChange::RemoveColumn {
+                name: schema.name.clone(),
+            }),
+            SchemaChange::RenameColumn { from, to } => Ok(SchemaChange::RenameColumn {
+                from: to.clone(),
+                to: from.clone(),
+            }),
+            SchemaChange::AddColumnTag { column, tag } => Ok(SchemaChange::RemoveColumnTag {
+                column: column.clone(),
+                tag: tag.clone(),
+            }),
+            SchemaChange::RemoveColumnTag { column, tag } => Ok(SchemaChange::AddColumnTag {
+                column: column.clone(),
+                tag: tag.clone(),
+            }),
+            SchemaChange::SetNullable { column, nullable } => Ok(SchemaChange::SetNullable {
+                column: column.clone(),
+                nullable: !nullable,
+            }),
+            SchemaChange::RemoveColumn { name } => Err(format!(
+                "cannot invert RemoveColumn('{}'): the removed column's original \
+                 definition (type, nullability, default) is not recorded on this change",
+                name
+            )),
+            SchemaChange::ChangeType { column, .. } => Err(format!(
+                "cannot invert ChangeType('{}'): the column's type before this change \
+                 is not recorded on this change",
+                column
+            )),
+            SchemaChange::RemoveConstraint { constraint_id } => Err(format!(
+                "cannot invert RemoveConstraint('{}'): the removed constraint's \
+                 definition is not recorded on this change, only its id",
+                constraint_id
+            )),
+            SchemaChange::SetDefault { column, .. } => Err(format!(
+                "cannot invert SetDefault('{}'): the column's previous default is not \
+                 recorded on this change",
+                column
+            )),
+            SchemaChange::SetColumnDescription { column, .. } => Err(format!(
+                "cannot invert SetColumnDescription('{}'): the column's previous \
+                 description is not recorded on this change",
+                column
+            )),
+            SchemaChange::ReorderColumns { .. } => Err(
+                "cannot invert ReorderColumns: the order before this change is not \
+                 recorded on this change"
+                    .to_string(),
+            ),
+            SchemaChange::AddConstraint { constraint } => Err(format!(
+                "cannot invert AddConstraint({}): removing it would require its \
+                 generated id, and doing so silently would hide that the constraint \
+                 existed post-migration -- call this out explicitly if you rely on it",
+                constraint
+            )),
+            SchemaChange::SetMetadata { key, .. } => Err(format!(
+                "cannot invert SetMetadata('{}'): the previous value (or absence) of \
+                 this key is not recorded on this change",
+                key
+            )),
+            SchemaChange::RemoveMetadata { key } => Err(format!(
+                "cannot invert RemoveMetadata('{}'): the removed value is not recorded \
+                 on this change",
+                key
+            )),
         }
     }
 
@@ -212,6 +301,18 @@ impl fmt::Display for SchemaChange {
 pub struct Migration {
     /// Unique identifier for this migration
     pub id: String,
+    /// Name of the schema this migration applies to.
+    ///
+    /// This is what [`super::registry::SchemaRegistry::add_migration`] uses
+    /// to index the migration for [`super::registry::SchemaRegistry::find_migration_path`],
+    /// and what [`super::serialization::SchemaBundle`] uses to keep a
+    /// migration associated with its schema across a save/load round trip.
+    /// `#[serde(default)]` so migrations saved before this field existed
+    /// still deserialize (as an empty string, which `validate()` rejects
+    /// before the migration can be indexed -- it fails loudly rather than
+    /// silently landing in the wrong schema's migration graph).
+    #[serde(default)]
+    pub schema_name: String,
     /// Source schema version
     pub from_version: SchemaVersion,
     /// Target schema version
@@ -229,15 +330,17 @@ pub struct Migration {
 }
 
 impl Migration {
-    /// Create a new migration
+    /// Create a new migration for the named schema
     pub fn new(
         id: impl Into<String>,
+        schema_name: impl Into<String>,
         from_version: SchemaVersion,
         to_version: SchemaVersion,
         description: impl Into<String>,
     ) -> Self {
         Migration {
             id: id.into(),
+            schema_name: schema_name.into(),
             from_version,
             to_version,
             description: description.into(),
@@ -287,13 +390,109 @@ impl Migration {
         if self.id.is_empty() {
             return Err("Migration ID cannot be empty".to_string());
         }
+        if self.schema_name.trim().is_empty() {
+            return Err(format!(
+                "Migration '{}' has no schema_name set; it cannot be indexed for \
+                 path-finding (build it with a schema name via MigrationBuilder::new, \
+                 or register it through SchemaRegistry::add_migration_for_schema)",
+                self.id
+            ));
+        }
         if self.changes.is_empty() {
             return Err("Migration must have at least one change".to_string());
         }
-        if self.from_version == self.to_version {
-            return Err("From and to versions must differ".to_string());
+        // `to` must be strictly newer than `from`: a migration that moves
+        // backward or sideways can never appear on a forward path found by
+        // SchemaRegistry::find_migration_path, so registering one is
+        // always a mistake worth catching immediately.
+        if self.to_version <= self.from_version {
+            return Err(format!(
+                "Migration '{}' target version {} must be greater than source version {}",
+                self.id, self.to_version, self.from_version
+            ));
         }
+
+        // Internal consistency of the change list itself.
+        let mut added_columns = std::collections::HashSet::new();
+        let mut removed_columns = std::collections::HashSet::new();
+        let mut retyped_columns = std::collections::HashSet::new();
+        for change in &self.changes {
+            match change {
+                SchemaChange::RenameColumn { from, to } if from == to => {
+                    return Err(format!(
+                        "Migration '{}' renames column '{}' to itself",
+                        self.id, from
+                    ));
+                }
+                SchemaChange::AddColumn { schema, .. } => {
+                    if !added_columns.insert(schema.name.clone()) {
+                        return Err(format!(
+                            "Migration '{}' adds column '{}' more than once",
+                            self.id, schema.name
+                        ));
+                    }
+                }
+                SchemaChange::RemoveColumn { name } => {
+                    if !removed_columns.insert(name.clone()) {
+                        return Err(format!(
+                            "Migration '{}' removes column '{}' more than once",
+                            self.id, name
+                        ));
+                    }
+                }
+                SchemaChange::ChangeType { column, .. } => {
+                    if !retyped_columns.insert(column.clone()) {
+                        return Err(format!(
+                            "Migration '{}' changes the type of column '{}' more than once",
+                            self.id, column
+                        ));
+                    }
+                }
+                _ => {}
+            }
+        }
+
         Ok(())
+    }
+
+    /// Compute the inverse of this migration: the changes that undo it,
+    /// in reverse order, swapping `from_version`/`to_version`.
+    ///
+    /// Refuses (`Err`) when `reversible` is `false`, or when any individual
+    /// change has no well-defined inverse (see [`SchemaChange::inverse`]) --
+    /// the `reversible` flag is a promise about the *whole* migration, and a
+    /// partial inverse would silently apply only some of the original
+    /// changes' undo operations, leaving data in a state the caller did not
+    /// ask for.
+    pub fn inverse(&self) -> Result<Migration, String> {
+        if !self.reversible {
+            return Err(format!(
+                "Migration '{}' is marked irreversible (reversible = false)",
+                self.id
+            ));
+        }
+
+        let mut inverted_changes = Vec::with_capacity(self.changes.len());
+        for change in self.changes.iter().rev() {
+            inverted_changes.push(change.inverse().map_err(|e| {
+                format!(
+                    "Migration '{}' cannot be inverted despite reversible = true: {}",
+                    self.id, e
+                )
+            })?);
+        }
+
+        Ok(Migration {
+            id: format!("{}_inverse", self.id),
+            schema_name: self.schema_name.clone(),
+            from_version: self.to_version.clone(),
+            to_version: self.from_version.clone(),
+            description: format!("Inverse of: {}", self.description),
+            changes: inverted_changes,
+            created_at: chrono::Utc::now().to_rfc3339(),
+            author: self.author.clone(),
+            reversible: true,
+        })
     }
 }
 
@@ -315,6 +514,7 @@ impl fmt::Display for Migration {
 /// Builder for creating migrations fluently
 pub struct MigrationBuilder {
     id: String,
+    schema_name: String,
     from_version: SchemaVersion,
     to_version: SchemaVersion,
     description: String,
@@ -324,14 +524,16 @@ pub struct MigrationBuilder {
 }
 
 impl MigrationBuilder {
-    /// Create a new migration builder
+    /// Create a new migration builder for the named schema
     pub fn new(
         id: impl Into<String>,
+        schema_name: impl Into<String>,
         from_version: SchemaVersion,
         to_version: SchemaVersion,
     ) -> Self {
         MigrationBuilder {
             id: id.into(),
+            schema_name: schema_name.into(),
             from_version,
             to_version,
             description: String::new(),
@@ -434,6 +636,7 @@ impl MigrationBuilder {
     pub fn build(self) -> Migration {
         Migration {
             id: self.id,
+            schema_name: self.schema_name,
             from_version: self.from_version,
             to_version: self.to_version,
             description: self.description,
@@ -467,13 +670,54 @@ mod tests {
             from: "old".to_string(),
             to: "new".to_string(),
         };
-        assert!(!rename.is_breaking());
+        // Renaming breaks anything (code, downstream schemas) still
+        // addressing the column by its old name.
+        assert!(rename.is_breaking());
+
+        let required_no_default = SchemaChange::AddColumn {
+            schema: ColumnSchema::new("required_col", SchemaDataType::String).with_nullable(false),
+            position: None,
+        };
+        assert!(required_no_default.is_breaking());
+    }
+
+    #[test]
+    fn test_schema_change_inverse() {
+        let add = SchemaChange::AddColumn {
+            schema: ColumnSchema::new("email", SchemaDataType::String),
+            position: None,
+        };
+        assert_eq!(
+            add.inverse(),
+            Ok(SchemaChange::RemoveColumn {
+                name: "email".to_string()
+            })
+        );
+
+        let rename = SchemaChange::RenameColumn {
+            from: "old".to_string(),
+            to: "new".to_string(),
+        };
+        assert_eq!(
+            rename.inverse(),
+            Ok(SchemaChange::RenameColumn {
+                from: "new".to_string(),
+                to: "old".to_string(),
+            })
+        );
+
+        // No original definition to restore -> not invertible.
+        let remove = SchemaChange::RemoveColumn {
+            name: "col".to_string(),
+        };
+        assert!(remove.inverse().is_err());
     }
 
     #[test]
     fn test_migration_builder() {
         let migration = MigrationBuilder::new(
             "m001",
+            "users",
             SchemaVersion::new(1, 0, 0),
             SchemaVersion::new(1, 1, 0),
         )
@@ -483,6 +727,7 @@ mod tests {
         .build();
 
         assert_eq!(migration.id, "m001");
+        assert_eq!(migration.schema_name, "users");
         assert_eq!(migration.changes.len(), 1);
         assert!(!migration.has_breaking_changes());
     }
@@ -491,6 +736,7 @@ mod tests {
     fn test_migration_validate() {
         let valid = MigrationBuilder::new(
             "m001",
+            "users",
             SchemaVersion::new(1, 0, 0),
             SchemaVersion::new(1, 1, 0),
         )
@@ -501,6 +747,7 @@ mod tests {
         // No changes
         let invalid = Migration {
             id: "m002".to_string(),
+            schema_name: "users".to_string(),
             from_version: SchemaVersion::new(1, 0, 0),
             to_version: SchemaVersion::new(1, 1, 0),
             description: "test".to_string(),
@@ -510,5 +757,87 @@ mod tests {
             reversible: true,
         };
         assert!(invalid.validate().is_err());
+
+        // Missing schema_name (e.g. deserialized from a pre-field bundle)
+        let no_schema_name = Migration {
+            schema_name: String::new(),
+            ..valid.clone()
+        };
+        assert!(no_schema_name.validate().is_err());
+
+        // Backward (to <= from) is rejected
+        let backward = Migration {
+            from_version: SchemaVersion::new(2, 0, 0),
+            to_version: SchemaVersion::new(1, 0, 0),
+            ..valid.clone()
+        };
+        assert!(backward.validate().is_err());
+
+        // Self-rename is rejected
+        let self_rename = MigrationBuilder::new(
+            "m003",
+            "users",
+            SchemaVersion::new(1, 0, 0),
+            SchemaVersion::new(1, 1, 0),
+        )
+        .rename_column("a", "a")
+        .build();
+        assert!(self_rename.validate().is_err());
+    }
+
+    #[test]
+    fn test_migration_inverse() {
+        let migration = MigrationBuilder::new(
+            "m001",
+            "users",
+            SchemaVersion::new(1, 0, 0),
+            SchemaVersion::new(1, 1, 0),
+        )
+        .add_column(ColumnSchema::new("email", SchemaDataType::String), None)
+        .rename_column("name", "full_name")
+        .build();
+
+        let inverse = migration.inverse().expect("reversible migration");
+        assert_eq!(inverse.from_version, SchemaVersion::new(1, 1, 0));
+        assert_eq!(inverse.to_version, SchemaVersion::new(1, 0, 0));
+        assert_eq!(inverse.changes.len(), 2);
+        // Applied in reverse order: undo the rename first, then the add.
+        assert_eq!(
+            inverse.changes[0],
+            SchemaChange::RenameColumn {
+                from: "full_name".to_string(),
+                to: "name".to_string(),
+            }
+        );
+        assert_eq!(
+            inverse.changes[1],
+            SchemaChange::RemoveColumn {
+                name: "email".to_string()
+            }
+        );
+
+        // Irreversible migrations refuse to invert.
+        let irreversible = MigrationBuilder::new(
+            "m002",
+            "users",
+            SchemaVersion::new(1, 0, 0),
+            SchemaVersion::new(1, 1, 0),
+        )
+        .rename_column("a", "b")
+        .irreversible()
+        .build();
+        assert!(irreversible.inverse().is_err());
+
+        // A migration containing a non-invertible change refuses too, even
+        // when marked reversible.
+        let has_remove = MigrationBuilder::new(
+            "m003",
+            "users",
+            SchemaVersion::new(1, 0, 0),
+            SchemaVersion::new(1, 1, 0),
+        )
+        .remove_column("legacy")
+        .build();
+        assert!(has_remove.inverse().is_err());
     }
 }

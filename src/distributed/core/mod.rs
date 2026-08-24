@@ -4,13 +4,10 @@
 //! including configuration, DataFrame, and conversion traits.
 
 #[cfg(feature = "distributed")]
-use std::collections::HashMap;
-#[cfg(feature = "distributed")]
-use std::sync::{Arc, Mutex};
-
-#[cfg(feature = "distributed")]
 use crate::dataframe::DataFrame;
-use crate::error::{Error, Result};
+#[cfg(not(feature = "distributed"))]
+use crate::error::Error;
+use crate::error::Result;
 
 // Re-export types from subdirectories
 #[cfg(feature = "distributed")]

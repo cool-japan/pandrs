@@ -4,8 +4,7 @@
 
 use crate::core::error::{Error, Result};
 use crate::dataframe::base::DataFrame;
-use crate::series::Series;
-use std::collections::HashMap;
+use crate::dataframe::join::{join_with_suffixes, JoinType as CoreJoinType};
 
 /// Join type for merge operations
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -20,7 +19,37 @@ pub enum JoinType {
     Outer,
 }
 
+impl From<JoinType> for CoreJoinType {
+    fn from(how: JoinType) -> Self {
+        match how {
+            JoinType::Inner => CoreJoinType::Inner,
+            JoinType::Left => CoreJoinType::Left,
+            JoinType::Right => CoreJoinType::Right,
+            JoinType::Outer => CoreJoinType::Outer,
+        }
+    }
+}
+
 /// Merge two DataFrames on a common column
+///
+/// This is a thin, pandas-flavoured wrapper over
+/// [`crate::dataframe::join::join_with_suffixes`]: both entry points must agree
+/// on key normalisation, NA handling and column layout, so there is exactly one
+/// implementation of those rules.
+///
+/// # Semantics
+///
+/// * The key space is decided from **both** operands: two numeric key columns
+///   are compared as `f64` (with `-0.0` and `0.0` collapsed onto one key), two
+///   textual key columns are compared byte-for-byte, and a numeric/textual
+///   mismatch is an error rather than a silent zero-match join or a panic.
+/// * A missing (`NaN`) key never matches anything, not even another `NaN`;
+///   the row itself is still emitted for the join types that keep unmatched
+///   rows.
+/// * Column dtypes are preserved. Where a join introduces missing values,
+///   floats keep their type and use `NaN`, integers/booleans widen to `f64`
+///   (as in pandas), and text/date columns fall back to a textual NA marker
+///   because the column model has no nullable string type.
 ///
 /// # Arguments
 /// * `left` - Left DataFrame
@@ -30,7 +59,9 @@ pub enum JoinType {
 /// * `suffixes` - Tuple of suffixes to add to overlapping column names (left_suffix, right_suffix)
 ///
 /// # Returns
-/// Merged DataFrame
+/// Merged DataFrame whose columns are the left operand's columns in their
+/// original order (the key column appears once, in its left-hand position)
+/// followed by the right operand's non-key columns.
 pub fn merge(
     left: &DataFrame,
     right: &DataFrame,
@@ -38,7 +69,9 @@ pub fn merge(
     how: JoinType,
     suffixes: (&str, &str),
 ) -> Result<DataFrame> {
-    // Validate that join column exists in both DataFrames
+    // Validate that join column exists in both DataFrames. These checks are
+    // kept here (rather than deferred to the join implementation) so that
+    // `merge`'s documented error variant and wording stay stable.
     if !left.contains_column(on) {
         return Err(Error::InvalidValue(format!(
             "Join column '{}' not found in left DataFrame",
@@ -52,225 +85,14 @@ pub fn merge(
         )));
     }
 
-    // Get join column values (try numeric first, then string)
-    let left_join_values = if let Ok(vals) = left.get_column_numeric_values(on) {
-        vals.into_iter()
-            .map(|v| v.to_bits().to_string())
-            .collect::<Vec<_>>()
-    } else if let Ok(vals) = left.get_column_string_values(on) {
-        vals
-    } else {
-        return Err(Error::InvalidValue(format!(
-            "Cannot read join column '{}' from left DataFrame",
-            on
-        )));
-    };
-
-    let right_join_values = if let Ok(vals) = right.get_column_numeric_values(on) {
-        vals.into_iter()
-            .map(|v| v.to_bits().to_string())
-            .collect::<Vec<_>>()
-    } else if let Ok(vals) = right.get_column_string_values(on) {
-        vals
-    } else {
-        return Err(Error::InvalidValue(format!(
-            "Cannot read join column '{}' from right DataFrame",
-            on
-        )));
-    };
-
-    // Build index maps for right DataFrame
-    let mut right_index: HashMap<String, Vec<usize>> = HashMap::new();
-    for (i, val) in right_join_values.iter().enumerate() {
-        right_index
-            .entry(val.clone())
-            .or_insert_with(Vec::new)
-            .push(i);
-    }
-
-    // Collect matching row pairs based on join type
-    let mut matched_pairs: Vec<(Option<usize>, Option<usize>)> = Vec::new();
-    let mut left_matched = vec![false; left_join_values.len()];
-    let mut right_matched = vec![false; right_join_values.len()];
-
-    // Process left DataFrame rows
-    for (left_idx, left_val) in left_join_values.iter().enumerate() {
-        if let Some(right_indices) = right_index.get(left_val) {
-            // Matching rows found
-            for &right_idx in right_indices {
-                matched_pairs.push((Some(left_idx), Some(right_idx)));
-                left_matched[left_idx] = true;
-                right_matched[right_idx] = true;
-            }
-        } else if matches!(how, JoinType::Left | JoinType::Outer) {
-            // No match, but include for left/outer join
-            matched_pairs.push((Some(left_idx), None));
-            left_matched[left_idx] = true;
-        }
-    }
-
-    // Add unmatched right rows for right/outer joins
-    if matches!(how, JoinType::Right | JoinType::Outer) {
-        for (right_idx, matched) in right_matched.iter().enumerate() {
-            if !matched {
-                matched_pairs.push((None, Some(right_idx)));
-            }
-        }
-    }
-
-    // Build result DataFrame
-    let mut result = DataFrame::new();
-
-    // Get column names
-    let left_cols = left.column_names();
-    let right_cols = right.column_names();
-
-    // Identify overlapping columns (excluding join column)
-    let mut overlapping: Vec<String> = Vec::new();
-    for col in &right_cols {
-        if col != on && left_cols.contains(col) {
-            overlapping.push(col.clone());
-        }
-    }
-
-    // Add columns from left DataFrame
-    for col_name in &left_cols {
-        // Try numeric first
-        if let Ok(values) = left.get_column_numeric_values(col_name) {
-            let merged: Vec<f64> = if col_name == on {
-                // For join key, use right value when left is None
-                let right_values = right
-                    .get_column_numeric_values(on)
-                    .expect("test should succeed");
-                matched_pairs
-                    .iter()
-                    .map(|(left_idx, right_idx)| {
-                        left_idx
-                            .map(|i| values.get(i).copied().unwrap_or(f64::NAN))
-                            .or_else(|| {
-                                right_idx.map(|i| right_values.get(i).copied().unwrap_or(f64::NAN))
-                            })
-                            .unwrap_or(f64::NAN)
-                    })
-                    .collect()
-            } else {
-                matched_pairs
-                    .iter()
-                    .map(|(left_idx, _)| {
-                        left_idx
-                            .map(|i| values.get(i).copied().unwrap_or(f64::NAN))
-                            .unwrap_or(f64::NAN)
-                    })
-                    .collect()
-            };
-            result.add_column(
-                col_name.clone(),
-                Series::new(merged, Some(col_name.clone()))?,
-            )?;
-        } else if let Ok(values) = left.get_column_string_values(col_name) {
-            let merged: Vec<String> = if col_name == on {
-                // For join key, use right value when left is None
-                let right_values = right
-                    .get_column_string_values(on)
-                    .expect("test should succeed");
-                matched_pairs
-                    .iter()
-                    .map(|(left_idx, right_idx)| {
-                        left_idx
-                            .and_then(|i| values.get(i).cloned())
-                            .or_else(|| right_idx.and_then(|i| right_values.get(i).cloned()))
-                            .unwrap_or_else(|| "".to_string())
-                    })
-                    .collect()
-            } else {
-                matched_pairs
-                    .iter()
-                    .map(|(left_idx, _)| {
-                        left_idx
-                            .and_then(|i| values.get(i).cloned())
-                            .unwrap_or_else(|| "".to_string())
-                    })
-                    .collect()
-            };
-            result.add_column(
-                col_name.clone(),
-                Series::new(merged, Some(col_name.clone()))?,
-            )?;
-        }
-    }
-
-    // Add columns from right DataFrame (with suffix handling)
-    for col_name in &right_cols {
-        if col_name == on {
-            // Skip join column (already included from left)
-            continue;
-        }
-
-        let final_name = if overlapping.contains(col_name) {
-            format!("{}{}", col_name, suffixes.1)
-        } else {
-            col_name.clone()
-        };
-
-        // Try numeric first
-        if let Ok(values) = right.get_column_numeric_values(col_name) {
-            let merged: Vec<f64> = matched_pairs
-                .iter()
-                .map(|(_, right_idx)| {
-                    right_idx
-                        .map(|i| values.get(i).copied().unwrap_or(f64::NAN))
-                        .unwrap_or(f64::NAN)
-                })
-                .collect();
-            result.add_column(
-                final_name.clone(),
-                Series::new(merged, Some(final_name.clone()))?,
-            )?;
-        } else if let Ok(values) = right.get_column_string_values(col_name) {
-            let merged: Vec<String> = matched_pairs
-                .iter()
-                .map(|(_, right_idx)| {
-                    right_idx
-                        .and_then(|i| values.get(i).cloned())
-                        .unwrap_or_else(|| "".to_string())
-                })
-                .collect();
-            result.add_column(
-                final_name.clone(),
-                Series::new(merged, Some(final_name.clone()))?,
-            )?;
-        }
-    }
-
-    // Rename overlapping columns from left DataFrame with suffix
-    if !overlapping.is_empty() {
-        let mut rename_map = HashMap::new();
-        for col in &overlapping {
-            rename_map.insert(col.clone(), format!("{}{}", col, suffixes.0));
-        }
-
-        // Rebuild DataFrame with renamed columns
-        let mut renamed_df = DataFrame::new();
-        for col_name in result.column_names() {
-            let new_name = rename_map.get(&col_name).unwrap_or(&col_name).clone();
-
-            if let Ok(vals) = result.get_column_numeric_values(&col_name) {
-                renamed_df
-                    .add_column(new_name.clone(), Series::new(vals, Some(new_name.clone()))?)?;
-            } else if let Ok(vals) = result.get_column_string_values(&col_name) {
-                renamed_df
-                    .add_column(new_name.clone(), Series::new(vals, Some(new_name.clone()))?)?;
-            }
-        }
-        result = renamed_df;
-    }
-
-    Ok(result)
+    join_with_suffixes(left, right, on, how.into(), suffixes)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::dataframe::join::NA_STRING;
+    use crate::series::Series;
 
     fn create_left_df() -> DataFrame {
         let mut df = DataFrame::new();
@@ -551,5 +373,91 @@ mod tests {
             .get_column_numeric_values("score")
             .expect("test should succeed");
         assert_eq!(scores, vec![85.0, 90.0]);
+    }
+
+    /// The left key column is numeric and the right one is textual. This used
+    /// to hit `.expect("test should succeed")` in the production path and abort
+    /// the process; it must now be a recoverable error.
+    #[test]
+    fn test_merge_numeric_left_string_right_key_is_error_not_panic() {
+        let mut left = DataFrame::new();
+        left.add_column(
+            "id".to_string(),
+            Series::new(vec![1.0, 2.0], Some("id".to_string())).expect("test should succeed"),
+        )
+        .expect("test should succeed");
+        left.add_column(
+            "name".to_string(),
+            Series::new(
+                vec!["Alice".to_string(), "Bob".to_string()],
+                Some("name".to_string()),
+            )
+            .expect("test should succeed"),
+        )
+        .expect("test should succeed");
+
+        let mut right = DataFrame::new();
+        right
+            .add_column(
+                "id".to_string(),
+                Series::new(
+                    vec!["one".to_string(), "two".to_string()],
+                    Some("id".to_string()),
+                )
+                .expect("test should succeed"),
+            )
+            .expect("test should succeed");
+        right
+            .add_column(
+                "score".to_string(),
+                Series::new(vec![1.0, 2.0], Some("score".to_string()))
+                    .expect("test should succeed"),
+            )
+            .expect("test should succeed");
+
+        let result = merge(&left, &right, "id", JoinType::Inner, ("_x", "_y"));
+        assert!(result.is_err());
+    }
+
+    /// String columns coming from the right operand keep their exact text; the
+    /// rows with no right-hand match read back as NA rather than as `""`.
+    #[test]
+    fn test_merge_left_preserves_strings_and_marks_missing() {
+        let mut left = DataFrame::new();
+        left.add_column(
+            "key".to_string(),
+            Series::new(
+                vec!["A".to_string(), "B".to_string()],
+                Some("key".to_string()),
+            )
+            .expect("test should succeed"),
+        )
+        .expect("test should succeed");
+
+        let mut right = DataFrame::new();
+        right
+            .add_column(
+                "key".to_string(),
+                Series::new(vec!["B".to_string()], Some("key".to_string()))
+                    .expect("test should succeed"),
+            )
+            .expect("test should succeed");
+        right
+            .add_column(
+                "code".to_string(),
+                Series::new(vec!["007".to_string()], Some("code".to_string()))
+                    .expect("test should succeed"),
+            )
+            .expect("test should succeed");
+
+        let result =
+            merge(&left, &right, "key", JoinType::Left, ("_x", "_y")).expect("test should succeed");
+
+        assert_eq!(
+            result
+                .get_column_string_values("code")
+                .expect("test should succeed"),
+            vec![NA_STRING, "007"]
+        );
     }
 }

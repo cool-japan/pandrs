@@ -17,7 +17,5 @@ pub use concat::*;
 pub use functions::*;
 pub use groupby::*;
 pub use merge::*;
-pub use rankmethod_traits::*;
-pub use seriesvalue_traits::*;
 pub use trait_def::*;
 pub use types::*;

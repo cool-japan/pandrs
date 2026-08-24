@@ -1,20 +1,35 @@
 //! # SIMD Column Operations Module
 //!
-//! This module provides comprehensive SIMD-optimized operations for column-wise operations
-//! on all numeric types, extending beyond aggregations to include arithmetic, comparison,
-//! and mathematical functions.
+//! Element-wise column operations used by the [`crate::column::simd_operations`]
+//! traits (`SIMDFloat64Ops` / `SIMDInt64Ops`).
 //!
-//! Features:
-//! - Element-wise arithmetic operations (add, subtract, multiply, divide)
-//! - Element-wise comparison operations (eq, ne, lt, gt, le, ge)
-//! - Mathematical functions (abs, sqrt, pow, log, exp, trigonometric)
-//! - Transformation operations (round, ceil, floor, clip)
-//! - Support for both f64 and i64 types with SIMD acceleration
+//! ## What is SIMD-accelerated
 //!
-//! Performance: 2-8x improvements over scalar operations for large datasets
+//! On `x86_64`, each `f64` op dispatches at runtime to an AVX2 kernel
+//! (4 lanes) or an SSE2 kernel (2 lanes), falling back to scalar; off
+//! `x86_64` (e.g. aarch64) every op is scalar. The following `i64` ops have
+//! **no** SIMD kernel and are scalar on every target: `multiply` (no 64-bit
+//! SIMD multiply), `abs`, and `compare` under SSE2 (SSE2 lacks 64-bit
+//! comparisons); AVX2 `compare` vectorizes only `Equal`/`GreaterThan` and runs
+//! the other predicates scalar.
+//!
+//! ## Result semantics (identical across scalar / SSE2 / AVX2)
+//!
+//! Element-wise IEEE-754 operations are deterministic per element, so the
+//! vector and scalar paths are bit-identical. The contract is:
+//! - **Division** is pure IEEE: `x / 0.0 == +-inf`, `0.0 / 0.0 == NaN`. No
+//!   guarded-`NaN` substitution (which diverged from the vector lanes by CPU).
+//! - **Equality** is exact `==` / `!=` (never an epsilon tolerance); `NaN`
+//!   compares unequal to everything and `NaN != NaN` is `true`, on every path.
+//! - **`i64` arithmetic wraps** (two's complement), matching `_mm256_add_epi64`
+//!   and NumPy int64 — never saturating (which diverged from the vector lanes).
+//!
+//! Every intrinsic function is `unsafe` and reached only behind a runtime
+//! `is_x86_feature_detected!` gate; the AVX2 kernels carry
+//! `#[target_feature(enable = "avx2")]` so the intrinsics inline (SSE2 is the
+//! `x86_64` baseline and needs no attribute).
 
 use crate::core::error::{Error, Result};
-use std::cmp::Ordering;
 
 /// SIMD-optimized element-wise addition for f64 vectors
 pub fn simd_add_f64(left: &[f64], right: &[f64], result: &mut [f64]) -> Result<()> {
@@ -105,13 +120,12 @@ pub fn simd_divide_f64(left: &[f64], right: &[f64], result: &mut [f64]) -> Resul
         }
     }
 
-    // Fallback
+    // Fallback: pure IEEE-754 division, bit-identical to the `_mm256_div_pd` /
+    // `_mm_div_pd` kernels below. `x / 0.0` is `+-inf`, `0.0 / 0.0` is `NaN`
+    // (NumPy / pandas semantics) — never a guarded `NaN` stand-in, which would
+    // diverge from the vector path by CPU and by element index.
     for i in 0..left.len() {
-        result[i] = if right[i] != 0.0 {
-            left[i] / right[i]
-        } else {
-            f64::NAN
-        };
+        result[i] = left[i] / right[i];
     }
     Ok(())
 }
@@ -205,13 +219,11 @@ pub fn simd_sqrt_f64(data: &[f64], result: &mut [f64]) -> Result<()> {
         }
     }
 
-    // Fallback
+    // Fallback: `f64::sqrt` already returns `NaN` for negative inputs and
+    // `-0.0` for `sqrt(-0.0)`, matching `_mm256_sqrt_pd` / `_mm_sqrt_pd`. No
+    // guard is needed and adding one would diverge on `-0.0`.
     for i in 0..data.len() {
-        result[i] = if data[i] >= 0.0 {
-            data[i].sqrt()
-        } else {
-            f64::NAN
-        };
+        result[i] = data[i].sqrt();
     }
     Ok(())
 }
@@ -241,8 +253,8 @@ pub fn simd_compare_f64(
     // Fallback
     for i in 0..left.len() {
         result[i] = match op {
-            ComparisonOp::Equal => (left[i] - right[i]).abs() < f64::EPSILON,
-            ComparisonOp::NotEqual => (left[i] - right[i]).abs() >= f64::EPSILON,
+            ComparisonOp::Equal => left[i] == right[i],
+            ComparisonOp::NotEqual => left[i] != right[i],
             ComparisonOp::LessThan => left[i] < right[i],
             ComparisonOp::LessThanEqual => left[i] <= right[i],
             ComparisonOp::GreaterThan => left[i] > right[i],
@@ -283,7 +295,7 @@ pub fn simd_add_i64(left: &[i64], right: &[i64], result: &mut [i64]) -> Result<(
 
     // Fallback
     for i in 0..left.len() {
-        result[i] = left[i].saturating_add(right[i]);
+        result[i] = left[i].wrapping_add(right[i]);
     }
     Ok(())
 }
@@ -307,7 +319,7 @@ pub fn simd_subtract_i64(left: &[i64], right: &[i64], result: &mut [i64]) -> Res
 
     // Fallback
     for i in 0..left.len() {
-        result[i] = left[i].saturating_sub(right[i]);
+        result[i] = left[i].wrapping_sub(right[i]);
     }
     Ok(())
 }
@@ -320,10 +332,11 @@ pub fn simd_multiply_i64(left: &[i64], right: &[i64], result: &mut [i64]) -> Res
         ));
     }
 
-    // i64 multiplication is more complex in SIMD, so we use fallback for now
-    // In a production implementation, this could use special techniques
+    // Scalar only: AVX2/SSE2 have no full 64-bit integer multiply, so there is
+    // no SIMD kernel here. Wrapping (two's complement) is used for consistency
+    // with the wrapping i64 add/subtract paths and NumPy int64 semantics.
     for i in 0..left.len() {
-        result[i] = left[i].saturating_mul(right[i]);
+        result[i] = left[i].wrapping_mul(right[i]);
     }
     Ok(())
 }
@@ -347,7 +360,7 @@ pub fn simd_add_scalar_i64(data: &[i64], scalar: i64, result: &mut [i64]) -> Res
 
     // Fallback
     for i in 0..data.len() {
-        result[i] = data[i].saturating_add(scalar);
+        result[i] = data[i].wrapping_add(scalar);
     }
     Ok(())
 }
@@ -360,9 +373,11 @@ pub fn simd_abs_i64(data: &[i64], result: &mut [i64]) -> Result<()> {
         ));
     }
 
-    // i64 abs doesn't have direct SIMD support, use fallback
+    // Scalar only: no direct i64 SIMD abs. `wrapping_abs` avoids the debug-mode
+    // overflow panic on `i64::MIN` (whose absolute value is not representable);
+    // it maps `i64::MIN` to itself, matching two's-complement semantics.
     for i in 0..data.len() {
-        result[i] = data[i].abs();
+        result[i] = data[i].wrapping_abs();
     }
     Ok(())
 }
@@ -405,11 +420,11 @@ pub fn simd_compare_i64(
 
 // AVX2 implementations for f64
 #[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
 unsafe fn simd_add_f64_avx2(left: &[f64], right: &[f64], result: &mut [f64]) -> Result<()> {
     use std::arch::x86_64::*;
 
     let chunks = left.len() / 4;
-    let remainder = left.len() % 4;
 
     for i in 0..chunks {
         let offset = i * 4;
@@ -428,6 +443,7 @@ unsafe fn simd_add_f64_avx2(left: &[f64], right: &[f64], result: &mut [f64]) -> 
 }
 
 #[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
 unsafe fn simd_subtract_f64_avx2(left: &[f64], right: &[f64], result: &mut [f64]) -> Result<()> {
     use std::arch::x86_64::*;
 
@@ -450,6 +466,7 @@ unsafe fn simd_subtract_f64_avx2(left: &[f64], right: &[f64], result: &mut [f64]
 }
 
 #[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
 unsafe fn simd_multiply_f64_avx2(left: &[f64], right: &[f64], result: &mut [f64]) -> Result<()> {
     use std::arch::x86_64::*;
 
@@ -472,6 +489,7 @@ unsafe fn simd_multiply_f64_avx2(left: &[f64], right: &[f64], result: &mut [f64]
 }
 
 #[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
 unsafe fn simd_divide_f64_avx2(left: &[f64], right: &[f64], result: &mut [f64]) -> Result<()> {
     use std::arch::x86_64::*;
 
@@ -485,19 +503,16 @@ unsafe fn simd_divide_f64_avx2(left: &[f64], right: &[f64], result: &mut [f64]) 
         _mm256_storeu_pd(result.as_mut_ptr().add(offset), result_vec);
     }
 
-    // Handle remainder
+    // Handle remainder (pure IEEE division, matching the vector lanes)
     for i in (chunks * 4)..left.len() {
-        result[i] = if right[i] != 0.0 {
-            left[i] / right[i]
-        } else {
-            f64::NAN
-        };
+        result[i] = left[i] / right[i];
     }
 
     Ok(())
 }
 
 #[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
 unsafe fn simd_add_scalar_f64_avx2(data: &[f64], scalar: f64, result: &mut [f64]) -> Result<()> {
     use std::arch::x86_64::*;
 
@@ -520,6 +535,7 @@ unsafe fn simd_add_scalar_f64_avx2(data: &[f64], scalar: f64, result: &mut [f64]
 }
 
 #[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
 unsafe fn simd_multiply_scalar_f64_avx2(
     data: &[f64],
     scalar: f64,
@@ -546,6 +562,7 @@ unsafe fn simd_multiply_scalar_f64_avx2(
 }
 
 #[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
 unsafe fn simd_abs_f64_avx2(data: &[f64], result: &mut [f64]) -> Result<()> {
     use std::arch::x86_64::*;
 
@@ -569,6 +586,7 @@ unsafe fn simd_abs_f64_avx2(data: &[f64], result: &mut [f64]) -> Result<()> {
 }
 
 #[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
 unsafe fn simd_sqrt_f64_avx2(data: &[f64], result: &mut [f64]) -> Result<()> {
     use std::arch::x86_64::*;
 
@@ -583,17 +601,14 @@ unsafe fn simd_sqrt_f64_avx2(data: &[f64], result: &mut [f64]) -> Result<()> {
 
     // Handle remainder
     for i in (chunks * 4)..data.len() {
-        result[i] = if data[i] >= 0.0 {
-            data[i].sqrt()
-        } else {
-            f64::NAN
-        };
+        result[i] = data[i].sqrt();
     }
 
     Ok(())
 }
 
 #[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
 unsafe fn simd_compare_f64_avx2(
     left: &[f64],
     right: &[f64],
@@ -611,7 +626,10 @@ unsafe fn simd_compare_f64_avx2(
 
         let cmp_result = match op {
             ComparisonOp::Equal => _mm256_cmp_pd(left_vec, right_vec, _CMP_EQ_OQ),
-            ComparisonOp::NotEqual => _mm256_cmp_pd(left_vec, right_vec, _CMP_NEQ_OQ),
+            // `_CMP_NEQ_UQ` (unordered) returns true when either operand is NaN,
+            // matching Rust `!=` and the SSE2 `_mm_cmpneq_pd` path. `_CMP_NEQ_OQ`
+            // (ordered) would return false for NaN, diverging by CPU width.
+            ComparisonOp::NotEqual => _mm256_cmp_pd(left_vec, right_vec, _CMP_NEQ_UQ),
             ComparisonOp::LessThan => _mm256_cmp_pd(left_vec, right_vec, _CMP_LT_OQ),
             ComparisonOp::LessThanEqual => _mm256_cmp_pd(left_vec, right_vec, _CMP_LE_OQ),
             ComparisonOp::GreaterThan => _mm256_cmp_pd(left_vec, right_vec, _CMP_GT_OQ),
@@ -630,8 +648,8 @@ unsafe fn simd_compare_f64_avx2(
     // Handle remainder
     for i in (chunks * 4)..left.len() {
         result[i] = match op {
-            ComparisonOp::Equal => (left[i] - right[i]).abs() < f64::EPSILON,
-            ComparisonOp::NotEqual => (left[i] - right[i]).abs() >= f64::EPSILON,
+            ComparisonOp::Equal => left[i] == right[i],
+            ComparisonOp::NotEqual => left[i] != right[i],
             ComparisonOp::LessThan => left[i] < right[i],
             ComparisonOp::LessThanEqual => left[i] <= right[i],
             ComparisonOp::GreaterThan => left[i] > right[i],
@@ -723,13 +741,9 @@ unsafe fn simd_divide_f64_sse2(left: &[f64], right: &[f64], result: &mut [f64]) 
         _mm_storeu_pd(result.as_mut_ptr().add(offset), result_vec);
     }
 
-    // Handle remainder
+    // Handle remainder (pure IEEE division, matching the vector lanes)
     for i in (chunks * 2)..left.len() {
-        result[i] = if right[i] != 0.0 {
-            left[i] / right[i]
-        } else {
-            f64::NAN
-        };
+        result[i] = left[i] / right[i];
     }
 
     Ok(())
@@ -820,11 +834,7 @@ unsafe fn simd_sqrt_f64_sse2(data: &[f64], result: &mut [f64]) -> Result<()> {
 
     // Handle remainder
     for i in (chunks * 2)..data.len() {
-        result[i] = if data[i] >= 0.0 {
-            data[i].sqrt()
-        } else {
-            f64::NAN
-        };
+        result[i] = data[i].sqrt();
     }
 
     Ok(())
@@ -867,8 +877,8 @@ unsafe fn simd_compare_f64_sse2(
     // Handle remainder
     for i in (chunks * 2)..left.len() {
         result[i] = match op {
-            ComparisonOp::Equal => (left[i] - right[i]).abs() < f64::EPSILON,
-            ComparisonOp::NotEqual => (left[i] - right[i]).abs() >= f64::EPSILON,
+            ComparisonOp::Equal => left[i] == right[i],
+            ComparisonOp::NotEqual => left[i] != right[i],
             ComparisonOp::LessThan => left[i] < right[i],
             ComparisonOp::LessThanEqual => left[i] <= right[i],
             ComparisonOp::GreaterThan => left[i] > right[i],
@@ -881,6 +891,7 @@ unsafe fn simd_compare_f64_sse2(
 
 // AVX2 implementations for i64
 #[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
 unsafe fn simd_add_i64_avx2(left: &[i64], right: &[i64], result: &mut [i64]) -> Result<()> {
     use std::arch::x86_64::*;
 
@@ -896,13 +907,14 @@ unsafe fn simd_add_i64_avx2(left: &[i64], right: &[i64], result: &mut [i64]) -> 
 
     // Handle remainder
     for i in (chunks * 4)..left.len() {
-        result[i] = left[i].saturating_add(right[i]);
+        result[i] = left[i].wrapping_add(right[i]);
     }
 
     Ok(())
 }
 
 #[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
 unsafe fn simd_subtract_i64_avx2(left: &[i64], right: &[i64], result: &mut [i64]) -> Result<()> {
     use std::arch::x86_64::*;
 
@@ -918,13 +930,14 @@ unsafe fn simd_subtract_i64_avx2(left: &[i64], right: &[i64], result: &mut [i64]
 
     // Handle remainder
     for i in (chunks * 4)..left.len() {
-        result[i] = left[i].saturating_sub(right[i]);
+        result[i] = left[i].wrapping_sub(right[i]);
     }
 
     Ok(())
 }
 
 #[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
 unsafe fn simd_add_scalar_i64_avx2(data: &[i64], scalar: i64, result: &mut [i64]) -> Result<()> {
     use std::arch::x86_64::*;
 
@@ -940,13 +953,14 @@ unsafe fn simd_add_scalar_i64_avx2(data: &[i64], scalar: i64, result: &mut [i64]
 
     // Handle remainder
     for i in (chunks * 4)..data.len() {
-        result[i] = data[i].saturating_add(scalar);
+        result[i] = data[i].wrapping_add(scalar);
     }
 
     Ok(())
 }
 
 #[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
 unsafe fn simd_compare_i64_avx2(
     left: &[i64],
     right: &[i64],
@@ -1026,7 +1040,7 @@ unsafe fn simd_add_i64_sse2(left: &[i64], right: &[i64], result: &mut [i64]) -> 
 
     // Handle remainder
     for i in (chunks * 2)..left.len() {
-        result[i] = left[i].saturating_add(right[i]);
+        result[i] = left[i].wrapping_add(right[i]);
     }
 
     Ok(())
@@ -1048,7 +1062,7 @@ unsafe fn simd_subtract_i64_sse2(left: &[i64], right: &[i64], result: &mut [i64]
 
     // Handle remainder
     for i in (chunks * 2)..left.len() {
-        result[i] = left[i].saturating_sub(right[i]);
+        result[i] = left[i].wrapping_sub(right[i]);
     }
 
     Ok(())
@@ -1070,7 +1084,7 @@ unsafe fn simd_add_scalar_i64_sse2(data: &[i64], scalar: i64, result: &mut [i64]
 
     // Handle remainder
     for i in (chunks * 2)..data.len() {
-        result[i] = data[i].saturating_add(scalar);
+        result[i] = data[i].wrapping_add(scalar);
     }
 
     Ok(())
@@ -1083,8 +1097,6 @@ unsafe fn simd_compare_i64_sse2(
     op: ComparisonOp,
     result: &mut [bool],
 ) -> Result<()> {
-    let chunks = left.len() / 2;
-
     // SSE2 has limited i64 comparison support, so we use scalar fallback
     for i in 0..left.len() {
         result[i] = match op {

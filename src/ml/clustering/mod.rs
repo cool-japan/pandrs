@@ -40,6 +40,18 @@ pub enum DistanceMetric {
     Cosine,
 }
 
+/// Centroid initialization strategy for [`KMeans`].
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum KMeansInit {
+    /// k-means++ (Arthur & Vassilvitskii, 2007): spreads initial centroids out
+    /// by sampling with probability proportional to squared distance from the
+    /// nearest already-chosen centroid. This is scikit-learn's default and
+    /// reliably produces lower-inertia results than uniform random picks.
+    KMeansPlusPlus,
+    /// Uniform random selection of `n_clusters` distinct data points.
+    Random,
+}
+
 /// K-means clustering algorithm
 #[derive(Debug, Clone)]
 pub struct KMeans {
@@ -47,15 +59,23 @@ pub struct KMeans {
     pub n_clusters: usize,
     /// Maximum number of iterations
     pub max_iter: usize,
-    /// Tolerance for convergence
+    /// Tolerance for convergence (compared against the change in inertia,
+    /// i.e. the sum of squared distances to the assigned centroid)
     pub tol: f64,
     /// Random seed for initialization
     pub random_seed: Option<u64>,
+    /// Centroid initialization strategy (default: k-means++)
+    pub init: KMeansInit,
+    /// Number of independent initializations to run; the run with the lowest
+    /// inertia is kept (default: 10, matching scikit-learn's historical
+    /// default for both `random` and `k-means++` initialization)
+    pub n_init: usize,
     /// Cluster assignments for each sample
     pub labels: Option<Vec<usize>>,
     /// Cluster centers
     pub centroids: Option<Vec<Vec<f64>>>,
-    /// Inertia (within-cluster sum of squares)
+    /// Inertia: sum of squared distances of samples to their closest
+    /// cluster center (matches scikit-learn's definition)
     pub inertia: Option<f64>,
     /// Column names used for clustering
     pub feature_columns: Option<Vec<String>>,
@@ -69,6 +89,8 @@ impl KMeans {
             max_iter: 100,
             tol: 1e-4,
             random_seed: None,
+            init: KMeansInit::KMeansPlusPlus,
+            n_init: 10,
             labels: None,
             centroids: None,
             inertia: None,
@@ -91,6 +113,19 @@ impl KMeans {
     /// Set random seed for initialization
     pub fn random_seed(mut self, seed: u64) -> Self {
         self.random_seed = Some(seed);
+        self
+    }
+
+    /// Set the centroid initialization strategy
+    pub fn init(mut self, init: KMeansInit) -> Self {
+        self.init = init;
+        self
+    }
+
+    /// Set the number of independent initializations to run (the run with
+    /// the lowest inertia is kept). Must be at least 1.
+    pub fn n_init(mut self, n_init: usize) -> Self {
+        self.n_init = n_init.max(1);
         self
     }
 
@@ -153,7 +188,7 @@ impl KMeans {
             let mut min_cluster = 0;
 
             for (j, centroid) in centroids.iter().enumerate() {
-                let dist = euclidean_distance(sample, centroid);
+                let dist = squared_euclidean_distance(sample, centroid)?;
 
                 if dist < min_dist {
                     min_dist = dist;
@@ -173,7 +208,7 @@ impl UnsupervisedModel for KMeans {
         // Determine feature columns
         let feature_columns = match &self.feature_columns {
             Some(cols) => cols.clone(),
-            None => data.column_names(),
+            None => data.column_names().to_vec(),
         };
 
         // Extract feature data
@@ -208,9 +243,14 @@ impl UnsupervisedModel for KMeans {
             feature_data.push(row_data);
         }
 
-        // Initialize centroids (randomly select k samples)
-        // A real implementation would use k-means++ or similar
-        let mut rng = match self.random_seed {
+        let k = self.n_clusters.min(n_samples);
+        if k == 0 {
+            return Err(Error::InvalidValue(
+                "KMeans requires n_clusters >= 1 and at least one sample".into(),
+            ));
+        }
+
+        let mut rng: StdRng = match self.random_seed {
             Some(seed) => StdRng::seed_from_u64(seed),
             None => {
                 let mut seed_bytes = [0u8; 32];
@@ -219,102 +259,40 @@ impl UnsupervisedModel for KMeans {
             }
         };
 
-        let mut centroid_indices = Vec::with_capacity(self.n_clusters);
-        let indices: Vec<usize> = (0..n_samples).collect();
+        // Run `n_init` independent initializations and keep the one with the
+        // lowest final inertia (scikit-learn semantics). Each run draws its
+        // own centroid seed from the shared, already-seeded RNG so the whole
+        // fit is reproducible given `random_seed`.
+        let n_init = self.n_init.max(1);
+        let mut best: Option<(Vec<usize>, Vec<Vec<f64>>, f64)> = None;
 
-        // Sample without replacement
-        // In rand 0.9, we need to use slice_choose instead of choose_multiple
-        let mut indices_copy = indices.clone();
-        indices_copy.shuffle(&mut rng);
-        for idx in indices_copy.iter().take(self.n_clusters.min(n_samples)) {
-            centroid_indices.push(*idx);
+        for _ in 0..n_init {
+            let init_centroids = match self.init {
+                KMeansInit::KMeansPlusPlus => kmeans_plusplus_init(&feature_data, k, &mut rng)?,
+                KMeansInit::Random => random_init(&feature_data, k, &mut rng),
+            };
+
+            let run = run_single_kmeans(
+                &feature_data,
+                n_features,
+                k,
+                self.max_iter,
+                self.tol,
+                init_centroids,
+            )?;
+
+            let is_better = match &best {
+                None => true,
+                Some((_, _, best_inertia)) => run.2 < *best_inertia,
+            };
+            if is_better {
+                best = Some(run);
+            }
         }
 
-        // Initialize centroids with selected samples
-        let mut centroids = Vec::with_capacity(self.n_clusters);
-        for &idx in &centroid_indices {
-            centroids.push(feature_data[idx].clone());
-        }
-
-        // Perform k-means clustering iterations
-        let mut labels = vec![0; n_samples];
-        let mut prev_inertia = f64::MAX;
-        let mut inertia = 0.0;
-
-        for _ in 0..self.max_iter {
-            // Assign samples to nearest centroid
-            inertia = 0.0;
-
-            for (i, sample) in feature_data.iter().enumerate() {
-                let mut min_dist = f64::MAX;
-                let mut min_cluster = 0;
-
-                for (j, centroid) in centroids.iter().enumerate() {
-                    let dist = euclidean_distance(sample, centroid);
-
-                    if dist < min_dist {
-                        min_dist = dist;
-                        min_cluster = j;
-                    }
-                }
-
-                labels[i] = min_cluster;
-                inertia += min_dist;
-            }
-
-            // Check convergence
-            if (prev_inertia - inertia).abs() < self.tol {
-                break;
-            }
-
-            prev_inertia = inertia;
-
-            // Update centroids
-            let mut new_centroids = vec![vec![0.0; n_features]; self.n_clusters];
-            let mut counts = vec![0; self.n_clusters];
-
-            for (i, sample) in feature_data.iter().enumerate() {
-                let cluster = labels[i];
-                counts[cluster] += 1;
-
-                for (j, &val) in sample.iter().enumerate() {
-                    new_centroids[cluster][j] += val;
-                }
-            }
-
-            // Calculate new centroids as mean of assigned points
-            for (i, centroid) in new_centroids.iter_mut().enumerate() {
-                if counts[i] > 0 {
-                    for val in centroid.iter_mut() {
-                        *val /= counts[i] as f64;
-                    }
-                }
-            }
-
-            // Handle empty clusters by reinitializing them
-            for i in 0..self.n_clusters {
-                if counts[i] == 0 {
-                    // Find the point furthest from its centroid
-                    let mut max_dist = 0.0;
-                    let mut max_idx = 0;
-
-                    for (j, sample) in feature_data.iter().enumerate() {
-                        let cluster = labels[j];
-                        let dist = euclidean_distance(sample, &centroids[cluster]);
-
-                        if dist > max_dist {
-                            max_dist = dist;
-                            max_idx = j;
-                        }
-                    }
-
-                    // Assign this point to the empty cluster
-                    new_centroids[i] = feature_data[max_idx].clone();
-                }
-            }
-
-            centroids = new_centroids;
-        }
+        let (labels, centroids, inertia) = best.ok_or_else(|| {
+            Error::InvalidOperation("KMeans produced no runs (n_init must be >= 1)".into())
+        })?;
 
         // Store results
         self.labels = Some(labels);
@@ -372,14 +350,16 @@ impl UnsupervisedModel for KMeans {
             feature_data.push(row_data);
         }
 
-        // Compute distances to centroids
+        // Compute distances to centroids (real Euclidean distance, matching
+        // scikit-learn's `KMeans.transform`, which is unrelated to the
+        // squared-distance objective used internally for fitting)
         let mut result = DataFrame::new();
 
         for c in 0..n_clusters {
             let mut distances = Vec::with_capacity(n_samples);
 
             for sample in &feature_data {
-                let dist = euclidean_distance(sample, &centroids[c]);
+                let dist = euclidean_distance(sample, &centroids[c])?;
                 distances.push(dist);
             }
 
@@ -402,13 +382,19 @@ impl ModelEvaluator for KMeans {
             metrics.add_metric("inertia", inertia);
         }
 
-        // Compute silhouette score for test data
-        if let Some(labels) = &self.labels {
-            if let Some(centroids) = &self.centroids {
-                let silhouette =
-                    compute_silhouette(test_data, labels, centroids, &self.feature_columns)?;
-                metrics.add_metric("silhouette_score", silhouette);
-            }
+        // Compute silhouette score for `test_data` using labels PREDICTED for
+        // it (not the labels recorded during training, which correspond to
+        // the training set's row count/order and may not line up with
+        // `test_data` at all).
+        if let Some(centroids) = &self.centroids {
+            let predicted_labels = self.predict(test_data)?;
+            let silhouette = compute_silhouette(
+                test_data,
+                &predicted_labels,
+                centroids,
+                &self.feature_columns,
+            )?;
+            metrics.add_metric("silhouette_score", silhouette);
         }
 
         Ok(metrics)
@@ -428,41 +414,270 @@ impl ModelEvaluator for KMeans {
 }
 
 // ---------------------------------------------------------------------------
+// K-means initialization and Lloyd's-algorithm helpers
+// ---------------------------------------------------------------------------
+
+/// Uniform-random centroid initialization: `k` distinct data points chosen
+/// without replacement.
+fn random_init(feature_data: &[Vec<f64>], k: usize, rng: &mut StdRng) -> Vec<Vec<f64>> {
+    let n = feature_data.len();
+    if k == 0 || n == 0 {
+        return Vec::new();
+    }
+
+    let mut indices: Vec<usize> = (0..n).collect();
+    indices.shuffle(rng);
+    indices
+        .into_iter()
+        .take(k)
+        .map(|idx| feature_data[idx].clone())
+        .collect()
+}
+
+/// k-means++ seeding (Arthur & Vassilvitskii, 2007).
+///
+/// Chooses the first centroid uniformly at random, then repeatedly samples
+/// each subsequent centroid from the remaining points with probability
+/// proportional to the squared distance to the nearest already-chosen
+/// centroid. This spreads the initial centroids apart and, in expectation,
+/// yields an initialization within `O(log k)` of the optimal inertia —
+/// materially better starting points than uniform random selection.
+fn kmeans_plusplus_init(
+    feature_data: &[Vec<f64>],
+    k: usize,
+    rng: &mut StdRng,
+) -> Result<Vec<Vec<f64>>> {
+    let n = feature_data.len();
+    if k == 0 || n == 0 {
+        return Ok(Vec::new());
+    }
+
+    let mut centroids: Vec<Vec<f64>> = Vec::with_capacity(k);
+
+    let first_idx = rng.random_range(0..n);
+    centroids.push(feature_data[first_idx].clone());
+
+    // closest_sq_dist[i] = squared distance from point i to the nearest
+    // centroid chosen so far.
+    let mut closest_sq_dist: Vec<f64> = Vec::with_capacity(n);
+    for point in feature_data {
+        closest_sq_dist.push(squared_euclidean_distance(point, &centroids[0])?);
+    }
+
+    while centroids.len() < k {
+        let total: f64 = closest_sq_dist.iter().sum();
+
+        let next_idx = if total <= 0.0 {
+            // Every remaining point already coincides with a chosen centroid
+            // (e.g. duplicate rows, or k > number of distinct points); fall
+            // back to a uniform pick so `k` centroids are still returned.
+            rng.random_range(0..n)
+        } else {
+            let target = rng.random::<f64>() * total;
+            let mut cumulative = 0.0_f64;
+            let mut chosen = n - 1;
+            for (idx, &d) in closest_sq_dist.iter().enumerate() {
+                cumulative += d;
+                if cumulative >= target {
+                    chosen = idx;
+                    break;
+                }
+            }
+            chosen
+        };
+
+        let new_centroid = feature_data[next_idx].clone();
+        for (idx, point) in feature_data.iter().enumerate() {
+            let d = squared_euclidean_distance(point, &new_centroid)?;
+            if d < closest_sq_dist[idx] {
+                closest_sq_dist[idx] = d;
+            }
+        }
+        centroids.push(new_centroid);
+    }
+
+    Ok(centroids)
+}
+
+/// Perform one complete run of Lloyd's algorithm from the given initial
+/// centroids.
+///
+/// Returns `(labels, centroids, inertia)` where `inertia` is the sum of
+/// SQUARED distances from each point to its assigned centroid — matching
+/// scikit-learn's definition, and consistent with the units `tol`-based
+/// convergence is checked against.
+fn run_single_kmeans(
+    feature_data: &[Vec<f64>],
+    n_features: usize,
+    n_clusters: usize,
+    max_iter: usize,
+    tol: f64,
+    mut centroids: Vec<Vec<f64>>,
+) -> Result<(Vec<usize>, Vec<Vec<f64>>, f64)> {
+    let n_samples = feature_data.len();
+    let mut labels = vec![0usize; n_samples];
+    let mut prev_inertia = f64::MAX;
+    let mut inertia = 0.0;
+
+    for _ in 0..max_iter {
+        // Assign samples to nearest centroid; inertia accumulates the
+        // SQUARED distance (the actual K-means objective), not the raw
+        // distance — squaring is monotonic so the assignment itself is
+        // unaffected, but the reported inertia and the `tol` convergence
+        // check now match scikit-learn's semantics.
+        inertia = 0.0;
+
+        for (i, sample) in feature_data.iter().enumerate() {
+            let mut min_dist = f64::MAX;
+            let mut min_cluster = 0;
+
+            for (j, centroid) in centroids.iter().enumerate() {
+                let dist = squared_euclidean_distance(sample, centroid)?;
+
+                if dist < min_dist {
+                    min_dist = dist;
+                    min_cluster = j;
+                }
+            }
+
+            labels[i] = min_cluster;
+            inertia += min_dist;
+        }
+
+        // Check convergence
+        if (prev_inertia - inertia).abs() < tol {
+            break;
+        }
+
+        prev_inertia = inertia;
+
+        // Update centroids
+        let mut new_centroids = vec![vec![0.0; n_features]; n_clusters];
+        let mut counts = vec![0usize; n_clusters];
+
+        for (i, sample) in feature_data.iter().enumerate() {
+            let cluster = labels[i];
+            counts[cluster] += 1;
+
+            for (j, &val) in sample.iter().enumerate() {
+                new_centroids[cluster][j] += val;
+            }
+        }
+
+        // Calculate new centroids as mean of assigned points
+        for (i, centroid) in new_centroids.iter_mut().enumerate() {
+            if counts[i] > 0 {
+                for val in centroid.iter_mut() {
+                    *val /= counts[i] as f64;
+                }
+            }
+        }
+
+        // Handle empty clusters by reinitializing them with DISTINCT points.
+        //
+        // Each empty cluster is reseeded with a different point, chosen in
+        // decreasing order of squared distance to that point's own (current)
+        // centroid — the single furthest point overall, then the next
+        // furthest, and so on. Consuming a shared, pre-sorted iterator
+        // guarantees no point is used twice, fixing the earlier behaviour
+        // where every empty cluster received an identical copy of the same
+        // "furthest point" (computed independently, and hence redundantly,
+        // for each empty cluster).
+        let empty_clusters: Vec<usize> = (0..n_clusters).filter(|&c| counts[c] == 0).collect();
+        if !empty_clusters.is_empty() {
+            let mut point_dists: Vec<(usize, f64)> = Vec::with_capacity(n_samples);
+            for (j, sample) in feature_data.iter().enumerate() {
+                let cluster = labels[j];
+                let dist = squared_euclidean_distance(sample, &centroids[cluster])?;
+                point_dists.push((j, dist));
+            }
+            point_dists.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+            let mut dist_iter = point_dists.into_iter();
+            for &empty_c in &empty_clusters {
+                if let Some((idx, _)) = dist_iter.next() {
+                    new_centroids[empty_c] = feature_data[idx].clone();
+                }
+                // If the iterator is exhausted (more empty clusters than
+                // samples, only possible when n_clusters > n_samples), the
+                // placeholder all-zero centroid is left as-is.
+            }
+        }
+
+        centroids = new_centroids;
+    }
+
+    Ok((labels, centroids, inertia))
+}
+
+// ---------------------------------------------------------------------------
 // Distance helpers
 // ---------------------------------------------------------------------------
 
 /// Calculate Euclidean distance between two vectors
-fn euclidean_distance(a: &[f64], b: &[f64]) -> f64 {
-    assert_eq!(a.len(), b.len(), "Vectors must have the same length");
-    a.iter()
+fn euclidean_distance(a: &[f64], b: &[f64]) -> Result<f64> {
+    if a.len() != b.len() {
+        return Err(Error::InvalidValue(format!(
+            "Vectors must have the same length: {} vs {}",
+            a.len(),
+            b.len()
+        )));
+    }
+    Ok(a.iter()
         .zip(b.iter())
         .map(|(&x, &y)| (x - y).powi(2))
         .sum::<f64>()
-        .sqrt()
+        .sqrt())
+}
+
+/// Calculate squared Euclidean distance between two vectors (avoids the
+/// `sqrt` round-trip; used wherever only relative ordering or a
+/// sum-of-squares objective is needed, e.g. K-means assignment/inertia).
+fn squared_euclidean_distance(a: &[f64], b: &[f64]) -> Result<f64> {
+    if a.len() != b.len() {
+        return Err(Error::InvalidValue(format!(
+            "Vectors must have the same length: {} vs {}",
+            a.len(),
+            b.len()
+        )));
+    }
+    Ok(a.iter().zip(b.iter()).map(|(&x, &y)| (x - y).powi(2)).sum())
 }
 
 /// Calculate Manhattan distance between two vectors
-fn manhattan_distance(a: &[f64], b: &[f64]) -> f64 {
-    assert_eq!(a.len(), b.len(), "Vectors must have the same length");
-    a.iter().zip(b.iter()).map(|(&x, &y)| (x - y).abs()).sum()
+fn manhattan_distance(a: &[f64], b: &[f64]) -> Result<f64> {
+    if a.len() != b.len() {
+        return Err(Error::InvalidValue(format!(
+            "Vectors must have the same length: {} vs {}",
+            a.len(),
+            b.len()
+        )));
+    }
+    Ok(a.iter().zip(b.iter()).map(|(&x, &y)| (x - y).abs()).sum())
 }
 
 /// Calculate Cosine distance between two vectors (1 - cosine_similarity)
-fn cosine_distance(a: &[f64], b: &[f64]) -> f64 {
-    assert_eq!(a.len(), b.len(), "Vectors must have the same length");
+fn cosine_distance(a: &[f64], b: &[f64]) -> Result<f64> {
+    if a.len() != b.len() {
+        return Err(Error::InvalidValue(format!(
+            "Vectors must have the same length: {} vs {}",
+            a.len(),
+            b.len()
+        )));
+    }
     let dot: f64 = a.iter().zip(b.iter()).map(|(&x, &y)| x * y).sum();
     let norm_a: f64 = a.iter().map(|&x| x * x).sum::<f64>().sqrt();
     let norm_b: f64 = b.iter().map(|&x| x * x).sum::<f64>().sqrt();
     if norm_a == 0.0 || norm_b == 0.0 {
-        return 1.0;
+        return Ok(1.0);
     }
     let similarity = dot / (norm_a * norm_b);
     // Clamp to [-1,1] to guard against floating-point rounding
-    1.0 - similarity.clamp(-1.0, 1.0)
+    Ok(1.0 - similarity.clamp(-1.0, 1.0))
 }
 
 /// Dispatch distance computation according to the chosen metric
-fn compute_distance(a: &[f64], b: &[f64], metric: DistanceMetric) -> f64 {
+fn compute_distance(a: &[f64], b: &[f64], metric: DistanceMetric) -> Result<f64> {
     match metric {
         DistanceMetric::Euclidean => euclidean_distance(a, b),
         DistanceMetric::Manhattan => manhattan_distance(a, b),
@@ -482,7 +697,7 @@ fn extract_features(
 ) -> Result<(Vec<Vec<f64>>, Vec<String>)> {
     let columns: Vec<String> = match feature_columns {
         Some(cols) => cols.clone(),
-        None => data.column_names(),
+        None => data.column_names().to_vec(),
     };
 
     let n_samples = data.nrows();
@@ -567,40 +782,33 @@ fn compute_silhouette(
         let c_i = labels[i];
         let members_ci = &cluster_members[&c_i];
 
-        // a_i: mean distance to other points in same cluster
-        let a_i = if members_ci.len() <= 1 {
-            // Singleton — s_i = 0 by definition
-            0.0
-        } else {
-            let sum: f64 = members_ci
-                .iter()
-                .filter(|&&j| j != i)
-                .map(|&j| euclidean_distance(&feature_data[i], &feature_data[j]))
-                .sum();
-            sum / (members_ci.len() - 1) as f64
-        };
-
+        // Singleton cluster — s_i = 0 by definition
         if members_ci.len() <= 1 {
-            // Singleton contributes 0
             silhouette_sum += 0.0;
             count += 1;
             continue;
         }
 
+        // a_i: mean distance to other points in same cluster
+        let mut a_sum = 0.0_f64;
+        for &j in members_ci {
+            if j != i {
+                a_sum += euclidean_distance(&feature_data[i], &feature_data[j])?;
+            }
+        }
+        let a_i = a_sum / (members_ci.len() - 1) as f64;
+
         // b_i: min mean distance over all other clusters
         let mut b_i = f64::MAX;
         for (&other_cluster, other_members) in &cluster_members {
-            if other_cluster == c_i {
+            if other_cluster == c_i || other_members.is_empty() {
                 continue;
             }
-            if other_members.is_empty() {
-                continue;
+            let mut sum_d = 0.0_f64;
+            for &j in other_members {
+                sum_d += euclidean_distance(&feature_data[i], &feature_data[j])?;
             }
-            let mean_dist: f64 = other_members
-                .iter()
-                .map(|&j| euclidean_distance(&feature_data[i], &feature_data[j]))
-                .sum::<f64>()
-                / other_members.len() as f64;
+            let mean_dist = sum_d / other_members.len() as f64;
             if mean_dist < b_i {
                 b_i = mean_dist;
             }
@@ -681,6 +889,16 @@ impl AgglomerativeClustering {
 
 impl UnsupervisedModel for AgglomerativeClustering {
     fn fit(&mut self, data: &DataFrame) -> Result<()> {
+        // Ward's criterion minimizes the increase in within-cluster variance
+        // assuming squared Euclidean distances; it is not a coherent
+        // objective under other metrics. scikit-learn raises for this
+        // combination, and so do we.
+        if self.linkage == Linkage::Ward && self.metric != DistanceMetric::Euclidean {
+            return Err(Error::InvalidInput(
+                "Ward linkage requires the Euclidean distance metric".into(),
+            ));
+        }
+
         let (feature_data, used_columns) = extract_features(data, &self.feature_columns)?;
         let n_samples = feature_data.len();
 
@@ -694,7 +912,7 @@ impl UnsupervisedModel for AgglomerativeClustering {
         let mut dist_matrix: Vec<Vec<f64>> = vec![vec![0.0; n_samples]; n_samples];
         for i in 0..n_samples {
             for j in (i + 1)..n_samples {
-                let d = compute_distance(&feature_data[i], &feature_data[j], self.metric);
+                let d = compute_distance(&feature_data[i], &feature_data[j], self.metric)?;
                 dist_matrix[i][j] = d;
                 dist_matrix[j][i] = d;
             }
@@ -716,12 +934,21 @@ impl UnsupervisedModel for AgglomerativeClustering {
                 for bi in (ai + 1)..active.len() {
                     let idx_a = active[ai];
                     let idx_b = active[bi];
-                    let pts_a = clusters[idx_a]
-                        .as_ref()
-                        .expect("active cluster slot is always Some");
-                    let pts_b = clusters[idx_b]
-                        .as_ref()
-                        .expect("active cluster slot is always Some");
+                    // `active` only ever holds indices of slots that have not
+                    // yet been merged away, so `clusters[idx]` is always
+                    // `Some` here — but that invariant is enforced by this
+                    // loop's own bookkeeping rather than the type system, so
+                    // a violation is surfaced as an `Error` (never a panic).
+                    let pts_a = clusters[idx_a].as_ref().ok_or_else(|| {
+                        Error::InvalidOperation(
+                            "Internal error: active cluster slot was unexpectedly empty".into(),
+                        )
+                    })?;
+                    let pts_b = clusters[idx_b].as_ref().ok_or_else(|| {
+                        Error::InvalidOperation(
+                            "Internal error: active cluster slot was unexpectedly empty".into(),
+                        )
+                    })?;
 
                     let d =
                         linkage_distance(pts_a, pts_b, &dist_matrix, &feature_data, self.linkage);
@@ -735,12 +962,16 @@ impl UnsupervisedModel for AgglomerativeClustering {
             }
 
             // Merge cluster best_b into cluster best_a
-            let pts_b = clusters[best_b]
-                .take()
-                .expect("active cluster slot is always Some");
-            let pts_a = clusters[best_a]
-                .as_mut()
-                .expect("active cluster slot is always Some");
+            let pts_b = clusters[best_b].take().ok_or_else(|| {
+                Error::InvalidOperation(
+                    "Internal error: active cluster slot was unexpectedly empty".into(),
+                )
+            })?;
+            let pts_a = clusters[best_a].as_mut().ok_or_else(|| {
+                Error::InvalidOperation(
+                    "Internal error: active cluster slot was unexpectedly empty".into(),
+                )
+            })?;
             pts_a.extend(pts_b);
 
             // Remove best_b from the active list
@@ -750,10 +981,12 @@ impl UnsupervisedModel for AgglomerativeClustering {
         // Assign final integer labels (0 .. target_clusters-1)
         let mut labels = vec![0usize; n_samples];
         for (cluster_label, &slot) in active.iter().enumerate() {
-            for &pt in clusters[slot]
-                .as_ref()
-                .expect("active cluster slot is always Some")
-            {
+            let members = clusters[slot].as_ref().ok_or_else(|| {
+                Error::InvalidOperation(
+                    "Internal error: active cluster slot was unexpectedly empty".into(),
+                )
+            })?;
+            for &pt in members {
                 labels[pt] = cluster_label;
             }
         }
@@ -894,7 +1127,9 @@ impl ModelEvaluator for AgglomerativeClustering {
 pub struct DBSCAN {
     /// Neighborhood radius epsilon
     pub eps: f64,
-    /// Minimum number of points to form a core point
+    /// Minimum number of points to form a core point (a point counts as its
+    /// own neighbor, matching scikit-learn: a point with `min_samples - 1`
+    /// OTHER points within `eps` is a core point)
     pub min_samples: usize,
     /// Distance metric
     pub metric: DistanceMetric,
@@ -944,17 +1179,22 @@ impl UnsupervisedModel for DBSCAN {
         let mut dist_matrix: Vec<Vec<f64>> = vec![vec![0.0; n_samples]; n_samples];
         for i in 0..n_samples {
             for j in (i + 1)..n_samples {
-                let d = compute_distance(&feature_data[i], &feature_data[j], self.metric);
+                let d = compute_distance(&feature_data[i], &feature_data[j], self.metric)?;
                 dist_matrix[i][j] = d;
                 dist_matrix[j][i] = d;
             }
         }
 
-        // For each point determine its eps-neighborhood
+        // For each point determine its eps-neighborhood, INCLUDING the point
+        // itself (dist_matrix[i][i] == 0.0 <= eps). This matches
+        // scikit-learn's DBSCAN, where `min_samples` counts the point itself:
+        // a point needs `min_samples - 1` OTHER points within `eps` to be a
+        // core point. Excluding self here would make `min_samples` off by
+        // one relative to sklearn (this module previously excluded self).
         let mut neighborhoods: Vec<Vec<usize>> = Vec::with_capacity(n_samples);
         for i in 0..n_samples {
             let nbrs: Vec<usize> = (0..n_samples)
-                .filter(|&j| j != i && dist_matrix[i][j] <= self.eps)
+                .filter(|&j| dist_matrix[i][j] <= self.eps)
                 .collect();
             neighborhoods.push(nbrs);
         }
@@ -987,7 +1227,8 @@ impl UnsupervisedModel for DBSCAN {
                     // Was noise — promote to border point of this cluster
                     labels[q] = cluster_id;
                 } else {
-                    // Already assigned to a cluster — skip
+                    // Already assigned to a cluster (including `i` itself,
+                    // which is now in its own neighborhood) — skip
                     continue;
                 }
 
@@ -1067,7 +1308,8 @@ impl ModelEvaluator for DBSCAN {
 
                 let n_unique = label_remap.len();
                 if n_unique >= 2 && !subset_data.is_empty() {
-                    let silhouette = compute_silhouette_raw(&subset_data, &subset_labels, n_unique);
+                    let silhouette =
+                        compute_silhouette_raw(&subset_data, &subset_labels, n_unique)?;
                     metrics.add_metric("silhouette_score", silhouette);
                 } else {
                     metrics.add_metric("silhouette_score", 0.0);
@@ -1098,9 +1340,13 @@ impl ModelEvaluator for DBSCAN {
 
 /// Compute silhouette coefficient directly from a feature matrix and label vector.
 /// `n_clusters` is the number of distinct cluster ids (0 .. n_clusters-1).
-fn compute_silhouette_raw(feature_data: &[Vec<f64>], labels: &[usize], n_clusters: usize) -> f64 {
+fn compute_silhouette_raw(
+    feature_data: &[Vec<f64>],
+    labels: &[usize],
+    n_clusters: usize,
+) -> Result<f64> {
     if n_clusters < 2 || labels.is_empty() {
-        return 0.0;
+        return Ok(0.0);
     }
 
     let n_samples = feature_data.len();
@@ -1122,22 +1368,19 @@ fn compute_silhouette_raw(feature_data: &[Vec<f64>], labels: &[usize], n_cluster
         }
         let members_ci = &cluster_members[c_i];
 
-        let a_i = if members_ci.len() <= 1 {
-            0.0
-        } else {
-            let sum: f64 = members_ci
-                .iter()
-                .filter(|&&j| j != i)
-                .map(|&j| euclidean_distance(&feature_data[i], &feature_data[j]))
-                .sum();
-            sum / (members_ci.len() - 1) as f64
-        };
-
         if members_ci.len() <= 1 {
             silhouette_sum += 0.0;
             count += 1;
             continue;
         }
+
+        let mut a_sum = 0.0_f64;
+        for &j in members_ci {
+            if j != i {
+                a_sum += euclidean_distance(&feature_data[i], &feature_data[j])?;
+            }
+        }
+        let a_i = a_sum / (members_ci.len() - 1) as f64;
 
         let mut b_i = f64::MAX;
         for k in 0..n_clusters {
@@ -1148,11 +1391,11 @@ fn compute_silhouette_raw(feature_data: &[Vec<f64>], labels: &[usize], n_cluster
             if other.is_empty() {
                 continue;
             }
-            let mean_d: f64 = other
-                .iter()
-                .map(|&j| euclidean_distance(&feature_data[i], &feature_data[j]))
-                .sum::<f64>()
-                / other.len() as f64;
+            let mut sum_d = 0.0_f64;
+            for &j in other {
+                sum_d += euclidean_distance(&feature_data[i], &feature_data[j])?;
+            }
+            let mean_d = sum_d / other.len() as f64;
             if mean_d < b_i {
                 b_i = mean_d;
             }
@@ -1173,11 +1416,11 @@ fn compute_silhouette_raw(feature_data: &[Vec<f64>], labels: &[usize], n_cluster
         count += 1;
     }
 
-    if count == 0 {
+    Ok(if count == 0 {
         0.0
     } else {
         silhouette_sum / count as f64
-    }
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -1260,6 +1503,30 @@ mod tests {
         );
     }
 
+    #[test]
+    fn test_dbscan_core_point_includes_self() {
+        // sklearn semantics: a point is core when it has `min_samples - 1`
+        // OTHER points within `eps` (i.e. `min_samples` including itself).
+        // Three points within eps=1.0 of each other and min_samples=3: each
+        // point's neighborhood (including itself) has size 3, so all three
+        // must be core points forming a single cluster — with the old
+        // "exclude self" behaviour each neighborhood would have size 2,
+        // which is < min_samples, and every point would be noise.
+        let xs = [0.0_f64, 0.3, 0.6];
+        let ys = [0.0_f64, 0.0, 0.0];
+        let df = make_df(&xs, &ys);
+
+        let mut dbscan = DBSCAN::new(1.0, 3).with_columns(vec!["x".to_string(), "y".to_string()]);
+        dbscan.fit(&df).unwrap();
+
+        let labels = dbscan.labels.as_ref().unwrap();
+        assert!(
+            labels.iter().all(|&l| l == 0),
+            "Expected all 3 points in a single cluster (core-point self-inclusion), got {:?}",
+            labels
+        );
+    }
+
     // -----------------------------------------------------------------------
     // Agglomerative tests
     // -----------------------------------------------------------------------
@@ -1290,6 +1557,24 @@ mod tests {
             unique.iter().all(|&l| l < 2),
             "Labels out of range: {:?}",
             unique
+        );
+    }
+
+    #[test]
+    fn test_agglomerative_ward_rejects_non_euclidean() {
+        let xs = [0.0_f64, 1.0, 2.0];
+        let ys = [0.0_f64, 1.0, 2.0];
+        let df = make_df(&xs, &ys);
+
+        let mut agg = AgglomerativeClustering::new(2)
+            .with_linkage(Linkage::Ward)
+            .with_metric(DistanceMetric::Manhattan)
+            .with_columns(vec!["x".to_string(), "y".to_string()]);
+
+        let result = agg.fit(&df);
+        assert!(
+            result.is_err(),
+            "Ward linkage with a non-Euclidean metric must be rejected"
         );
     }
 
@@ -1349,5 +1634,110 @@ mod tests {
             "Expected KMeans silhouette > 0.8 for well-separated blobs, got {}",
             score
         );
+    }
+
+    #[test]
+    fn test_kmeans_evaluate_on_disjoint_test_data_uses_prediction() {
+        // Fit on one set of blobs, evaluate on a DIFFERENT set of points with
+        // a different row count than the training data. Before the fix this
+        // scored `test_data` against the (wrong-length/training) `self.labels`
+        // directly; now `evaluate` must call `predict` on `test_data` first.
+        let train_xs = [0.0_f64, 0.1, -0.1, 10.0, 10.1, 9.9];
+        let train_ys = [0.0_f64, 0.1, -0.1, 10.0, 10.1, 9.9];
+        let train_df = make_df(&train_xs, &train_ys);
+
+        let mut km = KMeans::new(2)
+            .random_seed(7)
+            .with_columns(vec!["x".to_string(), "y".to_string()]);
+        km.fit(&train_df).unwrap();
+
+        // Test set has a DIFFERENT number of rows than the training set.
+        let test_xs = [0.05_f64, 9.95, -0.05, 10.05];
+        let test_ys = [0.05_f64, 9.95, -0.05, 10.05];
+        let test_df = make_df(&test_xs, &test_ys);
+
+        // Must not error out due to a labels/row-count mismatch, and must
+        // produce a well-separated silhouette score since the test points
+        // are themselves two clean, well-separated blobs.
+        let metrics = km.evaluate(&test_df, "").unwrap();
+        let score = metrics
+            .get_metric("silhouette_score")
+            .copied()
+            .unwrap_or(0.0);
+        assert!(
+            score > 0.5,
+            "Expected a well-separated silhouette on freshly predicted labels, got {}",
+            score
+        );
+    }
+
+    #[test]
+    fn test_kmeans_empty_cluster_reseed_is_distinct() {
+        // Directly exercise `run_single_kmeans` (the private per-run Lloyd's
+        // algorithm helper) with HAND-CRAFTED starting centroids that
+        // deterministically force multiple empty clusters after a single
+        // assignment pass — no RNG or convergence luck involved.
+        //
+        // Three of the four starting centroids are placed at the exact same
+        // location (0, 0). Nearest-centroid assignment breaks ties with a
+        // strict `<` comparison, so the FIRST matching index always wins:
+        // every point nearest that shared location is captured by centroid
+        // 0 alone, leaving centroids 1 and 2 with zero points (empty), while
+        // centroid 3 — far away at (10, 10) — captures its own local group.
+        //
+        // Under the old bug, both empty clusters were reseeded independently
+        // by searching for "the single globally-furthest point", so they
+        // would end up as EXACT DUPLICATES of each other ((-25, -25) in both
+        // slots). The fix must give them DISTINCT points instead.
+        let feature_data: Vec<Vec<f64>> = vec![
+            vec![0.0, 0.0],
+            vec![0.1, 0.0],
+            vec![0.0, 0.1],
+            vec![-0.1, -0.1],
+            vec![10.0, 10.0],
+            vec![10.1, 10.0],
+            vec![25.0, 25.0],
+            vec![-25.0, -25.0],
+        ];
+        let initial_centroids = vec![
+            vec![0.0, 0.0],   // captures the near-origin group (wins ties as index 0)
+            vec![0.0, 0.0],   // duplicate starting position -> ends up EMPTY
+            vec![0.0, 0.0],   // duplicate starting position -> ends up EMPTY
+            vec![10.0, 10.0], // captures the (10,10) group
+        ];
+
+        let (labels, centroids, _inertia) =
+            run_single_kmeans(&feature_data, 2, 4, 1, 1e-4, initial_centroids).unwrap();
+
+        // Sanity-check the hand-traced assignment: clusters 1 and 2 must
+        // indeed have received zero points (i.e. the fixture actually
+        // exercises the empty-cluster path this test is about).
+        for empty_cluster in [1usize, 2usize] {
+            assert!(
+                !labels.contains(&empty_cluster),
+                "expected cluster {} to be empty after the first assignment pass \
+                 (fixture assumption violated); got labels {:?}",
+                empty_cluster,
+                labels
+            );
+        }
+
+        assert_eq!(centroids.len(), 4);
+        // Collect centroids as bit-pattern-comparable tuples to check for
+        // exact duplicates (reseeded-from-the-same-point centroids would be
+        // bit-identical).
+        let mut seen: Vec<(u64, u64)> = Vec::new();
+        for c in &centroids {
+            let key = (c[0].to_bits(), c[1].to_bits());
+            assert!(
+                !seen.contains(&key),
+                "Found duplicate centroid {:?} among {:?} — empty-cluster reseed must \
+                 assign DISTINCT points to different empty clusters, not the same point \
+                 to all of them",
+                c,
+                centroids
+            );
+            seen.push(key);
+        }
     }
 }

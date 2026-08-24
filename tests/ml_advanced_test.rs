@@ -247,8 +247,13 @@ fn test_cross_validation_strategy() {
 
 #[test]
 fn test_parameter_distributions() {
+    // `sample` now takes an explicit RNG (threaded through by RandomizedSearchCV so
+    // `random_state` is actually reproducible) instead of reaching for an unseeded thread-local
+    // generator on every call.
+    let mut rng = scirs2_core::random::Random::seed(123);
+
     let uniform_int = ParameterDistribution::UniformInt { low: 1, high: 10 };
-    let sample = uniform_int.sample();
+    let sample = uniform_int.sample(&mut rng).unwrap();
     let value: i64 = sample.parse().unwrap();
     assert!(
         (1..=10).contains(&value),
@@ -259,7 +264,7 @@ fn test_parameter_distributions() {
         low: 0.0,
         high: 1.0,
     };
-    let sample = uniform_float.sample();
+    let sample = uniform_float.sample(&mut rng).unwrap();
     let value: f64 = sample.parse().unwrap();
     assert!(
         (0.0..=1.0).contains(&value),
@@ -271,14 +276,14 @@ fn test_parameter_distributions() {
         "option2".to_string(),
         "option3".to_string(),
     ]);
-    let sample = choice.sample();
+    let sample = choice.sample(&mut rng).unwrap();
     assert!(
         ["option1", "option2", "option3"].contains(&sample.as_str()),
         "Choice sample should be one of the options"
     );
 
     let fixed = ParameterDistribution::Fixed("fixed_value".to_string());
-    let sample = fixed.sample();
+    let sample = fixed.sample(&mut rng).unwrap();
     assert_eq!(
         sample, "fixed_value",
         "Fixed distribution should always return the same value"
@@ -446,17 +451,41 @@ fn test_model_search_space() {
         .any(|(name, _)| name == "LinearRegression");
     assert!(has_linear_regression, "Should include LinearRegression");
 
+    // Ridge/Lasso are intentionally NOT part of the default search space: `models/linear.rs`
+    // only implements unpenalized LinearRegression/LogisticRegression, there is no L1/L2
+    // penalized linear model to wire up, and `AutoML::create_estimator` has no case for these
+    // names (they would always fail with `Error::NotImplemented`). Advertising them here would
+    // be dishonest, so the search space -- and this test -- must not claim they are included.
+    // See the NOTE in `ModelSearchSpace::default_regression`.
     let has_ridge = regression_space
         .linear_models
         .iter()
         .any(|(name, _)| name == "Ridge");
-    assert!(has_ridge, "Should include Ridge regression");
+    assert!(
+        !has_ridge,
+        "Ridge is not implemented in create_estimator and must not be advertised"
+    );
+
+    let has_lasso = regression_space
+        .linear_models
+        .iter()
+        .any(|(name, _)| name == "Lasso");
+    assert!(
+        !has_lasso,
+        "Lasso is not implemented in create_estimator and must not be advertised"
+    );
 
     let has_random_forest = regression_space
         .ensemble_models
         .iter()
         .any(|(name, _)| name == "RandomForest");
     assert!(has_random_forest, "Should include RandomForest");
+
+    let has_gradient_boosting = regression_space
+        .ensemble_models
+        .iter()
+        .any(|(name, _)| name == "GradientBoosting");
+    assert!(has_gradient_boosting, "Should include GradientBoosting");
 
     // Test classification space
     let classification_space = ModelSearchSpace::default_classification();
@@ -472,6 +501,16 @@ fn test_model_search_space() {
         .iter()
         .any(|(name, _)| name == "DecisionTreeClassifier");
     assert!(has_decision_tree, "Should include DecisionTreeClassifier");
+
+    // RandomForestClassifier/GradientBoostingClassifier are intentionally excluded from the
+    // default classification search space: they derive only `Debug` (not `Clone`) in
+    // `models/ensemble.rs`, so they can never satisfy the `Clone` bound that cross-validation
+    // relies on to clone the base estimator per fold/trial. See the NOTE in
+    // `ModelSearchSpace::default_classification`.
+    assert!(
+        classification_space.ensemble_models.is_empty(),
+        "Ensemble classifiers are not Clone-safe yet and must not be advertised by default"
+    );
 }
 
 #[test]
@@ -649,15 +688,20 @@ fn test_ml_pipeline_integration() {
     );
 
     // Sample parameters
+    let mut rng = scirs2_core::random::Random::seed(99);
     for _ in 0..5 {
-        let alpha_sample = param_space.get("alpha").unwrap().sample();
+        let alpha_sample = param_space.get("alpha").unwrap().sample(&mut rng).unwrap();
         let alpha_value: f64 = alpha_sample.parse().unwrap();
         assert!(
             (1e-3..=1e1).contains(&alpha_value),
             "Alpha parameter should be in expected range"
         );
 
-        let intercept_sample = param_space.get("fit_intercept").unwrap().sample();
+        let intercept_sample = param_space
+            .get("fit_intercept")
+            .unwrap()
+            .sample(&mut rng)
+            .unwrap();
         assert!(
             ["true", "false"].contains(&intercept_sample.as_str()),
             "fit_intercept should be true or false"
@@ -881,10 +925,12 @@ fn test_randomized_search_cv_real() {
 
     let results = search.get_results().expect("Results should be available");
 
-    // Best score should be finite and reasonable for a linear model
+    // Best score should be present (Some) and finite and reasonable for a linear model.
+    // `best_score_` is `Option<f64>` — `None` only when no trial produced a finite score
+    // (never a fabricated placeholder) — so a successful search must yield `Some`.
     assert!(
-        results.best_score_.is_finite(),
-        "best_score_ should be finite, got {}",
+        results.best_score_.is_some_and(|s| s.is_finite()),
+        "best_score_ should be Some(finite), got {:?}",
         results.best_score_
     );
 
@@ -936,6 +982,7 @@ fn test_automl_end_to_end_linear() {
     let config = AutoMLConfig {
         task_type: TaskType::Regression,
         max_models: Some(2),
+        max_selected_features: Some(10),
         model_whitelist: Some(vec!["LinearRegression".to_string()]),
         feature_engineering: false, // disable to keep the test fast
         feature_selection: false,

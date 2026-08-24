@@ -184,18 +184,27 @@ where
             .collect()
     }
 
-    /// Get the size of each group as a DataFrame
+    /// Get the size of each group as a DataFrame.
+    ///
+    /// Rows are ordered deterministically (sorted by the group key's string
+    /// form) rather than following raw `HashMap` iteration order, which
+    /// varied from run to run.
     pub fn size_as_df(&self) -> Result<DataFrame> {
         // Create a DataFrame for results
         let mut result = DataFrame::new();
 
-        // Create columns for group keys and values
-        let mut keys = Vec::new();
-        let mut sizes = Vec::new();
+        let mut entries: Vec<(String, usize)> = self
+            .groups
+            .iter()
+            .map(|(k, indices)| (format!("{:?}", k), indices.len()))
+            .collect();
+        entries.sort_by(|(a, _), (b, _)| a.cmp(b));
 
-        for (key, indices) in &self.groups {
-            keys.push(format!("{:?}", key)); // Convert key to string
-            sizes.push(indices.len().to_string()); // Convert size to string
+        let mut keys = Vec::with_capacity(entries.len());
+        let mut sizes = Vec::with_capacity(entries.len());
+        for (key, size) in entries {
+            keys.push(key);
+            sizes.push(size.to_string());
         }
 
         // Add group key column
@@ -209,7 +218,15 @@ where
         Ok(result)
     }
 
-    /// Simple aggregation function
+    /// Simple aggregation function.
+    ///
+    /// Fetches the real numeric values of `column_name` from the source
+    /// DataFrame (previously a hardcoded empty `Vec`, which made every
+    /// group's data look empty and every aggregate come back `"0.0"`
+    /// regardless of the real data) and reduces each group's values with
+    /// `func_name` (one of `"sum"`, `"mean"`, `"min"`, `"max"`, `"count"`).
+    /// Groups are emitted in a deterministic order (sorted by the group
+    /// key's string form) rather than raw `HashMap` iteration order.
     pub fn aggregate(&self, column_name: &str, func_name: &str) -> Result<DataFrame> {
         // Check if column exists
         if !self.source.contains_column(column_name) {
@@ -219,57 +236,73 @@ where
             )));
         }
 
-        // Create DataFrame for results
-        let mut result = DataFrame::new();
+        if !matches!(func_name, "sum" | "mean" | "min" | "max" | "count") {
+            return Err(PandRSError::Consistency(format!(
+                "Unsupported aggregation function '{}' (expected one of: sum, mean, min, max, count)",
+                func_name
+            )));
+        }
 
-        // Create group key and value columns
-        let mut keys = Vec::new();
-        let mut aggregated_values = Vec::new();
+        // Fetch the column's real numeric values once (not a stub empty Vec).
+        let column_data: Vec<f64> = self.source.get_column_numeric_values(column_name)?;
 
-        // Get column data - using a stub for now
-        // In a real implementation we would get numeric values from the column
-        let column_data: Vec<f64> = Vec::new();
+        // Deterministic group order: sort by the same string form used for
+        // the output key column, instead of raw (unordered) HashMap
+        // iteration.
+        let mut sorted_groups: Vec<(String, &Vec<usize>)> = self
+            .groups
+            .iter()
+            .map(|(k, indices)| (format!("{:?}", k), indices))
+            .collect();
+        sorted_groups.sort_by(|(a, _), (b, _)| a.cmp(b));
 
-        for (key, indices) in &self.groups {
-            // Add group key
-            keys.push(format!("{:?}", key));
+        let mut keys = Vec::with_capacity(sorted_groups.len());
+        let mut aggregated_values = Vec::with_capacity(sorted_groups.len());
 
-            // Extract data for this group
+        for (key_str, indices) in sorted_groups {
             let group_data: Vec<f64> = indices
                 .iter()
-                .filter_map(|&idx| {
-                    if idx < column_data.len() {
-                        Some(column_data[idx])
-                    } else {
-                        None
-                    }
-                })
+                .filter_map(|&idx| column_data.get(idx).copied())
                 .collect();
 
-            // Apply aggregation function
-            let result_value = if group_data.is_empty() {
-                "0.0".to_string()
-            } else {
-                match func_name {
-                    "sum" => group_data.iter().sum::<f64>().to_string(),
-                    "mean" => {
-                        (group_data.iter().sum::<f64>() / group_data.len() as f64).to_string()
-                    }
-                    "min" => group_data
-                        .iter()
-                        .fold(f64::INFINITY, |a, &b| a.min(b))
-                        .to_string(),
-                    "max" => group_data
-                        .iter()
-                        .fold(f64::NEG_INFINITY, |a, &b| a.max(b))
-                        .to_string(),
-                    "count" => group_data.len().to_string(),
-                    _ => "0.0".to_string(),
+            // Every key in `self.groups` owns at least one source row (see
+            // `GroupBy::new`), so an empty `group_data` here only happens if
+            // the column read returned fewer values than the DataFrame's
+            // row count -- an inconsistency worth surfacing rather than
+            // papering over with a fabricated "0.0".
+            if group_data.is_empty() {
+                return Err(PandRSError::Consistency(format!(
+                    "No numeric values found for group {} in column '{}'",
+                    key_str, column_name
+                )));
+            }
+
+            let result_value = match func_name {
+                "sum" => group_data.iter().sum::<f64>().to_string(),
+                "mean" => (group_data.iter().sum::<f64>() / group_data.len() as f64).to_string(),
+                "min" => group_data
+                    .iter()
+                    .fold(f64::INFINITY, |a, &b| a.min(b))
+                    .to_string(),
+                "max" => group_data
+                    .iter()
+                    .fold(f64::NEG_INFINITY, |a, &b| a.max(b))
+                    .to_string(),
+                "count" => group_data.len().to_string(),
+                _ => {
+                    return Err(PandRSError::Consistency(format!(
+                        "Unsupported aggregation function '{}'",
+                        func_name
+                    )))
                 }
             };
 
+            keys.push(key_str);
             aggregated_values.push(result_value);
         }
+
+        // Create DataFrame for results
+        let mut result = DataFrame::new();
 
         // Add group key column
         let key_column = Series::new(keys, Some("group_key".to_string()))?;

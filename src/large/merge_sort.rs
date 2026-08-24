@@ -8,7 +8,7 @@
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
 use std::fs::File;
-use std::io::{BufRead, BufReader, BufWriter, Write};
+use std::io::{BufReader, BufWriter};
 use std::path::{Path, PathBuf};
 
 use csv::{ReaderBuilder, WriterBuilder};
@@ -85,7 +85,7 @@ fn create_sorted_runs(
             ))
         })?;
 
-    let chunk_size = config.chunk_size;
+    let chunk_size = config.effective_chunk_size(headers.len());
     let temp_dir = &config.temp_dir;
     let mut run_index = 0usize;
     let mut run_paths: Vec<PathBuf> = Vec::new();
@@ -199,11 +199,31 @@ impl Ord for HeapItem {
     }
 }
 
-/// Compare two CSV cell values: numeric if both parse, lexicographic otherwise.
+/// Compare two CSV cell values for external-sort/merge ordering.
+///
+/// Values that parse as `f64` sort before values that don't, and are
+/// compared numerically via `f64::total_cmp` (a real total order, unlike
+/// `partial_cmp(..).unwrap_or(Equal)`, which treats every NaN as equal to
+/// everything and breaks transitivity). Values that don't parse are
+/// compared lexicographically against each other.
+///
+/// This decides per-*value* rather than per-column: a previous version
+/// tried `(a.parse(), b.parse())` per PAIR and fell back to comparing the
+/// raw text whenever either side failed to parse. That is not a total
+/// order -- for "2" < "10" (both numeric) and "10" < "1a" (text fallback,
+/// since "1a" doesn't parse) it also judged "1a" < "2" (also a text
+/// fallback), a genuine three-way cycle. Bucketing by "parses as a number"
+/// per value first, then comparing consistently within each bucket, keeps
+/// the order transitive even for a column that mixes numeric and
+/// non-numeric text (e.g. missing values stored as an empty string among
+/// otherwise-numeric IDs): numeric values first in numeric order,
+/// non-numeric values after in lexicographic order.
 fn compare_values(a: &str, b: &str) -> Ordering {
     match (a.parse::<f64>(), b.parse::<f64>()) {
-        (Ok(fa), Ok(fb)) => fa.partial_cmp(&fb).unwrap_or(Ordering::Equal),
-        _ => a.cmp(b),
+        (Ok(fa), Ok(fb)) => fa.total_cmp(&fb),
+        (Ok(_), Err(_)) => Ordering::Less,
+        (Err(_), Ok(_)) => Ordering::Greater,
+        (Err(_), Err(_)) => a.cmp(b),
     }
 }
 

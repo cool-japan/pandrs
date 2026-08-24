@@ -1,11 +1,11 @@
-/// Core data structures and traits for PandRS.
-///
-/// This module contains the fundamental building blocks for all PandRS operations:
-/// - Column types and operations
-/// - Index implementations
-/// - Data value representations
-/// - Error types and contexts
-/// - DataFrame trait definitions
+//! Core data structures and traits for PandRS.
+//!
+//! This module contains the fundamental building blocks for all PandRS operations:
+//! - Column types and operations
+//! - Index implementations
+//! - Data value representations
+//! - Error types and contexts
+//! - DataFrame trait definitions
 
 /// Advanced multi-level indexing with hierarchical operations.
 ///
@@ -17,19 +17,15 @@ pub mod advanced_multi_index;
 /// Core column type definitions and casting operations.
 pub mod column;
 
-/// Column-specific operations organized by type.
-///
-/// Type-specific implementations for numeric, string, boolean, datetime, and categorical columns.
-pub mod column_ops;
-
 /// Data value representation and conversions.
 ///
 /// Unified value type for representing heterogeneous data.
 pub mod data_value;
 
-/// DataFrame trait definitions for polymorphic operations.
+/// The `DataFrameOps` trait for polymorphic operations.
 ///
-/// Defines the core traits that all DataFrame implementations must satisfy.
+/// Defines a structural operation set implemented by DataFrame wrapper types
+/// such as the JIT-optimized wrapper; the base `DataFrame` uses inherent methods.
 pub mod dataframe_traits;
 
 /// Error types for the core module.
@@ -49,7 +45,11 @@ pub mod index;
 
 /// Migration utilities for backward compatibility.
 ///
-/// Tools for migrating between different versions of data structures.
+/// Tools for migrating between different versions of data structures. The
+/// module itself is hidden from the public docs (internal surface); the
+/// intended public types are re-exported via the `pub use migration::{..}`
+/// facade below.
+#[doc(hidden)]
 pub mod migration;
 
 /// Multi-index (hierarchical index) implementation.
@@ -59,7 +59,11 @@ pub mod multi_index;
 
 /// Synchronization helpers for thread-safe operations.
 ///
-/// Utilities for safe concurrent access to shared data structures.
+/// Utilities for safe concurrent access to shared data structures. Hidden from
+/// the public docs (internal helper surface); kept `pub` rather than
+/// `pub(crate)` because the helpers have no in-crate callers, so demoting them
+/// would make them dead code.
+#[doc(hidden)]
 pub mod sync_helpers;
 
 // Re-exports for convenience
@@ -67,18 +71,8 @@ pub use advanced_multi_index::{
     AdvancedMultiIndex, CrossSectionResult, IndexValue, SelectionCriteria,
 };
 pub use column::{BitMask, Column, ColumnCast, ColumnTrait, ColumnType};
-pub use column_ops::{
-    BooleanColumn, BooleanColumnOps, CastErrorBehavior, CategoricalColumn, CategoricalColumnOps,
-    ColumnFactory, ColumnOps, ColumnStorage, DateColumn, DateTimeColumn, DateTimeColumnOps,
-    DefaultColumnFactory, DuplicateKeep, Float32Column, Float64Column, Int32Column, Int64Column,
-    NumericColumnOps, PadSide, StringColumn, StringColumnOps, TimeColumn, TypedColumn,
-};
 pub use data_value::DataValue;
-pub use dataframe_traits::{
-    AggFunc, Axis, BooleanMask, ColIndexer, DataFrameAdvancedOps, DataFrameIO, DataFrameOps,
-    DropNaHow, ExpandingWindow, FillMethod, GroupByOps, GroupKey, IndexingOps, JoinType,
-    LabelIndexer, Resampler, RollingWindow, RowIndexer, StatisticalOps,
-};
+pub use dataframe_traits::{Axis, DataFrameOps, DropNaHow, FillMethod};
 pub use error::{Error, PandRSError, Result};
 pub use error_context::{
     ErrorContext, ErrorContextBuilder, ErrorRecovery, ErrorRecoveryHelper, ErrorSeverity,

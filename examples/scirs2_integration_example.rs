@@ -50,12 +50,12 @@ fn main() {
     let pearson = df.scirs2_corr().expect("Pearson corr");
     let cols = pearson.column_names();
     print!("{:<12}", "");
-    for c in &cols {
+    for c in cols {
         print!("{:<12}", c);
     }
     println!();
     for row in 0..pearson.nrows() {
-        for c in &cols {
+        for c in cols {
             let vals = pearson.get_column_numeric_values(c).unwrap_or_else(|_| {
                 pearson
                     .get_column_string_values(c)
@@ -66,7 +66,7 @@ fn main() {
                     })
                     .unwrap_or_default()
             });
-            if c == "column" {
+            if c.as_str() == "column" {
                 if let Ok(sv) = pearson.get_column_string_values(c) {
                     print!("{:<12}", sv.get(row).map(|s| s.as_str()).unwrap_or(""));
                 } else {
@@ -98,8 +98,8 @@ fn main() {
     let cov = df.scirs2_cov().expect("Cov matrix");
     let cov_cols: Vec<_> = cov
         .column_names()
-        .into_iter()
-        .filter(|c| c != "column")
+        .iter()
+        .filter(|c| c.as_str() != "column")
         .collect();
     for c in &cov_cols {
         let vals = cov.get_column_numeric_values(c).unwrap();

@@ -24,9 +24,13 @@ pub struct Session {
     pub timeout: Duration,
     /// Session data/attributes
     pub attributes: HashMap<String, String>,
-    /// IP address (if available)
+    /// Source IP the session is bound to. When set, it is enforced by
+    /// [`SessionStore::validate_session_with_context`] (a request from a
+    /// different IP is rejected); when `None`, the session is not IP-bound.
     pub ip_address: Option<String>,
-    /// User agent (if available)
+    /// User agent the session is bound to. When set, it is enforced by
+    /// [`SessionStore::validate_session_with_context`]; when `None`, the session
+    /// is not user-agent-bound.
     pub user_agent: Option<String>,
     /// Whether the session is active
     pub active: bool,
@@ -203,6 +207,42 @@ impl SessionStore {
         if let Some(session) = self.sessions.get_mut(session_id) {
             if session.is_expired() {
                 return None;
+            }
+            session.refresh();
+            return self.sessions.get(session_id);
+        }
+        None
+    }
+
+    /// Validate and refresh a session, binding it to the request's source IP and
+    /// user agent.
+    ///
+    /// When the stored session carries an `ip_address` / `user_agent` (created
+    /// via [`Session::with_ip_address`] / [`Session::with_user_agent`]), a
+    /// mismatch against the presented value fails validation, so a stolen
+    /// session id replayed from a different client is rejected. A field left
+    /// unset on the session is treated as "not bound" and is not compared, so
+    /// this is backward compatible with sessions created without a context.
+    pub fn validate_session_with_context(
+        &mut self,
+        session_id: &str,
+        ip_address: Option<&str>,
+        user_agent: Option<&str>,
+    ) -> Option<&Session> {
+        if let Some(session) = self.sessions.get_mut(session_id) {
+            if session.is_expired() {
+                return None;
+            }
+            // Compare only the fields the session was actually bound to.
+            if let Some(bound_ip) = session.ip_address.as_deref() {
+                if ip_address != Some(bound_ip) {
+                    return None;
+                }
+            }
+            if let Some(bound_ua) = session.user_agent.as_deref() {
+                if user_agent != Some(bound_ua) {
+                    return None;
+                }
             }
             session.refresh();
             return self.sessions.get(session_id);

@@ -31,7 +31,8 @@
 //! // Windowed aggregation
 //! let window_config = WindowConfigBuilder::new()
 //!     .tumbling(Duration::from_secs(60))
-//!     .build();
+//!     .build()
+//!     .expect("valid window config");
 //! let mut agg = WindowedAggregator::new(window_config, "value", WindowAggregation::Sum);
 //! ```
 
@@ -41,7 +42,7 @@ pub mod window;
 // Re-export backpressure types
 pub use backpressure::{
     BackpressureBuffer, BackpressureChannel, BackpressureConfig, BackpressureConfigBuilder,
-    BackpressureStats, BackpressureStrategy, FlowController,
+    BackpressureStats, BackpressureStrategy, FlowController, PushOutcome,
 };
 
 // Re-export window types
@@ -50,22 +51,19 @@ pub use window::{
     WindowResult, WindowType, WindowedAggregator,
 };
 
-use crossbeam_channel::{bounded, Receiver, Sender};
-use std::collections::{HashMap, VecDeque};
+use crossbeam_channel::{bounded, Receiver, RecvTimeoutError, Sender};
+use std::collections::HashMap;
 use std::fs::File;
-use std::io::{self, BufRead, BufReader, Read};
+use std::io::{BufRead, BufReader};
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use crate::core::error::OptionExt;
 use crate::dataframe::DataFrame;
-use crate::error::{Error, PandRSError, Result};
+use crate::error::{Error, Result};
 use crate::lock_safe;
-use crate::optimized::dataframe::OptimizedDataFrame;
-use crate::series::Series;
-use crate::series::Series as LegacySeries;
 
 /// Configuration for stream processing
 #[derive(Debug, Clone)]
@@ -133,31 +131,85 @@ impl StreamRecord {
     }
 }
 
+/// Builds a [`DataFrame`] from one batch of records, given the stream's
+/// column headers. Free function (rather than a method borrowing a whole
+/// `DataStream`) so it can be reused by callers -- such as
+/// [`StreamProcessor::process`] -- that only have the headers available
+/// alongside a transformed batch, not a `DataStream` reference.
+fn build_dataframe_from_batch(headers: &[String], batch: &[StreamRecord]) -> Result<DataFrame> {
+    let mut df = DataFrame::new();
+
+    if batch.is_empty() {
+        return Ok(df);
+    }
+
+    // Prepare columns
+    let mut columns: HashMap<String, Vec<String>> = HashMap::new();
+    for header in headers {
+        columns.insert(header.clone(), Vec::with_capacity(batch.len()));
+    }
+
+    // Fill columns
+    for record in batch {
+        for header in headers {
+            let value = record.fields.get(header).cloned().unwrap_or_default();
+            columns
+                .get_mut(header)
+                .ok_or_else(|| Error::InvalidOperation(format!("column not found: {}", header)))?
+                .push(value);
+        }
+    }
+
+    // Create DataFrame using add_column method
+    for header in headers {
+        let column_data = columns
+            .get(header)
+            .ok_or_else(|| Error::InvalidOperation(format!("column not found: {}", header)))?
+            .clone();
+        let series = crate::series::Series::new(column_data, Some(header.clone()))?;
+        df.add_column(header.clone(), series)?;
+    }
+
+    Ok(df)
+}
+
 /// Represents a stream of data
 #[derive(Debug)]
 pub struct DataStream {
     /// Configuration for stream processing
     config: StreamConfig,
-    /// Buffer for received records
-    buffer: VecDeque<StreamRecord>,
     /// Column headers/schema
     headers: Vec<String>,
-    /// Sender for stream records
+    /// Sender for stream records. Kept only for callers that want to drive
+    /// the stream manually via [`DataStream::get_sender`] after
+    /// construction (see [`DataStream::new`]); stream sources that own their
+    /// producer outright (e.g. [`DataStream::read_from_csv`]) do not
+    /// populate this and instead move their sender into the producer
+    /// thread, so that dropping it there is what lets the receiving side
+    /// observe [`RecvTimeoutError::Disconnected`] -- see
+    /// [`DataStream::process`].
     sender: Option<Sender<StreamRecord>>,
     /// Receiver for stream records
     receiver: Option<Receiver<StreamRecord>>,
 }
 
 impl DataStream {
-    /// Create a new data stream with specified configuration
+    /// Create a new data stream with specified configuration.
+    ///
+    /// The returned stream retains its own sender (obtainable via
+    /// [`DataStream::get_sender`]) so a caller can feed it manually. If you
+    /// intend to call [`DataStream::process`] or
+    /// [`DataStream::window_operation`] on this stream, obtain the sender
+    /// (or hand it to a producer thread) *before* calling them: both of
+    /// those methods drop this struct-held sender as soon as they start, so
+    /// that a producer's own sender clone(s) being dropped is what lets the
+    /// stream terminate (see their doc comments).
     pub fn new(headers: Vec<String>, config: Option<StreamConfig>) -> Self {
         let config = config.unwrap_or_default();
-        let buffer = VecDeque::with_capacity(config.buffer_size);
         let (sender, receiver) = bounded(config.buffer_size);
 
         DataStream {
             config,
-            buffer,
             headers,
             sender: Some(sender),
             receiver: Some(receiver),
@@ -169,7 +221,15 @@ impl DataStream {
         self.sender.clone()
     }
 
-    /// Read from a CSV file, simulating a stream
+    /// Read from a CSV file, simulating a stream.
+    ///
+    /// The producer thread owns the only sender for the returned stream's
+    /// channel (the stream itself is constructed with no struct-held
+    /// sender), so once the file is fully read the sender is dropped and
+    /// the channel becomes genuinely disconnected -- which is what lets
+    /// [`DataStream::process`]/[`DataStream::window_operation`] know the
+    /// stream has actually ended, including after any idle gaps caused by
+    /// `delay_ms`.
     pub fn read_from_csv<P: AsRef<Path>>(
         path: P,
         config: Option<StreamConfig>,
@@ -191,14 +251,15 @@ impl DataStream {
             .map(|s| s.trim().to_string())
             .collect();
 
-        let stream = DataStream::new(headers.clone(), config);
-        let sender = stream.get_sender().expect("operation should succeed");
+        let config = config.unwrap_or_default();
+        let (sender, receiver) = bounded(config.buffer_size);
+        let thread_headers = headers.clone();
 
         // Start a thread to read lines and send to stream
         thread::spawn(move || {
             for line in lines {
                 if let Ok(line) = line {
-                    if let Ok(record) = StreamRecord::from_csv(&line, &headers) {
+                    if let Ok(record) = StreamRecord::from_csv(&line, &thread_headers) {
                         if sender.send(record).is_err() {
                             // Channel closed, exit thread
                             break;
@@ -211,12 +272,24 @@ impl DataStream {
                     }
                 }
             }
+            // `sender` drops here, disconnecting the channel once (and only
+            // once) the whole file has been read.
         });
 
-        Ok(stream)
+        Ok(DataStream {
+            config,
+            headers,
+            sender: None,
+            receiver: Some(receiver),
+        })
     }
 
-    /// Create a stream from an iterator
+    /// Create a stream from an iterator.
+    ///
+    /// As with [`DataStream::read_from_csv`], the producer thread owns the
+    /// only sender for the returned stream, so the channel disconnects
+    /// (letting consumers terminate correctly) once the iterator is
+    /// exhausted.
     pub fn from_iterator<I, T>(
         iter: I,
         headers: Vec<String>,
@@ -227,8 +300,8 @@ impl DataStream {
         I: Iterator<Item = T> + Send + 'static,
         T: Clone + Send + 'static,
     {
-        let stream = DataStream::new(headers, config);
-        let sender = stream.get_sender().expect("operation should succeed");
+        let config = config.unwrap_or_default();
+        let (sender, receiver) = bounded(config.buffer_size);
 
         // Start a thread to read from iterator and send to stream
         thread::spawn(move || {
@@ -243,14 +316,34 @@ impl DataStream {
             }
         });
 
-        stream
+        DataStream {
+            config,
+            headers,
+            sender: None,
+            receiver: Some(receiver),
+        }
     }
 
-    /// Process the stream with a function
+    /// Process the stream with a function, in batches of `batch_size`
+    /// records (or `self.config.batch_size` if not specified).
+    ///
+    /// A batch is flushed to `processor` as soon as it reaches `batch_size`,
+    /// and any partial trailing batch is flushed once the stream ends. The
+    /// stream is considered ended **only** when the channel reports
+    /// [`RecvTimeoutError::Disconnected`] -- an idle gap
+    /// ([`RecvTimeoutError::Timeout`]) longer than
+    /// `config.processing_interval` is not treated as end-of-stream, since
+    /// the producer may simply be slow and could still send more data. This
+    /// method drops any sender this struct itself still holds before
+    /// entering the receive loop, since a live self-held sender would make
+    /// `Disconnected` unreachable (the stream would then hang forever
+    /// instead of ever terminating) once a real producer finishes sending.
     pub fn process<F, T>(&mut self, processor: F, batch_size: Option<usize>) -> Result<Vec<T>>
     where
         F: FnMut(&[StreamRecord]) -> Result<T>,
     {
+        self.sender = None;
+
         let batch_size = batch_size.unwrap_or(self.config.batch_size);
         let mut results = Vec::new();
         let mut batch = Vec::with_capacity(batch_size);
@@ -267,15 +360,8 @@ impl DataStream {
         };
 
         loop {
-            // Try to receive a record with timeout
             match receiver.recv_timeout(self.config.processing_interval) {
                 Ok(record) => {
-                    // Add to buffer and batch
-                    self.buffer.push_back(record.clone());
-                    if self.buffer.len() > self.config.buffer_size {
-                        self.buffer.pop_front();
-                    }
-
                     batch.push(record);
 
                     // Process batch if it's full
@@ -285,20 +371,20 @@ impl DataStream {
                         batch.clear();
                     }
                 }
-                Err(_) => {
-                    // Timeout or channel closed
-                    // Process remaining records in batch
+                Err(RecvTimeoutError::Timeout) => {
+                    // Just an idle gap: the producer may still be alive.
+                    // Keep waiting instead of flushing/terminating.
+                    continue;
+                }
+                Err(RecvTimeoutError::Disconnected) => {
+                    // The stream has genuinely ended: flush any partial
+                    // trailing batch, then stop.
                     if !batch.is_empty() {
                         let result = processor(&batch)?;
                         results.push(result);
                         batch.clear();
                     }
-
-                    // If channel is disconnected, exit
-                    // Check if the receiver is disconnected by seeing if all senders have been dropped
-                    if receiver.is_empty() {
-                        break;
-                    }
+                    break;
                 }
             }
         }
@@ -306,11 +392,25 @@ impl DataStream {
         Ok(results)
     }
 
-    /// Apply a window operation to the stream
+    /// Apply a window operation to the stream, firing `operation` once per
+    /// completed window rather than once per record.
+    ///
+    /// Precedence when both are configured: if
+    /// `config.window_duration` is set, windows are duration-based (a
+    /// window closes once the gap between its first and most recent record
+    /// reaches that duration); otherwise, if `config.window_size` is set,
+    /// windows are count-based (a window closes once it holds that many
+    /// records); if neither is set, the entire stream is treated as a
+    /// single window that fires once at end-of-stream. As with
+    /// [`DataStream::process`], end-of-stream is detected only via
+    /// [`RecvTimeoutError::Disconnected`], and this method drops any
+    /// sender this struct itself still holds before consuming.
     pub fn window_operation<F, T>(&mut self, operation: F) -> Result<Vec<T>>
     where
         F: FnMut(&[StreamRecord]) -> Result<T>,
     {
+        self.sender = None;
+
         let mut results = Vec::new();
         let mut operation = operation;
 
@@ -324,63 +424,47 @@ impl DataStream {
             }
         };
 
-        // Track window
-        let mut window = VecDeque::new();
-        let window_size = self.config.window_size.unwrap_or(self.config.buffer_size);
-        let start_time = Instant::now();
+        let mut window: Vec<StreamRecord> = Vec::new();
+        let mut window_start: Option<Instant> = None;
 
         loop {
-            // Try to receive a record with timeout
             match receiver.recv_timeout(self.config.processing_interval) {
                 Ok(record) => {
-                    // Add to window
-                    window.push_back(record.clone());
-
-                    // Add to buffer
-                    self.buffer.push_back(record);
-                    if self.buffer.len() > self.config.buffer_size {
-                        self.buffer.pop_front();
+                    if window.is_empty() {
+                        window_start = Some(record.timestamp);
                     }
+                    window.push(record);
 
-                    // Maintain window size
-                    if let Some(win_size) = self.config.window_size {
-                        while window.len() > win_size {
-                            window.pop_front();
-                        }
-                    }
-
-                    // Check time-based window
-                    if let Some(duration) = self.config.window_duration {
-                        let now = Instant::now();
-                        while !window.is_empty() {
-                            let front = &window[0];
-                            if now.duration_since(front.timestamp) > duration {
-                                window.pop_front();
-                            } else {
-                                break;
+                    let boundary_reached = if let Some(duration) = self.config.window_duration {
+                        match (window_start, window.last()) {
+                            (Some(start), Some(last)) => {
+                                last.timestamp.duration_since(start) >= duration
                             }
+                            _ => false,
                         }
-                    }
+                    } else if let Some(win_size) = self.config.window_size {
+                        window.len() >= win_size
+                    } else {
+                        // No window configured: accumulate until end-of-stream.
+                        false
+                    };
 
-                    // Process window
-                    let window_vec: Vec<StreamRecord> = window.iter().cloned().collect();
-                    let result = operation(&window_vec)?;
-                    results.push(result);
+                    if boundary_reached {
+                        let result = operation(&window)?;
+                        results.push(result);
+                        window.clear();
+                        window_start = None;
+                    }
                 }
-                Err(_) => {
-                    // Timeout or channel closed
+                Err(RecvTimeoutError::Timeout) => {
+                    continue;
+                }
+                Err(RecvTimeoutError::Disconnected) => {
                     if !window.is_empty() {
-                        // Process final window
-                        let window_vec: Vec<StreamRecord> = window.iter().cloned().collect();
-                        let result = operation(&window_vec)?;
+                        let result = operation(&window)?;
                         results.push(result);
                     }
-
-                    // If channel is disconnected, exit
-                    // Check if the receiver is disconnected by seeing if all senders have been dropped
-                    if receiver.is_empty() {
-                        break;
-                    }
+                    break;
                 }
             }
         }
@@ -390,42 +474,7 @@ impl DataStream {
 
     /// Convert stream batch to DataFrame
     pub fn batch_to_dataframe(&self, batch: &[StreamRecord]) -> Result<DataFrame> {
-        let mut df = DataFrame::new();
-
-        if batch.is_empty() {
-            return Ok(df);
-        }
-
-        // Prepare columns
-        let mut columns: HashMap<String, Vec<String>> = HashMap::new();
-        for header in &self.headers {
-            columns.insert(header.clone(), Vec::with_capacity(batch.len()));
-        }
-
-        // Fill columns
-        for record in batch {
-            for header in &self.headers {
-                let value = record.fields.get(header).cloned().unwrap_or_default();
-                columns
-                    .get_mut(header)
-                    .ok_or_else(|| {
-                        Error::InvalidOperation(format!("column not found: {}", header))
-                    })?
-                    .push(value);
-            }
-        }
-
-        // Create DataFrame using add_column method
-        for header in &self.headers {
-            let column_data = columns
-                .get(header)
-                .ok_or_else(|| Error::InvalidOperation(format!("column not found: {}", header)))?
-                .clone();
-            let series = crate::series::Series::new(column_data, Some(header.clone()))?;
-            df.add_column(header.clone(), series)?;
-        }
-
-        Ok(df)
+        build_dataframe_from_batch(&self.headers, batch)
     }
 }
 
@@ -455,6 +504,60 @@ pub enum AggregationType {
     Max,
     /// Count of values
     Count,
+}
+
+/// Applies one record's contribution to a running aggregate state.
+///
+/// This is a free function (rather than a `&mut self` method) so it can be
+/// called from inside the closure passed to `DataStream::process`, which
+/// already holds a mutable borrow of `self.stream` for the duration of the
+/// call -- a method that needed `&mut self` (any field of it) could not be
+/// called from within that closure without conflicting with that borrow.
+fn apply_record_to_aggregates(
+    aggregators: &HashMap<String, AggregationType>,
+    current_values: &mut HashMap<String, f64>,
+    count: &mut usize,
+    record: &StreamRecord,
+) -> Result<()> {
+    for (column, agg_type) in aggregators {
+        let value_str = record
+            .fields
+            .get(column)
+            .ok_or_else(|| Error::Column(format!("Column '{}' not found in record", column)))?;
+
+        let value = value_str
+            .parse::<f64>()
+            .map_err(|_| Error::Cast(format!("Could not parse '{}' as number", value_str)))?;
+
+        let current = current_values.get_mut(column).ok_or_else(|| {
+            Error::InvalidOperation(format!("aggregation column not found: {}", column))
+        })?;
+
+        match agg_type {
+            AggregationType::Sum => {
+                *current += value;
+            }
+            AggregationType::Average => {
+                // Incremental average update
+                let old_count = *count as f64;
+                let new_count = (*count + 1) as f64;
+                *current = (*current * old_count + value) / new_count;
+            }
+            AggregationType::Min => {
+                *current = (*current).min(value);
+            }
+            AggregationType::Max => {
+                *current = (*current).max(value);
+            }
+            AggregationType::Count => {
+                *current += 1.0;
+            }
+        }
+    }
+
+    *count += 1;
+
+    Ok(())
 }
 
 impl StreamAggregator {
@@ -494,69 +597,36 @@ impl StreamAggregator {
         Ok(self)
     }
 
-    /// Process the stream and compute aggregates
+    /// Process the stream and compute aggregates.
+    ///
+    /// Aggregates are updated incrementally as each batch arrives from
+    /// `DataStream::process` -- this does **not** buffer the stream's
+    /// records in memory first; only the (typically small) running
+    /// aggregate state is held across batches.
     pub fn process(&mut self) -> Result<HashMap<String, f64>> {
-        // Collect all records from the stream first
-        let mut all_records = Vec::new();
+        let aggregators = self.aggregators.clone();
+        let mut current_values = self.current_values.clone();
+        let mut count = self.count;
+
         self.stream.process(
             |batch| {
                 for record in batch {
-                    all_records.push(record.clone());
+                    apply_record_to_aggregates(
+                        &aggregators,
+                        &mut current_values,
+                        &mut count,
+                        record,
+                    )?;
                 }
                 Ok(())
             },
             None,
         )?;
 
-        // Now process all records to update aggregates
-        for record in &all_records {
-            self.update_aggregates(record)?;
-        }
+        self.current_values = current_values;
+        self.count = count;
 
         Ok(self.current_values.clone())
-    }
-
-    /// Update aggregates with a new record
-    fn update_aggregates(&mut self, record: &StreamRecord) -> Result<()> {
-        for (column, agg_type) in &self.aggregators {
-            let value_str = record
-                .fields
-                .get(column)
-                .ok_or_else(|| Error::Column(format!("Column '{}' not found in record", column)))?;
-
-            let value = value_str
-                .parse::<f64>()
-                .map_err(|_| Error::Cast(format!("Could not parse '{}' as number", value_str)))?;
-
-            let current = self.current_values.get_mut(column).ok_or_else(|| {
-                Error::InvalidOperation(format!("aggregation column not found: {}", column))
-            })?;
-
-            match agg_type {
-                AggregationType::Sum => {
-                    *current += value;
-                }
-                AggregationType::Average => {
-                    // Incremental average update
-                    let old_count = self.count as f64;
-                    let new_count = (self.count + 1) as f64;
-                    *current = (*current * old_count + value) / new_count;
-                }
-                AggregationType::Min => {
-                    *current = (*current).min(value);
-                }
-                AggregationType::Max => {
-                    *current = (*current).max(value);
-                }
-                AggregationType::Count => {
-                    *current += 1.0;
-                }
-            }
-        }
-
-        self.count += 1;
-
-        Ok(())
     }
 
     /// Get current aggregate values
@@ -620,54 +690,62 @@ impl StreamProcessor {
         self
     }
 
-    /// Process the stream and transform data
+    /// Process the stream and transform data.
+    ///
+    /// Each batch is transformed and converted to a `DataFrame` as it
+    /// arrives from `DataStream::process`, rather than first collecting
+    /// every raw batch from the whole stream into memory and only then
+    /// transforming them.
     pub fn process(&mut self) -> Result<Vec<DataFrame>> {
-        // Collect all records from the stream first
-        let mut all_batches = Vec::new();
-        self.stream.process(
+        let headers = self.stream.headers.clone();
+        // Temporarily move the transformers/filter out of `self` so the
+        // closure below can borrow them without conflicting with
+        // `self.stream.process(...)`'s mutable borrow of `self.stream`.
+        // They are moved back into `self` after the call, regardless of
+        // outcome.
+        let transformers = std::mem::take(&mut self.transformers);
+        let filter = self.filter.take();
+        let mut results: Vec<DataFrame> = Vec::new();
+
+        let outcome = self.stream.process(
             |batch| {
-                all_batches.push(batch.to_vec());
+                let mut transformed_batch = Vec::with_capacity(batch.len());
+
+                for record in batch {
+                    // Apply filter if any
+                    if let Some(f) = &filter {
+                        if !f(record) {
+                            continue;
+                        }
+                    }
+
+                    // Apply transformations
+                    let mut new_fields = HashMap::with_capacity(record.fields.len());
+
+                    for (column, value) in &record.fields {
+                        if let Some(transformer) = transformers.get(column) {
+                            new_fields.insert(column.clone(), transformer(value)?);
+                        } else {
+                            new_fields.insert(column.clone(), value.clone());
+                        }
+                    }
+
+                    transformed_batch.push(StreamRecord {
+                        fields: new_fields,
+                        timestamp: record.timestamp,
+                    });
+                }
+
+                let df = build_dataframe_from_batch(&headers, &transformed_batch)?;
+                results.push(df);
                 Ok(())
             },
             None,
-        )?;
+        );
 
-        let mut results = Vec::new();
-
-        // Process each batch
-        for batch in all_batches {
-            let mut transformed_batch = Vec::new();
-
-            for record in &batch {
-                // Apply filter if any
-                if let Some(filter) = &self.filter {
-                    if !filter(record) {
-                        continue;
-                    }
-                }
-
-                // Apply transformations
-                let mut new_fields = HashMap::new();
-
-                for (column, value) in &record.fields {
-                    if let Some(transformer) = self.transformers.get(column) {
-                        let new_value = transformer(value)?;
-                        new_fields.insert(column.clone(), new_value);
-                    } else {
-                        new_fields.insert(column.clone(), value.clone());
-                    }
-                }
-
-                transformed_batch.push(StreamRecord {
-                    fields: new_fields,
-                    timestamp: record.timestamp,
-                });
-            }
-
-            // Convert transformed batch to DataFrame
-            let df = self.stream.batch_to_dataframe(&transformed_batch)?;
-            results.push(df);
-        }
+        self.transformers = transformers;
+        self.filter = filter;
+        outcome?;
 
         Ok(results)
     }
@@ -676,9 +754,15 @@ impl StreamProcessor {
 /// Stream connector for connecting to external data sources
 #[derive(Debug)]
 pub struct StreamConnector {
-    /// Stream configuration
-    config: StreamConfig,
-    /// Stream headers
+    /// The stream's declared schema, used by [`StreamConnector::send_fields`]
+    /// to validate incoming field names. Genuinely read (not just retained
+    /// for a hypothetical future use): without this check, a field sent
+    /// under a name that doesn't match any declared header would silently
+    /// vanish later, since [`DataStream::batch_to_dataframe`] builds each
+    /// `DataFrame` column by iterating over `headers` (not over whatever
+    /// keys a given record happens to carry) -- so a typo'd field name
+    /// would be dropped with no error anywhere, rather than surfacing at
+    /// the point the mistake was actually made.
     headers: Vec<String>,
     /// Data sender
     sender: Sender<StreamRecord>,
@@ -691,18 +775,13 @@ impl StreamConnector {
         let (sender, receiver) = bounded(config.buffer_size);
 
         let stream = DataStream {
-            config: config.clone(),
-            buffer: VecDeque::with_capacity(config.buffer_size),
+            config,
             headers: headers.clone(),
             sender: None,
             receiver: Some(receiver),
         };
 
-        let connector = StreamConnector {
-            config,
-            headers,
-            sender,
-        };
+        let connector = StreamConnector { headers, sender };
 
         (connector, stream)
     }
@@ -714,8 +793,26 @@ impl StreamConnector {
             .map_err(|_| Error::IoError("Failed to send record to stream".into()))
     }
 
-    /// Send a record from field values
+    /// Send a record from field values.
+    ///
+    /// Every key in `fields` must be one of this connector's declared
+    /// `headers`; see the field's doc comment for why this validation
+    /// matters. This does *not* require every declared header to be
+    /// present in `fields` -- a genuinely absent field is a separate,
+    /// pre-existing concern of the schema (`StreamRecord`'s field map has
+    /// no representation for "missing" narrower than the key being absent
+    /// at all) rather than something this connector-level check should
+    /// paper over.
     pub fn send_fields(&self, fields: HashMap<String, String>) -> Result<()> {
+        for key in fields.keys() {
+            if !self.headers.contains(key) {
+                return Err(Error::Column(format!(
+                    "field '{}' is not one of this stream's declared headers: {:?}",
+                    key, self.headers
+                )));
+            }
+        }
+
         let record = StreamRecord::new(fields);
         self.send(record)
     }
@@ -723,6 +820,30 @@ impl StreamConnector {
     /// Close the stream
     pub fn close(self) {
         // Sender is dropped, which closes the channel
+    }
+}
+
+/// Identifies one configured real-time metric by its user-given name and
+/// target column.
+///
+/// The public, user-facing key remains the combined `"{name}_{column}"`
+/// string (as returned by [`RealTimeAnalytics::get_metrics`]); this type
+/// exists so the background thread can recover the metric's *column*
+/// without parsing that combined string back apart via `split('_')` --
+/// which silently breaks for any name or column containing an underscore
+/// (e.g. name `"moving_avg"` + column `"value"` previously produced the
+/// combined key `"moving_avg_value"`, which `split('_')` then recovered as
+/// column `"avg_value"`, a column that does not exist, so the metric never
+/// updated again).
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct MetricKey {
+    name: String,
+    column: String,
+}
+
+impl MetricKey {
+    fn display_key(&self) -> String {
+        format!("{}_{}", self.name, self.column)
     }
 }
 
@@ -736,11 +857,14 @@ pub struct RealTimeAnalytics {
     /// Computing interval
     interval: Duration,
     /// Metrics to compute
-    metrics: HashMap<String, MetricType>,
+    metrics: HashMap<MetricKey, MetricType>,
     /// Current metric values
     current_values: Arc<Mutex<HashMap<String, f64>>>,
-    /// Stop signal
-    stop: Arc<Mutex<bool>>,
+    /// Stop signal for the background thread
+    stop: Arc<AtomicBool>,
+    /// Handle of the background processing thread, retained so it can
+    /// actually be joined (rather than leaked) on `stop()`/`Drop`.
+    thread_handle: Option<thread::JoinHandle<()>>,
 }
 
 /// Types of real-time metrics
@@ -754,8 +878,10 @@ pub enum MetricType {
     ExponentialMovingAverage(f64), // Alpha parameter
     /// Standard deviation
     StandardDeviation,
-    /// Percentile
-    Percentile(f64), // Percentile to compute (0.0-1.0)
+    /// Percentile, in the 0.0-1.0 convention (e.g. 0.9 for the 90th
+    /// percentile). Values outside that range are clamped in
+    /// `add_metric`.
+    Percentile(f64),
 }
 
 impl RealTimeAnalytics {
@@ -767,7 +893,8 @@ impl RealTimeAnalytics {
             interval,
             metrics: HashMap::new(),
             current_values: Arc::new(Mutex::new(HashMap::new())),
-            stop: Arc::new(Mutex::new(false)),
+            stop: Arc::new(AtomicBool::new(false)),
+            thread_handle: None,
         }
     }
 
@@ -782,15 +909,25 @@ impl RealTimeAnalytics {
             return Err(Error::Column(format!("Column '{}' does not exist", column)));
         }
 
-        let metric_key = format!("{}_{}", name, column);
-        self.metrics.insert(metric_key.clone(), metric_type);
+        // Unify on the 0.0-1.0 convention documented on `MetricType::Percentile`.
+        let metric_type = match metric_type {
+            MetricType::Percentile(p) => MetricType::Percentile(p.clamp(0.0, 1.0)),
+            other => other,
+        };
+
+        let key = MetricKey {
+            name: name.to_string(),
+            column: column.to_string(),
+        };
+        let display_key = key.display_key();
+        self.metrics.insert(key, metric_type);
 
         // Create a clone to avoid borrowing self in the closure
         let values_clone = self.current_values.clone();
         // Insert the initial value
         {
             let mut values = lock_safe!(values_clone, "stream metric values lock")?;
-            values.insert(metric_key, 0.0);
+            values.insert(display_key, 0.0);
         }
 
         Ok(self)
@@ -811,22 +948,22 @@ impl RealTimeAnalytics {
         let metrics = self.metrics.clone();
         let current_values = self.current_values.clone();
         let stop = self.stop.clone();
-        let headers = self.stream.headers.clone();
         let interval = self.interval;
 
         // Start background thread
-        thread::spawn(move || {
-            let mut window: VecDeque<StreamRecord> = VecDeque::with_capacity(window_size);
+        let handle = thread::spawn(move || {
+            let mut window: std::collections::VecDeque<StreamRecord> =
+                std::collections::VecDeque::with_capacity(window_size);
             let mut last_values: HashMap<String, f64> = HashMap::new();
+            // Per-metric EMA state, seeded from `None` (genuinely absent)
+            // rather than read back from `current_values` (which is
+            // pre-seeded with a `0.0` placeholder in `add_metric` for
+            // external readers, and so could never be told apart from "the
+            // previous EMA really was zero" -- biasing every metric's first
+            // emission toward zero).
+            let mut ema_state: HashMap<MetricKey, f64> = HashMap::new();
 
-            loop {
-                // Check if stopped
-                if let Ok(stop_guard) = lock_safe!(stop, "stream stop flag lock") {
-                    if *stop_guard {
-                        break;
-                    }
-                }
-
+            while !stop.load(Ordering::Acquire) {
                 // Process records
                 while let Ok(record) = receiver.try_recv() {
                     // Add to window
@@ -841,12 +978,8 @@ impl RealTimeAnalytics {
                     let mut new_values = HashMap::new();
 
                     for (metric_key, metric_type) in &metrics {
-                        let parts: Vec<&str> = metric_key.split('_').collect();
-                        if parts.len() < 2 {
-                            continue;
-                        }
-
-                        let column = parts[1..].join("_");
+                        let column = &metric_key.column;
+                        let display_key = metric_key.display_key();
 
                         // Collect values for this column
                         let values: Vec<f64> = window
@@ -854,7 +987,7 @@ impl RealTimeAnalytics {
                             .filter_map(|record| {
                                 record
                                     .fields
-                                    .get(&column)
+                                    .get(column)
                                     .and_then(|v| v.parse::<f64>().ok())
                             })
                             .collect();
@@ -873,7 +1006,7 @@ impl RealTimeAnalytics {
                                     let last = values[values.len() - 1];
                                     let prev = values[values.len() - 2];
                                     last - prev
-                                } else if let Some(&last_value) = last_values.get(&column) {
+                                } else if let Some(&last_value) = last_values.get(column) {
                                     values[0] - last_value
                                 } else {
                                     0.0
@@ -881,22 +1014,19 @@ impl RealTimeAnalytics {
                             }
                             MetricType::ExponentialMovingAverage(alpha) => {
                                 let last = values[values.len() - 1];
-                                if let Some(prev_ema) =
-                                    lock_safe!(current_values, "stream current values lock")
-                                        .ok()
-                                        .and_then(|v| v.get(metric_key).copied())
-                                {
-                                    alpha * last + (1.0 - alpha) * prev_ema
-                                } else {
-                                    last
-                                }
+                                let computed = match ema_state.get(metric_key) {
+                                    Some(&prev_ema) => alpha * last + (1.0 - alpha) * prev_ema,
+                                    None => last, // genuine cold start
+                                };
+                                ema_state.insert(metric_key.clone(), computed);
+                                computed
                             }
                             MetricType::StandardDeviation => {
                                 let mean = values.iter().sum::<f64>() / values.len() as f64;
                                 let variance =
                                     values.iter().map(|&v| (v - mean).powi(2)).sum::<f64>()
                                         / values.len() as f64;
-                                variance.sqrt()
+                                variance.max(0.0).sqrt()
                             }
                             MetricType::Percentile(p) => {
                                 let mut sorted = values.clone();
@@ -904,16 +1034,17 @@ impl RealTimeAnalytics {
                                     a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
                                 });
 
+                                let p = p.clamp(0.0, 1.0);
                                 let idx = (p * (sorted.len() - 1) as f64).round() as usize;
                                 sorted[idx]
                             }
                         };
 
-                        new_values.insert(metric_key.clone(), metric_value);
+                        new_values.insert(display_key, metric_value);
 
                         // Save last value for rate of change
                         if let Some(&last) = values.last() {
-                            last_values.insert(column, last);
+                            last_values.insert(column.clone(), last);
                         }
                     }
 
@@ -927,23 +1058,42 @@ impl RealTimeAnalytics {
                     }
                 }
 
-                // Wait for next interval
+                // Wait for next interval (or until stopped)
                 thread::sleep(interval);
             }
         });
 
+        self.thread_handle = Some(handle);
+
         Ok(self.current_values.clone())
     }
 
-    /// Stop background processing
-    pub fn stop(&self) -> Result<()> {
-        let mut stop = lock_safe!(self.stop, "stream stop flag lock")?;
-        *stop = true;
+    /// Stop background processing and wait for the background thread to
+    /// actually exit (bounded by roughly one `interval`), rather than only
+    /// flipping a flag and leaking the thread for the rest of the process's
+    /// lifetime.
+    pub fn stop(&mut self) -> Result<()> {
+        self.stop.store(true, Ordering::Release);
+        if let Some(handle) = self.thread_handle.take() {
+            let _ = handle.join();
+        }
         Ok(())
     }
 
     /// Get current metric values
     pub fn get_metrics(&self) -> Result<HashMap<String, f64>> {
         Ok(lock_safe!(self.current_values, "stream current values lock")?.clone())
+    }
+}
+
+impl Drop for RealTimeAnalytics {
+    fn drop(&mut self) {
+        // Mirror `stop()` so a caller that simply drops `RealTimeAnalytics`
+        // without calling `stop()` still doesn't leak the background
+        // thread.
+        self.stop.store(true, Ordering::Release);
+        if let Some(handle) = self.thread_handle.take() {
+            let _ = handle.join();
+        }
     }
 }

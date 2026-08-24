@@ -4,7 +4,7 @@ use pandrs::OptimizedDataFrame;
 use std::time::Instant;
 // Import to access all optimization modes
 use pandrs::column::string_column_impl::{
-    StringColumnOptimizationMode as OptMode, DEFAULT_OPTIMIZATION_MODE,
+    set_default_optimization_mode, StringColumnOptimizationMode as OptMode,
 };
 
 fn main() {
@@ -74,9 +74,7 @@ fn main() {
     // Legacy Mode
     {
         // Set to Legacy Mode
-        unsafe {
-            DEFAULT_OPTIMIZATION_MODE = OptMode::Legacy;
-        }
+        set_default_optimization_mode(OptMode::Legacy);
 
         let start = Instant::now();
         let mut df = OptimizedDataFrame::new();
@@ -108,9 +106,7 @@ fn main() {
     // Global Pool Mode
     {
         // Set to Global Pool Mode
-        unsafe {
-            DEFAULT_OPTIMIZATION_MODE = OptMode::GlobalPool;
-        }
+        set_default_optimization_mode(OptMode::GlobalPool);
 
         let start = Instant::now();
         let mut df = OptimizedDataFrame::new();
@@ -142,9 +138,7 @@ fn main() {
     // Categorical Mode
     {
         // Set to Categorical Mode
-        unsafe {
-            DEFAULT_OPTIMIZATION_MODE = OptMode::Categorical;
-        }
+        set_default_optimization_mode(OptMode::Categorical);
 
         let start = Instant::now();
         let mut df = OptimizedDataFrame::new();

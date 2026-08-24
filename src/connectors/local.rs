@@ -47,7 +47,7 @@ mod parquet_io {
         let mut fields = Vec::with_capacity(col_names.len());
         let mut arrays: Vec<Arc<dyn Array>> = Vec::with_capacity(col_names.len());
 
-        for name in &col_names {
+        for name in col_names {
             let str_values = df
                 .get_column_string_values(&name)
                 .map_err(|e| Error::ParquetError(format!("Column access error: {e}")))?;
@@ -187,10 +187,10 @@ mod parquet_io {
 
             for col_name in batch_df.column_names() {
                 let values = batch_df
-                    .get_column_string_values(&col_name)
+                    .get_column_string_values(col_name)
                     .map_err(|e| Error::ParquetError(format!("Column access error: {e}")))?;
-                let entry = col_data.entry(col_name.clone()).or_insert_with(|| {
-                    col_order.push(col_name.clone());
+                let entry = col_data.entry(col_name.to_string()).or_insert_with(|| {
+                    col_order.push(col_name.to_string());
                     Vec::new()
                 });
                 entry.extend(values);
@@ -212,6 +212,23 @@ mod parquet_io {
         }
         Ok(result_df)
     }
+}
+
+/// Lexically normalise `path` by resolving `.` and `..` components without
+/// touching the filesystem.  This is used as a fallback when the path does
+/// not yet exist and `canonicalize` would therefore fail.
+fn normalize_path(path: &Path) -> PathBuf {
+    let mut components: Vec<std::path::Component<'_>> = vec![];
+    for comp in path.components() {
+        match comp {
+            std::path::Component::ParentDir => {
+                components.pop();
+            }
+            std::path::Component::CurDir => {}
+            c => components.push(c),
+        }
+    }
+    components.iter().collect()
 }
 
 /// A connector that stores objects on the local filesystem.
@@ -236,16 +253,52 @@ impl LocalConnector {
         }
     }
 
-    /// Resolve the filesystem path for `bucket/key`.
+    /// Resolve the filesystem path for `bucket/key`, rejecting path-traversal attempts.
     fn resolve(&self, bucket: &str, key: &str) -> Result<PathBuf> {
-        let path = self.base_path.join(bucket).join(key);
-        // Guard against path-traversal attacks
+        // Step 1: Compute canonical base; fall back to lexical normalisation when the
+        // directory does not exist yet (i.e. `canonicalize` would fail).
         let canonical_base = self
             .base_path
             .canonicalize()
-            .unwrap_or_else(|_| self.base_path.clone());
-        // We only validate when the path already exists; for new files we accept as-is.
-        Ok(path)
+            .unwrap_or_else(|_| normalize_path(&self.base_path));
+
+        // Step 2: Build the raw candidate path.
+        let path = self.base_path.join(bucket).join(key);
+
+        // Step 3 / 4: Validate containment.
+        if path.exists() {
+            // Path exists on disk — use OS-level canonicalization to resolve symlinks.
+            let canonical_path = path
+                .canonicalize()
+                .map_err(|e| Error::IoError(e.to_string()))?;
+            if !canonical_path.starts_with(&canonical_base) {
+                return Err(Error::InvalidInput(format!(
+                    "path traversal detected: '{}' escapes base directory",
+                    path.display()
+                )));
+            }
+            Ok(canonical_path)
+        } else {
+            // Path does not exist yet (new file).
+            //
+            // Strategy: resolve any symlinks in the *base* via canonicalize() and
+            // then build the candidate path relative to that resolved base.  Both
+            // values are then in the same absolute form, so starts_with() is
+            // reliable even on macOS where /var is a symlink to /private/var.
+            let resolved_base = self
+                .base_path
+                .canonicalize()
+                .unwrap_or_else(|_| normalize_path(&self.base_path));
+            // Re-build the candidate from the resolved base to ensure a common prefix.
+            let candidate = normalize_path(&resolved_base.join(bucket).join(key));
+            if !candidate.starts_with(&resolved_base) {
+                return Err(Error::InvalidInput(format!(
+                    "path traversal detected: '{}' escapes base directory",
+                    path.display()
+                )));
+            }
+            Ok(candidate)
+        }
     }
 
     /// Ensure the parent directory of a path exists.
@@ -609,8 +662,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_object_metadata() {
-        use std::io::Write;
-
         let (connector, dir) = temp_connector();
         connector.create_bucket("meta").await.expect("create");
 
@@ -630,5 +681,58 @@ mod tests {
 
         assert_eq!(meta.size, content.len() as u64);
         assert!(meta.last_modified.is_some());
+    }
+
+    #[test]
+    fn test_resolve_within_base_succeeds() {
+        let base = std::env::temp_dir().join("pandrs_test_resolve_within");
+        std::fs::create_dir_all(&base).expect("create base");
+        let connector = LocalConnector::new(&base);
+        // Non-existent path within base should resolve without error
+        let result = connector.resolve("bucket", "subdir/file.txt");
+        assert!(result.is_ok(), "expected Ok, got {:?}", result);
+        let resolved = result.expect("resolve succeeded");
+        // The canonical base may differ from base (symlinks on macOS /var vs /private/var)
+        let canonical_base = base
+            .canonicalize()
+            .unwrap_or_else(|_| normalize_path(&base));
+        assert!(
+            resolved.starts_with(&canonical_base),
+            "resolved path should be under base"
+        );
+    }
+
+    #[test]
+    fn test_resolve_parent_traversal_rejected() {
+        let base = std::env::temp_dir().join("pandrs_test_resolve_traversal");
+        std::fs::create_dir_all(&base).expect("create base");
+        let connector = LocalConnector::new(&base);
+        // "../escape" should be rejected
+        let result = connector.resolve("..", "escape.txt");
+        assert!(result.is_err(), "expected Err for traversal, got Ok");
+    }
+
+    #[test]
+    fn test_resolve_absolute_outside_base_rejected() {
+        let base = std::env::temp_dir().join("pandrs_test_resolve_abs");
+        std::fs::create_dir_all(&base).expect("create base");
+        let connector = LocalConnector::new(&base);
+        // A path that normalizes outside the base directory
+        let result = connector.resolve("good_bucket", "../../outside.txt");
+        assert!(result.is_err(), "expected Err for outside path, got Ok");
+    }
+
+    #[test]
+    fn test_resolve_dot_subdir_succeeds() {
+        let base = std::env::temp_dir().join("pandrs_test_resolve_dot");
+        std::fs::create_dir_all(&base).expect("create base");
+        let connector = LocalConnector::new(&base);
+        // "./subdir/file" relative path should resolve successfully
+        let result = connector.resolve("bucket", "subdir/file.txt");
+        assert!(
+            result.is_ok(),
+            "expected Ok for valid relative path, got {:?}",
+            result
+        );
     }
 }

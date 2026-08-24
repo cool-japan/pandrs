@@ -3,7 +3,6 @@
 //! This module provides statistical functionality for data analysis.
 //! It supports ANOVA, t-tests, chi-square tests, Mann-Whitney U tests, and more.
 
-use crate::column::{Column, ColumnTrait};
 use crate::error::Result;
 use crate::optimized::split_dataframe::OptimizedDataFrame;
 use crate::stats::{
@@ -584,7 +583,6 @@ impl OptimizedDataFrame {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use crate::column::{Column, Float64Column, StringColumn};
     use crate::optimized::split_dataframe::OptimizedDataFrame;
 

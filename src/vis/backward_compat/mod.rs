@@ -8,7 +8,7 @@ pub mod direct_plot;
 pub mod plotters_ext;
 
 use crate::error::Result;
-use crate::vis::config::{OutputFormat, PlotConfig, PlotType};
+use crate::vis::config::PlotConfig;
 use crate::DataFrame;
 use crate::Series;
 use std::path::Path;

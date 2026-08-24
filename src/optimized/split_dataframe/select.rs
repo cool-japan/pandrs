@@ -1,11 +1,24 @@
 //! Selection functionality for OptimizedDataFrame
+//!
+//! This module owns the *canonical* row-materialization routine
+//! (`take_rows`). Every row-selecting operation of the optimized DataFrame
+//! (filter, head/tail, sample, sort, group extraction, index lookup, ...)
+//! delegates to it so that NULL semantics, column order and index labels are
+//! handled in exactly one place.
 
 use std::collections::HashSet;
 
-use crate::column::Column;
+use crate::column::{BooleanColumn, Column, Float64Column, Int64Column, StringColumn};
 use crate::core::error::OptionExt;
 use crate::error::Result;
+use crate::index::DataFrameIndex;
 use crate::optimized::split_dataframe::core::OptimizedDataFrame;
+
+/// Amount of work (selected rows x columns) above which column materialization
+/// is spread over the rayon thread pool. Below the threshold the serial path is
+/// faster because it avoids the task-scheduling overhead (group-by extraction
+/// issues one call per group, so small selections are the common case).
+const PARALLEL_TAKE_THRESHOLD: usize = 8192;
 
 impl OptimizedDataFrame {
     /// Select columns to create a new DataFrame
@@ -47,6 +60,9 @@ impl OptimizedDataFrame {
 
     /// Select rows by index
     ///
+    /// NULL values, column order and index labels of the source frame are
+    /// preserved. Positions outside the frame are ignored.
+    ///
     /// # Arguments
     /// * `indices` - Array of row indices to select
     ///
@@ -55,75 +71,13 @@ impl OptimizedDataFrame {
     ///
     /// Note: A method with the same name exists in sort.rs but that one is private
     pub fn select_rows_by_indices(&self, indices: &[usize]) -> Result<Self> {
-        let mut df = Self::new();
+        let mut df = take_rows(self, indices)?;
 
-        // Process each column
-        for (col_idx, col_name) in self.column_names.iter().enumerate() {
-            let column = &self.columns[col_idx];
-
-            // Extract data from selected rows
-            let new_column = match column {
-                Column::Int64(col) => {
-                    let values: Vec<i64> = indices
-                        .iter()
-                        .filter_map(|&idx| {
-                            if idx < self.row_count {
-                                col.get(idx).ok().flatten()
-                            } else {
-                                None
-                            }
-                        })
-                        .collect();
-                    Column::Int64(crate::column::Int64Column::new(values))
-                }
-                Column::Float64(col) => {
-                    let values: Vec<f64> = indices
-                        .iter()
-                        .filter_map(|&idx| {
-                            if idx < self.row_count {
-                                col.get(idx).ok().flatten()
-                            } else {
-                                None
-                            }
-                        })
-                        .collect();
-                    Column::Float64(crate::column::Float64Column::new(values))
-                }
-                Column::String(col) => {
-                    let values: Vec<String> = indices
-                        .iter()
-                        .filter_map(|&idx| {
-                            if idx < self.row_count {
-                                col.get(idx).ok().flatten().map(|s| s.to_string())
-                            } else {
-                                None
-                            }
-                        })
-                        .collect();
-                    Column::String(crate::column::StringColumn::new(values))
-                }
-                Column::Boolean(col) => {
-                    let values: Vec<bool> = indices
-                        .iter()
-                        .filter_map(|&idx| {
-                            if idx < self.row_count {
-                                col.get(idx).ok().flatten()
-                            } else {
-                                None
-                            }
-                        })
-                        .collect();
-                    Column::Boolean(crate::column::BooleanColumn::new(values))
-                }
-            };
-
-            df.add_column(col_name.clone(), new_column)?;
+        // Frames without an index keep the historical behaviour of this entry
+        // point: a fresh sequential index is attached to the result.
+        if df.index.is_none() {
+            df.set_default_index()?;
         }
-
-        // Create new index
-        // NOTE: We could extract corresponding values from the existing index,
-        // but for simplicity, we create a new sequential index here
-        df.set_default_index()?;
 
         Ok(df)
     }
@@ -172,113 +126,217 @@ impl OptimizedDataFrame {
     }
 }
 
-/// Implementation for selecting rows based on row indices (used by other modules)
-pub(crate) fn select_rows_by_indices_impl(
-    df: &OptimizedDataFrame,
-    indices: &[usize],
-) -> Result<OptimizedDataFrame> {
-    // Return an empty DataFrame if there are no rows
-    if indices.is_empty() {
-        return Ok(OptimizedDataFrame::new());
-    }
+/// Materialize the given rows of `df` into a new DataFrame.
+///
+/// This is the single implementation shared by every row-selecting operation.
+/// Its guarantees are:
+///
+/// * **NULL preservation** - a missing value stays missing. Values are never
+///   replaced by `0`/`0.0`/`""`/`false`; a null mask is rebuilt for the result.
+/// * **Deterministic schema** - columns are emitted in `df.column_names()`
+///   order (never in `HashMap` iteration order).
+/// * **Index integrity** - the labels of the selected rows are re-selected from
+///   the source index (both `Simple` and `Multi` indexes) instead of cloning the
+///   full-length index onto a shorter frame.
+/// * **Alignment** - positions outside the frame are dropped once, up front, so
+///   every column and the index agree on the very same row set.
+///
+/// Limitation: `Index<String>` cannot represent duplicate labels, so a selection
+/// that repeats rows (e.g. sampling with replacement) falls back to a positional
+/// index rather than failing the whole operation.
+pub(crate) fn take_rows(df: &OptimizedDataFrame, indices: &[usize]) -> Result<OptimizedDataFrame> {
+    // Drop out-of-range positions once so that every column and the index are
+    // built from the same set of rows.
+    let positions: Vec<usize> = if indices.iter().all(|&i| i < df.row_count) {
+        indices.to_vec()
+    } else {
+        indices
+            .iter()
+            .copied()
+            .filter(|&i| i < df.row_count)
+            .collect()
+    };
 
     let mut result = OptimizedDataFrame::new();
 
-    // Process each column
-    for (name, &column_idx) in &df.column_indices {
-        let column = &df.columns[column_idx];
+    // Materialize the columns in declared order (deterministic).
+    let resolve = |name: &String| -> Result<Column> {
+        let column_idx = *df
+            .column_indices
+            .get(name)
+            .ok_or_else(|| crate::error::Error::ColumnNotFound(name.clone()))?;
+        let column = df
+            .columns
+            .get(column_idx)
+            .ok_or_else(|| crate::error::Error::ColumnNotFound(name.clone()))?;
+        Ok(take_column(column, &positions))
+    };
 
-        // Get data from row indices based on column type
-        let selected_col = match column {
-            Column::Int64(col) => {
-                let selected_data: Vec<i64> = indices
-                    .iter()
-                    .map(|&idx| col.get(idx).ok().flatten().unwrap_or_default())
-                    .collect();
-                Column::Int64(crate::column::Int64Column::new(selected_data))
-            }
-            Column::Float64(col) => {
-                let selected_data: Vec<f64> = indices
-                    .iter()
-                    .map(|&idx| col.get(idx).ok().flatten().unwrap_or_default())
-                    .collect();
-                Column::Float64(crate::column::Float64Column::new(selected_data))
-            }
-            Column::String(col) => {
-                let selected_data: Vec<String> = indices
-                    .iter()
-                    .map(|&idx| {
-                        col.get(idx)
-                            .ok()
-                            .flatten()
-                            .map(|s| s.to_string())
-                            .unwrap_or_default()
-                    })
-                    .collect();
-                Column::String(crate::column::StringColumn::new(selected_data))
-            }
-            Column::Boolean(col) => {
-                let selected_data: Vec<bool> = indices
-                    .iter()
-                    .map(|&idx| col.get(idx).ok().flatten().unwrap_or_default())
-                    .collect();
-                Column::Boolean(crate::column::BooleanColumn::new(selected_data))
-            }
-        };
+    let workload = positions.len().saturating_mul(df.column_names.len());
+    let taken: Vec<Column> = if workload >= PARALLEL_TAKE_THRESHOLD {
+        use rayon::prelude::*;
+        df.column_names
+            .par_iter()
+            .map(&resolve)
+            .collect::<Result<Vec<Column>>>()?
+    } else {
+        df.column_names
+            .iter()
+            .map(&resolve)
+            .collect::<Result<Vec<Column>>>()?
+    };
 
-        result.add_column(name.clone(), selected_col)?;
+    for (name, column) in df.column_names.iter().zip(taken) {
+        result.add_column(name.clone(), column)?;
     }
 
-    // Get index and select appropriate index values for selected rows
-    if let Some(ref idx) = df.get_index() {
-        // Process index selection based on the selected row indices
-        match idx {
-            crate::index::DataFrameIndex::Simple(simple_idx) => {
-                // Create new index with values corresponding to selected rows
-                let selected_index_values: Vec<String> = indices
-                    .iter()
-                    .filter_map(|&row_idx| {
-                        if row_idx < simple_idx.len() {
-                            simple_idx.get_value(row_idx).cloned()
-                        } else {
-                            None
-                        }
-                    })
-                    .collect();
+    // Re-select the index labels of the selected rows. Frames without columns
+    // have no row count to align an index against, so they keep no index.
+    if !df.column_names.is_empty() {
+        if let Some(ref index) = df.index {
+            match index {
+                DataFrameIndex::Simple(simple_idx) => {
+                    let values: Vec<String> = positions
+                        .iter()
+                        .map(|&pos| {
+                            simple_idx
+                                .get_value(pos)
+                                .cloned()
+                                .unwrap_or_else(|| pos.to_string())
+                        })
+                        .collect();
 
-                // Create new simple index from selected values
-                let new_index = crate::index::Index::new(selected_index_values)?;
-                result.set_index(crate::index::DataFrameIndex::Simple(new_index))?;
-            }
-            crate::index::DataFrameIndex::Multi(multi_idx) => {
-                // For multi-index, extract the corresponding rows
-                let selected_multi_values: Vec<Vec<String>> = indices
-                    .iter()
-                    .filter_map(|&row_idx| {
-                        if row_idx < multi_idx.len() {
-                            multi_idx.get_tuple(row_idx)
-                        } else {
-                            None
-                        }
-                    })
-                    .collect();
+                    match crate::index::Index::with_name(values, simple_idx.name().cloned()) {
+                        Ok(new_index) => result.set_index_from_simple_index(new_index)?,
+                        // Duplicate labels (repeated positions) cannot be stored
+                        // in an Index<String>; fall back to positional labels.
+                        Err(_) => result.set_default_index()?,
+                    }
+                }
+                DataFrameIndex::Multi(multi_idx) => {
+                    let tuples: Option<Vec<Vec<String>>> = positions
+                        .iter()
+                        .map(|&pos| multi_idx.get_tuple(pos))
+                        .collect();
 
-                // Create new multi-index from selected rows
-                if !selected_multi_values.is_empty() {
-                    let level_names: Vec<Option<String>> =
-                        multi_idx.names().iter().cloned().collect();
-                    let new_multi_index = crate::index::MultiIndex::from_tuples(
-                        selected_multi_values,
-                        Some(level_names),
-                    )?;
-                    result.set_index(crate::index::DataFrameIndex::Multi(new_multi_index))?;
-                } else {
-                    // Fallback to default index if no valid rows selected
-                    result.set_default_index()?;
+                    match tuples {
+                        Some(tuples) if !tuples.is_empty() => {
+                            let level_names: Vec<Option<String>> = multi_idx.names().to_vec();
+                            match crate::index::MultiIndex::from_tuples(tuples, Some(level_names)) {
+                                Ok(new_index) => result.set_index_from_multi_index(new_index)?,
+                                Err(_) => result.set_default_index()?,
+                            }
+                        }
+                        // Empty selection or an index shorter than the frame:
+                        // no tuple can be reconstructed, use positional labels.
+                        _ => result.set_default_index()?,
+                    }
                 }
             }
         }
     }
 
     Ok(result)
+}
+
+/// Materialize one column for the given (already validated) row positions,
+/// carrying the NULL mask over to the new column.
+pub(crate) fn take_column(column: &Column, positions: &[usize]) -> Column {
+    match column {
+        Column::Int64(col) => {
+            let mut values = Vec::with_capacity(positions.len());
+            let mut nulls = Vec::with_capacity(positions.len());
+            for &pos in positions {
+                match col.get(pos) {
+                    Ok(Some(value)) => {
+                        values.push(value);
+                        nulls.push(false);
+                    }
+                    _ => {
+                        values.push(0);
+                        nulls.push(true);
+                    }
+                }
+            }
+            let mut new_col = Int64Column::with_nulls(values, nulls);
+            if let Some(name) = col.get_name() {
+                new_col.set_name(name.to_string());
+            }
+            Column::Int64(new_col)
+        }
+        Column::Float64(col) => {
+            let mut values = Vec::with_capacity(positions.len());
+            let mut nulls = Vec::with_capacity(positions.len());
+            for &pos in positions {
+                match col.get(pos) {
+                    Ok(Some(value)) => {
+                        values.push(value);
+                        nulls.push(false);
+                    }
+                    _ => {
+                        values.push(0.0);
+                        nulls.push(true);
+                    }
+                }
+            }
+            let mut new_col = Float64Column::with_nulls(values, nulls);
+            if let Some(name) = col.get_name() {
+                new_col.set_name(name.to_string());
+            }
+            Column::Float64(new_col)
+        }
+        Column::String(col) => {
+            let mut values = Vec::with_capacity(positions.len());
+            let mut nulls = Vec::with_capacity(positions.len());
+            for &pos in positions {
+                match col.get(pos) {
+                    Ok(Some(value)) => {
+                        values.push(value.to_string());
+                        nulls.push(false);
+                    }
+                    _ => {
+                        values.push(String::new());
+                        nulls.push(true);
+                    }
+                }
+            }
+            let mut new_col = StringColumn::with_nulls(values, nulls);
+            if let Some(name) = col.get_name() {
+                new_col.set_name(name.to_string());
+            }
+            Column::String(new_col)
+        }
+        Column::Boolean(col) => {
+            let mut values = Vec::with_capacity(positions.len());
+            let mut nulls = Vec::with_capacity(positions.len());
+            for &pos in positions {
+                match col.get(pos) {
+                    Ok(Some(value)) => {
+                        values.push(value);
+                        nulls.push(false);
+                    }
+                    _ => {
+                        values.push(false);
+                        nulls.push(true);
+                    }
+                }
+            }
+            let mut new_col = BooleanColumn::with_nulls(values, nulls);
+            if let Some(name) = col.get_name() {
+                new_col.set_name(name.to_string());
+            }
+            Column::Boolean(new_col)
+        }
+    }
+}
+
+/// Implementation for selecting rows based on row indices (used by other modules)
+///
+/// Delegates to `take_rows`; an empty selection yields a frame with the same
+/// schema (all columns, zero rows) instead of a frame without columns.
+pub(crate) fn select_rows_by_indices_impl(
+    df: &OptimizedDataFrame,
+    indices: &[usize],
+) -> Result<OptimizedDataFrame> {
+    take_rows(df, indices)
 }

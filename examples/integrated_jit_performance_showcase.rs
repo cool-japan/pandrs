@@ -410,10 +410,10 @@ fn benchmark_memory_efficiency(jit_context: &JitWindowContext) -> Result<()> {
     );
     println!("     JIT Executions: {}", stats.jit_executions);
     println!("     Native Executions: {}", stats.native_executions);
-    println!(
-        "     Average JIT Speedup: {:.2}x",
-        stats.average_speedup_ratio()
-    );
+    match stats.average_speedup_ratio() {
+        Some(ratio) => println!("     Average JIT Speedup: {ratio:.2}x"),
+        None => println!("     Average JIT Speedup: n/a (no JIT executions measured)"),
+    }
 
     println!("   Cache Management:");
     println!(
@@ -453,10 +453,11 @@ fn display_final_statistics(jit_context: &JitWindowContext) -> Result<()> {
         "│ Cache Hit Ratio                  │ {:23.1}% │",
         stats.cache_hit_ratio * 100.0
     );
-    println!(
-        "│ Average Speedup                  │ {:23.2}x │",
-        stats.average_speedup_ratio()
-    );
+    let speedup_display = match stats.average_speedup_ratio() {
+        Some(ratio) => format!("{ratio:.2}x"),
+        None => "n/a".to_string(),
+    };
+    println!("│ Average Speedup                  │ {speedup_display:>24} │");
     println!(
         "│ Functions Cached                 │ {:25} │",
         jit_context.compiled_functions_count().unwrap()

@@ -1,7 +1,6 @@
 #![allow(clippy::result_large_err)]
 use pandrs::series::{CategoricalOrder, NASeries, StringCategorical};
 use pandrs::{DataFrame, Series, NA};
-use std::path::Path;
 
 // Common test utilities
 mod common;

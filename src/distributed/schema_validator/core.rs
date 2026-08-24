@@ -5,10 +5,9 @@
 
 use arrow::datatypes::SchemaRef;
 use std::collections::HashMap;
-use std::sync::Arc;
 
 use crate::distributed::expr::ExprSchema;
-use crate::error::{Error, Result};
+use crate::error::Result;
 
 /// Schema validator for execution plans
 pub struct SchemaValidator {

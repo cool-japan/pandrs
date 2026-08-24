@@ -1,7 +1,5 @@
 use std::fmt::Debug;
 
-use crate::core::error::{Error, Result};
-
 /// Optimized DataFrame implementation
 #[derive(Debug, Clone)]
 pub struct OptimizedDataFrame {

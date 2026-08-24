@@ -1,7 +1,6 @@
 //! Function application capabilities for OptimizedDataFrame
 
 use rayon::prelude::*;
-use std::collections::HashMap;
 
 use super::core::{ColumnView, OptimizedDataFrame};
 use crate::column::{BooleanColumn, Column, ColumnTrait, Float64Column, Int64Column, StringColumn};

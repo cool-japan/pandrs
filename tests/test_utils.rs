@@ -78,7 +78,7 @@ impl CategoricalExt for DataFrame {
         // Copy all columns except the one we're converting
         for col in result.column_names() {
             if col != column_name {
-                let series = result.get_column_string_values(&col)?;
+                let series = result.get_column_string_values(col)?;
                 new_df.add_column(
                     col.to_string(),
                     pandrs::series::Series::new(series, Some(col.to_string()))?,
@@ -134,7 +134,7 @@ impl CategoricalExt for DataFrame {
         // Copy all columns except the one we're converting
         for col in self.column_names() {
             if col != column_name {
-                let series = self.get_column_string_values(&col)?;
+                let series = self.get_column_string_values(col)?;
                 new_df.add_column(
                     col.to_string(),
                     pandrs::series::Series::new(series, Some(col.to_string()))?,
@@ -245,7 +245,7 @@ impl CategoricalExt for DataFrame {
         // Copy all columns except the one we're replacing
         for col in self.column_names() {
             if col != column_name {
-                let col_values = self.get_column_string_values(&col)?;
+                let col_values = self.get_column_string_values(col)?;
                 new_df.add_column(
                     col.to_string(),
                     pandrs::series::Series::new(col_values, Some(col.to_string()))?,
@@ -298,7 +298,7 @@ impl CategoricalExt for DataFrame {
         // Copy all columns except the one we're replacing
         for col in self.column_names() {
             if col != column_name {
-                let col_values = self.get_column_string_values(&col)?;
+                let col_values = self.get_column_string_values(col)?;
                 new_df.add_column(
                     col.to_string(),
                     pandrs::series::Series::new(col_values, Some(col.to_string()))?,
@@ -359,7 +359,7 @@ impl CategoricalExt for DataFrame {
         // Copy all columns except the one we're replacing
         for col in self.column_names() {
             if col != column_name {
-                let col_values = self.get_column_string_values(&col)?;
+                let col_values = self.get_column_string_values(col)?;
                 new_df.add_column(
                     col.to_string(),
                     pandrs::series::Series::new(col_values, Some(col.to_string()))?,

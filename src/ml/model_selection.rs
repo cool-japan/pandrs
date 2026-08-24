@@ -5,14 +5,199 @@
 
 use crate::core::error::{Error, Result};
 use crate::dataframe::DataFrame;
-use crate::ml::models::{train_test_split, ModelMetrics};
-use crate::ml::sklearn_compat::{SklearnEstimator, SklearnPredictor, SklearnTransformer};
-use scirs2_core::random::{Rng, RngExt};
+use crate::ml::sklearn_compat::SklearnPredictor;
+use scirs2_core::random::{Random, StdRng};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::fmt;
 use std::sync::Arc;
 use std::time::Instant;
+
+/// Build a seeded RNG for reproducible-when-requested randomness.
+///
+/// When `random_state` is `Some(seed)` the returned generator is fully deterministic across
+/// runs. When it is `None` a fresh generator is still returned (seeded from OS entropy via
+/// [`scirs2_core::random::random`]) so callers always get a *real* shuffle/sample rather than a
+/// silently-skipped one — only reproducibility, not randomness itself, depends on the seed.
+fn seeded_or_entropy_rng(random_state: Option<u64>) -> StdRng {
+    let seed = random_state.unwrap_or_else(|| scirs2_core::random::random::<u64>());
+    Random::seed(seed)
+}
+
+/// Resolve the target column name in a `y` DataFrame used for cross-validation scoring.
+///
+/// Prefers a column literally named `"target"`; otherwise falls back to the first (typically
+/// only) column. This is shared by [`GridSearchCV`] and [`RandomizedSearchCV`] so both resolve
+/// the target column identically instead of one hardcoding `"target"`.
+fn resolve_target_column(y: &DataFrame) -> Result<String> {
+    if y.has_column("target") {
+        return Ok("target".to_string());
+    }
+    y.column_names()
+        .into_iter()
+        .next()
+        .cloned()
+        .ok_or_else(|| Error::InvalidInput("y DataFrame has no columns".into()))
+}
+
+/// Compute the `(train_indices, test_indices)` pair for one fold of a cross-validation split.
+///
+/// Shared by [`GridSearchCV`] and [`RandomizedSearchCV`] so `shuffle`/`random_state` are honored
+/// identically everywhere, and so `StratifiedKFold`/`TimeSeriesSplit` each have exactly one
+/// correct implementation instead of being duplicated (and drifting) per caller.
+fn compute_cv_fold(
+    cv: &CrossValidationStrategy,
+    n_samples: usize,
+    y: &DataFrame,
+    fold: usize,
+    n_splits: usize,
+) -> Result<(Vec<usize>, Vec<usize>)> {
+    if n_splits == 0 {
+        return Err(Error::InvalidValue(
+            "Cross-validation requires n_splits >= 1".into(),
+        ));
+    }
+
+    match cv {
+        CrossValidationStrategy::KFold {
+            shuffle,
+            random_state,
+            ..
+        } => {
+            if n_splits > n_samples {
+                return Err(Error::InvalidValue(format!(
+                    "Cannot have n_splits={} greater than n_samples={}",
+                    n_splits, n_samples
+                )));
+            }
+            let mut order: Vec<usize> = (0..n_samples).collect();
+            if *shuffle {
+                let mut rng = seeded_or_entropy_rng(*random_state);
+                rng.shuffle(&mut order);
+            }
+            let fold_size = n_samples / n_splits;
+            let test_start = fold * fold_size;
+            let test_end = if fold == n_splits - 1 {
+                n_samples
+            } else {
+                test_start + fold_size
+            };
+            let test_indices: Vec<usize> = order[test_start..test_end].to_vec();
+            let train_indices: Vec<usize> = order[..test_start]
+                .iter()
+                .chain(order[test_end..].iter())
+                .copied()
+                .collect();
+            Ok((train_indices, test_indices))
+        }
+        CrossValidationStrategy::StratifiedKFold {
+            shuffle,
+            random_state,
+            ..
+        } => {
+            if n_splits > n_samples {
+                return Err(Error::InvalidValue(format!(
+                    "Cannot have n_splits={} greater than n_samples={}",
+                    n_splits, n_samples
+                )));
+            }
+            let target_name = resolve_target_column(y)?;
+            let labels = y.get_column::<f64>(&target_name)?.as_f64()?;
+            if labels.len() != n_samples {
+                return Err(Error::DimensionMismatch(format!(
+                    "y has {} rows but x has {} rows",
+                    labels.len(),
+                    n_samples
+                )));
+            }
+
+            // Group sample indices by class label (rounded to the nearest integer), preserving
+            // first-seen class order for determinism.
+            let mut class_order: Vec<i64> = Vec::new();
+            let mut groups: HashMap<i64, Vec<usize>> = HashMap::new();
+            for (i, &v) in labels.iter().enumerate() {
+                let class = v.round() as i64;
+                groups.entry(class).or_insert_with(Vec::new).push(i);
+                if !class_order.contains(&class) {
+                    class_order.push(class);
+                }
+            }
+
+            // Optionally shuffle *within* each class before the round-robin fold assignment so
+            // repeated fits with `shuffle: false` stay perfectly stable while `shuffle: true`
+            // still stratifies (equal per-class proportions in every fold) rather than always
+            // handing fold 0 the first-seen rows of each class.
+            if *shuffle {
+                let mut rng = seeded_or_entropy_rng(*random_state);
+                for class in &class_order {
+                    if let Some(members) = groups.get_mut(class) {
+                        rng.shuffle(members);
+                    }
+                }
+            }
+
+            // Round-robin: the i-th member of each class goes to fold (i % n_splits). This keeps
+            // each fold's class proportions close to the overall proportions (true
+            // stratification), unlike plain contiguous slicing which can hand an entire fold a
+            // single class when the input is class-sorted.
+            let mut test_indices = Vec::new();
+            for class in &class_order {
+                if let Some(members) = groups.get(class) {
+                    for (i, &idx) in members.iter().enumerate() {
+                        if i % n_splits == fold {
+                            test_indices.push(idx);
+                        }
+                    }
+                }
+            }
+            test_indices.sort_unstable();
+            let test_set: std::collections::HashSet<usize> = test_indices.iter().copied().collect();
+            let train_indices: Vec<usize> =
+                (0..n_samples).filter(|i| !test_set.contains(i)).collect();
+            Ok((train_indices, test_indices))
+        }
+        CrossValidationStrategy::LeaveOneOut => {
+            if fold >= n_samples {
+                return Err(Error::InvalidValue(
+                    "fold index out of range for LeaveOneOut".into(),
+                ));
+            }
+            let test_indices = vec![fold];
+            let train_indices: Vec<usize> = (0..n_samples).filter(|&i| i != fold).collect();
+            Ok((train_indices, test_indices))
+        }
+        CrossValidationStrategy::TimeSeriesSplit { max_train_size, .. } => {
+            // Expanding-window split: fold `k`'s test block is the (k+1)-th contiguous chunk of
+            // the series; train is *strictly* everything before it (never future rows), so there
+            // is no look-ahead leakage. `max_train_size`, when set, caps training to the most
+            // recent rows instead of always using the full history.
+            if n_splits == 0 || n_splits >= n_samples {
+                return Err(Error::InvalidValue(format!(
+                    "TimeSeriesSplit requires 0 < n_splits < n_samples (got n_splits={}, n_samples={})",
+                    n_splits, n_samples
+                )));
+            }
+            let test_fold_size = n_samples / (n_splits + 1);
+            if test_fold_size == 0 {
+                return Err(Error::InvalidValue(
+                    "TimeSeriesSplit: not enough samples for the requested n_splits".into(),
+                ));
+            }
+            let test_start = test_fold_size * (fold + 1);
+            let test_end = if fold == n_splits - 1 {
+                n_samples
+            } else {
+                test_fold_size * (fold + 2)
+            };
+            let train_start = match max_train_size {
+                Some(max) => test_start.saturating_sub(*max),
+                None => 0,
+            };
+            let train_indices: Vec<usize> = (train_start..test_start).collect();
+            let test_indices: Vec<usize> = (test_start..test_end).collect();
+            Ok((train_indices, test_indices))
+        }
+    }
+}
 
 /// Cross-validation strategy
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -107,7 +292,15 @@ impl Scorer {
                     .sum();
 
                 Ok(if ss_tot == 0.0 {
-                    1.0
+                    // Constant target: mirror metrics/regression.rs's r2_score — a perfect
+                    // (zero-residual) prediction still scores 1.0, but a constant target with
+                    // ANY residual error scores 0.0 rather than being fabricated as a perfect
+                    // 1.0 regardless of how wrong the predictions are.
+                    if ss_res == 0.0 {
+                        1.0
+                    } else {
+                        0.0
+                    }
                 } else {
                     1.0 - ss_res / ss_tot
                 })
@@ -230,9 +423,15 @@ impl Scorer {
                 let n_pos: f64 = y_true.iter().filter(|&&y| y > 0.5).count() as f64;
                 let n_neg = y_true.len() as f64 - n_pos;
 
-                // Degenerate case: only one class present — return random-classifier baseline
+                // Degenerate case: only one class present. sklearn's `roc_auc_score` raises
+                // `ValueError` here because AUC is genuinely undefined with a single class —
+                // returning a fabricated 0.5 would silently misreport a fold as "random" instead
+                // of surfacing that this fold cannot be scored with ROC AUC at all (e.g. an
+                // unstratified split of imbalanced data handing one fold a single class).
                 if n_pos == 0.0 || n_neg == 0.0 {
-                    return Ok(0.5);
+                    return Err(Error::InvalidValue(
+                        "RocAuc is undefined when y_true contains only one class".into(),
+                    ));
                 }
 
                 // Walk sorted pairs, processing tied score groups together.
@@ -291,38 +490,52 @@ pub enum ParameterDistribution {
 }
 
 impl ParameterDistribution {
-    /// Sample a value from this distribution
-    pub fn sample(&self) -> String {
-        let mut rng = scirs2_core::random::rng();
-
+    /// Sample a value from this distribution using the given random generator.
+    ///
+    /// Taking `rng` as a parameter (rather than reaching for a fresh thread-local generator on
+    /// every call) lets [`RandomizedSearchCV`] thread a single seeded generator through an
+    /// entire search so that `random_state` actually makes the sampled trials reproducible.
+    ///
+    /// Returns an error for [`ParameterDistribution::LogUniform`] bounds that are not both
+    /// strictly positive (`ln` of a non-positive number is undefined/NaN, which would otherwise
+    /// silently propagate into a `"NaN"` parameter value).
+    pub fn sample(&self, rng: &mut StdRng) -> Result<String> {
         match self {
             ParameterDistribution::UniformInt { low, high } => {
-                rng.random_range(*low..=*high).to_string()
+                Ok(rng.random_range(*low..=*high).to_string())
             }
             ParameterDistribution::UniformFloat { low, high } => {
-                rng.random_range(*low..=*high).to_string()
+                Ok(rng.random_range(*low..=*high).to_string())
             }
             ParameterDistribution::LogUniform { low, high } => {
+                if !(*low > 0.0) || !(*high > 0.0) {
+                    return Err(Error::InvalidValue(format!(
+                        "LogUniform requires low > 0 and high > 0, got low={}, high={}",
+                        low, high
+                    )));
+                }
                 let log_low = low.ln();
                 let log_high = high.ln();
                 let log_val = rng.random_range(log_low..=log_high);
-                log_val.exp().to_string()
+                Ok(log_val.exp().to_string())
             }
             ParameterDistribution::Choice(choices) => {
                 if choices.is_empty() {
-                    "".to_string()
+                    Err(Error::InvalidValue(
+                        "Choice distribution has no options to sample from".into(),
+                    ))
                 } else {
                     let idx = rng.random_range(0..choices.len());
-                    choices[idx].clone()
+                    Ok(choices[idx].clone())
                 }
             }
             ParameterDistribution::Normal { mean, std } => {
                 let u1: f64 = rng.random_range(1e-300_f64..1.0_f64);
-                let u2: f64 = rng.random::<f64>();
+                let u2: f64 = rng.random_f64_raw();
                 let z = (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos();
-                (mean + std * z).to_string()
+                Ok((mean + std * z).to_string())
             }
-            ParameterDistribution::Fixed(value) => value.clone(),
+            ParameterDistribution::Fixed(value) => Ok(value.clone()),
         }
     }
 }
@@ -332,10 +545,16 @@ impl ParameterDistribution {
 pub struct SearchResults {
     /// Best parameters found
     pub best_params_: HashMap<String, String>,
-    /// Best cross-validation score
-    pub best_score_: f64,
-    /// Best estimator (fitted on full dataset)
-    pub best_estimator_: Option<String>, // Placeholder - would be actual estimator
+    /// Best cross-validation score, or `None` if no parameter combination produced a finite
+    /// score (e.g. every trial errored or every fold was degenerate) — never a fabricated
+    /// placeholder value.
+    pub best_score_: Option<f64>,
+    /// Textual description (parameters) of the estimator refit on the full dataset.
+    ///
+    /// This is a human-readable summary; the live fitted estimator itself is available via
+    /// [`GridSearchCV::best_estimator`] / [`RandomizedSearchCV::best_estimator`]. It is `None`
+    /// only when `refit` is disabled or no valid parameter combination was found.
+    pub best_estimator_: Option<String>,
     /// Cross-validation results for all parameter combinations
     pub cv_results_: Vec<SearchResultEntry>,
 }
@@ -378,6 +597,8 @@ pub struct GridSearchCV {
     pub verbose: usize,
     /// Search results
     results_: Option<SearchResults>,
+    /// Best estimator refit on the full dataset (present after `fit` when `refit` is true)
+    best_estimator_: Option<Box<dyn SklearnPredictor + Send + Sync>>,
 }
 
 impl GridSearchCV {
@@ -395,6 +616,7 @@ impl GridSearchCV {
             refit: true,
             verbose: 0,
             results_: None,
+            best_estimator_: None,
         }
     }
 
@@ -416,11 +638,20 @@ impl GridSearchCV {
         self
     }
 
-    /// Generate all parameter combinations from grid
+    /// Generate all parameter combinations from grid, in a deterministic order.
+    ///
+    /// Parameter names are visited in sorted order rather than `HashMap`'s unspecified
+    /// iteration order, so the resulting combination list — and therefore `cv_results_`'s order
+    /// and any score ties broken by "first seen" — is reproducible across runs instead of
+    /// depending on hash-map iteration order.
     fn generate_param_combinations(&self) -> Vec<HashMap<String, String>> {
         let mut combinations = vec![HashMap::new()];
 
-        for (param_name, param_values) in &self.param_grid {
+        let mut param_names: Vec<&String> = self.param_grid.keys().collect();
+        param_names.sort();
+
+        for param_name in param_names {
+            let param_values = &self.param_grid[param_name];
             let mut new_combinations = Vec::new();
 
             for combination in combinations {
@@ -451,6 +682,21 @@ impl GridSearchCV {
             CrossValidationStrategy::TimeSeriesSplit { n_splits, .. } => *n_splits,
         };
 
+        // `n_splits == 0` (an explicit `KFold { n_splits: 0, .. }`, or `LeaveOneOut` on an
+        // empty `x`) would otherwise skip the fold loop below entirely, leaving `fold_scores`
+        // empty and computing `0.0 / 0.0 = NaN` as the "mean" score — a silently fabricated
+        // result stored straight into `cv_results_` rather than a clear error. Fail fast
+        // instead, matching `compute_cv_fold`'s own "n_splits >= 1" requirement (which this
+        // guard front-runs, since the fold loop would otherwise never call it at all).
+        if n_splits == 0 {
+            return Err(Error::InvalidValue(
+                "Cross-validation requires at least one fold (n_splits >= 1 for \
+                 KFold/StratifiedKFold/TimeSeriesSplit; LeaveOneOut requires a non-empty \
+                 dataset); got 0 folds"
+                    .into(),
+            ));
+        }
+
         let mut fold_scores = Vec::new();
         let mut fit_times = Vec::new();
         let mut score_times = Vec::new();
@@ -474,8 +720,10 @@ impl GridSearchCV {
             let predictions = estimator_clone.predict(&test_x)?;
             let score_time = score_start.elapsed().as_secs_f64();
 
-            // Extract true values
-            let y_col = test_y.get_column::<f64>("target")?;
+            // Extract true values (resolves "target" when present, else the first column —
+            // consistent with RandomizedSearchCV instead of hardcoding "target").
+            let target_name = resolve_target_column(&test_y)?;
+            let y_col = test_y.get_column::<f64>(&target_name)?;
             let y_true = y_col.as_f64()?;
 
             // Calculate score
@@ -507,7 +755,11 @@ impl GridSearchCV {
         ))
     }
 
-    /// Generate train/test split for a specific fold
+    /// Generate train/test split for a specific fold.
+    ///
+    /// Delegates to [`compute_cv_fold`] so `shuffle`/`random_state` are honored and
+    /// `StratifiedKFold`/`TimeSeriesSplit` are handled correctly instead of being treated as
+    /// plain contiguous `KFold` slicing.
     fn generate_fold_split(
         &self,
         x: &DataFrame,
@@ -515,20 +767,9 @@ impl GridSearchCV {
         fold: usize,
         n_splits: usize,
     ) -> Result<(DataFrame, DataFrame, DataFrame, DataFrame)> {
-        let n_samples = x.nrows();
-        let fold_size = n_samples / n_splits;
-        let test_start = fold * fold_size;
-        let test_end = if fold == n_splits - 1 {
-            n_samples
-        } else {
-            test_start + fold_size
-        };
+        let (train_indices, test_indices) =
+            compute_cv_fold(&self.cv, x.nrows(), y, fold, n_splits)?;
 
-        // Generate indices
-        let test_indices: Vec<usize> = (test_start..test_end).collect();
-        let train_indices: Vec<usize> = (0..test_start).chain(test_end..n_samples).collect();
-
-        // Create splits
         let train_x = x.sample(&train_indices)?;
         let test_x = x.sample(&test_indices)?;
         let train_y = y.sample(&train_indices)?;
@@ -602,11 +843,26 @@ impl GridSearchCV {
             result.rank = i + 1;
         }
 
-        // Store results
+        // Refit the best parameters on the full dataset and keep the real fitted estimator.
+        let mut best_estimator_desc = None;
+        if self.refit && best_score.is_finite() {
+            let mut estimator = self.create_estimator_clone();
+            estimator.set_params(best_params.clone())?;
+            estimator.fit(x, y)?;
+            best_estimator_desc = Some(format!("{:?}", estimator.get_params()));
+            self.best_estimator_ = Some(estimator);
+        }
+
+        // Store results. `best_score_` is `None` (never a fabricated 0.0) when no combination
+        // produced a finite score.
         self.results_ = Some(SearchResults {
             best_params_: best_params,
-            best_score_: best_score,
-            best_estimator_: None, // Would be fitted estimator
+            best_score_: if best_score.is_finite() {
+                Some(best_score)
+            } else {
+                None
+            },
+            best_estimator_: best_estimator_desc,
             cv_results_: cv_results,
         });
 
@@ -623,6 +879,21 @@ impl GridSearchCV {
     /// Get the search results
     pub fn get_results(&self) -> Option<&SearchResults> {
         self.results_.as_ref()
+    }
+
+    /// Get the best estimator, refit on the full dataset (available when `refit` is true).
+    pub fn best_estimator(&self) -> Option<&(dyn SklearnPredictor + Send + Sync)> {
+        self.best_estimator_.as_deref()
+    }
+
+    /// Predict using the best estimator refit on the full dataset.
+    pub fn predict(&self, x: &DataFrame) -> Result<Vec<f64>> {
+        let estimator = self.best_estimator_.as_ref().ok_or_else(|| {
+            Error::InvalidOperation(
+                "No fitted best estimator available; call fit() with refit enabled first".into(),
+            )
+        })?;
+        estimator.predict(x)
     }
 }
 
@@ -649,6 +920,8 @@ pub struct RandomizedSearchCV {
     pub verbose: usize,
     /// Search results
     results_: Option<SearchResults>,
+    /// Best estimator refit on the full dataset (present after `fit` when `refit` is true)
+    best_estimator_: Option<Box<dyn SklearnPredictor + Send + Sync>>,
 }
 
 impl RandomizedSearchCV {
@@ -669,6 +942,7 @@ impl RandomizedSearchCV {
             refit: true,
             verbose: 0,
             results_: None,
+            best_estimator_: None,
         }
     }
 
@@ -690,27 +964,41 @@ impl RandomizedSearchCV {
         self
     }
 
-    /// Generate random parameter combinations
-    fn generate_random_params(&self) -> Vec<HashMap<String, String>> {
+    /// Generate random parameter combinations by sampling from `param_distributions`.
+    ///
+    /// Threads a single RNG (seeded from `self.random_state` when set) through every sample so
+    /// that a given `random_state` reproduces the exact same trials run after run — previously
+    /// each `ParameterDistribution::sample()` call reached for an unseeded thread-local
+    /// generator, so `random_state` had no effect at all.
+    ///
+    /// Parameter names are visited in sorted order (not `HashMap`'s unspecified order) so the
+    /// sequence of RNG draws — and therefore the sampled combinations for a given seed — is
+    /// reproducible independent of hash-map iteration order.
+    fn generate_random_params(&self, rng: &mut StdRng) -> Result<Vec<HashMap<String, String>>> {
         let mut combinations = Vec::with_capacity(self.n_iter);
+
+        let mut param_names: Vec<&String> = self.param_distributions.keys().collect();
+        param_names.sort();
 
         for _ in 0..self.n_iter {
             let mut params = HashMap::new();
 
-            for (param_name, distribution) in &self.param_distributions {
-                let value = distribution.sample();
-                params.insert(param_name.clone(), value);
+            for param_name in &param_names {
+                let distribution = &self.param_distributions[*param_name];
+                let value = distribution.sample(rng)?;
+                params.insert((*param_name).clone(), value);
             }
 
             combinations.push(params);
         }
 
-        combinations
+        Ok(combinations)
     }
 
     /// Fit the randomized search
     pub fn fit(&mut self, x: &DataFrame, y: &DataFrame) -> Result<()> {
-        let param_combinations = self.generate_random_params();
+        let mut sampling_rng = seeded_or_entropy_rng(self.random_state);
+        let param_combinations = self.generate_random_params(&mut sampling_rng)?;
 
         if self.verbose > 0 {
             println!(
@@ -742,22 +1030,15 @@ impl RandomizedSearchCV {
             let mut score_times = Vec::new();
 
             for fold in 0..n_splits {
-                let fold_size = x.nrows() / n_splits;
-                let test_start = fold * fold_size;
-                let test_end = if fold == n_splits - 1 {
-                    x.nrows()
-                } else {
-                    (fold + 1) * fold_size
-                };
-
-                if fold_size == 0 || test_start >= x.nrows() {
-                    continue;
-                }
-
-                let train_indices: Vec<usize> = (0..x.nrows())
-                    .filter(|&i| i < test_start || i >= test_end)
-                    .collect();
-                let test_indices: Vec<usize> = (test_start..test_end).collect();
+                // Delegate to the same fold-index logic GridSearchCV uses so `shuffle` /
+                // `random_state` / `StratifiedKFold` / `TimeSeriesSplit` behave identically
+                // everywhere. Randomized search stays lenient (skips a fold that can't be
+                // formed, e.g. n_splits > n_samples) rather than failing the whole trial.
+                let (train_indices, test_indices) =
+                    match compute_cv_fold(&self.cv, x.nrows(), y, fold, n_splits) {
+                        Ok(v) => v,
+                        Err(_) => continue,
+                    };
 
                 if train_indices.len() < 2 || test_indices.is_empty() {
                     continue;
@@ -786,7 +1067,10 @@ impl RandomizedSearchCV {
                 };
                 let score_time = score_start.elapsed().as_secs_f64();
 
-                let target_col_name = test_y.column_names().into_iter().next().unwrap_or_default();
+                let target_col_name = match resolve_target_column(&test_y) {
+                    Ok(name) => name,
+                    Err(_) => continue,
+                };
                 if let Ok(y_col) = test_y.get_column::<f64>(&target_col_name) {
                     if let Ok(y_true) = y_col.as_f64() {
                         if let Ok(score) = self.scoring.score(&y_true, &predictions) {
@@ -838,14 +1122,25 @@ impl RandomizedSearchCV {
             entry.rank = i + 1;
         }
 
+        // Refit the best parameters on the full dataset and keep the real fitted estimator.
+        let mut best_estimator_desc = None;
+        if self.refit && best_score.is_finite() {
+            let mut estimator = self.create_estimator_clone();
+            estimator.set_params(best_params.clone())?;
+            estimator.fit(x, y)?;
+            best_estimator_desc = Some(format!("{:?}", estimator.get_params()));
+            self.best_estimator_ = Some(estimator);
+        }
+
+        // `best_score_` is `None` (never a fabricated 0.0) when no trial produced a finite score.
         self.results_ = Some(SearchResults {
             best_params_: best_params,
             best_score_: if best_score.is_finite() {
-                best_score
+                Some(best_score)
             } else {
-                0.0
+                None
             },
-            best_estimator_: None,
+            best_estimator_: best_estimator_desc,
             cv_results_: cv_results,
         });
 
@@ -860,6 +1155,21 @@ impl RandomizedSearchCV {
     /// Get the search results
     pub fn get_results(&self) -> Option<&SearchResults> {
         self.results_.as_ref()
+    }
+
+    /// Get the best estimator, refit on the full dataset (available when `refit` is true).
+    pub fn best_estimator(&self) -> Option<&(dyn SklearnPredictor + Send + Sync)> {
+        self.best_estimator_.as_deref()
+    }
+
+    /// Predict using the best estimator refit on the full dataset.
+    pub fn predict(&self, x: &DataFrame) -> Result<Vec<f64>> {
+        let estimator = self.best_estimator_.as_ref().ok_or_else(|| {
+            Error::InvalidOperation(
+                "No fitted best estimator available; call fit() with refit enabled first".into(),
+            )
+        })?;
+        estimator.predict(x)
     }
 }
 
@@ -947,28 +1257,46 @@ impl SelectKBest {
 
         feature_scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
-        let selected_features: Vec<usize> = feature_scores
+        // Keep the *selected* indices in ascending (original-column) order — matching
+        // scikit-learn's `SelectKBest.transform`, which preserves each surviving feature's
+        // original position rather than reordering columns by score rank.
+        let mut selected_features: Vec<usize> = feature_scores
             .iter()
             .take(self.k)
             .map(|(i, _)| *i)
             .collect();
+        selected_features.sort_unstable();
 
         self.scores_ = Some(scores);
         self.selected_features_ = Some(selected_features);
-        self.feature_names_ = Some(feature_names);
+        self.feature_names_ = Some(feature_names.to_vec());
 
         Ok(())
     }
 
-    /// Transform data by selecting top k features
+    /// Transform data by selecting top k features (in their original column order).
     pub fn transform(&self, x: &DataFrame) -> Result<DataFrame> {
         let selected_features = self.selected_features_.as_ref().ok_or_else(|| {
             Error::InvalidOperation("SelectKBest must be fitted before transform".into())
         })?;
+        let fitted_feature_names = self.feature_names_.as_ref().ok_or_else(|| {
+            Error::InvalidOperation("SelectKBest must be fitted before transform".into())
+        })?;
 
-        let feature_names = x.column_names();
+        // `selected_features_` holds *positional* indices captured at fit time. If `x`'s
+        // columns don't match what was fitted (different count, names, or order), those
+        // positions would silently address the wrong columns — so require an exact match
+        // instead of transforming garbage.
+        let feature_names: Vec<String> = x.column_names().to_vec();
+        if &feature_names != fitted_feature_names {
+            return Err(Error::InvalidValue(format!(
+                "SelectKBest::transform: input columns {:?} do not match the columns seen \
+                 during fit {:?}",
+                feature_names, fitted_feature_names
+            )));
+        }
+
         let mut result = DataFrame::new();
-
         for &feature_idx in selected_features {
             if feature_idx < feature_names.len() {
                 let feature_name = &feature_names[feature_idx];
@@ -980,23 +1308,54 @@ impl SelectKBest {
         Ok(result)
     }
 
-    /// Calculate F-regression scores
+    /// Calculate the univariate linear-regression F-statistic for each feature.
+    ///
+    /// This is the genuine `f_regression` statistic (as in scikit-learn): for each feature the
+    /// Pearson correlation `r` with the target is converted to an F-value via
+    ///
+    /// ```text
+    /// F = r² / (1 - r²) · (n - 2)
+    /// ```
+    ///
+    /// where `n - 2` is the residual degrees of freedom. Larger `F` means a stronger linear
+    /// relationship. A perfect fit (`r² → 1`) yields `+∞`, and fewer than three samples yields a
+    /// zero score (the statistic is undefined).
     fn f_regression_scores(&self, x: &DataFrame, y: &DataFrame) -> Result<Vec<f64>> {
-        // Simplified F-statistic calculation
-        // In a real implementation, this would calculate proper F-statistics
         let feature_names = x.column_names();
         let mut scores = Vec::with_capacity(feature_names.len());
 
-        for feature_name in &feature_names {
-            // Placeholder: calculate correlation-based score
+        // Resolve the target column (first column of y, falling back to "target").
+        let target_name = y
+            .column_names()
+            .iter()
+            .find(|name| name.as_str() == "target")
+            .or_else(|| y.column_names().iter().next())
+            .cloned()
+            .ok_or_else(|| Error::InvalidInput("y DataFrame has no columns".into()))?;
+        let target_col = y.get_column::<f64>(&target_name)?;
+        let target_values = target_col.as_f64()?;
+
+        for feature_name in feature_names {
             let feature_col = x.get_column::<f64>(feature_name)?;
             let feature_values = feature_col.as_f64()?;
 
-            let target_col = y.get_column::<f64>("target")?;
-            let target_values = target_col.as_f64()?;
+            let n = feature_values.len();
+            if n < 3 {
+                // Degrees of freedom (n - 2) must be positive for the statistic to exist.
+                scores.push(0.0);
+                continue;
+            }
 
             let correlation = self.calculate_correlation(&feature_values, &target_values)?;
-            scores.push(correlation.abs());
+            let r_squared = correlation * correlation;
+            let degrees_of_freedom = n as f64 - 2.0;
+
+            let f_statistic = if r_squared >= 1.0 {
+                f64::INFINITY
+            } else {
+                (r_squared / (1.0 - r_squared)) * degrees_of_freedom
+            };
+            scores.push(f_statistic);
         }
 
         Ok(scores)
@@ -1033,7 +1392,7 @@ impl SelectKBest {
         let feature_names = x.column_names();
         let mut scores = Vec::with_capacity(feature_names.len());
 
-        for feat_name in &feature_names {
+        for feat_name in feature_names {
             let feat_col = match x.get_column::<f64>(feat_name) {
                 Ok(c) => c,
                 Err(_) => {
@@ -1153,7 +1512,7 @@ impl SelectKBest {
         let feature_names = x.column_names();
         let mut scores = Vec::with_capacity(feature_names.len());
 
-        for feat_name in &feature_names {
+        for feat_name in feature_names {
             let feat_col = match x.get_column::<f64>(feat_name) {
                 Ok(c) => c,
                 Err(_) => {
@@ -1258,229 +1617,11 @@ impl SelectKBest {
     }
 }
 
+// The unit test module for this file lives in `model_selection_tests.rs` (kept as a separate
+// physical file, still compiled as a child `mod tests` with full access to private items via
+// `use super::*;`) so this file itself stays under the project's 2000-line-per-file limit. This
+// mirrors the existing `#[path]` convention used by e.g. `dataframe/base.rs` +
+// `dataframe/base_tests.rs`.
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::series::Series;
-
-    #[test]
-    fn test_parameter_distribution_sampling() {
-        let uniform_int = ParameterDistribution::UniformInt { low: 1, high: 10 };
-        let sample = uniform_int.sample();
-        let value: i64 = sample.parse().expect("operation should succeed");
-        assert!(value >= 1 && value <= 10);
-
-        let uniform_float = ParameterDistribution::UniformFloat {
-            low: 0.0,
-            high: 1.0,
-        };
-        let sample = uniform_float.sample();
-        let value: f64 = sample.parse().expect("operation should succeed");
-        assert!(value >= 0.0 && value <= 1.0);
-
-        let choice =
-            ParameterDistribution::Choice(vec!["a".to_string(), "b".to_string(), "c".to_string()]);
-        let sample = choice.sample();
-        assert!(["a", "b", "c"].contains(&sample.as_str()));
-    }
-
-    #[test]
-    fn test_scorer_r2() {
-        let scorer = Scorer::R2;
-        let y_true = vec![1.0, 2.0, 3.0, 4.0, 5.0];
-        let y_pred = vec![1.1, 1.9, 3.1, 3.9, 5.1];
-
-        let score = scorer
-            .score(&y_true, &y_pred)
-            .expect("operation should succeed");
-        assert!(score > 0.9); // Should be high R²
-    }
-
-    #[test]
-    fn test_cross_validation_strategy() {
-        let cv = CrossValidationStrategy::KFold {
-            n_splits: 5,
-            shuffle: true,
-            random_state: Some(42),
-        };
-
-        match cv {
-            CrossValidationStrategy::KFold { n_splits, .. } => assert_eq!(n_splits, 5),
-            _ => panic!("Wrong CV strategy type"),
-        }
-    }
-
-    #[test]
-    fn test_select_k_best() {
-        let mut selector = SelectKBest::new(ScoreFunction::FRegression, 2);
-
-        // Create test data
-        let mut x = DataFrame::new();
-        x.add_column(
-            "feature1".to_string(),
-            Series::new(vec![1.0, 2.0, 3.0, 4.0, 5.0], Some("feature1".to_string()))
-                .expect("operation should succeed"),
-        )
-        .expect("operation should succeed");
-        x.add_column(
-            "feature2".to_string(),
-            Series::new(vec![2.0, 4.0, 6.0, 8.0, 10.0], Some("feature2".to_string()))
-                .expect("operation should succeed"),
-        )
-        .expect("operation should succeed");
-        x.add_column(
-            "feature3".to_string(),
-            Series::new(vec![0.1, 0.2, 0.3, 0.4, 0.5], Some("feature3".to_string()))
-                .expect("operation should succeed"),
-        )
-        .expect("operation should succeed");
-
-        let mut y = DataFrame::new();
-        y.add_column(
-            "target".to_string(),
-            Series::new(vec![3.0, 6.0, 9.0, 12.0, 15.0], Some("target".to_string()))
-                .expect("operation should succeed"),
-        )
-        .expect("operation should succeed");
-
-        // Fit and transform
-        selector.fit(&x, &y).expect("operation should succeed");
-        let selected = selector.transform(&x).expect("operation should succeed");
-
-        // Should select 2 features
-        assert_eq!(selected.column_names().len(), 2);
-    }
-
-    // ── ROC AUC tests ────────────────────────────────────────────────────────
-
-    #[test]
-    fn test_roc_auc_perfect() {
-        // Perfect ranking: all positives have strictly higher scores than all negatives
-        let y_true = vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0];
-        let y_pred = vec![0.1, 0.2, 0.3, 0.7, 0.8, 0.9];
-        let scorer = Scorer::RocAuc;
-        let auc = scorer.score(&y_true, &y_pred).expect("should compute AUC");
-        assert!(
-            (auc - 1.0).abs() < 1e-9,
-            "Expected AUC = 1.0 for perfect ranking, got {auc}"
-        );
-    }
-
-    #[test]
-    fn test_roc_auc_random() {
-        // Tied scores between one positive and one negative → AUC = 0.5
-        let y_true = vec![0.0, 1.0];
-        let y_pred = vec![0.5, 0.5];
-        let scorer = Scorer::RocAuc;
-        let auc = scorer.score(&y_true, &y_pred).expect("should compute AUC");
-        assert!(
-            (auc - 0.5).abs() < 1e-9,
-            "Expected AUC = 0.5 for tied scores, got {auc}"
-        );
-    }
-
-    #[test]
-    fn test_roc_auc_inverted() {
-        // Worst-case ranking: all positives have strictly lower scores than all negatives
-        let y_true = vec![1.0, 1.0, 1.0, 0.0, 0.0, 0.0];
-        let y_pred = vec![0.1, 0.2, 0.3, 0.7, 0.8, 0.9];
-        let scorer = Scorer::RocAuc;
-        let auc = scorer.score(&y_true, &y_pred).expect("should compute AUC");
-        assert!(
-            auc.abs() < 1e-9,
-            "Expected AUC = 0.0 for inverted ranking, got {auc}"
-        );
-    }
-
-    // ── Chi-square tests ──────────────────────────────────────────────────────
-
-    #[test]
-    fn test_chi2_scores_correlated() {
-        // feature1 is perfectly correlated to the target (target * 2);
-        // feature2 is a constant — its chi2 score should be zero.
-        let n = 20usize;
-        let target_vals: Vec<f64> = (0..n).map(|i| (i % 2) as f64).collect(); // alternating 0/1
-        let feat1_vals: Vec<f64> = target_vals.iter().map(|&v| v * 2.0).collect();
-        let feat2_vals: Vec<f64> = vec![1.0; n]; // constant
-
-        let mut x = DataFrame::new();
-        x.add_column(
-            "feature1".to_string(),
-            Series::new(feat1_vals, Some("feature1".to_string()))
-                .expect("series creation should succeed"),
-        )
-        .expect("add column should succeed");
-        x.add_column(
-            "feature2".to_string(),
-            Series::new(feat2_vals, Some("feature2".to_string()))
-                .expect("series creation should succeed"),
-        )
-        .expect("add column should succeed");
-
-        let mut y = DataFrame::new();
-        y.add_column(
-            "target".to_string(),
-            Series::new(target_vals, Some("target".to_string()))
-                .expect("series creation should succeed"),
-        )
-        .expect("add column should succeed");
-
-        let selector = SelectKBest::new(ScoreFunction::Chi2, 1);
-        let scores = selector.chi2_scores(&x, &y).expect("chi2 should succeed");
-        assert_eq!(scores.len(), 2);
-        // Correlated feature must score higher than constant feature
-        assert!(
-            scores[0] > scores[1],
-            "Correlated feature chi2 ({}) should exceed constant feature chi2 ({})",
-            scores[0],
-            scores[1]
-        );
-    }
-
-    // ── Mutual information tests ──────────────────────────────────────────────
-
-    #[test]
-    fn test_mutual_info_scores_vary() {
-        // feature1 is perfectly correlated to target; feature2 is constant.
-        // MI(feature1, target) should be strictly greater than MI(feature2, target).
-        let n = 30usize;
-        let target_vals: Vec<f64> = (0..n).map(|i| (i % 3) as f64).collect(); // classes 0/1/2
-        let feat1_vals: Vec<f64> = target_vals.clone(); // perfect correlation
-        let feat2_vals: Vec<f64> = vec![0.0; n]; // constant — zero MI
-
-        let mut x = DataFrame::new();
-        x.add_column(
-            "correlated".to_string(),
-            Series::new(feat1_vals, Some("correlated".to_string()))
-                .expect("series creation should succeed"),
-        )
-        .expect("add column should succeed");
-        x.add_column(
-            "constant".to_string(),
-            Series::new(feat2_vals, Some("constant".to_string()))
-                .expect("series creation should succeed"),
-        )
-        .expect("add column should succeed");
-
-        let mut y = DataFrame::new();
-        y.add_column(
-            "target".to_string(),
-            Series::new(target_vals, Some("target".to_string()))
-                .expect("series creation should succeed"),
-        )
-        .expect("add column should succeed");
-
-        let selector = SelectKBest::new(ScoreFunction::MutualInfoClassification, 1);
-        let scores = selector
-            .mutual_info_scores(&x, &y)
-            .expect("mutual info should succeed");
-        assert_eq!(scores.len(), 2);
-        // Correlated feature must have strictly higher MI than constant feature
-        assert!(
-            scores[0] > scores[1],
-            "Correlated feature MI ({}) should exceed constant feature MI ({})",
-            scores[0],
-            scores[1]
-        );
-    }
-}
+#[path = "model_selection_tests.rs"]
+mod tests;

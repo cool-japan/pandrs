@@ -1,15 +1,13 @@
 //! Implementation functions for PandasCompatExt - element-wise ops, string ops, comparison, and utility functions
 
-use super::super::helpers::{aggregations, comparison_ops, math_ops, string_ops, window_ops};
+use super::super::helpers::{aggregations, comparison_ops, math_ops, string_ops};
 use super::super::trait_def::PandasCompatExt;
-use super::super::types::{Axis, CorrelationMatrix, DescribeStats, RankMethod, SeriesValue};
-use super::functions::select_rows_by_indices;
+use super::super::types::SeriesValue;
 use super::functions_3::{covariance, pearson_correlation};
 use crate::core::error::{Error, Result};
 use crate::dataframe::base::DataFrame;
 use crate::series::Series;
-use std::cmp::Ordering;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 pub(super) fn query_contains(df: &DataFrame, column: &str, pattern: &str) -> Result<DataFrame> {
     let values = df.get_column_string_values(column)?;
@@ -180,18 +178,45 @@ pub(super) fn col_div(
 }
 
 pub(super) fn iterrows(df: &DataFrame) -> Vec<(usize, HashMap<String, SeriesValue>)> {
-    let mut result = Vec::new();
+    // Materialize each column once (dispatched by concrete dtype via
+    // `is_numeric_column`, not "does numeric parsing happen to succeed" --
+    // that would turn an object column of e.g. `"007"` into `Float(7.0)`)
+    // instead of re-fetching every column on every row, which made this
+    // O(rows^2 * cols).
+    enum ColData {
+        Num(Vec<f64>),
+        Str(Vec<String>),
+    }
     let columns = df.column_names();
+    let column_data: Vec<(String, ColData)> = columns
+        .iter()
+        .filter_map(|col| {
+            if df.is_numeric_column(col) {
+                df.get_column_numeric_values(col)
+                    .ok()
+                    .map(|v| (col.clone(), ColData::Num(v)))
+            } else {
+                df.get_column_string_values(col)
+                    .ok()
+                    .map(|v| (col.clone(), ColData::Str(v)))
+            }
+        })
+        .collect();
+
+    let mut result = Vec::with_capacity(df.row_count());
     for row_idx in 0..df.row_count() {
-        let mut row_data = HashMap::new();
-        for col in &columns {
-            if let Ok(vals) = df.get_column_numeric_values(col) {
-                if row_idx < vals.len() {
-                    row_data.insert(col.clone(), SeriesValue::Float(vals[row_idx]));
+        let mut row_data: HashMap<String, SeriesValue> = HashMap::new();
+        for (col, data) in &column_data {
+            match data {
+                ColData::Num(vals) => {
+                    if let Some(&v) = vals.get(row_idx) {
+                        row_data.insert(col.clone(), SeriesValue::Float(v));
+                    }
                 }
-            } else if let Ok(vals) = df.get_column_string_values(col) {
-                if row_idx < vals.len() {
-                    row_data.insert(col.clone(), SeriesValue::String(vals[row_idx].clone()));
+                ColData::Str(vals) => {
+                    if let Some(v) = vals.get(row_idx) {
+                        row_data.insert(col.clone(), SeriesValue::String(v.clone()));
+                    }
                 }
             }
         }
@@ -313,7 +338,7 @@ pub(super) fn items(df: &DataFrame) -> Vec<(String, Vec<SeriesValue>)> {
                 .map(|v| SeriesValue::String(v.clone()))
                 .collect();
         }
-        result.push((col, values));
+        result.push((col.clone(), values));
     }
     result
 }
@@ -369,10 +394,10 @@ where
     F: Fn(Option<f64>, Option<f64>) -> f64,
 {
     let mut result = DataFrame::new();
-    let mut all_cols: Vec<String> = df.column_names();
+    let mut all_cols: Vec<String> = df.column_names().to_vec();
     for col in other.column_names() {
-        if !all_cols.contains(&col) {
-            all_cols.push(col);
+        if !all_cols.contains(col) {
+            all_cols.push(col.to_string());
         }
     }
     let max_rows = std::cmp::max(df.row_count(), other.row_count());
@@ -525,7 +550,7 @@ pub(super) fn swap_columns(df: &DataFrame, col1: &str, col2: &str) -> Result<Dat
 }
 
 pub(super) fn sort_columns(df: &DataFrame, ascending: bool) -> Result<DataFrame> {
-    let mut columns = df.column_names();
+    let mut columns = df.column_names().to_vec();
     if ascending {
         columns.sort();
     } else {
@@ -630,50 +655,15 @@ pub(super) fn duplicated_rows(
     subset: Option<&[&str]>,
     keep: &str,
 ) -> Result<Vec<bool>> {
-    let cols_to_check: Vec<String> = subset
-        .map(|s| s.iter().map(|&c| c.to_string()).collect())
-        .unwrap_or_else(|| df.column_names());
-    let hashes = df.row_hash();
-    let mut seen: HashMap<u64, usize> = HashMap::new();
-    let mut result = vec![false; df.row_count()];
-    match keep {
-        "first" => {
-            for (i, hash) in hashes.iter().enumerate() {
-                if seen.contains_key(hash) {
-                    result[i] = true;
-                } else {
-                    seen.insert(*hash, i);
-                }
-            }
-        }
-        "last" => {
-            for (i, hash) in hashes.iter().enumerate() {
-                seen.insert(*hash, i);
-            }
-            let mut seen_final: HashMap<u64, bool> = HashMap::new();
-            for (i, hash) in hashes.iter().enumerate() {
-                if let Some(&last_idx) = seen.get(hash) {
-                    if i != last_idx {
-                        result[i] = true;
-                    }
-                }
-                seen_final.insert(*hash, true);
-            }
-        }
-        "none" | _ => {
-            let mut counts: HashMap<u64, usize> = HashMap::new();
-            for hash in &hashes {
-                *counts.entry(*hash).or_insert(0) += 1;
-            }
-            for (i, hash) in hashes.iter().enumerate() {
-                if counts.get(hash).copied().unwrap_or(0) > 1 {
-                    result[i] = true;
-                }
-            }
-        }
-    }
-    let _ = cols_to_check;
-    Ok(result)
+    // `duplicated_rows` and `duplicated` (functions_2_impl_part2) are the
+    // same operation under two trait method names; delegate to the
+    // subset-aware, dtype-aware implementation instead of maintaining a
+    // second copy. The previous body computed a *whole-row* hash via
+    // `df.row_hash()` unconditionally, so `subset` was read into
+    // `cols_to_check` and then never consulted (`let _ = cols_to_check;`) --
+    // `duplicated_rows(Some(&["a"]), ..)` compared every column, not just
+    // `"a"`.
+    super::functions_2_impl_part2::duplicated(df, subset, keep)
 }
 
 pub(super) fn get_column_as_f64(df: &DataFrame, column: &str) -> Result<Vec<f64>> {
@@ -812,10 +802,10 @@ pub(super) fn ffill(df: &DataFrame, column: &str) -> Result<DataFrame> {
     }
     let mut result = DataFrame::new();
     for col_name in df.column_names() {
-        if &col_name == column {
+        if col_name == column {
             result.add_column(
                 col_name.clone(),
-                Series::new(filled.clone(), Some(col_name))?,
+                Series::new(filled.clone(), Some(col_name.clone()))?,
             )?;
         } else if let Ok(vals) = df.get_column_numeric_values(&col_name) {
             result.add_column(col_name.clone(), Series::new(vals, Some(col_name.clone()))?)?;
@@ -838,10 +828,10 @@ pub(super) fn bfill(df: &DataFrame, column: &str) -> Result<DataFrame> {
     }
     let mut result = DataFrame::new();
     for col_name in df.column_names() {
-        if &col_name == column {
+        if col_name == column {
             result.add_column(
                 col_name.clone(),
-                Series::new(filled.clone(), Some(col_name))?,
+                Series::new(filled.clone(), Some(col_name.clone()))?,
             )?;
         } else if let Ok(vals) = df.get_column_numeric_values(&col_name) {
             result.add_column(col_name.clone(), Series::new(vals, Some(col_name.clone()))?)?;
@@ -946,10 +936,10 @@ pub(super) fn clip_lower(df: &DataFrame, column: &str, min: f64) -> Result<DataF
     let clipped: Vec<f64> = values.iter().map(|v| v.max(min)).collect();
     let mut result = DataFrame::new();
     for col_name in df.column_names() {
-        if &col_name == column {
+        if col_name == column {
             result.add_column(
                 col_name.clone(),
-                Series::new(clipped.clone(), Some(col_name))?,
+                Series::new(clipped.clone(), Some(col_name.clone()))?,
             )?;
         } else if let Ok(vals) = df.get_column_numeric_values(&col_name) {
             result.add_column(col_name.clone(), Series::new(vals, Some(col_name.clone()))?)?;
@@ -965,10 +955,10 @@ pub(super) fn clip_upper(df: &DataFrame, column: &str, max: f64) -> Result<DataF
     let clipped: Vec<f64> = values.iter().map(|v| v.min(max)).collect();
     let mut result = DataFrame::new();
     for col_name in df.column_names() {
-        if &col_name == column {
+        if col_name == column {
             result.add_column(
                 col_name.clone(),
-                Series::new(clipped.clone(), Some(col_name))?,
+                Series::new(clipped.clone(), Some(col_name.clone()))?,
             )?;
         } else if let Ok(vals) = df.get_column_numeric_values(&col_name) {
             result.add_column(col_name.clone(), Series::new(vals, Some(col_name.clone()))?)?;
@@ -1196,10 +1186,10 @@ pub(super) fn replace_inf(df: &DataFrame, column: &str, replacement: f64) -> Res
         .collect();
     let mut result = DataFrame::new();
     for col_name in df.column_names() {
-        if &col_name == column {
+        if col_name == column {
             result.add_column(
                 col_name.clone(),
-                Series::new(result_values.clone(), Some(col_name))?,
+                Series::new(result_values.clone(), Some(col_name.clone()))?,
             )?;
         } else if let Ok(vals) = df.get_column_numeric_values(&col_name) {
             result.add_column(col_name.clone(), Series::new(vals, Some(col_name.clone()))?)?;
@@ -1281,10 +1271,10 @@ pub(super) fn fillna_zero(df: &DataFrame, column: &str) -> Result<DataFrame> {
         .collect();
     let mut result = DataFrame::new();
     for col_name in df.column_names() {
-        if &col_name == column {
+        if col_name == column {
             result.add_column(
                 col_name.clone(),
-                Series::new(result_values.clone(), Some(col_name))?,
+                Series::new(result_values.clone(), Some(col_name.clone()))?,
             )?;
         } else if let Ok(vals) = df.get_column_numeric_values(&col_name) {
             result.add_column(col_name.clone(), Series::new(vals, Some(col_name.clone()))?)?;
@@ -1311,7 +1301,7 @@ pub(super) fn nunique_all(df: &DataFrame) -> Result<HashMap<String, usize>> {
         } else {
             0
         };
-        result.insert(col_name, count);
+        result.insert(col_name.to_string(), count);
     }
     Ok(result)
 }

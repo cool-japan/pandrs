@@ -385,7 +385,7 @@ mod tests {
 
         df.set_column_names(vec!["final_name".to_string()]).unwrap();
 
-        assert_eq!(df.column_names(), vec!["final_name"]);
+        assert_eq!(df.column_names(), ["final_name".to_string()]);
     }
 
     #[test]

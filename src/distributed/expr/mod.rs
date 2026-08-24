@@ -10,9 +10,14 @@ pub mod core;
 pub mod projection;
 pub mod schema;
 pub mod validator;
-// Re-export backward compatibility module
-pub mod backward_compat;
-pub use backward_compat::*;
+
+// NOTE: a `backward_compat` module used to live here and was glob re-exported
+// (`pub use backward_compat::*`). It defined a SECOND `Expr`, `Literal`,
+// `BinaryOperator`, `UnaryOperator`, `ProjectionExt`, `ColumnProjection`, and
+// `UdfDefinition`, which collided with the canonical types re-exported below
+// and made `df.select_expr(..)` / `df.filter_expr(..)` ambiguous whenever both
+// `ProjectionExt` traits were in scope. Only the canonical set (from `core`,
+// `projection`, `schema`, `validator`) is exported now.
 
 /// Data types for expressions
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

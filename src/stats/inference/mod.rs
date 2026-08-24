@@ -3,52 +3,6 @@
 use crate::error::{Error, Result};
 use crate::stats::{AnovaResult, ChiSquareResult, MannWhitneyResult, TTestResult};
 use std::collections::HashMap;
-use std::f64::consts::PI;
-
-/// Calculate standard normal distribution CDF (cumulative distribution function)
-fn normal_cdf(z: f64) -> f64 {
-    // Calculate approximation of error function (pure Rust implementation)
-    // Approximation calculation for standard normal distribution CDF (Abramowitz and Stegun)
-    const A1: f64 = 0.254829592;
-    const A2: f64 = -0.284496736;
-    const A3: f64 = 1.421413741;
-    const A4: f64 = -1.453152027;
-    const A5: f64 = 1.061405429;
-    const P: f64 = 0.3275911;
-
-    let sign = if z < 0.0 { -1.0 } else { 1.0 };
-    let x = z.abs() / (2.0_f64).sqrt();
-
-    let t = 1.0 / (1.0 + P * x);
-    let y = 1.0 - (((((A5 * t + A4) * t) + A3) * t + A2) * t + A1) * t * (-x * x).exp();
-
-    0.5 * (1.0 + sign * y)
-}
-
-/// Calculate t-distribution CDF (cumulative distribution function)
-fn t_distribution_cdf(t: f64, df: usize) -> f64 {
-    // Use normal distribution approximation (for large degrees of freedom)
-    if df > 30 {
-        return normal_cdf(t);
-    }
-
-    // Here we use a simplified approximation
-    // In a real implementation, higher precision calculation would be needed
-    let df_f64 = df as f64;
-    let x = df_f64 / (df_f64 + t * t);
-    let a = 0.5 * df_f64;
-    let b = 0.5;
-
-    // Approximation calculation for incomplete beta function (for accurate t-distribution CDF)
-    // This part should use a numerical calculation library in practice
-    let beta_approx = if t > 0.0 {
-        1.0 - 0.5 * x.powf(a)
-    } else {
-        0.5 * x.powf(a)
-    };
-
-    beta_approx
-}
 
 /// Internal implementation for two-sample t-test
 pub(crate) fn ttest_impl(
@@ -98,8 +52,12 @@ pub(crate) fn ttest_impl(
         (t_value, df_welch.floor() as usize)
     };
 
-    // Two-tailed test p-value calculation
-    let p_value = 2.0 * (1.0 - t_distribution_cdf(t_stat.abs(), df));
+    // Two-tailed test p-value, via `special::student_t_two_sided_p`'s direct
+    // incomplete-beta evaluation — never `1.0 - student_t_cdf(...)`, which
+    // double-cancels to exactly `0.0` for any strongly-significant (large
+    // |t|) result (see `special::student_t_sf`'s doc comment for the exact
+    // mechanism).
+    let p_value = crate::stats::special::student_t_two_sided_p(t_stat, df as f64);
 
     Ok(TTestResult {
         statistic: t_stat,
@@ -109,56 +67,14 @@ pub(crate) fn ttest_impl(
     })
 }
 
-/// Convert chi-square value to p-value
+/// Convert a chi-square statistic to its upper-tail p-value `P(X > chi2 | df)`.
+///
+/// The previous closed-form was numerically divergent (used `x.exp()` where
+/// `(-x).exp()` was meant) and returned ≈0 for every input, so every
+/// chi-square test reported "significant". Now routed through the correct
+/// regularized incomplete gamma in `stats::special`.
 fn chi2_to_pvalue(chi2: f64, df: usize) -> f64 {
-    // Simplified implementation (more accurate calculation needed in practice)
-    // Should use special function library in real implementation
-    let k = df as f64 / 2.0;
-    let x = chi2 / 2.0;
-
-    // Approximation calculation for gamma function
-    let gamma_k = if df % 2 == 0 {
-        1.0 // k is integer
-    } else {
-        (PI * 2.0).sqrt() // k + 0.5 is integer
-    };
-
-    // Approximation calculation for lower incomplete gamma function
-    let p = if chi2 > df as f64 + 2.0 {
-        1.0 - gamma_k * (1.0 - x.exp() * (1.0 + x + 0.5 * x.powi(2)))
-    } else {
-        gamma_k * x.exp() * x.powf(k - 1.0)
-    };
-
-    1.0 - p.min(1.0).max(0.0)
-}
-
-/// F-distribution cumulative distribution function (CDF)
-/// Calculate p-value for F-distribution (approximate)
-fn f_distribution_cdf(f: f64, df1: usize, df2: usize) -> f64 {
-    // Approximation calculation for F-distribution (higher precision implementation needed for large degrees of freedom)
-    // Real library implementation should use special function library
-
-    // Use relationship between F-distribution and beta distribution
-    let df1_f64 = df1 as f64;
-    let df2_f64 = df2 as f64;
-    let x = df1_f64 * f / (df1_f64 * f + df2_f64);
-
-    // Approximation calculation for incomplete beta function
-    let a = df1_f64 / 2.0;
-    let b = df2_f64 / 2.0;
-
-    // Simplified approximation
-    let beta_approx = if x > 0.5 {
-        // Approximation for x > 0.5
-        1.0 - (1.0 - x).powf(b)
-            * (1.0 + (1.0 - x) * a / b + (1.0 - x).powi(2) * a * (a + 1.0) / (b * (b + 1.0)) / 2.0)
-    } else {
-        // Approximation for x <= 0.5
-        x.powf(a) * (1.0 + x * b / a + x.powi(2) * b * (b + 1.0) / (a * (a + 1.0)) / 2.0)
-    };
-
-    beta_approx.min(1.0).max(0.0)
+    crate::stats::special::chi2_sf(chi2, df as f64)
 }
 
 /// Implementation for one-way ANOVA
@@ -223,8 +139,11 @@ pub(crate) fn anova_impl(groups: &HashMap<&str, &[f64]>, alpha: f64) -> Result<A
     // Calculate F-statistic
     let f_statistic = ms_between / ms_within;
 
-    // Calculate p-value (using F-distribution)
-    let p_value = 1.0 - f_distribution_cdf(f_statistic, df_between, df_within);
+    // Calculate p-value directly via `special::f_sf` — never
+    // `1.0 - f_cdf(...)`, which silently reports `p_value = 0.0` for any
+    // strongly-significant F-statistic (see `special::f_sf`'s doc comment
+    // for the exact cancellation mechanism this avoids).
+    let p_value = crate::stats::special::f_sf(f_statistic, df_between as f64, df_within as f64);
 
     // Return result
     Ok(AnovaResult {
@@ -312,16 +231,44 @@ pub(crate) fn mann_whitney_u_impl(
     let u1 = r1 - (n1 * (n1 + 1)) as f64 / 2.0;
     let u2 = (n1 * n2) as f64 - u1;
 
-    // Use the smaller U value
-    let u_statistic = u1.min(u2);
-
-    // Calculate mean and standard deviation
+    let n_total = (n1 + n2) as f64;
     let mean_u = (n1 * n2) as f64 / 2.0;
-    let std_u = ((n1 * n2 * (n1 + n2 + 1)) as f64 / 12.0).sqrt();
 
-    // Calculate p-value using normal approximation
-    let z = (u_statistic - mean_u) / std_u;
-    let p_value = 2.0 * normal_cdf(-z.abs()); // Two-tailed test
+    // Tie correction (Hollander & Wolfe): σ² = n1·n2/12 · [(N+1) −
+    // Σ(t_j³ − t_j) / (N(N−1))], where t_j is each tied-value group's size.
+    // The previous `(n1·n2·(N+1))/12` no-tie formula overstates the
+    // variance — and understates significance — whenever the combined
+    // sample has ties.
+    let tie_term: f64 = {
+        let mut sorted: Vec<f64> = combined.iter().map(|(v, _, _)| *v).collect();
+        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        let mut sum = 0.0;
+        let mut i = 0;
+        while i < sorted.len() {
+            let mut j = i;
+            while j < sorted.len() && (sorted[j] - sorted[i]).abs() < f64::EPSILON {
+                j += 1;
+            }
+            let t = (j - i) as f64;
+            sum += t * t * t - t;
+            i = j;
+        }
+        sum
+    };
+    let var_u =
+        (n1 * n2) as f64 / 12.0 * ((n_total + 1.0) - tie_term / (n_total * (n_total - 1.0)));
+    let std_u = var_u.sqrt();
+
+    // Two-sided normal approximation with continuity correction, matching
+    // the reference formula in `nonparametric::mann_whitney_u_test` (and
+    // `scipy.stats.mannwhitneyu`'s asymptotic method): test the larger of
+    // U1/U2 against its null mean via the survival function, subtracting
+    // the 0.5 continuity correction — rather than the previous
+    // uncorrected `min(u1, u2)` against a non-tie-adjusted standard
+    // deviation.
+    let u_statistic = u1.min(u2);
+    let z = (u1.max(u2) - mean_u - 0.5) / std_u;
+    let p_value = (2.0 * crate::stats::special::normal_sf(z)).clamp(0.0, 1.0);
 
     Ok(MannWhitneyResult {
         u_statistic,

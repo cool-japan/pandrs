@@ -6,6 +6,7 @@
 
 use crate::core::error::{Error, Result};
 use crate::time_series::core::{TimeSeries, TimeSeriesData};
+use crate::time_series::stats::inv_normal_cdf;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -63,6 +64,7 @@ pub struct SeasonalDecomposition {
     method: DecompositionMethod,
     period: Option<usize>,
     extrapolate_trend: usize,
+    robust: bool,
 }
 
 impl SeasonalDecomposition {
@@ -72,6 +74,7 @@ impl SeasonalDecomposition {
             method,
             period: None,
             extrapolate_trend: 0,
+            robust: false,
         }
     }
 
@@ -84,6 +87,20 @@ impl SeasonalDecomposition {
     /// Set trend extrapolation
     pub fn with_extrapolate_trend(mut self, extrapolate: usize) -> Self {
         self.extrapolate_trend = extrapolate;
+        self
+    }
+
+    /// Enable STL's **outer robustness loop**.
+    ///
+    /// With `robust = true` the decomposition runs Cleveland et al.'s robust
+    /// configuration (one inner pass per outer iteration, fifteen outer
+    /// iterations), recomputing bisquare weights from the remainder each time so
+    /// that outliers land in the remainder instead of bending the trend and
+    /// seasonal components towards them. It costs proportionally more work and
+    /// only affects [`DecompositionMethod::STL`]; the classical additive and
+    /// multiplicative decompositions have no robustness loop to enable.
+    pub fn with_robust(mut self, robust: bool) -> Self {
+        self.robust = robust;
         self
     }
 
@@ -129,21 +146,56 @@ impl SeasonalDecomposition {
         }
     }
 
-    /// Detect period using autocorrelation
+    /// Detect the seasonal period as the lag with the strongest positive
+    /// autocorrelation, provided it clears the white-noise significance band.
+    ///
+    /// # Errors
+    /// Returns [`Error::InvalidInput`] when the series is too short to test any
+    /// candidate lag, or when no lag is significantly autocorrelated. The
+    /// previous version seeded `best_period = 12` and returned it whenever no
+    /// candidate beat a correlation of `0.0`, so a series with *no* seasonality
+    /// was silently decomposed at a fabricated period of 12 — and every
+    /// downstream `result.period` reported 12 as if it had been measured.
+    /// Callers that know the period should set it with
+    /// [`SeasonalDecomposition::with_period`].
     fn detect_period_autocorr(&self, ts: &TimeSeries) -> Result<usize> {
         let max_period = std::cmp::min(ts.len() / 2, 100);
-        let mut best_period = 12; // Default
-        let mut max_correlation = 0.0;
+        if max_period < 2 {
+            return Err(Error::InvalidInput(format!(
+                "Time series of length {} is too short to detect a seasonal period; \
+                 set one explicitly with `with_period`",
+                ts.len()
+            )));
+        }
+
+        // White-noise band at the 5% family-wise level. Every lag in
+        // `2..=max_period` is a candidate, so a per-lag 5% band would flag
+        // roughly one lag in twenty *by chance* — on pure noise it picks a
+        // "seasonal period" almost every time. A Bonferroni correction over the
+        // number of candidates keeps the false-positive rate at 5% for the
+        // whole search: z = Φ⁻¹(1 − α / (2·L)), band = z / √n.
+        let candidates = (max_period - 1) as f64;
+        let z = inv_normal_cdf(1.0 - 0.05 / (2.0 * candidates));
+        let significance = z / (ts.len() as f64).sqrt();
+
+        let mut best_period = None;
+        let mut max_correlation = significance;
 
         for period in 2..=max_period {
             let correlation = self.calculate_autocorrelation(ts, period)?;
             if correlation > max_correlation {
                 max_correlation = correlation;
-                best_period = period;
+                best_period = Some(period);
             }
         }
 
-        Ok(best_period)
+        best_period.ok_or_else(|| {
+            Error::InvalidInput(format!(
+                "No seasonal period detected: no lag in 2..={max_period} has an autocorrelation \
+                 above the family-wise 5% white-noise band ({significance:.4}); set the period \
+                 explicitly with `with_period`"
+            ))
+        })
     }
 
     /// Calculate autocorrelation at given lag
@@ -244,45 +296,152 @@ impl SeasonalDecomposition {
         })
     }
 
-    /// STL decomposition (simplified implementation)
+    /// STL decomposition (Seasonal-Trend decomposition using Loess), following
+    /// Cleveland, Cleveland, McRae & Terpenning (1990).
+    ///
+    /// This is the real algorithm — an inner loop that alternates
+    /// cycle-subseries loess smoothing (with a low-pass filter to keep the
+    /// seasonal component free of trend) and loess smoothing of the
+    /// deseasonalized series — not a classical decomposition wearing the STL
+    /// label. Unlike [`Self::additive_decomposition`], the seasonal component is
+    /// allowed to *evolve* from cycle to cycle. Smoothing spans follow the
+    /// authors' recommended defaults for the given period; see
+    /// [`crate::time_series::stl::StlParams::recommended`].
+    ///
+    /// # Errors
+    /// Returns [`Error::InvalidInput`] when the series is shorter than two full
+    /// periods, when `period < 2`, or when any observation is non-finite (STL
+    /// is a global fit; substituting a value for a missing observation would
+    /// change every component).
     fn stl_decomposition(&self, ts: &TimeSeries, period: usize) -> Result<DecompositionResult> {
-        // Simplified STL implementation
-        // In practice, this would involve iterative LOESS smoothing
-        self.additive_decomposition(ts, period)
+        let values: Vec<f64> = (0..ts.len())
+            .map(|i| ts.values.get_f64(i).unwrap_or(f64::NAN))
+            .collect();
+
+        let params = if self.robust {
+            crate::time_series::stl::StlParams::robust(period)
+        } else {
+            crate::time_series::stl::StlParams::recommended(period)
+        };
+        let decomposed = crate::time_series::stl::stl(&values, period, &params)?;
+
+        let trend = TimeSeries::new(ts.index.clone(), TimeSeriesData::from_vec(decomposed.trend))?;
+        let seasonal = TimeSeries::new(
+            ts.index.clone(),
+            TimeSeriesData::from_vec(decomposed.seasonal),
+        )?;
+        let residual = TimeSeries::new(
+            ts.index.clone(),
+            TimeSeriesData::from_vec(decomposed.residual),
+        )?;
+
+        let metrics = self.calculate_metrics(ts, &trend, &seasonal, &residual)?;
+
+        Ok(DecompositionResult {
+            original: ts.clone(),
+            trend,
+            seasonal,
+            residual,
+            method: DecompositionMethod::STL,
+            period,
+            metrics,
+        })
     }
 
-    /// X-13ARIMA-SEATS decomposition (simplified implementation)
-    fn x13_decomposition(&self, ts: &TimeSeries, period: usize) -> Result<DecompositionResult> {
-        // Simplified X-13 implementation
-        // In practice, this would use ARIMA modeling and sophisticated filters
-        self.additive_decomposition(ts, period)
+    /// X-13ARIMA-SEATS decomposition.
+    ///
+    /// Not implemented, and deliberately so. Unlike STL — whose definition is a
+    /// self-contained sequence of loess smoothers, and which is implemented in
+    /// [`Self::stl_decomposition`] — "X-13ARIMA-SEATS" does not name an
+    /// algorithm but a *program*: the U.S. Census Bureau's X-13 suite, whose
+    /// output is defined by its own RegARIMA pre-adjustment (automatic outlier,
+    /// trading-day and holiday regressors with automatic ARIMA order
+    /// selection), its X-11 seasonal-filter cascade with data-dependent filter
+    /// selection, and the alternative SEATS ARIMA-model-based signal
+    /// extraction. Any short reimplementation would produce *different numbers*
+    /// under the same name, which is exactly the kind of silent algorithm swap
+    /// this crate refuses to ship. Use [`DecompositionMethod::STL`] for a
+    /// loess-based decomposition or [`DecompositionMethod::Additive`] /
+    /// [`DecompositionMethod::Multiplicative`] for the classical one.
+    fn x13_decomposition(&self, _ts: &TimeSeries, _period: usize) -> Result<DecompositionResult> {
+        Err(Error::NotImplemented(
+            "X-13ARIMA-SEATS decomposition is not implemented: its output is defined by the \
+             U.S. Census Bureau X-13 program (RegARIMA pre-adjustment, the X-11 filter cascade \
+             and SEATS signal extraction), and an approximation under that name would report \
+             different numbers as if they were X-13's. Use DecompositionMethod::STL for a \
+             loess-based decomposition."
+                .into(),
+        ))
     }
 
     /// Extract trend component using moving average
+    /// Extract the trend with a **centered moving average** matched to the
+    /// seasonal period.
+    ///
+    /// * odd `m`: the ordinary centered `m`-MA, weights `1/m` on offsets
+    ///   `−⌊m/2⌋ ..= ⌊m/2⌋`.
+    /// * even `m`: the `2×m`-MA (Hyndman & Athanasopoulos §6.2), i.e. `m + 1`
+    ///   taps with **half weight on the two endpoints**:
+    ///   `1/(2m), 1/m, …, 1/m, 1/(2m)`. This is what makes the window centered
+    ///   on an observation rather than half-way between two of them, and is
+    ///   what every classical decomposition uses for even periods.
+    ///
+    /// The previous code read `if period % 2 == 0 { period } else { period }` —
+    /// both branches identical — and then took a plain unweighted mean, so for
+    /// an even period (`m = 12` monthly, `m = 4` quarterly) the "centered"
+    /// average was offset by half a period and leaked seasonality into the
+    /// trend.
+    ///
+    /// **Edge policy:** near the ends the kernel is truncated to the available
+    /// samples and its weights renormalized to sum to one, so the output has
+    /// the same length as the input and reconstruction stays exact. The trend
+    /// is correspondingly less smooth in the first and last `⌊m/2⌋` points.
+    /// Positions whose window contains no finite value at all are `NaN`.
     fn extract_trend(&self, ts: &TimeSeries, period: usize) -> Result<TimeSeries> {
-        let window_size = if period % 2 == 0 { period } else { period };
+        if period == 0 {
+            return Err(Error::InvalidInput(
+                "Seasonal period must be at least 1".to_string(),
+            ));
+        }
 
+        let half = (period / 2) as isize;
+        let m = period as f64;
+        let kernel: Vec<(isize, f64)> = (-half..=half)
+            .map(|offset| {
+                let weight = if period % 2 == 0 && offset.abs() == half {
+                    0.5 / m
+                } else {
+                    1.0 / m
+                };
+                (offset, weight)
+            })
+            .collect();
+
+        let len = ts.len() as isize;
         let mut trend_values = Vec::with_capacity(ts.len());
 
-        for i in 0..ts.len() {
-            let start = if i >= window_size / 2 {
-                i - window_size / 2
-            } else {
-                0
-            };
-            let end = std::cmp::min(i + window_size / 2 + 1, ts.len());
+        for i in 0..len {
+            let mut weighted_sum = 0.0;
+            let mut weight_total = 0.0;
 
-            let window_values: Vec<f64> = (start..end)
-                .filter_map(|idx| ts.values.get_f64(idx))
-                .filter(|v| v.is_finite())
-                .collect();
-
-            if !window_values.is_empty() {
-                let trend_val = window_values.iter().sum::<f64>() / window_values.len() as f64;
-                trend_values.push(trend_val);
-            } else {
-                trend_values.push(f64::NAN);
+            for &(offset, weight) in &kernel {
+                let idx = i + offset;
+                if idx < 0 || idx >= len {
+                    continue;
+                }
+                if let Some(value) = ts.values.get_f64(idx as usize) {
+                    if value.is_finite() {
+                        weighted_sum += weight * value;
+                        weight_total += weight;
+                    }
+                }
             }
+
+            trend_values.push(if weight_total > 0.0 {
+                weighted_sum / weight_total
+            } else {
+                f64::NAN
+            });
         }
 
         let trend_series = TimeSeriesData::from_vec(trend_values);
@@ -422,7 +581,26 @@ impl SeasonalDecomposition {
         TimeSeries::new(ts1.index.clone(), result_series)
     }
 
-    /// Calculate decomposition metrics
+    /// Calculate decomposition metrics.
+    ///
+    /// `trend_strength` and `seasonality_strength` follow Hyndman &
+    /// Athanasopoulos (*Forecasting: Principles and Practice*, §6.7):
+    ///
+    /// ```text
+    /// F_T = max(0, 1 − Var(R) / Var(T + R))
+    /// F_S = max(0, 1 − Var(R) / Var(S + R))
+    /// ```
+    ///
+    /// i.e. each component is measured against the variance of *itself plus the
+    /// remainder*, which is what bounds the result to `[0, 1]`.
+    ///
+    /// The formulas this replaces were `1 − (Var(R) + Var(T))/Var(Y)` and
+    /// `1 − (Var(R) + Var(S))/Var(Y)`. Those measure something else entirely
+    /// (they are 1 minus a *different* component's share) and are routinely
+    /// **negative**: for the module's own weekly-seasonal fixture the trend
+    /// variance alone exceeds the total, so the reported "seasonality strength"
+    /// came out below zero — a value the field is documented to hold in
+    /// `[0, 1]`.
     fn calculate_metrics(
         &self,
         original: &TimeSeries,
@@ -435,9 +613,23 @@ impl SeasonalDecomposition {
         let seasonal_var = self.calculate_variance(seasonal)?;
         let residual_var = self.calculate_variance(residual)?;
 
-        let total_explained_var = trend_var + seasonal_var;
-        let signal_var = total_explained_var;
+        let signal_var = trend_var + seasonal_var;
         let noise_var = residual_var;
+
+        // Var(T + R) and Var(S + R) over the positions where both components
+        // are finite.
+        let trend_plus_residual_var = self.calculate_sum_variance(trend, residual)?;
+        let seasonal_plus_residual_var = self.calculate_sum_variance(seasonal, residual)?;
+
+        let strength = |remainder: f64, combined: f64| -> f64 {
+            if combined > 0.0 {
+                (1.0 - remainder / combined).clamp(0.0, 1.0)
+            } else {
+                // No variation in the component plus the remainder: the
+                // component carries no signal.
+                0.0
+            }
+        };
 
         Ok(DecompositionMetrics {
             trend_variance_ratio: if original_var > 0.0 {
@@ -460,17 +652,27 @@ impl SeasonalDecomposition {
             } else {
                 f64::INFINITY
             },
-            seasonality_strength: if original_var > 0.0 {
-                1.0 - (residual_var + trend_var) / original_var
-            } else {
-                0.0
-            },
-            trend_strength: if original_var > 0.0 {
-                1.0 - (residual_var + seasonal_var) / original_var
-            } else {
-                0.0
-            },
+            seasonality_strength: strength(residual_var, seasonal_plus_residual_var),
+            trend_strength: strength(residual_var, trend_plus_residual_var),
         })
+    }
+
+    /// Variance of the pointwise sum of two components, over the positions
+    /// where both are finite.
+    fn calculate_sum_variance(&self, a: &TimeSeries, b: &TimeSeries) -> Result<f64> {
+        let values: Vec<f64> = (0..a.len().min(b.len()))
+            .filter_map(|i| match (a.values.get_f64(i), b.values.get_f64(i)) {
+                (Some(x), Some(y)) if x.is_finite() && y.is_finite() => Some(x + y),
+                _ => None,
+            })
+            .collect();
+
+        if values.is_empty() {
+            return Ok(0.0);
+        }
+
+        let mean = values.iter().sum::<f64>() / values.len() as f64;
+        Ok(values.iter().map(|&x| (x - mean).powi(2)).sum::<f64>() / values.len() as f64)
     }
 
     /// Calculate variance of time series

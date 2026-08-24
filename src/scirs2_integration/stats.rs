@@ -3,11 +3,6 @@
 //! All types and functions in this module are gated behind the `scirs2` feature flag.
 
 #[cfg(feature = "scirs2")]
-use scirs2_core::ndarray::Array2;
-#[cfg(feature = "scirs2")]
-use scirs2_core::ndarray::ArrayView1;
-
-#[cfg(feature = "scirs2")]
 use crate::core::error::{Error, Result};
 #[cfg(feature = "scirs2")]
 use crate::dataframe::DataFrame;
@@ -114,7 +109,7 @@ impl SciRS2Stats {
     ///
     /// Returns an error if any column cannot be converted to numeric values.
     pub fn describe(df: &DataFrame, columns: &[&str]) -> Result<DataFrame> {
-        use scirs2_stats::{mean, median, std, var};
+        use scirs2_stats::{mean, std};
 
         let stat_names = vec![
             "count".to_string(),
@@ -185,7 +180,7 @@ impl SciRS2Stats {
         use scirs2_stats::corrcoef;
 
         let arr = dataframe_to_array2(df, columns)?;
-        let arr_t = arr.t().to_owned(); // corrcoef expects (n_vars, n_obs) in some implementations
+        let _arr_t = arr.t().to_owned(); // corrcoef expects (n_vars, n_obs) in some implementations
 
         // corrcoef expects rows = observations, columns = variables
         let corr = corrcoef::<f64, _>(&arr, "pearson")

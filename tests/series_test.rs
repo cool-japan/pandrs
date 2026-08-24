@@ -15,8 +15,13 @@ fn test_series_creation() {
 
 #[test]
 fn test_series_numeric_operations() {
-    // Numeric operations on integer series
-    let series = Series::new(vec![10, 20, 30, 40, 50], Some("numbers".to_string())).unwrap();
+    // Numeric operations on integer series.
+    //
+    // Explicitly typed `i32`: `sum`/`mean`/`min`/`max` now exist for both
+    // `Series<i32>` and `Series<i64>` (previously only `Series<i32>` had
+    // them), so an untyped integer-literal `vec![10, 20, ...]` is
+    // otherwise ambiguous between the two at these method-call sites.
+    let series = Series::<i32>::new(vec![10, 20, 30, 40, 50], Some("numbers".to_string())).unwrap();
 
     // Sum
     assert_eq!(series.sum(), 150);

@@ -6,12 +6,12 @@
 
 use crate::core::error::{Error, Result};
 use crate::dataframe::DataFrame;
-use crossbeam_channel::{bounded, unbounded, Receiver, Sender};
 use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
+use tokio::sync::mpsc;
 
 /// Trait for streaming data sources
 pub trait StreamingDataSource: Send + Sync {
@@ -255,6 +255,19 @@ pub struct ProcessorStats {
 }
 
 /// Data pipeline for streaming operations
+///
+/// # Concurrency
+///
+/// `execute` connects a source and a sink through two `tokio::spawn`ed
+/// tasks joined by a `tokio::sync::mpsc` channel. This module previously
+/// used `crossbeam_channel`'s *blocking* `recv()`/`send()` for that
+/// hand-off, from inside `tokio::spawn`ed futures: on a `current_thread`
+/// runtime that deadlocks immediately (the one worker thread blocks
+/// forever waiting on a channel that only a second task -- which never gets
+/// to run -- could service), and on a multi-thread runtime it silently
+/// burns a whole worker thread per blocked call and can still deadlock once
+/// enough workers are blocked this way. `tokio::sync::mpsc` is async
+/// end-to-end, so the tasks genuinely yield instead of blocking a worker.
 pub struct StreamingPipeline<T> {
     /// Pipeline stages
     stages: Vec<Box<dyn PipelineStage<T>>>,
@@ -290,13 +303,32 @@ where
         self.error_handler = Some(Box::new(handler));
     }
 
-    /// Execute the pipeline
+    /// Execute the pipeline: read batches from `source`, run each batch
+    /// through every registered stage in order, and write the result to
+    /// `sink`.
+    ///
+    /// Previously, registered stages were never actually invoked --
+    /// `add_stage` recorded them, but `execute`'s processor task forwarded
+    /// each batch from source to sink completely unmodified, silently
+    /// discarding whatever the stages were supposed to do. This also honors
+    /// `config.error_strategy` (and, if set, `error_handler`, which takes
+    /// precedence) for both source-read and stage-processing errors, and
+    /// `PipelineStats.error_count` is incremented on every recorded error
+    /// via `record_error()`.
+    ///
+    /// `execute` is single-shot with respect to the registered stages and
+    /// error handler: it moves them into the spawned processor task (so the
+    /// task can own them across `.await` points without borrowing `self`
+    /// for its whole lifetime) and does not restore them afterward. Only
+    /// `self.stats` -- a shared `Arc<Mutex<..>>` -- remains valid to read
+    /// via `stats()` after `execute` returns; add stages again before
+    /// calling `execute` a second time on the same pipeline instance.
     pub async fn execute<S, K>(&mut self, source: S, sink: K) -> Result<()>
     where
         S: StreamingDataSource<Item = T> + 'static,
         K: StreamingDataSink<Item = T> + 'static,
     {
-        let (tx, rx) = bounded(self.config.buffer_size);
+        let (tx, rx) = mpsc::channel(self.config.buffer_size.max(1));
 
         // Start source reader
         let source_handle = self.spawn_source_reader(source, tx).await?;
@@ -314,33 +346,73 @@ where
         Ok(())
     }
 
-    /// Spawn source reader task
+    /// Spawn source reader task.
+    ///
+    /// On a read error, `config.error_strategy` decides what happens:
+    /// `FailFast` propagates the error (terminating the pipeline instead of
+    /// silently truncating the stream with an `Ok(())`), `SkipErrors` moves
+    /// on to the next batch, and `RetryWithBackoff` retries the same
+    /// `next_batch()` call after a short delay, up to a bounded number of
+    /// attempts (a source read is naturally retriable: unlike a stage
+    /// error, no already-consumed batch data needs to be recovered).
     async fn spawn_source_reader<S>(
         &self,
         mut source: S,
-        tx: Sender<Vec<T>>,
+        tx: mpsc::Sender<Vec<T>>,
     ) -> Result<tokio::task::JoinHandle<Result<()>>>
     where
         S: StreamingDataSource<Item = T> + 'static,
     {
         let stats = Arc::clone(&self.stats);
+        let error_strategy = self.config.error_strategy;
+        const MAX_SOURCE_RETRIES: u32 = 5;
 
         let handle = tokio::spawn(async move {
+            let mut consecutive_errors = 0u32;
+
             while source.has_more() {
                 match source.next_batch().await {
                     Ok(Some(batch)) => {
+                        consecutive_errors = 0;
                         if let Ok(mut pipeline_stats) = stats.lock() {
                             pipeline_stats.record_batch_read(batch.len());
                         }
 
-                        if tx.send(batch).is_err() {
-                            break; // Pipeline closed
+                        if tx.send(batch).await.is_err() {
+                            break; // Pipeline closed (processor task exited)
                         }
                     }
                     Ok(None) => break, // End of stream
-                    Err(_e) => {
-                        // Handle error
-                        break;
+                    Err(e) => {
+                        if let Ok(mut pipeline_stats) = stats.lock() {
+                            pipeline_stats.record_error();
+                        }
+
+                        match error_strategy {
+                            ErrorStrategy::FailFast => {
+                                return Err(Error::InvalidOperation(format!(
+                                    "Source read error: {}",
+                                    e
+                                )));
+                            }
+                            ErrorStrategy::SkipErrors => {
+                                continue;
+                            }
+                            ErrorStrategy::RetryWithBackoff => {
+                                consecutive_errors += 1;
+                                if consecutive_errors > MAX_SOURCE_RETRIES {
+                                    return Err(Error::InvalidOperation(format!(
+                                        "Source read error persisted after {} retries: {}",
+                                        MAX_SOURCE_RETRIES, e
+                                    )));
+                                }
+                                let shift: u32 = consecutive_errors.min(6);
+                                let backoff =
+                                    Duration::from_millis(50u64.saturating_mul(1u64 << shift));
+                                tokio::time::sleep(backoff).await;
+                                continue;
+                            }
+                        }
                     }
                 }
             }
@@ -350,29 +422,101 @@ where
         Ok(handle)
     }
 
-    /// Spawn pipeline processor task
+    /// Spawn pipeline processor task: runs every registered stage over each
+    /// batch in order, then writes the result to `sink`.
+    ///
+    /// On a stage error, `error_handler` (if set via `set_error_handler`)
+    /// decides the [`ErrorAction`]; otherwise `config.error_strategy`
+    /// implies one (`FailFast` -> `Abort`, `SkipErrors` -> `Continue`,
+    /// `RetryWithBackoff` -> `Continue`). Note that `Retry` is not
+    /// meaningfully implementable for a *stage* error with the current
+    /// [`PipelineStage::process`] signature: on error, the input batch that
+    /// was passed in is gone (the trait only returns the transformed batch
+    /// on success), so there is nothing left to retry with -- this is
+    /// therefore treated the same as `Continue` (skip this batch) rather
+    /// than silently pretending to retry. A sink write/flush/close error is
+    /// always terminal and propagated (previously, both were silently
+    /// swallowed via `let _ = ...`, and the loop `break`ing on a write error
+    /// still returned `Ok(())`, i.e. truncating the stream while reporting
+    /// success).
     async fn spawn_pipeline_processor<K>(
-        &self,
-        rx: Receiver<Vec<T>>,
+        &mut self,
+        mut rx: mpsc::Receiver<Vec<T>>,
         mut sink: K,
     ) -> Result<tokio::task::JoinHandle<Result<()>>>
     where
         K: StreamingDataSink<Item = T> + 'static,
     {
         let stats = Arc::clone(&self.stats);
+        let mut stages = std::mem::take(&mut self.stages);
+        let error_handler = self.error_handler.take();
+        let error_strategy = self.config.error_strategy;
 
         let handle = tokio::spawn(async move {
-            while let Ok(batch) = rx.recv() {
-                // Process through all stages
-                let current_batch = batch;
+            while let Some(batch) = rx.recv().await {
+                // `Option<Vec<T>>` (rather than a bare `Vec<T>` reassigned
+                // in a loop with a separate `bool` "skip" flag) so the
+                // borrow checker can see, from the type alone, that using
+                // the batch below is only ever reached in the well-defined
+                // `Some` case -- a bare `Vec<T>` moved into a failing
+                // `stage.process(...)` call with no reassignment on that
+                // path left it in a statically "possibly moved" state at
+                // the point of the sink write, even though a runtime-only
+                // `bool` flag guaranteed that path was always skipped.
+                let mut current_batch: Option<Vec<T>> = Some(batch);
+                let mut abort_error: Option<Error> = None;
 
-                // For now, we assume stages maintain the same type T
-                // In a real implementation, stages would be more flexible
+                for stage in stages.iter_mut() {
+                    let Some(input) = current_batch.take() else {
+                        break;
+                    };
+                    match stage.process(input).await {
+                        Ok(next_batch) => current_batch = Some(next_batch),
+                        Err(e) => {
+                            if let Ok(mut pipeline_stats) = stats.lock() {
+                                pipeline_stats.record_error();
+                            }
+
+                            let action = match &error_handler {
+                                Some(handler) => handler.handle_error(&e),
+                                None => match error_strategy {
+                                    ErrorStrategy::FailFast => ErrorAction::Abort,
+                                    ErrorStrategy::SkipErrors | ErrorStrategy::RetryWithBackoff => {
+                                        ErrorAction::Continue
+                                    }
+                                },
+                            };
+
+                            match action {
+                                ErrorAction::Abort => abort_error = Some(e),
+                                // `Retry` cannot recover the input batch
+                                // that `stage.process` just consumed (see
+                                // this method's doc comment), so it is
+                                // treated the same as `Continue`: skip this
+                                // batch. `current_batch` is left `None`.
+                                ErrorAction::Continue | ErrorAction::Retry => {}
+                            }
+                            break;
+                        }
+                    }
+                }
+
+                if let Some(e) = abort_error {
+                    return Err(e);
+                }
+
+                let Some(current_batch) = current_batch else {
+                    // A stage declined to continue (and it wasn't an
+                    // abort): skip this batch entirely.
+                    continue;
+                };
 
                 // Write to sink
-                if let Err(_e) = sink.write_batch(current_batch.clone()).await {
-                    // Handle error
-                    break;
+                if let Err(e) = sink.write_batch(current_batch.clone()).await {
+                    if let Ok(mut pipeline_stats) = stats.lock() {
+                        pipeline_stats.record_error();
+                    }
+                    return Err(Error::InvalidOperation(format!("Sink write error: {}", e)));
                 }
 
                 if let Ok(mut pipeline_stats) = stats.lock() {
@@ -380,8 +524,12 @@ where
                 }
             }
 
-            let _ = sink.flush().await;
-            let _ = sink.close().await;
+            sink.flush()
+                .await
+                .map_err(|e| Error::InvalidOperation(format!("Sink flush error: {}", e)))?;
+            sink.close()
+                .await
+                .map_err(|e| Error::InvalidOperation(format!("Sink close error: {}", e)))?;
             Ok(())
         });
 
@@ -645,6 +793,22 @@ pub struct MemoryStreamSink<T> {
     data: Arc<Mutex<Vec<T>>>,
     max_batch_size: usize,
     metadata: SinkMetadata,
+}
+
+// Manual `Clone` (rather than `#[derive(Clone)]`, which would add an
+// unnecessary `T: Clone` bound): all fields are cheap to duplicate as
+// *handles* onto the same underlying data (`Arc::clone`, not a deep copy of
+// the buffered `Vec<T>`), which is exactly what makes this useful for tests
+// that need to inspect what a sink received after moving one clone of it
+// into `StreamingPipeline::execute` (which consumes its sink by value).
+impl<T> Clone for MemoryStreamSink<T> {
+    fn clone(&self) -> Self {
+        MemoryStreamSink {
+            data: Arc::clone(&self.data),
+            max_batch_size: self.max_batch_size,
+            metadata: self.metadata.clone(),
+        }
+    }
 }
 
 impl<T> MemoryStreamSink<T>
@@ -970,6 +1134,119 @@ mod tests {
         let stats = pipeline.stats().expect("operation should succeed");
         assert!(stats.items_read > 0);
         assert!(stats.items_processed > 0);
+    }
+
+    /// A trivial stage that doubles every value, used to prove that
+    /// registered stages actually run (previously `add_stage` recorded a
+    /// stage but `execute` never invoked it, so the sink always received
+    /// the source's data completely unmodified).
+    struct DoublingStage;
+
+    impl PipelineStage<i32> for DoublingStage {
+        fn process(
+            &mut self,
+            data: Vec<i32>,
+        ) -> Pin<Box<dyn Future<Output = Result<Vec<i32>>> + Send + '_>> {
+            Box::pin(async move { Ok(data.into_iter().map(|v| v * 2).collect()) })
+        }
+
+        fn name(&self) -> &str {
+            "doubling"
+        }
+
+        fn stats(&self) -> StageStats {
+            StageStats {
+                items_processed: 0,
+                processing_time: Duration::from_secs(0),
+                error_count: 0,
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_streaming_pipeline_executes_registered_stages() {
+        let config = PipelineConfig::default();
+        let mut pipeline = StreamingPipeline::new(config);
+        pipeline.add_stage(DoublingStage);
+
+        let source_data = vec![1, 2, 3, 4, 5];
+        let source = MemoryStreamSource::new(source_data, 2);
+        let sink = MemoryStreamSink::new();
+        let sink_handle = sink.clone();
+
+        pipeline
+            .execute(source, sink)
+            .await
+            .expect("operation should succeed");
+
+        let data = sink_handle.get_data().expect("operation should succeed");
+        assert_eq!(data, vec![2, 4, 6, 8, 10]);
+    }
+
+    /// A sink whose `write_batch` always fails, used to verify that a
+    /// terminal sink error is propagated out of `execute` as an `Err`
+    /// rather than being swallowed (`let _ = sink.write_batch(...)`) while
+    /// the pipeline reports `Ok(())` after silently truncating the stream.
+    struct FailingSink;
+
+    impl StreamingDataSink for FailingSink {
+        type Item = i32;
+        type Error = Error;
+
+        fn write_batch(
+            &mut self,
+            _batch: Vec<i32>,
+        ) -> Pin<Box<dyn Future<Output = std::result::Result<(), Error>> + Send + '_>> {
+            Box::pin(async move { Err(Error::IoError("simulated sink failure".into())) })
+        }
+
+        fn flush(
+            &mut self,
+        ) -> Pin<Box<dyn Future<Output = std::result::Result<(), Error>> + Send + '_>> {
+            Box::pin(async move { Ok(()) })
+        }
+
+        fn close(
+            &mut self,
+        ) -> Pin<Box<dyn Future<Output = std::result::Result<(), Error>> + Send + '_>> {
+            Box::pin(async move { Ok(()) })
+        }
+
+        fn metadata(&self) -> SinkMetadata {
+            SinkMetadata {
+                id: "failing".to_string(),
+                sink_type: SinkType::Memory,
+                schema: None,
+                created_at: Instant::now(),
+                properties: HashMap::new(),
+            }
+        }
+
+        fn set_max_batch_size(&mut self, _size: usize) {}
+    }
+
+    #[tokio::test]
+    async fn test_streaming_pipeline_propagates_sink_error() {
+        let config = PipelineConfig {
+            error_strategy: ErrorStrategy::FailFast,
+            ..PipelineConfig::default()
+        };
+        let mut pipeline = StreamingPipeline::new(config);
+
+        let source = MemoryStreamSource::new(vec![1, 2, 3], 1);
+        let sink = FailingSink;
+
+        let result = pipeline.execute(source, sink).await;
+        assert!(
+            result.is_err(),
+            "a terminal sink error must propagate as Err, not be swallowed as Ok(())"
+        );
+
+        let stats = pipeline.stats().expect("operation should succeed");
+        assert!(
+            stats.error_count > 0,
+            "the sink error should have been recorded via record_error()"
+        );
     }
 
     #[test]

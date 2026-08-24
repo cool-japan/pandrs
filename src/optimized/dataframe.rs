@@ -6,6 +6,7 @@
 pub mod core;
 pub mod io;
 pub mod operations;
+pub mod stats;
 pub mod transformations;
 
 // Re-export the main public API

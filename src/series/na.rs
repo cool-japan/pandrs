@@ -275,54 +275,48 @@ where
         NA::Value(sum / count)
     }
 
-    /// Calculate the minimum value (ignoring NA)
+    /// Calculate the minimum value (ignoring NA).
+    ///
+    /// Returns `NA::NA` both when the series is empty and when every
+    /// element is `NA` -- there is no observation to report a minimum for
+    /// in either case. Never panics: the fold below has no non-empty-vector
+    /// precondition to prove, unlike a `.min_by(..).expect(..)` on a vector
+    /// already known to be non-empty (that pattern is a real, if currently
+    /// unreachable, panic risk if the emptiness check above it is ever
+    /// edited out from under it, so it is avoided entirely here).
     pub fn min(&self) -> NA<T> {
-        let values: Vec<T> = self
-            .values
+        self.values
             .iter()
             .filter_map(|v| match v {
                 NA::Value(val) => Some(*val),
                 NA::NA => None,
             })
-            .collect();
-
-        if values.is_empty() {
-            return NA::NA;
-        }
-
-        // SAFETY: We've already checked that values is not empty above
-        let min = values
-            .iter()
-            .min_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
-            .cloned()
-            .expect("min() should succeed on non-empty vector");
-
-        NA::Value(min)
+            .fold(None, |acc: Option<T>, v| match acc {
+                None => Some(v),
+                Some(a) if v.partial_cmp(&a) == Some(std::cmp::Ordering::Less) => Some(v),
+                Some(a) => Some(a),
+            })
+            .map_or(NA::NA, NA::Value)
     }
 
-    /// Calculate the maximum value (ignoring NA)
+    /// Calculate the maximum value (ignoring NA).
+    ///
+    /// Returns `NA::NA` both when the series is empty and when every
+    /// element is `NA`. See [`NASeries::min`] for why this is written as a
+    /// panic-free fold rather than `.max_by(..).expect(..)`.
     pub fn max(&self) -> NA<T> {
-        let values: Vec<T> = self
-            .values
+        self.values
             .iter()
             .filter_map(|v| match v {
                 NA::Value(val) => Some(*val),
                 NA::NA => None,
             })
-            .collect();
-
-        if values.is_empty() {
-            return NA::NA;
-        }
-
-        // SAFETY: We've already checked that values is not empty above
-        let max = values
-            .iter()
-            .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
-            .cloned()
-            .expect("max() should succeed on non-empty vector");
-
-        NA::Value(max)
+            .fold(None, |acc: Option<T>, v| match acc {
+                None => Some(v),
+                Some(a) if v.partial_cmp(&a) == Some(std::cmp::Ordering::Greater) => Some(v),
+                Some(a) => Some(a),
+            })
+            .map_or(NA::NA, NA::Value)
     }
 }
 

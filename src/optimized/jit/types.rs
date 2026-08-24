@@ -4,7 +4,6 @@
 //! in JIT-compiled functions, allowing for type-parameterized operations.
 
 use std::any::Any;
-use std::convert::TryFrom;
 use std::fmt;
 
 /// A trait for numeric types that can be used in JIT-compiled functions

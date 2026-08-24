@@ -1,7 +1,6 @@
 use pandrs::error::Result;
 use pandrs::series::{CategoricalOrder, StringCategorical};
 use pandrs::{DataFrame, Series, NA};
-use std::path::Path;
 
 #[allow(clippy::result_large_err)]
 fn main() -> Result<()> {

@@ -5,14 +5,304 @@
 
 use crate::core::error::{Error, Result};
 use crate::dataframe::DataFrame;
-use crate::ml::models::{ModelEvaluator, ModelMetrics, SupervisedModel, UnsupervisedModel};
-use crate::ml::preprocessing::*;
+use crate::ml::models::ensemble::{
+    GradientBoostingConfig, GradientBoostingRegressor, RandomForestConfig, RandomForestRegressor,
+};
+use crate::ml::models::linear::{LinearRegression, LogisticRegression};
+use crate::ml::models::neural::{MLPClassifier, MLPRegressor};
+use crate::ml::models::tree::{DecisionTreeClassifier, DecisionTreeConfig, DecisionTreeRegressor};
+use crate::ml::models::SupervisedModel;
 use crate::series::Series;
 use serde::{Deserialize, Serialize};
+use std::any::Any;
 use std::collections::HashMap;
 use std::fmt;
-use std::sync::Arc;
-use std::time::Instant;
+
+// ─── Hyperparameter application for wrapped models ──────────────────────────────────────────
+//
+// `SupervisedModel` (the trait concrete models implement) intentionally has no generic
+// `set_params`-style method of its own — each model's hyperparameters live in a
+// model-specific, privately-held config struct with no public setters. To let
+// `SupervisedAdapter::set_params` actually tune the wrapped model — instead of discarding every
+// key but `target_col`, which was the root cause of grid/randomized search tuning nothing at
+// all — the functions below downcast to each concrete model type pandrs ships and rebuild it
+// from a fresh `Config::default()` overlaid with the recognized keys in `params`.
+//
+// Rebuilding (rather than mutating fields in place) is necessary because these models store
+// their config privately with no setters, and it is *correct* to do here because `set_params`
+// is always called on a freshly-cloned, not-yet-fitted estimator immediately before `fit()` in
+// every search loop in this crate (`GridSearchCV`/`RandomizedSearchCV`); it is never called on a
+// model whose fitted state must be preserved.
+//
+// Unknown parameter keys — and model types this function doesn't recognize at all — return an
+// `Err` (matching scikit-learn's `set_params`, which raises `ValueError` on invalid parameters)
+// instead of silently accepting hyperparameters that go nowhere.
+
+fn parse_bool_param(key: &str, value: &str) -> Result<bool> {
+    value
+        .parse::<bool>()
+        .map_err(|_| Error::InvalidValue(format!("Invalid boolean value for {key}: {value}")))
+}
+
+fn parse_usize_param(key: &str, value: &str) -> Result<usize> {
+    value
+        .parse::<usize>()
+        .map_err(|_| Error::InvalidValue(format!("Invalid usize value for {key}: {value}")))
+}
+
+fn parse_u64_param(key: &str, value: &str) -> Result<u64> {
+    value
+        .parse::<u64>()
+        .map_err(|_| Error::InvalidValue(format!("Invalid u64 value for {key}: {value}")))
+}
+
+fn parse_f64_param(key: &str, value: &str) -> Result<f64> {
+    value
+        .parse::<f64>()
+        .map_err(|_| Error::InvalidValue(format!("Invalid f64 value for {key}: {value}")))
+}
+
+/// Parse an `Option<usize>`-valued parameter where the sentinel string `"none"`
+/// (case-insensitive) or an empty string means `None` — the convention this crate's own
+/// `ParameterDistribution::Choice` search spaces use for "unlimited", e.g.
+/// `["3", "5", "10", "None"]` for `max_depth`.
+fn parse_optional_usize_param(key: &str, value: &str) -> Result<Option<usize>> {
+    if value.is_empty() || value.eq_ignore_ascii_case("none") {
+        Ok(None)
+    } else {
+        Ok(Some(parse_usize_param(key, value)?))
+    }
+}
+
+fn err_on_unknown_params(model_type: &str, unknown: Vec<String>) -> Result<()> {
+    if unknown.is_empty() {
+        Ok(())
+    } else {
+        Err(Error::InvalidValue(format!(
+            "set_params: unknown parameter(s) {:?} for {}",
+            unknown, model_type
+        )))
+    }
+}
+
+fn set_linear_regression_params(
+    model: &mut LinearRegression,
+    params: &HashMap<String, String>,
+) -> Result<()> {
+    let mut unknown = Vec::new();
+    for (key, value) in params {
+        match key.as_str() {
+            "fit_intercept" => model.fit_intercept = parse_bool_param(key, value)?,
+            "normalize" => model.normalize = parse_bool_param(key, value)?,
+            _ => unknown.push(key.clone()),
+        }
+    }
+    err_on_unknown_params("LinearRegression", unknown)
+}
+
+fn set_logistic_regression_params(
+    model: &mut LogisticRegression,
+    params: &HashMap<String, String>,
+) -> Result<()> {
+    let mut unknown = Vec::new();
+    for (key, value) in params {
+        match key.as_str() {
+            // sklearn's inverse-regularization-strength hyperparameter is spelled "C"; accept
+            // the lowercase form too since it matches the model's own field name.
+            "C" | "c" => model.c = parse_f64_param(key, value)?,
+            "fit_intercept" => model.fit_intercept = parse_bool_param(key, value)?,
+            "max_iter" => model.max_iter = parse_usize_param(key, value)?,
+            "tol" => model.tol = parse_f64_param(key, value)?,
+            _ => unknown.push(key.clone()),
+        }
+    }
+    err_on_unknown_params("LogisticRegression", unknown)
+}
+
+fn set_decision_tree_classifier_params(
+    model: &mut DecisionTreeClassifier,
+    params: &HashMap<String, String>,
+) -> Result<()> {
+    let mut config = DecisionTreeConfig::default();
+    let mut unknown = Vec::new();
+    for (key, value) in params {
+        match key.as_str() {
+            "max_depth" => config.max_depth = parse_optional_usize_param(key, value)?,
+            "min_samples_split" => config.min_samples_split = parse_usize_param(key, value)?,
+            "min_samples_leaf" => config.min_samples_leaf = parse_usize_param(key, value)?,
+            "max_features" => config.max_features = parse_optional_usize_param(key, value)?,
+            "random_seed" => config.random_seed = Some(parse_u64_param(key, value)?),
+            _ => unknown.push(key.clone()),
+        }
+    }
+    err_on_unknown_params("DecisionTreeClassifier", unknown)?;
+    *model = DecisionTreeClassifier::new(config);
+    Ok(())
+}
+
+fn set_decision_tree_regressor_params(
+    model: &mut DecisionTreeRegressor,
+    params: &HashMap<String, String>,
+) -> Result<()> {
+    let mut config = DecisionTreeConfig::default();
+    let mut unknown = Vec::new();
+    for (key, value) in params {
+        match key.as_str() {
+            "max_depth" => config.max_depth = parse_optional_usize_param(key, value)?,
+            "min_samples_split" => config.min_samples_split = parse_usize_param(key, value)?,
+            "min_samples_leaf" => config.min_samples_leaf = parse_usize_param(key, value)?,
+            "max_features" => config.max_features = parse_optional_usize_param(key, value)?,
+            "random_seed" => config.random_seed = Some(parse_u64_param(key, value)?),
+            _ => unknown.push(key.clone()),
+        }
+    }
+    err_on_unknown_params("DecisionTreeRegressor", unknown)?;
+    *model = DecisionTreeRegressor::new(config);
+    Ok(())
+}
+
+fn set_random_forest_regressor_params(
+    model: &mut RandomForestRegressor,
+    params: &HashMap<String, String>,
+) -> Result<()> {
+    let mut config = RandomForestConfig::default();
+    let mut unknown = Vec::new();
+    for (key, value) in params {
+        match key.as_str() {
+            "n_estimators" => config.n_estimators = parse_usize_param(key, value)?,
+            "max_depth" => config.max_depth = parse_optional_usize_param(key, value)?,
+            "min_samples_split" => config.min_samples_split = parse_usize_param(key, value)?,
+            "min_samples_leaf" => config.min_samples_leaf = parse_usize_param(key, value)?,
+            "max_features" => config.max_features = parse_optional_usize_param(key, value)?,
+            "bootstrap" => config.bootstrap = parse_bool_param(key, value)?,
+            "max_samples" => config.max_samples = parse_optional_usize_param(key, value)?,
+            "random_seed" => config.random_seed = Some(parse_u64_param(key, value)?),
+            "oob_score" => config.oob_score = parse_bool_param(key, value)?,
+            "n_jobs" => config.n_jobs = parse_usize_param(key, value)?,
+            _ => unknown.push(key.clone()),
+        }
+    }
+    err_on_unknown_params("RandomForestRegressor", unknown)?;
+    *model = RandomForestRegressor::new(config);
+    Ok(())
+}
+
+fn set_gradient_boosting_regressor_params(
+    model: &mut GradientBoostingRegressor,
+    params: &HashMap<String, String>,
+) -> Result<()> {
+    let mut config = GradientBoostingConfig::default();
+    let mut unknown = Vec::new();
+    for (key, value) in params {
+        match key.as_str() {
+            "n_estimators" => config.n_estimators = parse_usize_param(key, value)?,
+            "learning_rate" => config.learning_rate = parse_f64_param(key, value)?,
+            "max_depth" => config.max_depth = parse_usize_param(key, value)?,
+            "min_samples_split" => config.min_samples_split = parse_usize_param(key, value)?,
+            "min_samples_leaf" => config.min_samples_leaf = parse_usize_param(key, value)?,
+            "subsample" => config.subsample = parse_f64_param(key, value)?,
+            "random_seed" => config.random_seed = Some(parse_u64_param(key, value)?),
+            _ => unknown.push(key.clone()),
+        }
+    }
+    err_on_unknown_params("GradientBoostingRegressor", unknown)?;
+    *model = GradientBoostingRegressor::new(config);
+    Ok(())
+}
+
+fn set_mlp_regressor_params(
+    model: &mut MLPRegressor,
+    params: &HashMap<String, String>,
+) -> Result<()> {
+    // MLPRegressor stores its config privately with no accessor either, so — like the
+    // tree/ensemble models above — tuning rebuilds a fresh (unfitted) instance from
+    // `MLPConfig::default()` overlaid with the recognized keys.
+    let mut config = crate::ml::models::neural::MLPConfig::default();
+    let mut unknown = Vec::new();
+    for (key, value) in params {
+        match key.as_str() {
+            "learning_rate" => config.learning_rate = parse_f64_param(key, value)?,
+            "n_epochs" => config.n_epochs = parse_usize_param(key, value)?,
+            "batch_size" => config.batch_size = parse_usize_param(key, value)?,
+            "random_seed" => config.random_seed = parse_u64_param(key, value)?,
+            _ => unknown.push(key.clone()),
+        }
+    }
+    err_on_unknown_params("MLPRegressor", unknown)?;
+    *model = MLPRegressor::new(config);
+    Ok(())
+}
+
+fn set_mlp_classifier_params(
+    model: &mut MLPClassifier,
+    params: &HashMap<String, String>,
+) -> Result<()> {
+    let mut config = crate::ml::models::neural::MLPConfig::default();
+    let mut unknown = Vec::new();
+    for (key, value) in params {
+        match key.as_str() {
+            "learning_rate" => config.learning_rate = parse_f64_param(key, value)?,
+            "n_epochs" => config.n_epochs = parse_usize_param(key, value)?,
+            "batch_size" => config.batch_size = parse_usize_param(key, value)?,
+            "random_seed" => config.random_seed = parse_u64_param(key, value)?,
+            _ => unknown.push(key.clone()),
+        }
+    }
+    err_on_unknown_params("MLPClassifier", unknown)?;
+    *model = MLPClassifier::new(config);
+    Ok(())
+}
+
+/// Apply `params` to `model` by downcasting to a concrete type pandrs ships.
+///
+/// Returns `Ok(())` when the type is recognized and every key in `params` was applied (or
+/// `params` is empty); `Err` when the type is recognized but `params` contains keys it doesn't
+/// support, OR when `model`'s concrete type isn't one this function knows how to tune at all —
+/// rather than silently accepting hyperparameters that go nowhere.
+///
+/// `RandomForestClassifier`/`GradientBoostingClassifier` are deliberately not among the
+/// recognized types: they derive only `Debug` (not `Clone`) in `models/ensemble.rs`, so they can
+/// never actually instantiate `SupervisedAdapter<M>` (which requires `M: Clone`) in the first
+/// place — downcasting to them here would be unreachable dead code.
+fn apply_model_hyperparams<M: 'static>(
+    model: &mut M,
+    params: &HashMap<String, String>,
+) -> Result<()> {
+    if params.is_empty() {
+        return Ok(());
+    }
+    let any_model: &mut dyn Any = model;
+    if let Some(m) = any_model.downcast_mut::<LinearRegression>() {
+        return set_linear_regression_params(m, params);
+    }
+    if let Some(m) = any_model.downcast_mut::<LogisticRegression>() {
+        return set_logistic_regression_params(m, params);
+    }
+    if let Some(m) = any_model.downcast_mut::<DecisionTreeClassifier>() {
+        return set_decision_tree_classifier_params(m, params);
+    }
+    if let Some(m) = any_model.downcast_mut::<DecisionTreeRegressor>() {
+        return set_decision_tree_regressor_params(m, params);
+    }
+    if let Some(m) = any_model.downcast_mut::<RandomForestRegressor>() {
+        return set_random_forest_regressor_params(m, params);
+    }
+    if let Some(m) = any_model.downcast_mut::<GradientBoostingRegressor>() {
+        return set_gradient_boosting_regressor_params(m, params);
+    }
+    if let Some(m) = any_model.downcast_mut::<MLPRegressor>() {
+        return set_mlp_regressor_params(m, params);
+    }
+    if let Some(m) = any_model.downcast_mut::<MLPClassifier>() {
+        return set_mlp_classifier_params(m, params);
+    }
+    Err(Error::InvalidValue(format!(
+        "set_params: hyperparameter tuning is not implemented for model type `{}`; \
+         unrecognized parameter(s): {:?}",
+        std::any::type_name::<M>(),
+        params.keys().collect::<Vec<_>>()
+    )))
+}
 
 /// Adapter that bridges SupervisedModel (fit by target column name) into SklearnPredictor
 /// (fit by separate X and Y DataFrames).
@@ -42,9 +332,16 @@ impl<M: SupervisedModel + Clone + Send + Sync + fmt::Debug> SupervisedAdapter<M>
     }
 
     /// Compute R² score from two slices — 1 – SS_res / SS_tot.
-    fn r2_score_slices(y_true: &[f64], y_pred: &[f64]) -> f64 {
+    fn r2_score_slices(y_true: &[f64], y_pred: &[f64]) -> Result<f64> {
+        if y_true.len() != y_pred.len() {
+            return Err(Error::DimensionMismatch(format!(
+                "r2_score_slices: y_true has {} rows but predictions have {} rows",
+                y_true.len(),
+                y_pred.len()
+            )));
+        }
         if y_true.is_empty() {
-            return 0.0;
+            return Ok(0.0);
         }
         let mean_y = y_true.iter().sum::<f64>() / y_true.len() as f64;
         let ss_tot: f64 = y_true.iter().map(|&y| (y - mean_y).powi(2)).sum();
@@ -53,7 +350,7 @@ impl<M: SupervisedModel + Clone + Send + Sync + fmt::Debug> SupervisedAdapter<M>
             .zip(y_pred.iter())
             .map(|(&y_t, &y_p)| (y_t - y_p).powi(2))
             .sum();
-        if ss_tot == 0.0 {
+        Ok(if ss_tot == 0.0 {
             if ss_res == 0.0 {
                 1.0
             } else {
@@ -61,7 +358,7 @@ impl<M: SupervisedModel + Clone + Send + Sync + fmt::Debug> SupervisedAdapter<M>
             }
         } else {
             1.0 - ss_res / ss_tot
-        }
+        })
     }
 
     /// Merge the feature DataFrame `x` with the target DataFrame `y` into one combined
@@ -81,8 +378,9 @@ impl<M: SupervisedModel + Clone + Send + Sync + fmt::Debug> SupervisedAdapter<M>
             self.target_col.clone()
         } else {
             y.column_names()
-                .into_iter()
+                .iter()
                 .next()
+                .cloned()
                 .ok_or_else(|| Error::InvalidValue("Y DataFrame has no columns".into()))?
         };
 
@@ -109,24 +407,25 @@ impl<M: SupervisedModel + Clone + Send + Sync + fmt::Debug + 'static> SklearnEst
         params
     }
 
-    /// Best-effort parameter setting.  Unknown keys are silently ignored so that
-    /// hyperparameter search loops do not fail when they pass model-internal param names
-    /// through the generic `set_params` interface.
+    /// Set hyperparameters on the wrapped model.
+    ///
+    /// `"target_col"` is handled here directly (it belongs to the adapter, not the wrapped
+    /// model). Every other key is forwarded to `apply_model_hyperparams`, which downcasts to
+    /// the wrapped model's concrete type and actually applies it — this is what makes
+    /// `GridSearchCV`/`RandomizedSearchCV` tune real hyperparameters instead of fitting the same
+    /// untuned model on every trial. Unknown keys return `Err`, matching scikit-learn's
+    /// `set_params` (which raises on invalid parameter names) rather than silently discarding
+    /// them.
     fn set_params(&mut self, params: HashMap<String, String>) -> Result<()> {
-        for (key, value) in &params {
-            match key.as_str() {
-                "target_col" => {
-                    self.target_col = value.clone();
-                }
-                _ => {
-                    // Silently ignore unknown hyperparameter keys.
-                    // Concrete model types do not expose a set_params method through
-                    // SupervisedModel, so per-trial hyperparameter tuning must be handled
-                    // by constructing fresh model instances (see AutoML::create_estimator).
-                }
+        let mut remaining: HashMap<String, String> = HashMap::new();
+        for (key, value) in params {
+            if key == "target_col" {
+                self.target_col = value;
+            } else {
+                remaining.insert(key, value);
             }
         }
-        Ok(())
+        apply_model_hyperparams(&mut self.model, &remaining)
     }
 
     fn get_feature_names_out(&self, input_features: Option<&[String]>) -> Option<Vec<String>> {
@@ -157,14 +456,15 @@ impl<M: SupervisedModel + Clone + Send + Sync + fmt::Debug + 'static> SklearnPre
             self.target_col.clone()
         } else {
             y.column_names()
-                .into_iter()
+                .iter()
                 .next()
+                .cloned()
                 .ok_or_else(|| Error::InvalidValue("Y DataFrame has no columns".into()))?
         };
         let y_col = y.get_column::<f64>(&y_col_name)?;
         let y_true = y_col.as_f64()?;
 
-        Ok(Self::r2_score_slices(&y_true, &predictions))
+        Self::r2_score_slices(&y_true, &predictions)
     }
 
     fn feature_importances(&self) -> Option<HashMap<String, f64>> {
@@ -203,7 +503,7 @@ pub trait SklearnTransformer: SklearnEstimator {
     }
 
     /// Inverse transform data (if supported)
-    fn inverse_transform(&self, x: &DataFrame) -> Result<DataFrame> {
+    fn inverse_transform(&self, _x: &DataFrame) -> Result<DataFrame> {
         Err(Error::NotImplemented(
             "inverse_transform not supported".into(),
         ))
@@ -222,7 +522,7 @@ pub trait SklearnPredictor: SklearnEstimator {
     fn predict(&self, x: &DataFrame) -> Result<Vec<f64>>;
 
     /// Get prediction confidence scores (if supported)
-    fn predict_proba(&self, x: &DataFrame) -> Result<Vec<Vec<f64>>> {
+    fn predict_proba(&self, _x: &DataFrame) -> Result<Vec<Vec<f64>>> {
         Err(Error::NotImplemented("predict_proba not supported".into()))
     }
 
@@ -346,7 +646,7 @@ impl SklearnEstimator for StandardScalerCompat {
 
 impl SklearnTransformer for StandardScalerCompat {
     fn fit(&mut self, x: &DataFrame, _y: Option<&DataFrame>) -> Result<()> {
-        let feature_names: Vec<String> = x.column_names();
+        let feature_names: Vec<String> = x.column_names().to_vec();
         let n_features = feature_names.len();
         let n_samples = x.nrows();
 
@@ -367,12 +667,11 @@ impl SklearnTransformer for StandardScalerCompat {
                 continue;
             }
 
-            // Calculate mean
-            let mean = if self.with_mean {
-                values.iter().sum::<f64>() / values.len() as f64
-            } else {
-                0.0
-            };
+            // The true mean is always needed to compute variance correctly (Var(x) = E[(x -
+            // mean)^2]), even when `with_mean` is false and centering itself is skipped at
+            // transform time below. Using 0.0 here when `with_mean` is false would compute
+            // E[x^2] instead of Var(x) whenever the feature isn't already zero-centered.
+            let mean = values.iter().sum::<f64>() / values.len() as f64;
 
             // Calculate variance
             let variance = if self.with_std {
@@ -415,11 +714,11 @@ impl SklearnTransformer for StandardScalerCompat {
         let mut result = DataFrame::new();
 
         for feature_name in x.column_names() {
-            let col = x.get_column::<f64>(&feature_name)?;
+            let col = x.get_column::<f64>(feature_name.as_str())?;
             let values = col.as_f64()?;
 
-            let mean = means.get(&feature_name).copied().unwrap_or(0.0);
-            let scale = scales.get(&feature_name).copied().unwrap_or(1.0);
+            let mean = means.get(feature_name.as_str()).copied().unwrap_or(0.0);
+            let scale = scales.get(feature_name.as_str()).copied().unwrap_or(1.0);
 
             let transformed_values: Vec<f64> = values
                 .iter()
@@ -435,7 +734,7 @@ impl SklearnTransformer for StandardScalerCompat {
 
             result.add_column(
                 feature_name.clone(),
-                Series::new(transformed_values, Some(feature_name))?,
+                Series::new(transformed_values, Some(feature_name.clone()))?,
             )?;
         }
 
@@ -454,11 +753,11 @@ impl SklearnTransformer for StandardScalerCompat {
         let mut result = DataFrame::new();
 
         for feature_name in x.column_names() {
-            let col = x.get_column::<f64>(&feature_name)?;
+            let col = x.get_column::<f64>(feature_name.as_str())?;
             let values = col.as_f64()?;
 
-            let mean = means.get(&feature_name).copied().unwrap_or(0.0);
-            let scale = scales.get(&feature_name).copied().unwrap_or(1.0);
+            let mean = means.get(feature_name.as_str()).copied().unwrap_or(0.0);
+            let scale = scales.get(feature_name.as_str()).copied().unwrap_or(1.0);
 
             let inverse_transformed_values: Vec<f64> = values
                 .iter()
@@ -478,7 +777,7 @@ impl SklearnTransformer for StandardScalerCompat {
 
             result.add_column(
                 feature_name.clone(),
-                Series::new(inverse_transformed_values, Some(feature_name))?,
+                Series::new(inverse_transformed_values, Some(feature_name.clone()))?,
             )?;
         }
 
@@ -617,7 +916,7 @@ impl SklearnEstimator for MinMaxScalerCompat {
 
 impl SklearnTransformer for MinMaxScalerCompat {
     fn fit(&mut self, x: &DataFrame, _y: Option<&DataFrame>) -> Result<()> {
-        let feature_names: Vec<String> = x.column_names();
+        let feature_names: Vec<String> = x.column_names().to_vec();
         let n_features = feature_names.len();
         let n_samples = x.nrows();
 
@@ -685,11 +984,11 @@ impl SklearnTransformer for MinMaxScalerCompat {
         let mut result = DataFrame::new();
 
         for feature_name in x.column_names() {
-            let col = x.get_column::<f64>(&feature_name)?;
+            let col = x.get_column::<f64>(feature_name.as_str())?;
             let values = col.as_f64()?;
 
-            let scale = scales.get(&feature_name).copied().unwrap_or(1.0);
-            let min = mins.get(&feature_name).copied().unwrap_or(0.0);
+            let scale = scales.get(feature_name.as_str()).copied().unwrap_or(1.0);
+            let min = mins.get(feature_name.as_str()).copied().unwrap_or(0.0);
 
             let transformed_values: Vec<f64> = values
                 .iter()
@@ -707,7 +1006,7 @@ impl SklearnTransformer for MinMaxScalerCompat {
 
             result.add_column(
                 feature_name.clone(),
-                Series::new(transformed_values, Some(feature_name))?,
+                Series::new(transformed_values, Some(feature_name.clone()))?,
             )?;
         }
 
@@ -726,11 +1025,11 @@ impl SklearnTransformer for MinMaxScalerCompat {
         let mut result = DataFrame::new();
 
         for feature_name in x.column_names() {
-            let col = x.get_column::<f64>(&feature_name)?;
+            let col = x.get_column::<f64>(feature_name.as_str())?;
             let values = col.as_f64()?;
 
-            let scale = scales.get(&feature_name).copied().unwrap_or(1.0);
-            let min = mins.get(&feature_name).copied().unwrap_or(0.0);
+            let scale = scales.get(feature_name.as_str()).copied().unwrap_or(1.0);
+            let min = mins.get(feature_name.as_str()).copied().unwrap_or(0.0);
 
             let inverse_transformed_values: Vec<f64> = values
                 .iter()
@@ -745,7 +1044,7 @@ impl SklearnTransformer for MinMaxScalerCompat {
 
             result.add_column(
                 feature_name.clone(),
-                Series::new(inverse_transformed_values, Some(feature_name))?,
+                Series::new(inverse_transformed_values, Some(feature_name.clone()))?,
             )?;
         }
 
@@ -758,12 +1057,17 @@ impl SklearnTransformer for MinMaxScalerCompat {
 }
 
 /// Enhanced Pipeline with full scikit-learn compatibility
+///
+/// Note: unlike scikit-learn's `Pipeline`, there is deliberately no `memory` /
+/// joblib-`Memory`-style caching option here. A previous version accepted and echoed back a
+/// `memory` parameter but never actually cached anything — a no-op that silently did nothing
+/// while looking configured. Real caching of intermediate transformer outputs would need a
+/// content-addressed on-disk cache (real infrastructure, not a quick shim), so the honest
+/// choice was to remove the false affordance rather than leave a setting that does nothing.
 #[derive(Debug)]
 pub struct Pipeline {
     /// List of pipeline steps (name, transformer/estimator)
     pub steps: Vec<(String, PipelineStep)>,
-    /// Whether to cache intermediate results
-    pub memory: Option<String>,
     /// Verbose output
     pub verbose: bool,
 }
@@ -795,7 +1099,6 @@ impl Pipeline {
     pub fn new(steps: Vec<(String, PipelineStep)>) -> Self {
         Self {
             steps,
-            memory: None,
             verbose: false,
         }
     }
@@ -818,25 +1121,27 @@ impl Pipeline {
         self.steps.iter().map(|(name, _)| name).collect()
     }
 
-    /// Set pipeline parameters
+    /// Set pipeline parameters.
+    ///
+    /// Step-scoped keys use the `"<step_name>__<param_name>"` convention (e.g.
+    /// `"scaler__with_mean"`), checked *before* any other interpretation of the key — a
+    /// previous version checked `key.starts_with("memory")` first, which meant a step literally
+    /// named `memory...` (e.g. `"memory_cache__enabled"`) would be misrouted into the
+    /// pipeline-level memory setting instead of reaching its step. A `"__"`-bearing key whose
+    /// step name doesn't exist, or a top-level key that isn't `"verbose"`, is an error rather
+    /// than being silently dropped — matching scikit-learn's `set_params`, which raises on
+    /// invalid parameter names.
     pub fn set_params(&mut self, params: HashMap<String, String>) -> Result<()> {
         for (key, value) in params {
-            if key == "verbose" {
-                self.verbose = value.parse().map_err(|_| {
-                    Error::InvalidValue(format!("Invalid boolean value for verbose: {}", value))
-                })?;
-            } else if key.starts_with("memory") {
-                self.memory = Some(value);
-            } else if let Some(param_sep) = key.find("__") {
-                // Step-specific parameter (e.g., "scaler__with_mean")
-                let step_name = &key[..param_sep];
-                let param_name = &key[param_sep + 2..];
+            if let Some(sep_idx) = key.find("__") {
+                let step_name = &key[..sep_idx];
+                let param_name = &key[sep_idx + 2..];
 
-                // Find the step and set its parameter
+                let mut matched = false;
                 for (name, step) in &mut self.steps {
                     if name == step_name {
                         let mut step_params = HashMap::new();
-                        step_params.insert(param_name.to_string(), value);
+                        step_params.insert(param_name.to_string(), value.clone());
 
                         match step {
                             PipelineStep::Transformer(transformer) => {
@@ -846,9 +1151,25 @@ impl Pipeline {
                                 predictor.set_params(step_params)?;
                             }
                         }
+                        matched = true;
                         break;
                     }
                 }
+                if !matched {
+                    return Err(Error::InvalidValue(format!(
+                        "Pipeline::set_params: no step named '{}' (parameter '{}')",
+                        step_name, key
+                    )));
+                }
+            } else if key == "verbose" {
+                self.verbose = value.parse().map_err(|_| {
+                    Error::InvalidValue(format!("Invalid boolean value for verbose: {}", value))
+                })?;
+            } else {
+                return Err(Error::InvalidValue(format!(
+                    "Pipeline::set_params: unknown parameter '{}'",
+                    key
+                )));
             }
         }
         Ok(())
@@ -859,10 +1180,6 @@ impl SklearnEstimator for Pipeline {
     fn get_params(&self) -> HashMap<String, String> {
         let mut params = HashMap::new();
         params.insert("verbose".to_string(), self.verbose.to_string());
-
-        if let Some(memory) = &self.memory {
-            params.insert("memory".to_string(), memory.clone());
-        }
 
         // Add step-specific parameters
         for (step_name, step) in &self.steps {
@@ -959,7 +1276,7 @@ impl SklearnPredictor for Pipeline {
     fn predict_proba(&self, x: &DataFrame) -> Result<Vec<Vec<f64>>> {
         let mut current_x = x.clone();
 
-        for (step_name, step) in &self.steps {
+        for (_step_name, step) in &self.steps {
             match step {
                 PipelineStep::Transformer(transformer) => {
                     current_x = transformer.transform(&current_x)?;
@@ -978,7 +1295,7 @@ impl SklearnPredictor for Pipeline {
     fn score(&self, x: &DataFrame, y: &DataFrame) -> Result<f64> {
         let mut current_x = x.clone();
 
-        for (step_name, step) in &self.steps {
+        for (_step_name, step) in &self.steps {
             match step {
                 PipelineStep::Transformer(transformer) => {
                     current_x = transformer.transform(&current_x)?;
@@ -1003,7 +1320,6 @@ impl SklearnPredictor for Pipeline {
 
         Box::new(Pipeline {
             steps: cloned_steps,
-            memory: self.memory.clone(),
             verbose: self.verbose,
         })
     }
@@ -1101,6 +1417,48 @@ mod tests {
     }
 
     #[test]
+    fn test_standard_scaler_with_mean_false_uses_true_variance() {
+        // Values [1,2,3,4,5]: true mean=3, true variance=Σ(x-3)²/5=2.0 (scale=sqrt(2)).
+        // The previous bug forced mean=0.0 before computing variance whenever `with_mean` was
+        // false, so it computed E[x²]=11.0 (scale=sqrt(11)) instead of the true variance — wrong
+        // for any feature that isn't already zero-centered.
+        let mut scaler = StandardScalerCompat::with_params(false, true);
+        let mut df = DataFrame::new();
+        df.add_column(
+            "feature1".to_string(),
+            Series::new(vec![1.0, 2.0, 3.0, 4.0, 5.0], Some("feature1".to_string()))
+                .expect("operation should succeed"),
+        )
+        .expect("operation should succeed");
+
+        scaler.fit(&df, None).expect("fit should succeed");
+        let transformed = scaler.transform(&df).expect("transform should succeed");
+        let values = transformed
+            .get_column::<f64>("feature1")
+            .expect("column should exist")
+            .as_f64()
+            .expect("column should be f64");
+
+        let true_scale = 2.0f64.sqrt();
+        let buggy_scale = 11.0f64.sqrt();
+        assert!(
+            (values[0] - 1.0 / true_scale).abs() < 1e-9,
+            "with_mean=false must still divide by the TRUE standard deviation (sqrt(2) ≈ \
+             {:.4}), not sqrt(E[x^2]) (sqrt(11) ≈ {:.4}); got {}",
+            true_scale,
+            buggy_scale,
+            values[0]
+        );
+
+        // Sanity: with_mean=false means values are NOT centered (no subtraction), only scaled —
+        // val=3 (the true mean) maps to 3/sqrt(2), not 0.
+        assert!(
+            (values[2] - 3.0 / true_scale).abs() < 1e-9,
+            "with_mean=false must not subtract the mean before scaling"
+        );
+    }
+
+    #[test]
     fn test_minmax_scaler_compat() {
         let mut scaler = MinMaxScalerCompat::new();
 
@@ -1152,5 +1510,71 @@ mod tests {
         assert!(params.contains_key("verbose"));
         assert!(params.contains_key("scaler__with_mean"));
         assert!(params.contains_key("scaler__with_std"));
+    }
+
+    #[test]
+    fn test_pipeline_set_params_step_scoped_and_errors() {
+        let mut pipeline = pipeline_builders::standard_preprocessing_pipeline();
+
+        // Step-scoped parameter actually reaches the step.
+        let mut params = HashMap::new();
+        params.insert("scaler__with_mean".to_string(), "false".to_string());
+        pipeline
+            .set_params(params)
+            .expect("step-scoped set_params should succeed");
+        let updated = pipeline.get_params();
+        assert_eq!(
+            updated.get("scaler__with_mean").map(|s| s.as_str()),
+            Some("false")
+        );
+
+        // A "__"-bearing key whose step doesn't exist must error, not be silently dropped.
+        let mut bad_step_params = HashMap::new();
+        bad_step_params.insert("no_such_step__with_mean".to_string(), "true".to_string());
+        assert!(
+            pipeline.set_params(bad_step_params).is_err(),
+            "set_params referencing a nonexistent step must return Err"
+        );
+
+        // An unknown top-level (non-"__", non-"verbose") key must also error — including the
+        // removed "memory" setting, which used to be silently accepted and echoed back despite
+        // never caching anything.
+        let mut unknown_top_level = HashMap::new();
+        unknown_top_level.insert("memory".to_string(), "/tmp/cache".to_string());
+        assert!(
+            pipeline.set_params(unknown_top_level).is_err(),
+            "unknown top-level parameters (including the removed 'memory' option) must error"
+        );
+
+        // A step literally prefixed "memory" must still route through step-scoped handling
+        // rather than being misrouted into a pipeline-level "memory" setting (the root cause of
+        // the original bug: `key.starts_with(\"memory\")` was checked before the \"__\" split).
+        pipeline.add_step(
+            "memory_cache".to_string(),
+            PipelineStep::Transformer(Box::new(StandardScalerCompat::new())),
+        );
+        let mut step_like_memory = HashMap::new();
+        step_like_memory.insert("memory_cache__with_std".to_string(), "false".to_string());
+        pipeline
+            .set_params(step_like_memory)
+            .expect("a step named 'memory_cache' must be reachable via '__' routing");
+    }
+
+    #[test]
+    fn test_supervised_adapter_set_params_rejects_unknown_key() {
+        let mut adapter: Box<dyn SklearnPredictor + Send + Sync> =
+            Box::new(SupervisedAdapter::new(LinearRegression::new(), "target"));
+        let mut params = HashMap::new();
+        params.insert("not_a_real_hyperparameter".to_string(), "1".to_string());
+        assert!(
+            adapter.set_params(params).is_err(),
+            "set_params must error on an unrecognized key instead of silently discarding it"
+        );
+
+        // Recognized keys still succeed.
+        let mut good_params = HashMap::new();
+        good_params.insert("fit_intercept".to_string(), "false".to_string());
+        good_params.insert("normalize".to_string(), "true".to_string());
+        assert!(adapter.set_params(good_params).is_ok());
     }
 }

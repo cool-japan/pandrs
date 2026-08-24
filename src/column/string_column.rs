@@ -1,25 +1,58 @@
 use std::any::Any;
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::Arc;
 
-use crate::column::string_pool::{StringPool, GLOBAL_STRING_POOL};
+use crate::column::string_pool::StringPool;
 use crate::core::column::{Column, ColumnTrait, ColumnType};
 use crate::core::error::{Error, Result};
-use std::collections::HashMap;
 
 /// Optimization modes for string columns
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum StringColumnOptimizationMode {
     /// Legacy mode (original implementation)
-    Legacy,
+    Legacy = 0,
     /// Uses global string pool
-    GlobalPool,
+    GlobalPool = 1,
     /// Uses categorical encoding
-    Categorical,
+    Categorical = 2,
 }
 
-/// Default optimization mode
-pub static mut DEFAULT_OPTIMIZATION_MODE: StringColumnOptimizationMode =
-    StringColumnOptimizationMode::GlobalPool;
+impl StringColumnOptimizationMode {
+    fn from_u8(value: u8) -> Self {
+        match value {
+            0 => StringColumnOptimizationMode::Legacy,
+            2 => StringColumnOptimizationMode::Categorical,
+            _ => StringColumnOptimizationMode::GlobalPool,
+        }
+    }
+}
+
+/// Process-wide default optimization mode, as an atomic `u8` encoding of
+/// [`StringColumnOptimizationMode`].
+///
+/// This used to be a `pub static mut StringColumnOptimizationMode`, read
+/// and written through ad hoc `unsafe` blocks at every call site (see
+/// `StringColumn::new`/`with_nulls` below). That is undefined behavior the
+/// moment two threads touch it concurrently -- one thread reading while
+/// another writes is a data race on a non-atomic static -- and merely
+/// taking a reference to a mutable static is a hard error under the Rust
+/// 2024 edition. `AtomicU8` gives the same "process-wide default, settable
+/// at runtime" behavior with neither problem, via the
+/// [`default_optimization_mode`]/[`set_default_optimization_mode`] accessors.
+static DEFAULT_OPTIMIZATION_MODE: AtomicU8 =
+    AtomicU8::new(StringColumnOptimizationMode::GlobalPool as u8);
+
+/// Get the process-wide default optimization mode used by [`StringColumn::new`]
+/// and [`StringColumn::with_nulls`].
+pub fn default_optimization_mode() -> StringColumnOptimizationMode {
+    StringColumnOptimizationMode::from_u8(DEFAULT_OPTIMIZATION_MODE.load(Ordering::Relaxed))
+}
+
+/// Set the process-wide default optimization mode used by [`StringColumn::new`]
+/// and [`StringColumn::with_nulls`].
+pub fn set_default_optimization_mode(mode: StringColumnOptimizationMode) {
+    DEFAULT_OPTIMIZATION_MODE.store(mode as u8, Ordering::Relaxed);
+}
 
 /// Structure representing a string column (using string pool)
 #[derive(Debug, Clone)]
@@ -34,19 +67,17 @@ pub struct StringColumn {
 impl StringColumn {
     /// Create a new StringColumn from a vector of strings
     pub fn new(data: Vec<String>) -> Self {
-        // Use default optimization mode
-        let mode = unsafe { DEFAULT_OPTIMIZATION_MODE };
-        match mode {
+        match default_optimization_mode() {
             StringColumnOptimizationMode::Legacy => Self::new_legacy(data),
             StringColumnOptimizationMode::GlobalPool => Self::new_with_global_pool(data),
             StringColumnOptimizationMode::Categorical => Self::new_categorical(data),
         }
     }
 
-    /// Create a StringColumn using legacy mode (original implementation)
+    /// Create a StringColumn using legacy mode (original implementation,
+    /// bypassing the global string pool entirely).
     pub fn new_legacy(data: Vec<String>) -> Self {
-        let pool = StringPool::from_strings_legacy(data.clone());
-        let indices: Vec<u32> = data.iter().map(|s| pool.find(s).unwrap_or(0)).collect();
+        let (pool, indices) = StringPool::from_strings_legacy(&data);
 
         Self {
             string_pool: Arc::new(pool),
@@ -57,17 +88,36 @@ impl StringColumn {
         }
     }
 
-    /// Create a StringColumn using global pool
+    /// Create a StringColumn using global pool.
+    ///
+    /// Falls back to a purely local pool (built the same way
+    /// [`Self::new_legacy`] builds one) if the process-wide global string
+    /// pool's lock is poisoned -- an exceedingly rare condition that can
+    /// only happen if some unrelated thread already panicked while holding
+    /// it. This keeps the constructor infallible, which callers rely on,
+    /// while never fabricating a wrong index the way the old "poisoned
+    /// lock silently returns index 0" behavior did: every string in `data`
+    /// still round-trips correctly through `get()`, just without the
+    /// cross-column interning bookkeeping for this one call. The fallback
+    /// is also tagged `Legacy` rather than `GlobalPool` in
+    /// [`Self::optimization_mode`]'s return value: it never touched the
+    /// global pool, so claiming otherwise would be exactly the kind of
+    /// fabricated status this crate's audit exists to catch.
     pub fn new_with_global_pool(data: Vec<String>) -> Self {
-        let indices = GLOBAL_STRING_POOL.add_strings(&data);
-        let pool = StringPool::from_strings(data.clone());
+        let (pool, indices, optimization_mode) = match StringPool::from_strings(&data) {
+            Ok((pool, indices)) => (pool, indices, StringColumnOptimizationMode::GlobalPool),
+            Err(_) => {
+                let (pool, indices) = StringPool::from_strings_legacy(&data);
+                (pool, indices, StringColumnOptimizationMode::Legacy)
+            }
+        };
 
         Self {
             string_pool: Arc::new(pool),
             indices: indices.into(),
             null_mask: None,
             name: None,
-            optimization_mode: StringColumnOptimizationMode::GlobalPool,
+            optimization_mode,
         }
     }
 
@@ -99,8 +149,7 @@ impl StringColumn {
         };
 
         // Processing according to optimization mode
-        let mode = unsafe { DEFAULT_OPTIMIZATION_MODE };
-        let mut column = match mode {
+        let mut column = match default_optimization_mode() {
             StringColumnOptimizationMode::Legacy => Self::new_legacy(data),
             StringColumnOptimizationMode::GlobalPool => Self::new_with_global_pool(data),
             StringColumnOptimizationMode::Categorical => Self::new_categorical(data),
@@ -118,6 +167,11 @@ impl StringColumn {
     /// Get the name
     pub fn get_name(&self) -> Option<&str> {
         self.name.as_deref()
+    }
+
+    /// Get the optimization mode this column was built with
+    pub fn optimization_mode(&self) -> StringColumnOptimizationMode {
+        self.optimization_mode
     }
 
     /// Get string at the specified index
@@ -271,5 +325,47 @@ impl ColumnTrait for StringColumn {
 
     fn as_any(&self) -> &dyn Any {
         self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_optimization_mode_round_trips_through_atomic_accessor() {
+        // Save/restore so this test doesn't leak its mode change into
+        // other tests running in the same process (StringColumn::new()
+        // consults the process-wide default).
+        let previous = default_optimization_mode();
+
+        set_default_optimization_mode(StringColumnOptimizationMode::Legacy);
+        assert_eq!(
+            default_optimization_mode(),
+            StringColumnOptimizationMode::Legacy
+        );
+
+        set_default_optimization_mode(StringColumnOptimizationMode::Categorical);
+        assert_eq!(
+            default_optimization_mode(),
+            StringColumnOptimizationMode::Categorical
+        );
+
+        set_default_optimization_mode(previous);
+    }
+
+    #[test]
+    fn optimization_mode_getter_reports_construction_mode() {
+        let legacy = StringColumn::new_legacy(vec!["a".to_string()]);
+        assert_eq!(
+            legacy.optimization_mode(),
+            StringColumnOptimizationMode::Legacy
+        );
+
+        let global = StringColumn::new_with_global_pool(vec!["a".to_string()]);
+        assert_eq!(
+            global.optimization_mode(),
+            StringColumnOptimizationMode::GlobalPool
+        );
     }
 }

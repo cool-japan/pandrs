@@ -23,7 +23,7 @@ use pandrs::core::error::Result;
 use pandrs::time_series::advanced_forecasting::{
     AutoArima, ModelSelectionCriterion, SarimaForecaster,
 };
-use pandrs::time_series::core::{Frequency, TimeSeries, TimeSeriesBuilder, TimeSeriesData};
+use pandrs::time_series::core::{Frequency, TimeSeries, TimeSeriesBuilder};
 use pandrs::time_series::decomposition::{DecompositionMethod, SeasonalDecomposition};
 use pandrs::time_series::features::TimeSeriesFeatureExtractor;
 use pandrs::time_series::forecasting::{
@@ -31,10 +31,9 @@ use pandrs::time_series::forecasting::{
     LinearTrendForecaster, SimpleMovingAverageForecaster,
 };
 use pandrs::time_series::preprocessing::{
-    Differencing, MissingValueStrategy, Normalization, OutlierDetection, TimeSeriesPreprocessor,
+    MissingValueStrategy, Normalization, OutlierDetection, TimeSeriesPreprocessor,
 };
 use pandrs::time_series::stats::TimeSeriesStats;
-use std::collections::HashMap;
 
 /// Generate synthetic sales data with weekly seasonality and trend
 fn generate_sales_data(n_points: usize) -> Result<TimeSeries> {

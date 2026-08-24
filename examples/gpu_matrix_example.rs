@@ -13,9 +13,9 @@
 #[cfg(cuda_available)]
 use pandrs::error::Result;
 #[cfg(cuda_available)]
-use pandrs::gpu::operations::{GpuMatrix, GpuVector};
+use pandrs::gpu::operations::GpuMatrix;
 #[cfg(cuda_available)]
-use pandrs::gpu::{get_gpu_manager, init_gpu, init_gpu_with_config, GpuConfig, GpuError};
+use pandrs::gpu::{get_gpu_manager, init_gpu_with_config, GpuConfig};
 #[cfg(cuda_available)]
 use scirs2_core::ndarray::{arr2, Array2};
 #[cfg(cuda_available)]
@@ -206,9 +206,11 @@ fn run_performance_benchmark() -> Result<()> {
                 size, cpu_duration, gpu_duration, speedup
             );
         } else {
+            // Bound rather than inlined so the column keeps its {:13} padding.
+            let not_available = "N/A";
             println!(
                 "{:4} | {:13} | {:13} | {}",
-                size, cpu_duration, "N/A", "N/A"
+                size, cpu_duration, not_available, not_available
             );
         }
     }

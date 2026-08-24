@@ -1,5 +1,4 @@
 use crate::error::{PandRSError, Result};
-use crate::index::Index;
 use std::collections::HashMap;
 use std::fmt::{Debug, Display};
 use std::hash::Hash;

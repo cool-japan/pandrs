@@ -6,9 +6,9 @@ use pandrs::schema_evolution::{
     schema_from_json, schema_from_yaml, schema_to_json, schema_to_yaml,
 };
 use pandrs::schema_evolution::{
-    BreakingChange, ColumnSchema, CompatibilityReport, DataFrameSchema, DefaultValue, Migration,
-    MigrationBuilder, SchemaChange, SchemaConstraint, SchemaDataType, SchemaFormat, SchemaMigrator,
-    SchemaRegistry, SchemaVersion, ValidationErrorType, ValidationReport,
+    ColumnSchema, DataFrameSchema, DefaultValue, Migration, MigrationBuilder, SchemaChange,
+    SchemaConstraint, SchemaDataType, SchemaFormat, SchemaMigrator, SchemaRegistry, SchemaVersion,
+    ValidationErrorType,
 };
 use pandrs::{DataFrame, Series};
 use std::env;
@@ -57,6 +57,7 @@ fn make_schema_v2() -> DataFrameSchema {
 fn make_migration_v1_v2() -> Migration {
     MigrationBuilder::new(
         "m_users_001",
+        "users",
         SchemaVersion::new(1, 0, 0),
         SchemaVersion::new(1, 1, 0),
     )
@@ -270,6 +271,7 @@ fn test_apply_rename_column_migration() {
     let df = make_df_users();
     let migration = MigrationBuilder::new(
         "m002",
+        "users",
         SchemaVersion::new(1, 0, 0),
         SchemaVersion::new(1, 1, 0),
     )
@@ -288,6 +290,7 @@ fn test_apply_remove_column_migration() {
     let df = make_df_users();
     let migration = MigrationBuilder::new(
         "m003",
+        "users",
         SchemaVersion::new(1, 0, 0),
         SchemaVersion::new(1, 1, 0),
     )
@@ -306,6 +309,7 @@ fn test_apply_change_type_migration() {
     let df = make_df_users();
     let migration = MigrationBuilder::new(
         "m004",
+        "users",
         SchemaVersion::new(1, 0, 0),
         SchemaVersion::new(1, 1, 0),
     )
@@ -325,6 +329,7 @@ fn test_apply_multi_step_migration() {
     let df = make_df_users();
     let migration = MigrationBuilder::new(
         "m005",
+        "users",
         SchemaVersion::new(1, 0, 0),
         SchemaVersion::new(2, 0, 0),
     )
@@ -350,6 +355,7 @@ fn test_metadata_only_changes_no_data_loss() {
     let df = make_df_users();
     let migration = MigrationBuilder::new(
         "m_meta",
+        "users",
         SchemaVersion::new(1, 0, 0),
         SchemaVersion::new(1, 0, 1),
     )
@@ -738,6 +744,7 @@ fn test_registry_migration_path_multi_hop() {
 
     let m1 = MigrationBuilder::new(
         "p_m001",
+        "products",
         SchemaVersion::new(1, 0, 0),
         SchemaVersion::new(1, 1, 0),
     )
@@ -746,6 +753,7 @@ fn test_registry_migration_path_multi_hop() {
 
     let m2 = MigrationBuilder::new(
         "p_m002",
+        "products",
         SchemaVersion::new(1, 1, 0),
         SchemaVersion::new(1, 2, 0),
     )
@@ -825,7 +833,7 @@ fn test_end_to_end_migrate_via_registry() {
     assert_eq!(result.row_count(), 3);
 
     // Validate migrated result against target schema
-    let target_schema = make_schema_v2();
+    let _target_schema = make_schema_v2();
     let report = migrator.registry.get_latest("users").map(|s| {
         let m = SchemaMigrator::empty();
         m.validate(&result, s).expect("validate")
@@ -889,16 +897,24 @@ fn test_schema_change_breaking_detection() {
 
     assert!(rm.is_breaking());
     assert!(!add.is_breaking());
-    assert!(!rename.is_breaking());
+    // A rename breaks anything still addressing the column by its old name.
+    assert!(rename.is_breaking());
     assert!(change_type.is_breaking());
     assert!(make_non_nullable.is_breaking());
     assert!(!make_nullable.is_breaking());
+
+    let required_no_default = SchemaChange::AddColumn {
+        schema: ColumnSchema::new("required", SchemaDataType::String).with_nullable(false),
+        position: None,
+    };
+    assert!(required_no_default.is_breaking());
 }
 
 #[test]
 fn test_migration_breaking_changes_summary() {
     let migration = MigrationBuilder::new(
         "breaking_m",
+        "users",
         SchemaVersion::new(1, 0, 0),
         SchemaVersion::new(2, 0, 0),
     )
@@ -921,6 +937,7 @@ fn test_add_column_with_bool_default() {
     // Apply via single-change migration
     let migration = MigrationBuilder::new(
         "bool_default",
+        "users",
         SchemaVersion::new(1, 0, 0),
         SchemaVersion::new(1, 1, 0),
     )
@@ -941,6 +958,7 @@ fn test_add_column_with_string_default() {
     let migrator = SchemaMigrator::empty();
     let migration = MigrationBuilder::new(
         "str_default",
+        "users",
         SchemaVersion::new(1, 0, 0),
         SchemaVersion::new(1, 1, 0),
     )

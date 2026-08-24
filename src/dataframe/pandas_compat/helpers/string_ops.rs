@@ -154,10 +154,10 @@ pub fn str_pad_left(
 
     let mut result = DataFrame::new();
     for col_name in df.column_names() {
-        if &col_name == column {
+        if col_name == column {
             result.add_column(
                 col_name.clone(),
-                Series::new(padded.clone(), Some(col_name))?,
+                Series::new(padded.clone(), Some(col_name.clone()))?,
             )?;
         } else if let Ok(vals) = df.get_column_numeric_values(&col_name) {
             result.add_column(col_name.clone(), Series::new(vals, Some(col_name.clone()))?)?;
@@ -189,10 +189,10 @@ pub fn str_pad_right(
 
     let mut result = DataFrame::new();
     for col_name in df.column_names() {
-        if &col_name == column {
+        if col_name == column {
             result.add_column(
                 col_name.clone(),
-                Series::new(padded.clone(), Some(col_name))?,
+                Series::new(padded.clone(), Some(col_name.clone()))?,
             )?;
         } else if let Ok(vals) = df.get_column_numeric_values(&col_name) {
             result.add_column(col_name.clone(), Series::new(vals, Some(col_name.clone()))?)?;
@@ -225,10 +225,10 @@ pub fn str_slice(
 
     let mut result = DataFrame::new();
     for col_name in df.column_names() {
-        if &col_name == column {
+        if col_name == column {
             result.add_column(
                 col_name.clone(),
-                Series::new(sliced.clone(), Some(col_name))?,
+                Series::new(sliced.clone(), Some(col_name.clone()))?,
             )?;
         } else if let Ok(vals) = df.get_column_numeric_values(&col_name) {
             result.add_column(col_name.clone(), Series::new(vals, Some(col_name.clone()))?)?;
@@ -252,10 +252,10 @@ pub fn str_repeat(df: &DataFrame, column: &str, n: usize) -> Result<DataFrame> {
 
     let mut result = DataFrame::new();
     for col_name in df.column_names() {
-        if &col_name == column {
+        if col_name == column {
             result.add_column(
                 col_name.clone(),
-                Series::new(repeated.clone(), Some(col_name))?,
+                Series::new(repeated.clone(), Some(col_name.clone()))?,
             )?;
         } else if let Ok(vals) = df.get_column_numeric_values(&col_name) {
             result.add_column(col_name.clone(), Series::new(vals, Some(col_name.clone()))?)?;
@@ -290,10 +290,10 @@ pub fn str_center(df: &DataFrame, column: &str, width: usize, fillchar: char) ->
 
     let mut result = DataFrame::new();
     for col_name in df.column_names() {
-        if &col_name == column {
+        if col_name == column {
             result.add_column(
                 col_name.clone(),
-                Series::new(centered.clone(), Some(col_name))?,
+                Series::new(centered.clone(), Some(col_name.clone()))?,
             )?;
         } else if let Ok(vals) = df.get_column_numeric_values(&col_name) {
             result.add_column(col_name.clone(), Series::new(vals, Some(col_name.clone()))?)?;
@@ -320,10 +320,10 @@ pub fn str_zfill(df: &DataFrame, column: &str, width: usize) -> Result<DataFrame
 
     let mut result = DataFrame::new();
     for col_name in df.column_names() {
-        if &col_name == column {
+        if col_name == column {
             result.add_column(
                 col_name.clone(),
-                Series::new(filled.clone(), Some(col_name))?,
+                Series::new(filled.clone(), Some(col_name.clone()))?,
             )?;
         } else if let Ok(vals) = df.get_column_numeric_values(&col_name) {
             result.add_column(col_name.clone(), Series::new(vals, Some(col_name.clone()))?)?;

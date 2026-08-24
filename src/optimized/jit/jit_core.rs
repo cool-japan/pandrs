@@ -10,17 +10,11 @@ use std::error::Error as StdError;
 use std::fmt;
 use std::sync::Arc;
 
-use super::types::{JitNumeric, JitType, NumericValue, TypedVector};
+use super::types::{NumericValue, TypedVector};
 
 // JIT compilation imports
 #[cfg(feature = "jit")]
 use cranelift::prelude::*;
-#[cfg(feature = "jit")]
-use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
-#[cfg(feature = "jit")]
-use cranelift_jit::JITModule;
-#[cfg(feature = "jit")]
-use cranelift_module::Module;
 
 /// Error types for JIT compilation and execution
 #[derive(Debug)]
@@ -91,7 +85,11 @@ pub struct JitFunction {
     output_type: &'static str,
     /// JIT compilation context
     #[cfg(feature = "jit")]
-    jit_context: Option<Arc<JitContext>>,
+    // `Rc`, not `Arc`: `JitContext` is inherently `!Send + !Sync` (it owns a raw
+    // `*const u8` code pointer and a Cranelift `JITModule`), so this handle never
+    // crosses threads. `Rc` gives the same cheap `Clone` without a pointless
+    // atomic refcount (clippy::arc_with_non_send_sync).
+    jit_context: Option<std::rc::Rc<JitContext>>,
 }
 
 /// Runtime statistics for JIT-compiled functions
@@ -165,7 +163,7 @@ impl JitFunction {
         let name = self.name.clone();
         match JitContext::compile(&name) {
             Ok(ctx) => {
-                self.jit_context = Some(Arc::new(ctx));
+                self.jit_context = Some(std::rc::Rc::new(ctx));
                 Ok(self)
             }
             Err(e) => Err(e),
@@ -199,7 +197,7 @@ impl JitCompilable<Vec<f64>, f64> for JitFunction {
                 // Use the JIT-compiled function for array operations
                 match ctx.execute_array_sum(&args) {
                     Ok(result) => {
-                        let duration = start.elapsed().as_nanos() as u64;
+                        let _duration = start.elapsed().as_nanos() as u64;
                         // In a real implementation, record JIT stats
                         // stats.record_jit_execution(duration);
                         return result;
@@ -214,7 +212,7 @@ impl JitCompilable<Vec<f64>, f64> for JitFunction {
 
         // Fall back to native implementation
         let result = (self.native_fn)(args);
-        let duration = start.elapsed().as_nanos() as u64;
+        let _duration = start.elapsed().as_nanos() as u64;
 
         // In a real implementation, record stats
         // stats.record_native_execution(duration);
@@ -227,11 +225,14 @@ impl JitCompilable<Vec<f64>, f64> for JitFunction {
 #[cfg(feature = "jit")]
 pub struct JitContext {
     /// Function name for debugging and caching
+    #[allow(dead_code)] // reserved for future use
     name: String,
     /// The compiled function pointer
     compiled_fn: Option<*const u8>,
     /// JIT module for function management
     #[cfg(feature = "jit")]
+    #[allow(dead_code)]
+    // keeps the JIT module alive so the compiled function pointer stays valid
     jit_module: Option<cranelift_jit::JITModule>,
 }
 
@@ -241,7 +242,6 @@ impl JitContext {
     pub fn compile(name: &str) -> JitResult<Self> {
         use cranelift_jit::{JITBuilder, JITModule};
         use cranelift_module::{Linkage, Module};
-        use target_lexicon::Triple;
 
         // Create JIT builder with current target
         let isa = cranelift_native::builder()
@@ -324,7 +324,7 @@ impl JitContext {
             let element_ptr = builder.ins().iadd(array_ptr, element_offset);
             let element_value = builder
                 .ins()
-                .load(types::F64, MemFlags::new(), element_ptr, 0);
+                .load(types::F64, MemFlagsData::new(), element_ptr, 0);
 
             let current_sum = builder.use_var(sum);
             let new_sum = builder.ins().fadd(current_sum, element_value);

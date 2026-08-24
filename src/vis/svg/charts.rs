@@ -118,6 +118,20 @@ impl SvgChartConfig {
 // ============================================================================
 
 fn nice_ticks(min: f64, max: f64, count: usize) -> Vec<f64> {
+    // A non-finite domain (e.g. every sample the caller folded into
+    // min/max was NaN, leaving the fold stuck at its +inf/-inf seed)
+    // must never reach the log10/step arithmetic below: `(-inf).log10()`
+    // is NaN, every "nice" step derived from it is NaN, and every
+    // generated tick would inherit that NaN and print as the literal
+    // text "NaN" in an axis label. Callers are expected to substitute a
+    // finite fallback domain when they have no finite data (see
+    // `finite_domain`), so reaching here with a non-finite bound means
+    // there is nothing sensible to tick — return no ticks rather than
+    // fabricate one that says "NaN". `draw_axes_and_grid` iterates the
+    // tick slice, so an empty result just draws bare axis lines.
+    if !min.is_finite() || !max.is_finite() {
+        return Vec::new();
+    }
     if (max - min).abs() < f64::EPSILON {
         return vec![min];
     }
@@ -140,13 +154,61 @@ fn nice_ticks(min: f64, max: f64, count: usize) -> Vec<f64> {
     };
     let nice_min = (min / nice_step).floor() * nice_step;
     let nice_max = (max / nice_step).ceil() * nice_step;
-    let mut ticks = Vec::new();
-    let mut v = nice_min;
-    while v <= nice_max + f64::EPSILON {
-        ticks.push(v);
-        v += nice_step;
+
+    // Generate ticks by index rather than by repeated float addition.
+    // `v += nice_step` can become a silent no-op once `nice_step` falls
+    // below the local ULP of `v` (e.g. a huge min/max with a small span,
+    // as happens with nanosecond-resolution timestamp axes), which made
+    // the old accumulator loop spin forever, pushing duplicate ticks
+    // until memory was exhausted. Computing the tick count up front and
+    // indexing bounds the output unconditionally.
+    const MAX_TICKS: usize = 1_000;
+    let span = nice_max - nice_min;
+    let raw_count = if nice_step.is_finite() && nice_step > 0.0 && span.is_finite() {
+        (span / nice_step).round()
+    } else {
+        f64::NAN
+    };
+    let n = if raw_count.is_finite() && raw_count >= 0.0 {
+        (raw_count as usize).min(MAX_TICKS)
+    } else {
+        MAX_TICKS
+    };
+
+    (0..=n).map(|i| nice_min + i as f64 * nice_step).collect()
+}
+
+/// Fold a sample slice down to a finite `(min, max)` domain, ignoring
+/// any non-finite (NaN/±inf) entries entirely.
+///
+/// `f64::min`/`f64::max` treat a NaN operand as absent and return the
+/// other side, so folding an *all-NaN* slice over the usual
+/// `(INFINITY, f64::min)` / `(NEG_INFINITY, f64::max)` seeds leaves the
+/// result stuck at that seed rather than producing NaN directly — but
+/// the resulting `(+inf, -inf)` pair is just as toxic once it reaches
+/// axis-tick generation (see `nice_ticks`), and a scatter/line point
+/// built from it would format as the literal text "NaN" in the SVG.
+/// When no finite sample exists at all, fall back to a unit domain
+/// `(0.0, 1.0)` so callers always have something finite to scale
+/// against; every value in the original data was non-finite, so no
+/// point will actually be plotted against this fallback range anyway
+/// (per-point finiteness is still checked before drawing).
+fn finite_domain(values: &[f64]) -> (f64, f64) {
+    let lo = values
+        .iter()
+        .copied()
+        .filter(|v| v.is_finite())
+        .fold(f64::INFINITY, f64::min);
+    let hi = values
+        .iter()
+        .copied()
+        .filter(|v| v.is_finite())
+        .fold(f64::NEG_INFINITY, f64::max);
+    if lo.is_finite() && hi.is_finite() {
+        (lo, hi)
+    } else {
+        (0.0, 1.0)
     }
-    ticks
 }
 
 fn format_tick(v: f64) -> String {
@@ -437,11 +499,17 @@ impl BarChart {
         let py = config.plot_y();
 
         let n = self.values.len();
+        // Symmetric with `min_val`'s `.min(0.0)` below: without also
+        // clamping `max_val` to include 0, an all-negative series (e.g.
+        // -20..-5) would produce a [max_val, min_val] axis range that
+        // excludes the zero baseline entirely, placing `zero_y` off the
+        // top of the canvas and drawing every bar out of view.
         let max_val = self
             .values
             .iter()
             .cloned()
-            .fold(f64::NEG_INFINITY, f64::max);
+            .fold(f64::NEG_INFINITY, f64::max)
+            .max(0.0);
         let min_val = self
             .values
             .iter()
@@ -521,11 +589,15 @@ impl BarChart {
         let py = effective_config.plot_y();
 
         let n = self.values.len();
+        // See render_vertical: clamp both ends toward 0 so an all-negative
+        // series still has a zero baseline inside the axis range, instead
+        // of drawing every bar outside the visible canvas.
         let max_val = self
             .values
             .iter()
             .cloned()
-            .fold(f64::NEG_INFINITY, f64::max);
+            .fold(f64::NEG_INFINITY, f64::max)
+            .max(0.0);
         let min_val = self
             .values
             .iter()
@@ -687,20 +759,17 @@ impl LineChart {
         let px = config.plot_x();
         let py = config.plot_y();
 
-        let x_min = self.x_values.iter().cloned().fold(f64::INFINITY, f64::min);
-        let x_max = self
-            .x_values
-            .iter()
-            .cloned()
-            .fold(f64::NEG_INFINITY, f64::max);
+        // `finite_domain` ignores non-finite samples (e.g. an all-NaN
+        // series) instead of letting them cascade through `nice_ticks`
+        // into an axis tick that prints the literal text "NaN".
+        let (x_min, x_max) = finite_domain(&self.x_values);
 
         let all_y: Vec<f64> = self
             .series
             .iter()
             .flat_map(|s| s.values.iter().cloned())
             .collect();
-        let y_min_raw = all_y.iter().cloned().fold(f64::INFINITY, f64::min);
-        let y_max_raw = all_y.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        let (y_min_raw, y_max_raw) = finite_domain(&all_y);
         let y_range = y_max_raw - y_min_raw;
         let y_min = y_min_raw - y_range * 0.05;
         let y_max = y_max_raw + y_range * 0.05;
@@ -742,35 +811,61 @@ impl LineChart {
             if n == 0 {
                 continue;
             }
-            let points: Vec<(f64, f64)> = (0..n)
-                .map(|i| (to_px(self.x_values[i]), to_py(series.values[i])))
-                .collect();
 
-            // Fill area under line
-            if series.fill_area && n > 1 {
-                let mut fill_pts = points.clone();
-                fill_pts.push((points[n - 1].0, base_y));
-                fill_pts.push((points[0].0, base_y));
-                let fill_style = DrawStyle {
-                    fill: Some(Color::rgba(color.r, color.g, color.b, 50)),
-                    stroke: None,
-                    ..Default::default()
-                };
-                canvas.polygon(&fill_pts, &fill_style);
+            // A non-finite x or y (missing/invalid sample) must never
+            // reach the SVG `points` attribute: it would serialize as the
+            // literal text "NaN", which is invalid SVG and makes browsers
+            // discard the *entire* polyline rather than just that vertex.
+            // Instead, break the series into maximal runs of finite
+            // points and render each run as its own polyline/fill, so a
+            // gap in the data shows as a gap in the line, not a missing
+            // series.
+            let mut segments: Vec<Vec<(f64, f64)>> = Vec::new();
+            let mut current: Vec<(f64, f64)> = Vec::new();
+            for i in 0..n {
+                let xv = self.x_values[i];
+                let yv = series.values[i];
+                if xv.is_finite() && yv.is_finite() {
+                    current.push((to_px(xv), to_py(yv)));
+                } else if !current.is_empty() {
+                    segments.push(std::mem::take(&mut current));
+                }
+            }
+            if !current.is_empty() {
+                segments.push(current);
             }
 
-            // Line
-            if n > 1 {
-                let line_style = DrawStyle {
-                    fill: None,
-                    stroke: Some(color),
-                    stroke_width: 2.0,
-                    ..Default::default()
-                };
-                canvas.polyline(&points, &line_style);
+            // Fill area under each finite run
+            if series.fill_area {
+                for seg in &segments {
+                    if seg.len() > 1 {
+                        let mut fill_pts = seg.clone();
+                        fill_pts.push((seg[seg.len() - 1].0, base_y));
+                        fill_pts.push((seg[0].0, base_y));
+                        let fill_style = DrawStyle {
+                            fill: Some(Color::rgba(color.r, color.g, color.b, 50)),
+                            stroke: None,
+                            ..Default::default()
+                        };
+                        canvas.polygon(&fill_pts, &fill_style);
+                    }
+                }
             }
 
-            // Markers
+            // Line: one polyline per contiguous finite run
+            for seg in &segments {
+                if seg.len() > 1 {
+                    let line_style = DrawStyle {
+                        fill: None,
+                        stroke: Some(color),
+                        stroke_width: 2.0,
+                        ..Default::default()
+                    };
+                    canvas.polyline(seg, &line_style);
+                }
+            }
+
+            // Markers: every finite point, including isolated ones
             if series.show_markers {
                 let marker_style = DrawStyle {
                     fill: Some(color),
@@ -778,8 +873,10 @@ impl LineChart {
                     stroke_width: 1.5,
                     ..Default::default()
                 };
-                for &(mx, my) in &points {
-                    canvas.circle(mx, my, 4.0, &marker_style);
+                for seg in &segments {
+                    for &(mx, my) in seg {
+                        canvas.circle(mx, my, 4.0, &marker_style);
+                    }
                 }
             }
         }
@@ -874,18 +971,12 @@ impl ScatterPlot {
         let px = config.plot_x();
         let py = config.plot_y();
 
-        let x_min = self.x_values.iter().cloned().fold(f64::INFINITY, f64::min);
-        let x_max = self
-            .x_values
-            .iter()
-            .cloned()
-            .fold(f64::NEG_INFINITY, f64::max);
-        let y_min = self.y_values.iter().cloned().fold(f64::INFINITY, f64::min);
-        let y_max = self
-            .y_values
-            .iter()
-            .cloned()
-            .fold(f64::NEG_INFINITY, f64::max);
+        // See `LineChart::render` / `finite_domain`: ignoring non-finite
+        // samples here (rather than letting an all-NaN column drag the
+        // fold to +inf/-inf) is what keeps `nice_ticks` below from
+        // generating axis labels that print the literal text "NaN".
+        let (x_min, x_max) = finite_domain(&self.x_values);
+        let (y_min, y_max) = finite_domain(&self.y_values);
 
         let x_pad = (x_max - x_min).max(1.0) * 0.05;
         let y_pad = (y_max - y_min).max(1.0) * 0.05;
@@ -920,8 +1011,21 @@ impl ScatterPlot {
         };
 
         for i in 0..n {
-            let mx = to_px(self.x_values[i]);
-            let my = to_py(self.y_values[i]);
+            let xv = self.x_values[i];
+            let yv = self.y_values[i];
+            // A non-finite sample (missing/invalid point) must never
+            // reach `to_px`/`to_py`: `Square` markers draw through
+            // `canvas.rect`, which — unlike `polyline`/`polygon`/
+            // `circle`/`line` — has no finite-coordinate guard of its
+            // own, so an unfiltered NaN here would still leak the
+            // literal text "NaN" into the SVG. Skip the whole marker
+            // instead, the same way `LineChart` drops non-finite points
+            // from its polyline segments.
+            if !xv.is_finite() || !yv.is_finite() {
+                continue;
+            }
+            let mx = to_px(xv);
+            let my = to_py(yv);
             let r = self.marker_size;
             match self.marker_shape {
                 MarkerShape::Circle => canvas.circle(mx, my, r, &style),
@@ -1307,26 +1411,12 @@ impl PieChart {
             let x2_outer = cx + r * end_angle.cos();
             let y2_outer = cy + r * end_angle.sin();
 
-            let path_d = if self.donut {
-                let x1_inner = cx + inner_r * end_angle.cos();
-                let y1_inner = cy + inner_r * end_angle.sin();
-                let x2_inner = cx + inner_r * start_angle.cos();
-                let y2_inner = cy + inner_r * start_angle.sin();
-                PathBuilder::new()
-                    .move_to(x1_outer, y1_outer)
-                    .arc(r, r, 0.0, large_arc, true, x2_outer, y2_outer)
-                    .line_to(x1_inner, y1_inner)
-                    .arc(inner_r, inner_r, 0.0, large_arc, false, x2_inner, y2_inner)
-                    .close()
-                    .build()
-            } else {
-                PathBuilder::new()
-                    .move_to(cx, cy)
-                    .line_to(x1_outer, y1_outer)
-                    .arc(r, r, 0.0, large_arc, true, x2_outer, y2_outer)
-                    .close()
-                    .build()
-            };
+            // A slice that accounts for (essentially) the whole pie has
+            // `start_angle` and `end_angle` coterminous, so the arc's
+            // start and end points are identical. Per the SVG spec an
+            // arc command with equal endpoints renders nothing at all,
+            // silently dropping the only slice.
+            let is_full_circle = frac >= 1.0 - 1e-9;
 
             let style = DrawStyle {
                 fill: Some(color),
@@ -1334,7 +1424,49 @@ impl PieChart {
                 stroke_width: 1.5,
                 ..Default::default()
             };
-            canvas.path(path_d, &style);
+
+            if is_full_circle && !self.donut {
+                // A plain circle draws it directly with no degenerate
+                // arc involved at all.
+                canvas.circle(cx, cy, r, &style);
+            } else if is_full_circle {
+                // Donuts need a ring, which a single `<circle>` can't
+                // represent: combine two circles, wound in opposite
+                // directions, into one path so the default nonzero fill
+                // rule punches the inner one out as a hole.
+                let path_d = PathBuilder::new()
+                    .move_to(cx + r, cy)
+                    .arc(r, r, 0.0, false, true, cx - r, cy)
+                    .arc(r, r, 0.0, false, true, cx + r, cy)
+                    .close()
+                    .move_to(cx + inner_r, cy)
+                    .arc(inner_r, inner_r, 0.0, false, false, cx - inner_r, cy)
+                    .arc(inner_r, inner_r, 0.0, false, false, cx + inner_r, cy)
+                    .close()
+                    .build();
+                canvas.path(path_d, &style);
+            } else if self.donut {
+                let x1_inner = cx + inner_r * end_angle.cos();
+                let y1_inner = cy + inner_r * end_angle.sin();
+                let x2_inner = cx + inner_r * start_angle.cos();
+                let y2_inner = cy + inner_r * start_angle.sin();
+                let path_d = PathBuilder::new()
+                    .move_to(x1_outer, y1_outer)
+                    .arc(r, r, 0.0, large_arc, true, x2_outer, y2_outer)
+                    .line_to(x1_inner, y1_inner)
+                    .arc(inner_r, inner_r, 0.0, large_arc, false, x2_inner, y2_inner)
+                    .close()
+                    .build();
+                canvas.path(path_d, &style);
+            } else {
+                let path_d = PathBuilder::new()
+                    .move_to(cx, cy)
+                    .line_to(x1_outer, y1_outer)
+                    .arc(r, r, 0.0, large_arc, true, x2_outer, y2_outer)
+                    .close()
+                    .build();
+                canvas.path(path_d, &style);
+            }
 
             // Percentage label on slice
             let mid_angle = start_angle + sweep / 2.0;

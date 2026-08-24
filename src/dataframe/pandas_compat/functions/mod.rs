@@ -15,6 +15,8 @@ mod functions_tests_2;
 #[cfg(test)]
 mod functions_tests_3;
 
-// Re-export all types
-pub use functions::*;
-pub use functions_2::*;
+// Re-export the companion extension traits (see functions_4's module docs)
+// so they're reachable at `pandrs::dataframe::pandas_compat::AstypeErrorsExt`
+// etc. via `pandas_compat::mod.rs`'s existing `pub use functions::*;`,
+// instead of only at the buried `...::functions::functions_4::AstypeErrorsExt`.
+pub use functions_4::*;

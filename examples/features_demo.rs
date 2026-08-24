@@ -215,7 +215,7 @@ mod tests {
         rename_map.insert("values".to_string(), "new_values".to_string());
         df.rename_columns(&rename_map).unwrap();
 
-        assert_eq!(df.column_names(), &["new_values"]);
+        assert_eq!(df.column_names(), ["new_values".to_string()]);
     }
 
     #[test]

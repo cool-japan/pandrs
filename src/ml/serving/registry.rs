@@ -10,13 +10,90 @@ use crate::ml::serving::serialization::{
 };
 use crate::ml::serving::{ModelMetadata, ModelSerializer, ModelServing, SerializationFormat};
 use serde::{Deserialize, Serialize};
+use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+/// All file extensions a model version might be persisted under. Used to find a model file
+/// regardless of which [`SerializationFormat`] was active when it was written, so that
+/// changing a registry's `default_format` after some models are already registered doesn't
+/// orphan them (see [`FileSystemModelRegistry::find_model_file`]).
+const KNOWN_MODEL_EXTENSIONS: &[&str] = &["json", "yaml", "yml", "toml", "bin", "pandrs"];
+
+/// Parse a version string's leading `major.minor.patch` numeric components.
+///
+/// Trailing pre-release/build metadata after the patch number (e.g. `-rc1`, `+build5`) is
+/// ignored for comparison purposes; only the three leading numeric components are extracted.
+/// Returns `None` when the string doesn't start with at least one numeric component.
+fn parse_semver_prefix(version: &str) -> Option<(u64, u64, u64)> {
+    let mut parts = version.splitn(3, '.');
+    let major: u64 = parts.next()?.parse().ok()?;
+    let minor: u64 = parts
+        .next()
+        .map(|s| {
+            let numeric: String = s.chars().take_while(|c| c.is_ascii_digit()).collect();
+            numeric.parse().unwrap_or(0)
+        })
+        .unwrap_or(0);
+    let patch: u64 = parts
+        .next()
+        .map(|s| {
+            let numeric: String = s.chars().take_while(|c| c.is_ascii_digit()).collect();
+            numeric.parse().unwrap_or(0)
+        })
+        .unwrap_or(0);
+    Some((major, minor, patch))
+}
+
+/// Compare two version strings for the purpose of finding a registry's "latest" version.
+///
+/// Versions that parse as `major.minor.patch` are compared numerically (so `"1.10.0"` sorts
+/// after `"1.9.0"`, unlike a plain lexicographic string sort). When either version fails to
+/// parse, falls back to a lexicographic comparison so registries using non-semver version
+/// tags (e.g. content hashes) still get a deterministic, documented ordering.
+pub(crate) fn compare_versions(a: &str, b: &str) -> Ordering {
+    match (parse_semver_prefix(a), parse_semver_prefix(b)) {
+        (Some(va), Some(vb)) => va.cmp(&vb),
+        _ => a.cmp(b),
+    }
+}
+
+/// Sort a list of version strings in-place using [`compare_versions`] (ascending; the last
+/// element is the "latest").
+fn sort_versions(versions: &mut [String]) {
+    versions.sort_by(|a, b| compare_versions(a, b));
+}
+
+/// Write `contents` to `path` atomically: write to a sibling temp file, then rename over the
+/// destination. On POSIX and Windows, rename within the same directory is atomic, so readers
+/// never observe a partially-written registry file even if the process is interrupted
+/// mid-write.
+fn atomic_write(path: &Path, contents: &str) -> Result<()> {
+    let dir = path.parent().ok_or_else(|| {
+        Error::InvalidInput(format!(
+            "Registry path '{}' has no parent directory",
+            path.display()
+        ))
+    })?;
+    let file_name = path.file_name().and_then(|n| n.to_str()).ok_or_else(|| {
+        Error::InvalidInput(format!(
+            "Registry path '{}' has no file name",
+            path.display()
+        ))
+    })?;
+    let tmp_path = dir.join(format!(".{}.tmp", file_name));
+    fs::write(&tmp_path, contents)?;
+    fs::rename(&tmp_path, path)?;
+    Ok(())
+}
+
 /// Model registry trait for managing models
-pub trait ModelRegistry {
+///
+/// Requires `Send + Sync` so a registry can be shared (typically via `Arc`) with a
+/// [`crate::ml::serving::ModelServer`] that resolves unregistered model names through it.
+pub trait ModelRegistry: Send + Sync {
     /// Register a new model
     fn register_model(&mut self, model: Box<dyn ModelServing>) -> Result<()>;
 
@@ -96,11 +173,6 @@ impl InMemoryModelRegistry {
         }
     }
 
-    /// Get model key
-    fn get_model_key(name: &str, version: &str) -> String {
-        format!("{}:{}", name, version)
-    }
-
     /// Update registry entry
     fn update_entry(&mut self, name: &str, version: &str, metadata: &ModelMetadata) {
         let entry = self
@@ -119,10 +191,10 @@ impl InMemoryModelRegistry {
 
         if !entry.versions.contains(&version.to_string()) {
             entry.versions.push(version.to_string());
-            entry.versions.sort();
+            sort_versions(&mut entry.versions);
         }
 
-        // Update latest version (assuming semantic versioning)
+        // Update latest version using numeric semver comparison, not lexicographic order.
         entry.latest_version = entry.versions.last().cloned();
 
         // Set as default if it's the first version
@@ -280,16 +352,13 @@ impl ModelRegistry for InMemoryModelRegistry {
                 Error::KeyNotFound(format!("Model '{}' version '{}' not found", name, version))
             })?;
 
-        // Reconstruct a SerializableModel from the existing model's metadata, then
-        // overlay the new metadata and re-wrap as a fresh GenericServingModel.
+        // Round-trip the existing model through its own `to_serializable()` so the real
+        // parameters/model_data/preprocessing survive, then overlay only the metadata and
+        // re-wrap as a fresh GenericServingModel. (Previously this rebuilt from a blank
+        // SerializableModel with empty `parameters`, silently discarding the model's weights
+        // on every metadata edit.)
         use crate::ml::serving::serialization::GenericServingModel;
-        let mut serializable = SerializableModel {
-            metadata: existing_arc.get_metadata().clone(),
-            parameters: std::collections::HashMap::new(),
-            model_data: serde_json::json!({}),
-            preprocessing: None,
-            config: existing_arc.info().configuration,
-        };
+        let mut serializable = existing_arc.to_serializable()?;
         serializable.metadata = new_metadata.clone();
 
         let rebuilt: Arc<dyn ModelServing> =
@@ -393,10 +462,35 @@ impl FileSystemModelRegistry {
         self.base_path.join(name)
     }
 
-    /// Get model file path
+    /// Get the model file path this registry would use to *write* a model version, using its
+    /// currently-configured `default_format`.
     fn get_model_file(&self, name: &str, version: &str) -> PathBuf {
         self.get_model_dir(name)
             .join(format!("{}.{}", version, self.default_format.extension()))
+    }
+
+    /// Find the on-disk file for a model version, regardless of which [`SerializationFormat`]
+    /// it was written under.
+    ///
+    /// Tries the current `default_format` first (the common case), then falls back to probing
+    /// every known extension. This matters because `default_format` is a mutable,
+    /// registry-wide setting ([`Self::set_default_format`]): without this fallback, changing it
+    /// after some models were already persisted under the old format would make `exists`,
+    /// `load_model`, etc. silently fail to find them (an "orphaned model" bug), even though the
+    /// file is still sitting on disk.
+    fn find_model_file(&self, name: &str, version: &str) -> Option<PathBuf> {
+        let preferred = self.get_model_file(name, version);
+        if preferred.exists() {
+            return Some(preferred);
+        }
+        let dir = self.get_model_dir(name);
+        for ext in KNOWN_MODEL_EXTENSIONS {
+            let candidate = dir.join(format!("{}.{}", version, ext));
+            if candidate.exists() {
+                return Some(candidate);
+            }
+        }
+        None
     }
 
     /// Load registry metadata from file
@@ -408,11 +502,13 @@ impl FileSystemModelRegistry {
         Ok(())
     }
 
-    /// Save registry metadata to file
+    /// Save registry metadata to file.
+    ///
+    /// Writes atomically (temp file + rename) so a crash or concurrent read mid-write can never
+    /// observe a truncated/corrupt `registry.json`.
     fn save_registry(&self) -> Result<()> {
         let registry_data = serde_json::to_string_pretty(&self.entries)?;
-        fs::write(&self.registry_file, registry_data)?;
-        Ok(())
+        atomic_write(&self.registry_file, &registry_data)
     }
 
     /// Update registry entry
@@ -433,10 +529,10 @@ impl FileSystemModelRegistry {
 
         if !entry.versions.contains(&version.to_string()) {
             entry.versions.push(version.to_string());
-            entry.versions.sort();
+            sort_versions(&mut entry.versions);
         }
 
-        // Update latest version
+        // Update latest version using numeric semver comparison, not lexicographic order.
         entry.latest_version = entry.versions.last().cloned();
 
         // Set as default if it's the first version
@@ -449,17 +545,33 @@ impl FileSystemModelRegistry {
         self.save_registry()
     }
 
-    /// Convert ModelServing to SerializableModel
+    /// Convert a `ModelServing` to its persistable `SerializableModel`, preserving the model's
+    /// real parameters/weights via its own `to_serializable()` implementation. (Previously this
+    /// synthesized a blank `SerializableModel` with empty `parameters`/`model_data`, so every
+    /// model persisted through this registry silently lost its weights.)
     fn model_to_serializable(&self, model: &dyn ModelServing) -> Result<SerializableModel> {
-        let metadata = model.get_metadata().clone();
-        let info = model.info();
+        model.to_serializable()
+    }
 
-        Ok(SerializableModel {
-            metadata,
-            parameters: HashMap::new(), // Would need to extract from model
-            model_data: serde_json::json!({}), // Would need to extract from model
-            preprocessing: None,
-            config: info.configuration,
+    /// Read and deserialize a `SerializableModel` from `model_file`, detecting the format from
+    /// its extension (which may differ from `self.default_format` if the registry's default
+    /// format was changed after this file was written).
+    fn read_serializable_model(&self, model_file: &Path) -> Result<SerializableModel> {
+        let format = SerializationFormat::from_extension(
+            model_file
+                .extension()
+                .and_then(|ext| ext.to_str())
+                .ok_or_else(|| Error::InvalidInput("File has no extension".to_string()))?,
+        )
+        .ok_or_else(|| Error::InvalidInput("Unsupported file extension".to_string()))?;
+
+        Ok(match format {
+            SerializationFormat::Json => JsonModelSerializer.deserialize(&fs::read(model_file)?)?,
+            SerializationFormat::Yaml => YamlModelSerializer.deserialize(&fs::read(model_file)?)?,
+            SerializationFormat::Toml => TomlModelSerializer.deserialize(&fs::read(model_file)?)?,
+            SerializationFormat::Binary => {
+                BinaryModelSerializer.deserialize(&fs::read(model_file)?)?
+            }
         })
     }
 }
@@ -510,14 +622,14 @@ impl ModelRegistry for FileSystemModelRegistry {
             version.to_string()
         };
 
-        let model_file = self.get_model_file(name, &resolved_version);
-
-        if !model_file.exists() {
-            return Err(Error::KeyNotFound(format!(
-                "Model file not found: {:?}",
-                model_file
-            )));
-        }
+        let model_file = self
+            .find_model_file(name, &resolved_version)
+            .ok_or_else(|| {
+                Error::KeyNotFound(format!(
+                    "Model file not found for '{}' version '{}' (searched extensions: {:?})",
+                    name, resolved_version, KNOWN_MODEL_EXTENSIONS
+                ))
+            })?;
 
         // Deserialize from disk then wrap in Arc so the call site gets an owned,
         // cheaply-cloneable handle rather than an exclusive Box.
@@ -545,55 +657,22 @@ impl ModelRegistry for FileSystemModelRegistry {
             version.to_string()
         };
 
-        let model_file = self.get_model_file(name, &resolved_version);
+        let model_file = self
+            .find_model_file(name, &resolved_version)
+            .ok_or_else(|| {
+                Error::KeyNotFound(format!(
+                    "Model file not found for '{}' version '{}'",
+                    name, resolved_version
+                ))
+            })?;
 
-        if !model_file.exists() {
-            return Err(Error::KeyNotFound(format!(
-                "Model file not found: {:?}",
-                model_file
-            )));
-        }
-
-        // For getting metadata, we need to read and deserialize the file
-        let format = SerializationFormat::from_extension(
-            model_file
-                .extension()
-                .and_then(|ext| ext.to_str())
-                .ok_or_else(|| Error::InvalidInput("File has no extension".to_string()))?,
-        )
-        .ok_or_else(|| Error::InvalidInput("Unsupported file extension".to_string()))?;
-
-        let serializable_model = match format {
-            SerializationFormat::Json => {
-                let serializer = JsonModelSerializer;
-                serializer.deserialize(&fs::read(&model_file)?)?
-            }
-            SerializationFormat::Yaml => {
-                let serializer = YamlModelSerializer;
-                serializer.deserialize(&fs::read(&model_file)?)?
-            }
-            SerializationFormat::Toml => {
-                let serializer = TomlModelSerializer;
-                serializer.deserialize(&fs::read(&model_file)?)?
-            }
-            SerializationFormat::Binary => {
-                let serializer = BinaryModelSerializer;
-                serializer.deserialize(&fs::read(&model_file)?)?
-            }
-        };
-
-        Ok(serializable_model.metadata)
+        Ok(self.read_serializable_model(&model_file)?.metadata)
     }
 
     fn delete_model(&mut self, name: &str, version: &str) -> Result<()> {
-        let model_file = self.get_model_file(name, version);
-
-        if !model_file.exists() {
-            return Err(Error::KeyNotFound(format!(
-                "Model '{}' version '{}' not found",
-                name, version
-            )));
-        }
+        let model_file = self.find_model_file(name, version).ok_or_else(|| {
+            Error::KeyNotFound(format!("Model '{}' version '{}' not found", name, version))
+        })?;
 
         // Delete model file
         fs::remove_file(&model_file)?;
@@ -632,16 +711,13 @@ impl ModelRegistry for FileSystemModelRegistry {
         version: &str,
         new_metadata: ModelMetadata,
     ) -> Result<()> {
-        let model_file = self.get_model_file(name, version);
+        let model_file = self.find_model_file(name, version).ok_or_else(|| {
+            Error::KeyNotFound(format!("Model '{}' version '{}' not found", name, version))
+        })?;
 
-        if !model_file.exists() {
-            return Err(Error::KeyNotFound(format!(
-                "Model '{}' version '{}' not found",
-                name, version
-            )));
-        }
-
-        // Load existing model
+        // Load the existing model in whatever format it was actually written (which may not
+        // match `self.default_format` if that was changed after this file was saved), so the
+        // real parameters/model_data survive the metadata edit.
         let format = SerializationFormat::from_extension(
             model_file
                 .extension()
@@ -650,29 +726,12 @@ impl ModelRegistry for FileSystemModelRegistry {
         )
         .ok_or_else(|| Error::InvalidInput("Unsupported file extension".to_string()))?;
 
-        let mut serializable_model = match format {
-            SerializationFormat::Json => {
-                let serializer = JsonModelSerializer;
-                serializer.deserialize(&fs::read(&model_file)?)?
-            }
-            SerializationFormat::Yaml => {
-                let serializer = YamlModelSerializer;
-                serializer.deserialize(&fs::read(&model_file)?)?
-            }
-            SerializationFormat::Toml => {
-                let serializer = TomlModelSerializer;
-                serializer.deserialize(&fs::read(&model_file)?)?
-            }
-            SerializationFormat::Binary => {
-                let serializer = BinaryModelSerializer;
-                serializer.deserialize(&fs::read(&model_file)?)?
-            }
-        };
+        let mut serializable_model = self.read_serializable_model(&model_file)?;
 
-        // Update metadata
+        // Overlay only the metadata; parameters/model_data/preprocessing/config are untouched.
         serializable_model.metadata = new_metadata.clone();
 
-        // Save updated model
+        // Save updated model, in its original format and at its original path.
         ModelSerializationFactory::save_model(&serializable_model, &model_file, format)?;
 
         // Update registry entry
@@ -682,7 +741,7 @@ impl ModelRegistry for FileSystemModelRegistry {
     }
 
     fn exists(&self, name: &str, version: &str) -> bool {
-        self.get_model_file(name, version).exists()
+        self.find_model_file(name, version).is_some()
     }
 
     fn get_latest_version(&self, name: &str) -> Result<String> {
@@ -700,10 +759,20 @@ impl ModelRegistry for FileSystemModelRegistry {
             )));
         }
 
-        if let Some(entry) = self.entries.get_mut(name) {
-            entry.default_version = Some(version.to_string());
-            entry.updated_at = chrono::Utc::now();
-        }
+        // `exists` confirmed the file is present; the registry entry itself must also be
+        // present for us to actually record the change. Previously, a missing entry here (e.g.
+        // a corrupted/hand-edited registry.json with orphaned model files) made this function
+        // silently no-op: it would fall through to `save_registry()` and return `Ok(())` without
+        // ever setting a default version.
+        let entry = self.entries.get_mut(name).ok_or_else(|| {
+            Error::KeyNotFound(format!(
+                "Model '{}' has files on disk but no registry entry; registry.json may be \
+                 corrupt or out of sync with the model directory",
+                name
+            ))
+        })?;
+        entry.default_version = Some(version.to_string());
+        entry.updated_at = chrono::Utc::now();
 
         self.save_registry()?;
         Ok(())
@@ -789,6 +858,7 @@ mod tests {
         };
 
         let serializable = SerializableModel {
+            schema_version: crate::ml::serving::serialization::CURRENT_SCHEMA_VERSION,
             metadata,
             parameters: HashMap::new(),
             model_data: serde_json::json!({}),

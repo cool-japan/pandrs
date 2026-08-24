@@ -80,6 +80,11 @@ pub struct Window<'a, T: Temporal> {
     /// Decay factor for exponential weighting (alpha)
     /// 0.0 < alpha <= 1.0, larger values give higher weights to more recent data
     alpha: Option<f64>,
+
+    /// Whether the exponentially weighted statistics use the *adjusted*
+    /// weighted average over all prior observations (pandas' `adjust=True`
+    /// default) or the plain recursion `yₜ = α·xₜ + (1−α)·yₜ₋₁`.
+    adjust: bool,
 }
 
 impl<'a, T: Temporal> Window<'a, T> {
@@ -103,7 +108,16 @@ impl<'a, T: Temporal> Window<'a, T> {
             window_type,
             window_size,
             alpha: None,
+            adjust: true,
         })
+    }
+
+    /// Choose between the adjusted weighted average (`true`, the default and
+    /// pandas' default) and the plain recursion (`false`) for exponentially
+    /// weighted statistics.
+    pub fn with_adjust(mut self, adjust: bool) -> Self {
+        self.adjust = adjust;
+        self
     }
 
     /// Set the decay factor for exponentially weighted window
@@ -703,72 +717,34 @@ impl<'a, T: Temporal> Window<'a, T> {
 
     // ------- Exponentially Weighted Window Implementations -------
 
-    /// Calculate exponentially weighted moving average
+    /// Calculate the exponentially weighted moving average.
+    ///
+    /// Honours `adjust` (see [`Window::with_adjust`]): with `adjust = true`
+    /// (the default, matching pandas) the value is the *adjusted* weighted
+    /// average over every prior observation,
+    /// `yₜ = Σᵢ (1−α)ⁱ xₜ₋ᵢ / Σᵢ (1−α)ⁱ`; with `adjust = false` it is the plain
+    /// recursion `yₜ = α·xₜ + (1−α)·yₜ₋₁`.
+    ///
+    /// **NA policy (unchanged):** positions before the first observation are
+    /// `NA`; a missing observation afterwards leaves the state untouched and
+    /// carries the previous value forward rather than propagating `NA`.
     fn ewm_mean(&self) -> Result<TimeSeries<T>> {
-        // Implementation omitted for brevity - see the original window.rs file
-        // This would include the exponentially weighted moving average implementation
-
-        let alpha = self.alpha.ok_or_else(|| {
-            PandRSError::Consistency(
-                "Alpha parameter is required for exponentially weighted windows.".to_string(),
-            )
-        })?;
-
-        let mut result_values = Vec::with_capacity(self.time_series.len());
-
-        // Calculate exponentially weighted moving average
+        let alpha = self.require_alpha()?;
         let values = self.time_series.values();
 
-        // If there are no initial values
         if values.is_empty() {
-            return Ok(TimeSeries::new(
-                Vec::new(),
-                Vec::new(),
-                self.time_series.name().cloned(),
-            )?);
+            return TimeSeries::new(Vec::new(), Vec::new(), self.time_series.name().cloned());
         }
 
-        // Find the first non-NA index
-        let first_valid_idx = values.iter().position(|v| !v.is_na());
-
-        if let Some(idx) = first_valid_idx {
-            // Add NA up to the first valid value
-            for _ in 0..idx {
-                result_values.push(NA::NA);
-            }
-
-            // Get the first valid value
-            let mut weighted_avg = if let NA::Value(first_val) = values[idx] {
-                first_val
-            } else {
-                return Err(PandRSError::Consistency(
-                    "Invalid initial value".to_string(),
-                ));
-            };
-
-            // Add the first value
-            result_values.push(NA::Value(weighted_avg));
-
-            // Calculate for the remaining values
-            for i in (idx + 1)..values.len() {
-                match values[i] {
-                    NA::Value(val) => {
-                        // Update exponentially weighted average: yt = α*xt + (1-α)*yt-1
-                        weighted_avg = alpha * val + (1.0 - alpha) * weighted_avg;
-                        result_values.push(NA::Value(weighted_avg));
-                    }
-                    NA::NA => {
-                        // Maintain the previous value for NA (NA does not propagate)
-                        result_values.push(NA::Value(weighted_avg));
-                    }
-                }
-            }
-        } else {
-            // If there are no valid values, all are NA
-            for _ in 0..values.len() {
-                result_values.push(NA::NA);
-            }
-        }
+        let state = Self::ewm_recursion(values, alpha, self.adjust);
+        let result_values: Vec<NA<f64>> = state
+            .mean
+            .iter()
+            .map(|m| match m {
+                Some(value) => NA::Value(*value),
+                None => NA::NA,
+            })
+            .collect();
 
         TimeSeries::new(
             result_values,
@@ -777,16 +753,26 @@ impl<'a, T: Temporal> Window<'a, T> {
         )
     }
 
-    /// Calculate exponentially weighted moving standard deviation
+    /// Calculate the exponentially weighted moving standard deviation.
+    ///
+    /// The variance comes from the numerically sound weighted-covariance
+    /// recursion in [`Window::ewm_recursion`] (the same one pandas uses in
+    /// `_libs/window/aggregations.pyx`), **not** from `E[X²] − (E[X])²`.
+    /// That difference-of-squares form cancels catastrophically once the mean
+    /// dominates the spread: for a series around `1e8` with unit noise the two
+    /// accumulators agree to well past `f64`'s 16 significant digits, the
+    /// subtraction yields a negative number, and the old
+    /// `if variance > 0.0 { sqrt } else { 0.0 }` guard reported the deviation
+    /// as **exactly `0.0`** — a plausible-looking answer that is off by 100%.
+    ///
+    /// `ddof` is now honoured (it was validated and then ignored). The
+    /// correction uses the weights' effective sample size
+    /// `n_eff = (Σw)² / Σw²`: the reported variance is
+    /// `cov · n_eff / (n_eff − ddof)`, and `NA` where there is not enough
+    /// effective sample for it (`n_eff ≤ ddof` — with pandas' default
+    /// `ddof = 1` that is always the first observation).
     fn ewm_std(&self, ddof: usize) -> Result<TimeSeries<T>> {
-        // Implementation omitted for brevity - see the original window.rs file
-        // This would include the exponentially weighted moving std implementation
-
-        let alpha = self.alpha.ok_or_else(|| {
-            PandRSError::Consistency(
-                "Alpha parameter is required for exponentially weighted windows.".to_string(),
-            )
-        })?;
+        let alpha = self.require_alpha()?;
 
         // Degrees of freedom adjustment
         if ddof >= self.time_series.len() {
@@ -796,77 +782,28 @@ impl<'a, T: Temporal> Window<'a, T> {
             )));
         }
 
-        let mut result_values = Vec::with_capacity(self.time_series.len());
-
-        // Calculate exponentially weighted moving standard deviation
         let values = self.time_series.values();
-
-        // If there are no initial values
         if values.is_empty() {
-            return Ok(TimeSeries::new(
-                Vec::new(),
-                Vec::new(),
-                self.time_series.name().cloned(),
-            )?);
+            return TimeSeries::new(Vec::new(), Vec::new(), self.time_series.name().cloned());
         }
 
-        // Find the first non-NA index
-        let first_valid_idx = values.iter().position(|v| !v.is_na());
+        let state = Self::ewm_recursion(values, alpha, self.adjust);
+        let ddof = ddof as f64;
 
-        if let Some(idx) = first_valid_idx {
-            // Add NA up to the first valid value
-            for _ in 0..idx {
+        let mut result_values = Vec::with_capacity(values.len());
+        for i in 0..values.len() {
+            if state.mean[i].is_none() {
                 result_values.push(NA::NA);
+                continue;
             }
-
-            // Get the first valid value
-            let first_val = if let NA::Value(val) = values[idx] {
-                val
+            let n_eff = state.n_eff[i];
+            let denom = n_eff - ddof;
+            if denom > 0.0 && state.cov_biased[i].is_finite() {
+                // The weighted sum of squared deviations cannot be negative;
+                // clamp only to absorb float rounding noise near zero.
+                let variance = (state.cov_biased[i] * n_eff / denom).max(0.0);
+                result_values.push(NA::Value(variance.sqrt()));
             } else {
-                return Err(PandRSError::Consistency(
-                    "Invalid initial value".to_string(),
-                ));
-            };
-
-            // Set initial values
-            let mut weighted_avg = first_val;
-            let mut weighted_sq_avg = first_val * first_val;
-
-            // Add the first value (standard deviation is 0)
-            result_values.push(NA::Value(0.0));
-
-            // Calculate for the remaining values
-            for i in (idx + 1)..values.len() {
-                match values[i] {
-                    NA::Value(val) => {
-                        // Update exponentially weighted average
-                        weighted_avg = alpha * val + (1.0 - alpha) * weighted_avg;
-
-                        // Update exponentially weighted squared average
-                        weighted_sq_avg = alpha * val * val + (1.0 - alpha) * weighted_sq_avg;
-
-                        // Variance = E[X^2] - (E[X])^2
-                        let variance = weighted_sq_avg - weighted_avg * weighted_avg;
-
-                        // Prevent variance from being negative (to counter numerical errors)
-                        let std_dev = if variance > 0.0 { variance.sqrt() } else { 0.0 };
-
-                        result_values.push(NA::Value(std_dev));
-                    }
-                    NA::NA => {
-                        // Maintain the previous value for NA
-                        result_values.push(
-                            result_values
-                                .last()
-                                .expect("operation should succeed")
-                                .clone(),
-                        );
-                    }
-                }
-            }
-        } else {
-            // If there are no valid values, all are NA
-            for _ in 0..values.len() {
                 result_values.push(NA::NA);
             }
         }
@@ -877,6 +814,101 @@ impl<'a, T: Temporal> Window<'a, T> {
             self.time_series.name().cloned(),
         )
     }
+
+    /// The decay factor, or an error when it was never configured.
+    fn require_alpha(&self) -> Result<f64> {
+        self.alpha.ok_or_else(|| {
+            PandRSError::Consistency(
+                "Alpha parameter is required for exponentially weighted windows.".to_string(),
+            )
+        })
+    }
+
+    /// The recursive EWM algorithm, tracking the weighted mean, the biased
+    /// (`ddof = 0`) weighted covariance and the weight moments needed to
+    /// bias-correct it for an arbitrary `ddof`.
+    ///
+    /// This mirrors `series::window`'s `ewm_recursion`, specialized to this
+    /// module's NA policy (a missing observation costs no decay weight and
+    /// leaves the running value in place, so the mean carries forward).
+    /// It is duplicated rather than shared because the `series` version is a
+    /// private item of a module this file does not own; the two should be
+    /// unified behind one crate-internal helper when that file next changes.
+    fn ewm_recursion(values: &[NA<f64>], alpha: f64, adjust: bool) -> EwmState {
+        let n = values.len();
+        let old_wt_factor = 1.0 - alpha;
+        let new_wt = if adjust { 1.0 } else { alpha };
+
+        let mut mean_out = vec![None; n];
+        let mut cov_out = vec![f64::NAN; n];
+        let mut n_eff_out = vec![f64::NAN; n];
+
+        let mut mean: Option<f64> = None;
+        let mut cov = 0.0_f64;
+        let mut old_wt = 1.0_f64;
+        let mut sum_wt = 1.0_f64;
+        let mut sum_wt2 = 1.0_f64;
+
+        for (i, value) in values.iter().enumerate() {
+            if let NA::Value(x) = *value {
+                match mean {
+                    None => {
+                        mean = Some(x);
+                        cov = 0.0;
+                    }
+                    Some(old_mean) => {
+                        old_wt *= old_wt_factor;
+                        sum_wt *= old_wt_factor;
+                        sum_wt2 *= old_wt_factor * old_wt_factor;
+
+                        let new_mean = if old_mean != x {
+                            (old_wt * old_mean + new_wt * x) / (old_wt + new_wt)
+                        } else {
+                            old_mean
+                        };
+                        cov = (old_wt * (cov + (old_mean - new_mean) * (old_mean - new_mean))
+                            + new_wt * (x - new_mean) * (x - new_mean))
+                            / (old_wt + new_wt);
+                        mean = Some(new_mean);
+
+                        sum_wt += new_wt;
+                        sum_wt2 += new_wt * new_wt;
+                        old_wt += new_wt;
+                        if !adjust {
+                            sum_wt /= old_wt;
+                            sum_wt2 /= old_wt * old_wt;
+                            old_wt = 1.0;
+                        }
+                    }
+                }
+            }
+
+            if mean.is_some() {
+                mean_out[i] = mean;
+                cov_out[i] = cov;
+                n_eff_out[i] = if sum_wt2 > 0.0 {
+                    sum_wt * sum_wt / sum_wt2
+                } else {
+                    f64::NAN
+                };
+            }
+        }
+
+        EwmState {
+            mean: mean_out,
+            cov_biased: cov_out,
+            n_eff: n_eff_out,
+        }
+    }
+}
+
+/// Running EWM state at every position: the exponentially weighted mean
+/// (`None` before the first observation), the biased (`ddof = 0`) weighted
+/// variance, and the weights' effective sample size `(Σw)² / Σw²`.
+struct EwmState {
+    mean: Vec<Option<f64>>,
+    cov_biased: Vec<f64>,
+    n_eff: Vec<f64>,
 }
 
 // Add window creation methods to TimeSeries struct
@@ -918,9 +950,7 @@ impl<T: Temporal> crate::temporal::core::TimeSeries<T> {
 
         // Create window (window_size is set to 1, not actually used)
         let mut window = Window::new(self, WindowType::ExponentiallyWeighted, 1)?;
-        window = window.with_alpha(alpha_value)?;
-
-        // The adjust parameter is not used in the current version but may be implemented in the future
+        window = window.with_alpha(alpha_value)?.with_adjust(adjust);
 
         Ok(window)
     }

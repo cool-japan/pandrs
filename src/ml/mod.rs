@@ -30,12 +30,6 @@ pub mod gpu;
 // Backward compatibility layer (for legacy code)
 pub mod backward_compat;
 
-// Re-export public types and functions
-use crate::core::error::{Error, Result};
-use crate::dataframe::DataFrame;
-use crate::optimized::OptimizedDataFrame;
-use std::collections::HashMap;
-
 // Re-export preprocessing tools
 pub use preprocessing::{
     Binner, FeatureSelector, ImputeStrategy, Imputer, MinMaxScaler, OneHotEncoder,

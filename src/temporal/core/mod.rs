@@ -151,9 +151,10 @@ impl Temporal for NaiveDate {
     }
 
     fn to_utc(&self) -> DateTime<Utc> {
-        // Add default time (00:00:00) to the date and treat as UTC
-        let naive_dt =
-            self.and_time(NaiveTime::from_hms_opt(0, 0, 0).expect("00:00:00 is always valid"));
+        // Add default time (midnight) to the date and treat as UTC. `NaiveTime::MIN`
+        // is chrono's midnight constant, so this needs no fallible constructor (the
+        // previous `from_hms_opt(0, 0, 0).expect(...)` was an unnecessary panic site).
+        let naive_dt = self.and_time(NaiveTime::MIN);
         DateTime::<Utc>::from_naive_utc_and_offset(naive_dt, Utc)
     }
 
@@ -284,20 +285,41 @@ impl<T: Temporal> TimeSeries<T> {
     }
 }
 
-// Define utilities for date calculations
+/// Number of days in `month` of `year`.
+///
+/// Months outside `1..=12` are **normalized by wrapping**, carrying the excess
+/// into the year, so `days_in_month(2024, 13)` is January 2025 (31) and
+/// `days_in_month(2024, 0)` is December 2023 (31). This function is `pub`, so
+/// panicking on an out-of-range month (the previous behaviour) turned a caller's
+/// arithmetic slip into a process abort; wrapping is both total and the answer
+/// the caller's own calendar arithmetic implies.
 pub fn days_in_month(year: i32, month: u32) -> u32 {
+    let (year, month) = normalize_year_month(year, i64::from(month));
     match month {
         1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
         4 | 6 | 9 | 11 => 30,
-        2 => {
+        // Only February remains; the normalization above guarantees 1..=12.
+        _ => {
             if is_leap_year(year) {
                 29
             } else {
                 28
             }
         }
-        _ => panic!("Invalid month: {}", month),
     }
+}
+
+/// Normalize `(year, month)` so that `month` lands in `1..=12`, carrying whole
+/// years in or out as needed. Saturates the year at `i32`'s bounds rather than
+/// overflowing.
+pub(crate) fn normalize_year_month(year: i32, month: i64) -> (i32, u32) {
+    let zero_based = month - 1;
+    let year_offset = zero_based.div_euclid(12);
+    let normalized_month = zero_based.rem_euclid(12) + 1;
+    let normalized_year = i64::from(year)
+        .saturating_add(year_offset)
+        .clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32;
+    (normalized_year, normalized_month as u32)
 }
 
 /// Check if a year is a leap year

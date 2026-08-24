@@ -53,6 +53,7 @@ impl TempTestFile {
     }
 
     /// Create from an existing path
+    #[allow(dead_code)]
     pub fn from_path(path: PathBuf) -> Self {
         TempTestFile { path, keep: false }
     }
@@ -63,11 +64,13 @@ impl TempTestFile {
     }
 
     /// Keep the file after drop (for debugging)
+    #[allow(dead_code)]
     pub fn keep(&mut self) {
         self.keep = true;
     }
 
     /// Convert to PathBuf, consuming self and disabling cleanup
+    #[allow(dead_code)]
     pub fn into_path(mut self) -> PathBuf {
         self.keep = true;
         self.path.clone()
@@ -99,6 +102,7 @@ impl TempTestDir {
     }
 
     /// Create from an existing path
+    #[allow(dead_code)]
     pub fn from_path(path: PathBuf) -> std::io::Result<Self> {
         fs::create_dir_all(&path)?;
         Ok(TempTestDir { path, keep: false })
@@ -110,11 +114,13 @@ impl TempTestDir {
     }
 
     /// Keep the directory after drop (for debugging)
+    #[allow(dead_code)]
     pub fn keep(&mut self) {
         self.keep = true;
     }
 
     /// Convert to PathBuf, consuming self and disabling cleanup
+    #[allow(dead_code)]
     pub fn into_path(mut self) -> PathBuf {
         self.keep = true;
         self.path.clone()

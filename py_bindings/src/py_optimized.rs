@@ -16,7 +16,13 @@ use self::py_string_pool::{
     get_or_init_global_pool, indices_to_py_string_list, py_string_list_to_indices,
 };
 
-/// Python wrapper for optimized pandrs DataFrame
+/// Typed, columnar DataFrame with the best performance (`OptimizedDataFrame`).
+///
+/// Columns are stored with real dtypes (int64 / float64 / bool / string-pooled)
+/// on top of the crate's `OptimizedDataFrame` engine, giving genuine typed
+/// filtering, Parquet I/O, and a lazy pipeline (`LazyFrame`). Prefer this class
+/// for heavy numeric work. For a pandas-shaped method surface see
+/// `PandasDataFrame`; for a simple string-typed frame see `DataFrame`.
 #[pyclass(name = "OptimizedDataFrame")]
 pub struct PyOptimizedDataFrame {
     pub(crate) inner: OptimizedDataFrame,
@@ -92,10 +98,10 @@ impl PyOptimizedDataFrame {
         &mut self,
         py: Python<'_>,
         name: String,
-        data: PyObject,
+        data: Py<PyAny>,
     ) -> PyResult<()> {
         // Downcast to a list
-        let list_obj = data.downcast_bound::<PyList>(py)?;
+        let list_obj = data.cast_bound::<PyList>(py)?;
 
         // Efficiently convert using the string pool
         let indices = py_string_list_to_indices(py, list_obj)?;
@@ -127,7 +133,7 @@ impl PyOptimizedDataFrame {
 
     /// Get column names
     #[getter]
-    fn column_names(&self, py: Python<'_>) -> PyResult<PyObject> {
+    fn column_names(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         let cols = self.inner.column_names();
         let python_list = PyList::new(py, cols)?;
         Ok(python_list.into())
@@ -140,9 +146,9 @@ impl PyOptimizedDataFrame {
     }
 
     /// Rename columns using a dictionary mapping old names to new names
-    fn rename_columns(&mut self, columns: PyObject, py: Python<'_>) -> PyResult<()> {
+    fn rename_columns(&mut self, columns: Py<PyAny>, py: Python<'_>) -> PyResult<()> {
         // Convert Python dict to Rust HashMap
-        let dict = columns.downcast_bound::<PyDict>(py)?;
+        let dict = columns.cast_bound::<PyDict>(py)?;
         let mut column_map = HashMap::new();
 
         for item in dict.iter() {
@@ -191,7 +197,7 @@ impl PyOptimizedDataFrame {
     }
 
     /// Convert to a pandas DataFrame (requires pandas)
-    fn to_pandas(&self, py: Python<'_>) -> PyResult<PyObject> {
+    fn to_pandas(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         let pandas = py.import("pandas")?;
         let pd_df = pandas.getattr("DataFrame")?;
 
@@ -294,7 +300,7 @@ impl PyOptimizedDataFrame {
 
     /// Create an optimized DataFrame from a pandas DataFrame
     #[staticmethod]
-    fn from_pandas(py: Python<'_>, pandas_df: PyObject) -> PyResult<Self> {
+    fn from_pandas(py: Python<'_>, pandas_df: Py<PyAny>) -> PyResult<Self> {
         // Get columns and prepare data
         let pd_obj = pandas_df.bind(py);
         let columns = pd_obj.getattr("columns")?;
@@ -355,7 +361,7 @@ impl PyOptimizedDataFrame {
             } else {
                 // Default to string for anything else - use string pool for efficiency
                 let values = pd_col.call_method0("to_list")?;
-                let py_list = values.downcast::<PyList>()?;
+                let py_list = values.cast::<PyList>()?;
 
                 // Efficiently convert using the string pool
                 let indices = py_string_list_to_indices(py, py_list)?;
@@ -386,14 +392,23 @@ impl PyOptimizedDataFrame {
     fn to_parquet(&self, path: &str, compression: Option<&str>) -> PyResult<()> {
         use ::pandrs::io::parquet::{write_parquet, ParquetCompression};
 
-        let compression_type = compression.map(|comp| match comp {
-            "snappy" => ParquetCompression::Snappy,
-            "gzip" => ParquetCompression::Gzip,
-            "brotli" => ParquetCompression::Brotli,
-            "lz4" => ParquetCompression::Lz4,
-            "zstd" => ParquetCompression::Zstd,
-            _ => ParquetCompression::Snappy,
-        });
+        // Map the requested codec, rejecting unknown names rather than
+        // silently downgrading them to Snappy (which would write a file in a
+        // different codec than the caller asked for).
+        let compression_type = match compression {
+            None => None,
+            Some("snappy") => Some(ParquetCompression::Snappy),
+            Some("gzip") => Some(ParquetCompression::Gzip),
+            Some("brotli") => Some(ParquetCompression::Brotli),
+            Some("lz4") => Some(ParquetCompression::Lz4),
+            Some("zstd") => Some(ParquetCompression::Zstd),
+            Some(other) => {
+                return Err(PyValueError::new_err(format!(
+                    "unknown parquet compression '{}'; expected one of: snappy, gzip, brotli, lz4, zstd",
+                    other
+                )))
+            }
+        };
 
         match write_parquet(&self.inner, path, compression_type) {
             Ok(_) => Ok(()),

@@ -371,7 +371,7 @@ fn tutorial_step_4_analysis() -> Result<(), Box<dyn std::error::Error>> {
     }
     sorted_values.sort_by(|a, b| a.partial_cmp(b).unwrap());
 
-    let median = if sorted_values.len() % 2 == 0 {
+    let median = if sorted_values.len().is_multiple_of(2) {
         (sorted_values[sorted_values.len() / 2 - 1] + sorted_values[sorted_values.len() / 2]) / 2.0
     } else {
         sorted_values[sorted_values.len() / 2]

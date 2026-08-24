@@ -4,7 +4,6 @@
 //! to/from JSON and YAML formats.
 
 use std::fs;
-use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
@@ -55,7 +54,7 @@ fn to_string_format<T: Serialize>(value: &T, format: SchemaFormat) -> Result<Str
     }
 }
 
-/// Deserialize a value from a string, trying to detect the format automatically
+/// Deserialize a value from a string in a known format
 fn from_str_format<T: for<'de> Deserialize<'de>>(content: &str, format: SchemaFormat) -> Result<T> {
     match format {
         SchemaFormat::Json => {
@@ -64,6 +63,23 @@ fn from_str_format<T: for<'de> Deserialize<'de>>(content: &str, format: SchemaFo
         SchemaFormat::Yaml => {
             serde_yaml::from_str(content).map_err(|e| Error::SerializationError(e.to_string()))
         }
+    }
+}
+
+/// Deserialize a value when the format is unknown: genuinely attempt JSON
+/// first, then YAML, rather than guessing once from a content heuristic
+/// (`{` at the start) and only trying that single guess. Returns an error
+/// naming both parse failures if neither format accepts the content.
+fn from_str_format_fallback<T: for<'de> Deserialize<'de>>(content: &str) -> Result<T> {
+    match serde_json::from_str(content) {
+        Ok(value) => Ok(value),
+        Err(json_err) => match serde_yaml::from_str(content) {
+            Ok(value) => Ok(value),
+            Err(yaml_err) => Err(Error::SerializationError(format!(
+                "content did not parse as JSON ({}) or YAML ({})",
+                json_err, yaml_err
+            ))),
+        },
     }
 }
 
@@ -93,16 +109,11 @@ pub fn save_schema(schema: &DataFrameSchema, path: &str, format: SchemaFormat) -
 /// # Errors
 /// Returns an error if the file cannot be read or deserialization fails.
 pub fn load_schema(path: &str) -> Result<DataFrameSchema> {
-    let content = fs::read_to_string(path).map_err(|e| Error::Io(e))?;
-    let format = SchemaFormat::from_path(path).unwrap_or_else(|| {
-        // Try to auto-detect from content
-        if content.trim_start().starts_with('{') {
-            SchemaFormat::Json
-        } else {
-            SchemaFormat::Yaml
-        }
-    });
-    from_str_format(&content, format)
+    let content = fs::read_to_string(path).map_err(Error::Io)?;
+    match SchemaFormat::from_path(path) {
+        Some(format) => from_str_format(&content, format),
+        None => from_str_format_fallback(&content),
+    }
 }
 
 /// Save a `Migration` to a file
@@ -114,15 +125,11 @@ pub fn save_migration(migration: &Migration, path: &str, format: SchemaFormat) -
 
 /// Load a `Migration` from a file
 pub fn load_migration(path: &str) -> Result<Migration> {
-    let content = fs::read_to_string(path).map_err(|e| Error::Io(e))?;
-    let format = SchemaFormat::from_path(path).unwrap_or_else(|| {
-        if content.trim_start().starts_with('{') {
-            SchemaFormat::Json
-        } else {
-            SchemaFormat::Yaml
-        }
-    });
-    from_str_format(&content, format)
+    let content = fs::read_to_string(path).map_err(Error::Io)?;
+    match SchemaFormat::from_path(path) {
+        Some(format) => from_str_format(&content, format),
+        None => from_str_format_fallback(&content),
+    }
 }
 
 /// Serialize a `DataFrameSchema` to a JSON string
@@ -205,6 +212,53 @@ impl Default for SchemaBundle {
     }
 }
 
+impl SchemaBundle {
+    /// Snapshot every schema and migration held by `registry` into a bundle.
+    ///
+    /// Each [`Migration`] already carries its own `schema_name` (see
+    /// [`Migration::schema_name`]), so unlike the pre-`schema_name` design
+    /// this captures the schema<->migration association, not just the raw
+    /// lists -- [`Self::into_registry`] can rebuild a fully working registry
+    /// from the result.
+    pub fn from_registry(registry: &super::registry::SchemaRegistry) -> Self {
+        let mut bundle = SchemaBundle::new();
+        for name in registry.schema_names() {
+            for version in registry.versions_of(name) {
+                if let Some(schema) = registry.get_version(name, version) {
+                    bundle = bundle.with_schema(schema.clone());
+                }
+            }
+        }
+        for migration in registry.all_migrations() {
+            bundle = bundle.with_migration(migration.clone());
+        }
+        bundle
+    }
+
+    /// Rebuild a [`SchemaRegistry`](super::registry::SchemaRegistry) from
+    /// this bundle: every schema is registered, and every migration is
+    /// re-indexed via [`SchemaRegistry::add_migration`](super::registry::SchemaRegistry::add_migration)
+    /// using the `schema_name` recorded on the migration itself. This is
+    /// the operation that actually closes the save/load round trip -- a
+    /// bundle with the association recorded but no way to restore a
+    /// queryable registry from it would only be half a fix.
+    ///
+    /// Fails if any migration's `schema_name` is missing (see
+    /// [`Migration::validate`]) or if two schemas/migrations collide,
+    /// exactly as [`SchemaRegistry::register`](super::registry::SchemaRegistry::register)
+    /// and `add_migration` would.
+    pub fn into_registry(self) -> Result<super::registry::SchemaRegistry> {
+        let mut registry = super::registry::SchemaRegistry::new();
+        for schema in self.schemas {
+            registry.register(schema)?;
+        }
+        for migration in self.migrations {
+            registry.add_migration(migration)?;
+        }
+        Ok(registry)
+    }
+}
+
 /// Save a schema bundle to a file
 pub fn save_bundle(bundle: &SchemaBundle, path: &str, format: SchemaFormat) -> Result<()> {
     let content = to_string_format(bundle, format)?;
@@ -214,15 +268,11 @@ pub fn save_bundle(bundle: &SchemaBundle, path: &str, format: SchemaFormat) -> R
 
 /// Load a schema bundle from a file
 pub fn load_bundle(path: &str) -> Result<SchemaBundle> {
-    let content = fs::read_to_string(path).map_err(|e| Error::Io(e))?;
-    let format = SchemaFormat::from_path(path).unwrap_or_else(|| {
-        if content.trim_start().starts_with('{') {
-            SchemaFormat::Json
-        } else {
-            SchemaFormat::Yaml
-        }
-    });
-    from_str_format(&content, format)
+    let content = fs::read_to_string(path).map_err(Error::Io)?;
+    match SchemaFormat::from_path(path) {
+        Some(format) => from_str_format(&content, format),
+        None => from_str_format_fallback(&content),
+    }
 }
 
 #[cfg(test)]
@@ -286,6 +336,78 @@ mod tests {
 
         // Cleanup
         let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn test_load_schema_unknown_extension_falls_back_json_then_yaml() {
+        let schema = make_schema();
+        let dir = std::env::temp_dir();
+
+        // A JSON body under an unrecognized extension must still load via
+        // the genuine JSON-then-YAML fallback (not a single content guess).
+        let json_path = dir.join("test_schema_fallback_json.dat");
+        fs::write(&json_path, schema_to_json(&schema).expect("to json")).expect("write");
+        let recovered = load_schema(json_path.to_str().expect("path")).expect("load json fallback");
+        assert_eq!(recovered.name, schema.name);
+        let _ = fs::remove_file(&json_path);
+
+        // Likewise for a YAML body.
+        let yaml_path = dir.join("test_schema_fallback_yaml.dat");
+        fs::write(&yaml_path, schema_to_yaml(&schema).expect("to yaml")).expect("write");
+        let recovered = load_schema(yaml_path.to_str().expect("path")).expect("load yaml fallback");
+        assert_eq!(recovered.name, schema.name);
+        let _ = fs::remove_file(&yaml_path);
+    }
+
+    #[test]
+    fn test_bundle_round_trip_preserves_migration_schema_association() {
+        use crate::schema_evolution::evolution::MigrationBuilder;
+        use crate::schema_evolution::registry::SchemaRegistry;
+        use crate::schema_evolution::schema::SchemaVersion;
+
+        let v1 = DataFrameSchema::new("orders", SchemaVersion::new(1, 0, 0))
+            .with_column(ColumnSchema::new("id", SchemaDataType::Int64));
+        let v2 = DataFrameSchema::new("orders", SchemaVersion::new(1, 1, 0))
+            .with_column(ColumnSchema::new("id", SchemaDataType::Int64))
+            .with_column(ColumnSchema::new("total", SchemaDataType::Float64));
+
+        let migration = MigrationBuilder::new(
+            "orders_m1",
+            "orders",
+            SchemaVersion::new(1, 0, 0),
+            SchemaVersion::new(1, 1, 0),
+        )
+        .add_column(ColumnSchema::new("total", SchemaDataType::Float64), None)
+        .build();
+
+        let mut registry = SchemaRegistry::new();
+        registry.register(v1).expect("register v1");
+        registry.register(v2).expect("register v2");
+        registry.add_migration(migration).expect("add migration");
+
+        let bundle = SchemaBundle::from_registry(&registry);
+
+        let dir = std::env::temp_dir();
+        let path = dir.join("test_bundle_round_trip_association.json");
+        let path_str = path.to_str().expect("path");
+        save_bundle(&bundle, path_str, SchemaFormat::Json).expect("save bundle");
+        let loaded_bundle = load_bundle(path_str).expect("load bundle");
+        let _ = fs::remove_file(&path);
+
+        let rebuilt = loaded_bundle
+            .into_registry()
+            .expect("bundle round trip should preserve the schema<->migration association");
+
+        let path_found = rebuilt.find_migration_path(
+            "orders",
+            &SchemaVersion::new(1, 0, 0),
+            &SchemaVersion::new(1, 1, 0),
+        );
+        assert!(
+            path_found.is_ok(),
+            "migration path should survive a full bundle save/load round trip"
+        );
+        assert_eq!(path_found.expect("path").len(), 1);
     }
 
     #[test]

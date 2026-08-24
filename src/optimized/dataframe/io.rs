@@ -6,15 +6,14 @@
 //! - Parquet reading/writing  
 //! - JSON reading/writing
 
-use std::collections::HashMap;
 use std::path::Path;
 
 use crate::column::{BooleanColumn, Column, Float64Column, Int64Column, StringColumn};
-use crate::error::{Error, Result};
+use crate::error::Result;
 #[cfg(feature = "parquet")]
 use crate::optimized::split_dataframe::io::ParquetCompression;
 
-use super::core::{ColumnView, JsonOrient, OptimizedDataFrame};
+use super::core::{JsonOrient, OptimizedDataFrame};
 
 impl OptimizedDataFrame {
     /// Create a DataFrame from a CSV file (high-performance implementation)
@@ -246,7 +245,6 @@ impl OptimizedDataFrame {
     pub fn from_json<P: AsRef<Path>>(path: P) -> Result<Self> {
         // Using implementation from split_dataframe/serialize.rs
         use crate::optimized::split_dataframe::core::OptimizedDataFrame as SplitDataFrame;
-        use crate::optimized::split_dataframe::serialize::JsonOrient as SplitJsonOrient;
 
         // Call from_json from SplitDataFrame
         let split_df = SplitDataFrame::from_json(path)?;
@@ -319,7 +317,8 @@ impl OptimizedDataFrame {
     }
 
     /// Infer data type and create the optimal column (internal helper)
-    pub(super) fn infer_and_create_column(data: &[String], name: &str) -> Column {
+    #[allow(dead_code)] // reserved for future use
+    pub(super) fn infer_and_create_column(data: &[String], _name: &str) -> Column {
         // Return a string column for empty data
         if data.is_empty() {
             return Column::String(StringColumn::new(Vec::new()));
@@ -388,6 +387,7 @@ impl OptimizedDataFrame {
     }
 
     /// Convert an OptimizedDataFrame to a standard DataFrame
+    #[allow(dead_code)] // reserved for future use
     pub(super) fn to_standard_dataframe(&self) -> Result<crate::dataframe::DataFrame> {
         // Use functions from the convert module
         crate::optimized::convert::to_standard_dataframe(self)

@@ -4,7 +4,6 @@
 //! In addition to text-based visualization (textplots), it can generate higher quality graphs and visualizations.
 
 use crate::error::{PandRSError, Result};
-use crate::temporal::TimeSeries;
 use crate::DataFrame;
 use crate::Series;
 use plotters::prelude::*;
@@ -222,7 +221,7 @@ impl DataFrame {
         }
 
         // Get numeric data
-        let column: &Series<f64> = self.get_column(col_name).expect("operation should succeed");
+        let column: &Series<f64> = self.get_column(col_name)?;
         let values = column.as_f64()?;
 
         // Values are already f64, no need to handle NA conversion
@@ -298,7 +297,7 @@ impl DataFrame {
         // Prepare data for each column
         let mut series_data = Vec::new();
         for (i, &col_name) in col_names.iter().enumerate() {
-            let column: &Series<f64> = self.get_column(col_name).expect("operation should succeed");
+            let column: &Series<f64> = self.get_column(col_name)?;
             let values = column.as_f64()?;
 
             // Values are already f64, no need to handle NA conversion
@@ -362,8 +361,8 @@ impl DataFrame {
         }
 
         // Get numeric data
-        let x_column: &Series<f64> = self.get_column(x_col).expect("operation should succeed");
-        let y_column: &Series<f64> = self.get_column(y_col).expect("operation should succeed");
+        let x_column: &Series<f64> = self.get_column(x_col)?;
+        let y_column: &Series<f64> = self.get_column(y_col)?;
         let x_values = x_column.as_f64()?;
         let y_values = y_column.as_f64()?;
 
@@ -445,12 +444,8 @@ impl DataFrame {
         }
 
         // Create mapping of categories and their values
-        let cat_column: &Series<String> = self
-            .get_column(category_col)
-            .expect("operation should succeed");
-        let val_column: &Series<f64> = self
-            .get_column(value_col)
-            .expect("operation should succeed");
+        let cat_column: &Series<String> = self.get_column(category_col)?;
+        let val_column: &Series<f64> = self.get_column(value_col)?;
         let categories = cat_column
             .values()
             .iter()
@@ -488,185 +483,87 @@ impl DataFrame {
 }
 
 /// Box plot implementation in PNG format
+///
+/// Statistics and the box/whisker/median/outlier drawing are delegated to
+/// [`crate::vis::plotters::boxplot_stats`] and
+/// [`crate::vis::plotters::draw_boxplot_series`], the same shared
+/// implementation used by `crate::vis::plotters::backend`'s box plot, so
+/// this no longer carries its own divergent quartile/whisker math.
 fn plot_boxplot_png<P: AsRef<Path>>(
     category_map: &std::collections::HashMap<String, Vec<f64>>,
     path: P,
     settings: &PlotSettings,
 ) -> Result<()> {
-    // Create PNG backend
     let root =
         BitMapBackend::new(path.as_ref(), (settings.width, settings.height)).into_drawing_area();
     root.fill(&WHITE)?;
-
-    // Get and sort list of categories
-    let mut categories: Vec<&String> = category_map.keys().collect();
-    categories.sort();
-
-    // Determine axis range by finding min and max of all values
-    let mut all_values = Vec::new();
-    for values in category_map.values() {
-        all_values.extend(values);
-    }
-
-    if all_values.is_empty() {
-        return Err(PandRSError::Empty("No data to plot".to_string()));
-    }
-
-    let y_min = all_values.iter().cloned().fold(f64::INFINITY, f64::min);
-    let y_max = all_values.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-
-    // Calculate margin
-    let y_margin = (y_max - y_min) * 0.1;
-
-    // Build chart
-    let mut chart = ChartBuilder::on(&root)
-        .caption(&settings.title, ("sans-serif", 30).into_font())
-        .margin(10)
-        .x_label_area_size(40)
-        .y_label_area_size(40)
-        .build_cartesian_2d(
-            (0f64)..(categories.len() as f64),
-            (y_min - y_margin)..(y_max + y_margin),
-        )?;
-
-    // Set labels
-    chart
-        .configure_mesh()
-        .x_labels(categories.len())
-        .x_label_formatter(&|idx| {
-            let i = *idx as usize;
-            if i < categories.len() {
-                categories[i].clone()
-            } else {
-                "".to_string()
-            }
-        })
-        .x_desc(&settings.x_label)
-        .y_desc(&settings.y_label)
-        .draw()?;
-
-    // Draw each element of the box plot
-    for (i, category) in categories.iter().enumerate() {
-        let values = &category_map[*category];
-        if values.is_empty() {
-            continue;
-        }
-
-        // Calculate basic statistics
-        let mut sorted_values = values.clone();
-        sorted_values.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-
-        let min = sorted_values[0];
-        let max = sorted_values[sorted_values.len() - 1];
-
-        let median_idx = sorted_values.len() / 2;
-        let median = if sorted_values.len() % 2 == 0 {
-            (sorted_values[median_idx - 1] + sorted_values[median_idx]) / 2.0
-        } else {
-            sorted_values[median_idx]
-        };
-
-        let q1_idx = sorted_values.len() / 4;
-        let q1 = if sorted_values.len() % 4 == 0 {
-            (sorted_values[q1_idx - 1] + sorted_values[q1_idx]) / 2.0
-        } else {
-            sorted_values[q1_idx]
-        };
-
-        let q3_idx = 3 * sorted_values.len() / 4;
-        let q3 = if (3 * sorted_values.len()) % 4 == 0 {
-            (sorted_values[q3_idx - 1] + sorted_values[q3_idx]) / 2.0
-        } else {
-            sorted_values[q3_idx]
-        };
-
-        // Box width
-        let box_width = 0.6;
-        let x = i as f64;
-
-        // Get color
-        let color_idx = i % settings.color_palette.len();
-        let (r, g, b) = settings.color_palette[color_idx];
-        let color = RGBColor(r, g, b);
-
-        // Draw box
-        chart.draw_series(std::iter::once(Rectangle::new(
-            [(x - box_width / 2.0, q1), (x + box_width / 2.0, q3)],
-            color.mix(0.2).filled(),
-        )))?;
-
-        // Draw median line
-        chart.draw_series(std::iter::once(PathElement::new(
-            vec![(x - box_width / 2.0, median), (x + box_width / 2.0, median)],
-            color.stroke_width(2),
-        )))?;
-
-        // Draw whiskers
-        chart.draw_series(std::iter::once(PathElement::new(
-            vec![(x, q3), (x, max)],
-            color.stroke_width(1),
-        )))?;
-
-        chart.draw_series(std::iter::once(PathElement::new(
-            vec![(x, q1), (x, min)],
-            color.stroke_width(1),
-        )))?;
-
-        // Draw horizontal lines at the ends of the whiskers
-        chart.draw_series(std::iter::once(PathElement::new(
-            vec![(x - box_width / 4.0, min), (x + box_width / 4.0, min)],
-            color.stroke_width(1),
-        )))?;
-
-        chart.draw_series(std::iter::once(PathElement::new(
-            vec![(x - box_width / 4.0, max), (x + box_width / 4.0, max)],
-            color.stroke_width(1),
-        )))?;
-    }
-
-    root.present()?;
-    Ok(())
+    draw_boxplot(&root, category_map, settings)
 }
 
-/// Box plot implementation in SVG format
+/// Box plot implementation in SVG format (see [`plot_boxplot_png`]).
 fn plot_boxplot_svg<P: AsRef<Path>>(
     category_map: &std::collections::HashMap<String, Vec<f64>>,
     path: P,
     settings: &PlotSettings,
 ) -> Result<()> {
-    // Create SVG backend
     let root =
         SVGBackend::new(path.as_ref(), (settings.width, settings.height)).into_drawing_area();
     root.fill(&WHITE)?;
+    draw_boxplot(&root, category_map, settings)
+}
 
+fn draw_boxplot<DB: plotters::prelude::DrawingBackend>(
+    root: &plotters::drawing::DrawingArea<DB, plotters::coord::Shift>,
+    category_map: &std::collections::HashMap<String, Vec<f64>>,
+    settings: &PlotSettings,
+) -> Result<()>
+where
+    DB::ErrorType: std::error::Error + Send + Sync + 'static,
+{
     // Get and sort list of categories
-    let mut categories: Vec<&String> = category_map.keys().collect();
+    let mut categories: Vec<String> = category_map
+        .iter()
+        .filter(|(_, v)| !v.is_empty())
+        .map(|(k, _)| k.clone())
+        .collect();
     categories.sort();
 
-    // Determine axis range by finding min and max of all values
-    let mut all_values = Vec::new();
-    for values in category_map.values() {
-        all_values.extend(values);
-    }
-
-    if all_values.is_empty() {
+    if categories.is_empty() {
         return Err(PandRSError::Empty("No data to plot".to_string()));
     }
 
-    let y_min = all_values.iter().cloned().fold(f64::INFINITY, f64::min);
-    let y_max = all_values.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+    let all_stats: Vec<crate::vis::plotters::BoxPlotStats> = categories
+        .iter()
+        .filter_map(|c| category_map.get(c))
+        .filter_map(|v| crate::vis::plotters::boxplot_stats(v))
+        .collect();
+    if all_stats.is_empty() {
+        return Err(PandRSError::Empty("No finite data to plot".to_string()));
+    }
 
-    // Calculate margin
-    let y_margin = (y_max - y_min) * 0.1;
+    let y_min = all_stats
+        .iter()
+        .map(|s| s.min.min(s.whisker_low))
+        .fold(f64::INFINITY, f64::min);
+    let y_max = all_stats
+        .iter()
+        .map(|s| s.max.max(s.whisker_high))
+        .fold(f64::NEG_INFINITY, f64::max);
+    let y_range = if (y_max - y_min).abs() < f64::EPSILON {
+        1.0
+    } else {
+        y_max - y_min
+    };
+    let y_margin = y_range * 0.1;
 
     // Build chart
-    let mut chart = ChartBuilder::on(&root)
+    let mut chart = ChartBuilder::on(root)
         .caption(&settings.title, ("sans-serif", 30).into_font())
         .margin(10)
         .x_label_area_size(40)
         .y_label_area_size(40)
         .build_cartesian_2d(
-            (0f64)..(categories.len() as f64),
+            -0.5f64..(categories.len() as f64 - 0.5),
             (y_min - y_margin)..(y_max + y_margin),
         )?;
 
@@ -674,99 +571,24 @@ fn plot_boxplot_svg<P: AsRef<Path>>(
     chart
         .configure_mesh()
         .x_labels(categories.len())
-        .x_label_formatter(&|idx| {
-            let i = *idx as usize;
-            if i < categories.len() {
-                categories[i].clone()
+        .x_label_formatter(&|x| {
+            let i = x.round() as isize;
+            if i >= 0 && (i as usize) < categories.len() {
+                categories[i as usize].clone()
             } else {
-                "".to_string()
+                String::new()
             }
         })
         .x_desc(&settings.x_label)
         .y_desc(&settings.y_label)
         .draw()?;
 
-    // Draw each element of the box plot
-    for (i, category) in categories.iter().enumerate() {
-        let values = &category_map[*category];
-        if values.is_empty() {
-            continue;
-        }
-
-        // Calculate basic statistics
-        let mut sorted_values = values.clone();
-        sorted_values.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-
-        let min = sorted_values[0];
-        let max = sorted_values[sorted_values.len() - 1];
-
-        let median_idx = sorted_values.len() / 2;
-        let median = if sorted_values.len() % 2 == 0 {
-            (sorted_values[median_idx - 1] + sorted_values[median_idx]) / 2.0
-        } else {
-            sorted_values[median_idx]
-        };
-
-        let q1_idx = sorted_values.len() / 4;
-        let q1 = if sorted_values.len() % 4 == 0 {
-            (sorted_values[q1_idx - 1] + sorted_values[q1_idx]) / 2.0
-        } else {
-            sorted_values[q1_idx]
-        };
-
-        let q3_idx = 3 * sorted_values.len() / 4;
-        let q3 = if (3 * sorted_values.len()) % 4 == 0 {
-            (sorted_values[q3_idx - 1] + sorted_values[q3_idx]) / 2.0
-        } else {
-            sorted_values[q3_idx]
-        };
-
-        // Box width
-        let box_width = 0.6;
-        let x = i as f64;
-
-        // Get color
-        let color_idx = i % settings.color_palette.len();
-        let (r, g, b) = settings.color_palette[color_idx];
-        let color = RGBColor(r, g, b);
-
-        // Draw box
-        chart.draw_series(std::iter::once(Rectangle::new(
-            [(x - box_width / 2.0, q1), (x + box_width / 2.0, q3)],
-            color.mix(0.2).filled(),
-        )))?;
-
-        // Draw median line
-        chart.draw_series(std::iter::once(PathElement::new(
-            vec![(x - box_width / 2.0, median), (x + box_width / 2.0, median)],
-            color.stroke_width(2),
-        )))?;
-
-        // Draw whiskers
-        chart.draw_series(std::iter::once(PathElement::new(
-            vec![(x, q3), (x, max)],
-            color.stroke_width(1),
-        )))?;
-
-        chart.draw_series(std::iter::once(PathElement::new(
-            vec![(x, q1), (x, min)],
-            color.stroke_width(1),
-        )))?;
-
-        // Draw horizontal lines at the ends of the whiskers
-        chart.draw_series(std::iter::once(PathElement::new(
-            vec![(x - box_width / 4.0, min), (x + box_width / 4.0, min)],
-            color.stroke_width(1),
-        )))?;
-
-        chart.draw_series(std::iter::once(PathElement::new(
-            vec![(x - box_width / 4.0, max), (x + box_width / 4.0, max)],
-            color.stroke_width(1),
-        )))?;
-    }
-
-    root.present()?;
-    Ok(())
+    crate::vis::plotters::draw_boxplot_series(
+        &mut chart,
+        &categories,
+        category_map,
+        &settings.color_palette,
+    )
 }
 
 /// Series XY plot implementation in PNG format
@@ -1093,16 +915,29 @@ fn plot_histogram_png<P: AsRef<Path>>(
         return Err(PandRSError::Empty("No data to plot".to_string()));
     }
 
+    if bins == 0 {
+        return Err(PandRSError::InvalidInput(
+            "Histogram: bins must be greater than 0".to_string(),
+        ));
+    }
+
     // Calculate histogram bins
     let min_val = values.iter().cloned().fold(f64::INFINITY, f64::min);
     let max_val = values.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
 
-    let bin_width = (max_val - min_val) / (bins as f64);
+    // A constant (or single-point) series has max_val == min_val, which
+    // would otherwise divide by a zero bin_width; fall back to a single
+    // unit-width bin holding every value instead.
+    let bin_width = if (max_val - min_val).abs() < f64::EPSILON {
+        1.0
+    } else {
+        (max_val - min_val) / (bins as f64)
+    };
     let mut histogram = vec![0; bins];
 
     for &val in values {
         let bin_idx = ((val - min_val) / bin_width).floor() as usize;
-        let bin_idx = if bin_idx >= bins { bins - 1 } else { bin_idx };
+        let bin_idx = bin_idx.min(bins - 1);
         histogram[bin_idx] += 1;
     }
 
@@ -1190,17 +1025,28 @@ fn plot_histogram_svg<P: AsRef<Path>>(
     if values.is_empty() {
         return Err(PandRSError::Empty("No data to plot".to_string()));
     }
+    if bins == 0 {
+        return Err(PandRSError::InvalidInput(
+            "Histogram: bins must be greater than 0".to_string(),
+        ));
+    }
 
     // Calculate histogram bins
     let min_val = values.iter().cloned().fold(f64::INFINITY, f64::min);
     let max_val = values.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
 
-    let bin_width = (max_val - min_val) / (bins as f64);
+    // See plot_histogram_png: a constant series has max_val == min_val,
+    // which would otherwise divide by a zero bin_width.
+    let bin_width = if (max_val - min_val).abs() < f64::EPSILON {
+        1.0
+    } else {
+        (max_val - min_val) / (bins as f64)
+    };
     let mut histogram = vec![0; bins];
 
     for &val in values {
         let bin_idx = ((val - min_val) / bin_width).floor() as usize;
-        let bin_idx = if bin_idx >= bins { bins - 1 } else { bin_idx };
+        let bin_idx = bin_idx.min(bins - 1);
         histogram[bin_idx] += 1;
     }
 

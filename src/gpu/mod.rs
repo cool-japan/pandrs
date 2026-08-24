@@ -8,11 +8,8 @@ use std::error::Error as StdError;
 use std::fmt;
 use std::sync::{Arc, Mutex};
 
-use crate::error::{Error, PandRSError, Result};
+use crate::error::{Error, Result};
 use crate::lock_safe;
-use crate::optimized::dataframe::OptimizedDataFrame;
-use crate::DataFrame;
-use crate::Series;
 
 /// Configuration options for GPU operations
 #[derive(Debug, Clone)]
@@ -97,17 +94,37 @@ impl GpuContext {
     fn detect_device(_config: &GpuConfig) -> GpuDeviceStatus {
         #[cfg(cuda_available)]
         {
-            // Use cudarc to detect CUDA availability (0.18.x uses CudaContext)
+            // Use cudarc (0.19.x) to detect CUDA availability and query real
+            // device properties instead of reporting hardcoded placeholders.
             match cudarc::driver::CudaContext::new(0) {
-                Ok(_context) => {
-                    // cudarc 0.18.x doesn't expose device properties easily
+                Ok(context) => {
+                    // Real device name (None if the query fails).
+                    let device_name = context.name().ok();
+
+                    // Real total/free device memory. `mem_get_info` returns
+                    // `(free, total)`.
+                    let (free_memory, total_memory) = match context.mem_get_info() {
+                        Ok((free, total)) => (Some(free), Some(total)),
+                        Err(_) => (None, None),
+                    };
+
+                    // cudarc's safe API does not expose the CUDA runtime/driver
+                    // version, so report the real device compute capability
+                    // rather than fabricating a version string.
+                    let cuda_version = context
+                        .compute_capability()
+                        .ok()
+                        .map(|(major, minor)| format!("compute capability {}.{}", major, minor));
+
                     return GpuDeviceStatus {
                         available: true,
-                        cuda_version: Some("11.0+".to_string()), // cudarc requires CUDA 11.0+
-                        device_name: Some("CUDA Device".to_string()),
-                        total_memory: None, // Not available in cudarc 0.18.x
-                        free_memory: None,  // Not available in cudarc 0.18.x
-                        core_count: None,   // Not available in cudarc 0.18.x
+                        cuda_version,
+                        device_name,
+                        total_memory,
+                        free_memory,
+                        // The streaming-multiprocessor/core count is not queried
+                        // here; report None rather than a fabricated value.
+                        core_count: None,
                     };
                 }
                 Err(_) => {
@@ -306,3 +323,7 @@ pub mod multi_gpu;
 
 // GPU memory pooling for efficient memory management
 pub mod memory_pool;
+
+// Real CPU math shared by the GPU-dispatch entry points (Rust extension
+// traits and the Python bindings alike) — see its module doc for why.
+pub mod cpu_math;

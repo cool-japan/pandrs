@@ -147,7 +147,7 @@ impl SciRS2LinAlg {
     pub fn eig(df: &DataFrame) -> Result<EigResult> {
         use scirs2_linalg::eigh;
 
-        let cols: Vec<String> = df.column_names();
+        let cols: Vec<String> = df.column_names().to_vec();
         let col_refs: Vec<&str> = cols.iter().map(|s| s.as_str()).collect();
         let arr = dataframe_to_array2(df, &col_refs)?;
 
@@ -192,16 +192,16 @@ impl SciRS2LinAlg {
     pub fn svd(df: &DataFrame) -> Result<SvdResult> {
         use scirs2_linalg::svd;
 
-        let cols: Vec<String> = df.column_names();
+        let cols: Vec<String> = df.column_names().to_vec();
         let col_refs: Vec<&str> = cols.iter().map(|s| s.as_str()).collect();
         let arr = dataframe_to_array2(df, &col_refs)?;
 
-        let (m, n) = arr.dim();
+        let (_m, _n) = arr.dim();
 
         let (u, s, vt) = svd(&arr.view(), false, None)
             .map_err(|e| Error::OperationFailed(format!("SciRS2 svd failed: {}", e)))?;
 
-        let k = s.len();
+        let _k = s.len();
         let singular_values: Vec<f64> = s.iter().copied().collect();
 
         let u_col_names: Vec<String> = (0..u.ncols()).map(|i| format!("u{}", i)).collect();
@@ -235,8 +235,8 @@ impl SciRS2LinAlg {
     pub fn solve(a: &DataFrame, b: &DataFrame) -> Result<DataFrame> {
         use scirs2_linalg::solve_multiple;
 
-        let a_cols: Vec<String> = a.column_names();
-        let b_cols: Vec<String> = b.column_names();
+        let a_cols: Vec<String> = a.column_names().to_vec();
+        let b_cols: Vec<String> = b.column_names().to_vec();
         let a_col_refs: Vec<&str> = a_cols.iter().map(|s| s.as_str()).collect();
         let b_col_refs: Vec<&str> = b_cols.iter().map(|s| s.as_str()).collect();
 
@@ -273,7 +273,7 @@ impl SciRS2LinAlg {
     pub fn inv(df: &DataFrame) -> Result<DataFrame> {
         use scirs2_linalg::inv;
 
-        let cols: Vec<String> = df.column_names();
+        let cols: Vec<String> = df.column_names().to_vec();
         let col_refs: Vec<&str> = cols.iter().map(|s| s.as_str()).collect();
         let arr = dataframe_to_array2(df, &col_refs)?;
 
@@ -303,7 +303,7 @@ impl SciRS2LinAlg {
     pub fn det(df: &DataFrame) -> Result<f64> {
         use scirs2_linalg::det;
 
-        let cols: Vec<String> = df.column_names();
+        let cols: Vec<String> = df.column_names().to_vec();
         let col_refs: Vec<&str> = cols.iter().map(|s| s.as_str()).collect();
         let arr = dataframe_to_array2(df, &col_refs)?;
 
@@ -334,7 +334,7 @@ impl SciRS2LinAlg {
     pub fn qr(df: &DataFrame) -> Result<QrResult> {
         use scirs2_linalg::qr;
 
-        let cols: Vec<String> = df.column_names();
+        let cols: Vec<String> = df.column_names().to_vec();
         let col_refs: Vec<&str> = cols.iter().map(|s| s.as_str()).collect();
         let arr = dataframe_to_array2(df, &col_refs)?;
 
@@ -366,7 +366,7 @@ impl SciRS2LinAlg {
     pub fn cholesky(df: &DataFrame) -> Result<DataFrame> {
         use scirs2_linalg::cholesky;
 
-        let cols: Vec<String> = df.column_names();
+        let cols: Vec<String> = df.column_names().to_vec();
         let col_refs: Vec<&str> = cols.iter().map(|s| s.as_str()).collect();
         let arr = dataframe_to_array2(df, &col_refs)?;
 
@@ -400,7 +400,7 @@ impl SciRS2LinAlg {
     pub fn lu(df: &DataFrame) -> Result<LuResult> {
         use scirs2_linalg::lu;
 
-        let cols: Vec<String> = df.column_names();
+        let cols: Vec<String> = df.column_names().to_vec();
         let col_refs: Vec<&str> = cols.iter().map(|s| s.as_str()).collect();
         let arr = dataframe_to_array2(df, &col_refs)?;
 
@@ -432,8 +432,8 @@ impl SciRS2LinAlg {
     pub fn lstsq(a: &DataFrame, b: &DataFrame) -> Result<LstsqDataFrameResult> {
         use scirs2_linalg::lstsq;
 
-        let a_cols: Vec<String> = a.column_names();
-        let b_cols: Vec<String> = b.column_names();
+        let a_cols: Vec<String> = a.column_names().to_vec();
+        let b_cols: Vec<String> = b.column_names().to_vec();
         let a_col_refs: Vec<&str> = a_cols.iter().map(|s| s.as_str()).collect();
         let b_col_refs: Vec<&str> = b_cols.iter().map(|s| s.as_str()).collect();
 
@@ -505,7 +505,7 @@ impl SciRS2LinAlg {
     pub fn matrix_norm(df: &DataFrame, ord: &str) -> Result<f64> {
         use scirs2_linalg::matrix_norm;
 
-        let cols: Vec<String> = df.column_names();
+        let cols: Vec<String> = df.column_names().to_vec();
         let col_refs: Vec<&str> = cols.iter().map(|s| s.as_str()).collect();
         let arr = dataframe_to_array2(df, &col_refs)?;
 
@@ -528,7 +528,7 @@ impl SciRS2LinAlg {
     pub fn matrix_rank(df: &DataFrame) -> Result<usize> {
         use scirs2_linalg::matrix_rank;
 
-        let cols: Vec<String> = df.column_names();
+        let cols: Vec<String> = df.column_names().to_vec();
         let col_refs: Vec<&str> = cols.iter().map(|s| s.as_str()).collect();
         let arr = dataframe_to_array2(df, &col_refs)?;
 
@@ -551,7 +551,7 @@ impl SciRS2LinAlg {
     pub fn condition_number(df: &DataFrame) -> Result<f64> {
         use scirs2_linalg::cond;
 
-        let cols: Vec<String> = df.column_names();
+        let cols: Vec<String> = df.column_names().to_vec();
         let col_refs: Vec<&str> = cols.iter().map(|s| s.as_str()).collect();
         let arr = dataframe_to_array2(df, &col_refs)?;
 
@@ -583,7 +583,7 @@ impl SciRS2LinAlg {
         use scirs2_core::ndarray::Array2;
         use scirs2_linalg::lstsq;
 
-        let cols: Vec<String> = df.column_names();
+        let cols: Vec<String> = df.column_names().to_vec();
         let col_refs: Vec<&str> = cols.iter().map(|s| s.as_str()).collect();
         let arr_a = dataframe_to_array2(df, &col_refs)?;
 

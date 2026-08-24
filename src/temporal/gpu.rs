@@ -1,21 +1,23 @@
-//! GPU-accelerated time series operations
+//! Time series window operations with a GPU-dispatch path
 //!
-//! This module provides GPU-accelerated implementations of time series operations
-//! such as moving averages, rolling windows, and resampling functions.
+//! This module provides window operations (moving averages, rolling and
+//! expanding windows, exponentially weighted windows) for time series data
+//! behind a GPU-dispatch interface.
+//!
+//! IMPORTANT (honesty note): cudarc 0.19.x does not expose the kernels needed to
+//! run these window operations on the device, so the `apply_gpu_impl` paths below
+//! currently compute their results on the **CPU** (the results are correct, just
+//! not produced on-device). No CUDA kernel is dispatched and no fabricated
+//! GPU-vs-CPU speedup is reported. The GPU-dispatch structure is retained so that
+//! real CUDA kernels can be slotted in later.
 
-use chrono::{DateTime, Duration, Utc};
-use scirs2_core::ndarray::{Array1, Array2, Axis};
-use std::fmt;
+use chrono::{DateTime, Utc};
 use std::fmt::Debug;
-use std::time::Instant;
 
 use crate::error::{Error, Result};
-use crate::gpu::operations::{GpuMatrix, GpuVector};
-use crate::gpu::{get_gpu_manager, GpuError};
+use crate::gpu::get_gpu_manager;
 use crate::series::Series;
-use crate::temporal::core::TimeSeries;
 use crate::temporal::window::WindowOperation;
-use crate::temporal::window::WindowType;
 
 /// GPU-accelerated window operation trait
 pub trait GpuWindowOperation {
@@ -69,7 +71,8 @@ impl GpuWindowOperation for GpuRollingWindow {
         let use_gpu = gpu_manager.is_available()
             && data.len() >= gpu_manager.context().config().min_size_threshold;
 
-        // If GPU acceleration is available, use it
+        // Take the GPU-dispatch path when selected. NOTE: apply_gpu_impl currently
+        // computes on the CPU (cudarc 0.19.x exposes no kernel); see its doc.
         if use_gpu {
             return self.apply_gpu_impl(data);
         }
@@ -80,12 +83,12 @@ impl GpuWindowOperation for GpuRollingWindow {
 }
 
 impl GpuRollingWindow {
-    /// GPU implementation of rolling window operation
+    /// Rolling window operation on the GPU-dispatch path.
+    ///
+    /// Honesty note: cudarc 0.19.x exposes no rolling-window kernel, so this
+    /// computes the result on the **CPU** (correct, just not on-device). No CUDA
+    /// kernel is dispatched and no fabricated speedup is reported.
     fn apply_gpu_impl(&self, data: &[f64]) -> Result<Vec<f64>> {
-        // Convert to Array1 and create GpuVector
-        let data_array = Array1::from_vec(data.to_vec());
-        let gpu_data = GpuVector::new(data_array);
-
         // Allocate vector for results
         let n = data.len();
         let mut result = vec![f64::NAN; n];
@@ -111,14 +114,14 @@ impl GpuRollingWindow {
 
             match self.operation {
                 WindowOperation::Mean => {
-                    // GPU-accelerated mean
+                    // Compute the mean (on the CPU; no CUDA kernel)
                     if window_data.len() > 0 {
                         let sum: f64 = window_data.iter().sum();
                         result[i] = sum / window_data.len() as f64;
                     }
                 }
                 WindowOperation::Sum => {
-                    // GPU-accelerated sum
+                    // Compute the sum (on the CPU; no CUDA kernel)
                     if window_data.len() > 0 {
                         result[i] = window_data.iter().sum();
                     }
@@ -167,8 +170,7 @@ impl GpuRollingWindow {
                             .filter(|&&x| !x.is_nan())
                             .cloned()
                             .collect();
-                        sorted
-                            .sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+                        sorted.sort_by(|a, b| a.total_cmp(b));
                         if !sorted.is_empty() {
                             let mid = sorted.len() / 2;
                             result[i] = if sorted.len() % 2 == 0 {
@@ -281,8 +283,7 @@ impl GpuRollingWindow {
                             .filter(|&&x| !x.is_nan())
                             .cloned()
                             .collect();
-                        sorted
-                            .sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+                        sorted.sort_by(|a, b| a.total_cmp(b));
                         if !sorted.is_empty() {
                             let mid = sorted.len() / 2;
                             result[i] = if sorted.len() % 2 == 0 {
@@ -332,7 +333,8 @@ impl GpuWindowOperation for GpuExpandingWindow {
         let use_gpu = gpu_manager.is_available()
             && data.len() >= gpu_manager.context().config().min_size_threshold;
 
-        // If GPU acceleration is available, use it
+        // Take the GPU-dispatch path when selected. NOTE: apply_gpu_impl currently
+        // computes on the CPU (cudarc 0.19.x exposes no kernel); see its doc.
         if use_gpu {
             return self.apply_gpu_impl(data);
         }
@@ -343,12 +345,12 @@ impl GpuWindowOperation for GpuExpandingWindow {
 }
 
 impl GpuExpandingWindow {
-    /// GPU implementation of expanding window operation
+    /// Expanding window operation on the GPU-dispatch path.
+    ///
+    /// Honesty note: cudarc 0.19.x exposes no expanding-window kernel, so this
+    /// computes the result on the **CPU** (correct, just not on-device). No CUDA
+    /// kernel is dispatched and no fabricated speedup is reported.
     fn apply_gpu_impl(&self, data: &[f64]) -> Result<Vec<f64>> {
-        // Convert to Array1 and create GpuVector
-        let data_array = Array1::from_vec(data.to_vec());
-        let gpu_data = GpuVector::new(data_array);
-
         // Allocate vector for results
         let n = data.len();
         let mut result = vec![f64::NAN; n];
@@ -365,14 +367,14 @@ impl GpuExpandingWindow {
 
             match self.operation {
                 WindowOperation::Mean => {
-                    // GPU-accelerated mean
+                    // Compute the mean (on the CPU; no CUDA kernel)
                     if window_data.len() > 0 {
                         let sum: f64 = window_data.iter().sum();
                         result[i] = sum / window_data.len() as f64;
                     }
                 }
                 WindowOperation::Sum => {
-                    // GPU-accelerated sum
+                    // Compute the sum (on the CPU; no CUDA kernel)
                     if window_data.len() > 0 {
                         result[i] = window_data.iter().sum();
                     }
@@ -421,8 +423,7 @@ impl GpuExpandingWindow {
                             .filter(|&&x| !x.is_nan())
                             .cloned()
                             .collect();
-                        sorted
-                            .sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+                        sorted.sort_by(|a, b| a.total_cmp(b));
                         if !sorted.is_empty() {
                             let mid = sorted.len() / 2;
                             result[i] = if sorted.len() % 2 == 0 {
@@ -520,8 +521,7 @@ impl GpuExpandingWindow {
                             .filter(|&&x| !x.is_nan())
                             .cloned()
                             .collect();
-                        sorted
-                            .sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+                        sorted.sort_by(|a, b| a.total_cmp(b));
                         if !sorted.is_empty() {
                             let mid = sorted.len() / 2;
                             result[i] = if sorted.len() % 2 == 0 {
@@ -590,7 +590,8 @@ impl GpuWindowOperation for GpuEWWindow {
         let use_gpu = gpu_manager.is_available()
             && data.len() >= gpu_manager.context().config().min_size_threshold;
 
-        // If GPU acceleration is available, use it
+        // Take the GPU-dispatch path when selected. NOTE: apply_gpu_impl currently
+        // computes on the CPU (cudarc 0.19.x exposes no kernel); see its doc.
         if use_gpu {
             return self.apply_gpu_impl(data);
         }
@@ -601,12 +602,13 @@ impl GpuWindowOperation for GpuEWWindow {
 }
 
 impl GpuEWWindow {
-    /// GPU implementation of exponentially weighted window operation
+    /// Exponentially weighted window operation on the GPU-dispatch path.
+    ///
+    /// Honesty note: cudarc 0.19.x exposes no exponentially-weighted-window
+    /// kernel, so this computes the result on the **CPU** (correct, just not
+    /// on-device). No CUDA kernel is dispatched and no fabricated speedup is
+    /// reported.
     fn apply_gpu_impl(&self, data: &[f64]) -> Result<Vec<f64>> {
-        // Convert to Array1 and create GpuVector
-        let data_array = Array1::from_vec(data.to_vec());
-        let gpu_data = GpuVector::new(data_array);
-
         // Allocate vector for results
         let n = data.len();
         let mut result = vec![f64::NAN; n];

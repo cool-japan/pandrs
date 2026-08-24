@@ -31,6 +31,7 @@ use std::time::SystemTime;
 
 /// Represents a role in the system with associated permissions
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[allow(dead_code)]
 enum Role {
     /// System administrator with full access
     Admin,
@@ -114,6 +115,7 @@ impl ResourceId {
 
 /// Access control entry for a specific resource
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct ResourceAcl {
     resource_id: ResourceId,
     tenant_id: TenantId,
@@ -189,6 +191,7 @@ struct RbacManager {
 
 /// Access log entry for audit trail
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct AccessLog {
     timestamp: SystemTime,
     user_id: String,

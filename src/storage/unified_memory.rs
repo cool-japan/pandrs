@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use std::ops::Range;
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
-    Arc, Mutex, RwLock,
+    Arc,
 };
 use std::time::Instant;
 
@@ -246,7 +246,34 @@ impl Default for StorageConstraints {
     }
 }
 
+/// Physical layout of the bytes inside a [`DataChunk`].
+///
+/// The layout is what makes the *row* addressing used by [`ChunkRange`]
+/// well-defined: it tells a storage strategy how to map a row index onto the
+/// byte buffer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ChunkLayout {
+    /// Opaque binary payload. One row is exactly one byte, so `row_count`
+    /// always equals `data.len()` and row ranges are byte ranges.
+    Opaque,
+    /// Length-prefixed UTF-8 strings. One row is one string.
+    ///
+    /// Wire format (all integers little-endian):
+    /// `u64 row_count`, then per row `u64 byte_len` followed by the UTF-8
+    /// bytes. NUL bytes inside a string are preserved because the length
+    /// prefix — not a separator — delimits the rows.
+    Strings,
+}
+
+/// Number of bytes used by the `row_count` header of a `Strings` payload.
+const STRINGS_HEADER_LEN: usize = 8;
+/// Number of bytes used by each per-row length prefix of a `Strings` payload.
+const STRINGS_LEN_PREFIX: usize = 8;
+
 /// Data chunk for read/write operations
+///
+/// A chunk carries both the raw bytes and the row structure needed to honour
+/// the row-indexed [`ChunkRange`] contract shared by every storage strategy.
 #[derive(Debug, Clone)]
 pub struct DataChunk {
     /// Raw data bytes
@@ -256,13 +283,32 @@ pub struct DataChunk {
 }
 
 impl DataChunk {
+    /// Create an opaque byte chunk. One row == one byte.
     pub fn new(data: Vec<u8>) -> Self {
         Self {
-            metadata: ChunkMetadata::new(data.len()),
+            metadata: ChunkMetadata::new(&data, data.len(), ChunkLayout::Opaque),
             data,
         }
     }
 
+    /// Create a chunk from an already-encoded payload with an explicit layout
+    /// and row count. Used by storage strategies that reassemble chunks from
+    /// their own on-disk representation.
+    pub fn from_encoded(data: Vec<u8>, layout: ChunkLayout, row_count: usize) -> Result<Self> {
+        if layout == ChunkLayout::Opaque && row_count != data.len() {
+            return Err(Error::InvalidOperation(format!(
+                "Opaque chunk row count {} does not match byte length {}",
+                row_count,
+                data.len()
+            )));
+        }
+        Ok(Self {
+            metadata: ChunkMetadata::new(&data, row_count, layout),
+            data,
+        })
+    }
+
+    /// Size of the chunk payload in bytes.
     pub fn len(&self) -> usize {
         self.data.len()
     }
@@ -271,25 +317,164 @@ impl DataChunk {
         self.data.is_empty()
     }
 
+    /// Number of logical rows carried by this chunk.
+    pub fn rows(&self) -> usize {
+        self.metadata.row_count
+    }
+
+    /// Physical layout of this chunk's payload.
+    pub fn layout(&self) -> ChunkLayout {
+        self.metadata.layout
+    }
+
     pub fn from_slice(data: &[u8]) -> Self {
         Self::new(data.to_vec())
     }
 
+    /// Encode a list of strings with an explicit length prefix per row.
+    ///
+    /// The previous implementation joined the strings with `"\0"`; because Rust
+    /// `String`s may legally contain NUL bytes that silently split rows, and an
+    /// empty input round-tripped as one empty row instead of zero rows.
     pub fn from_strings(strings: Vec<String>) -> Self {
-        let data = strings.join("\0").into_bytes();
-        Self::new(data)
+        let payload_len: usize = strings.iter().map(|s| STRINGS_LEN_PREFIX + s.len()).sum();
+        let mut data = Vec::with_capacity(STRINGS_HEADER_LEN + payload_len);
+        data.extend_from_slice(&(strings.len() as u64).to_le_bytes());
+        for s in &strings {
+            data.extend_from_slice(&(s.len() as u64).to_le_bytes());
+            data.extend_from_slice(s.as_bytes());
+        }
+        Self {
+            metadata: ChunkMetadata::new(&data, strings.len(), ChunkLayout::Strings),
+            data,
+        }
     }
 
+    /// Decode a `Strings` chunk back into its rows.
+    ///
+    /// Returns an error for opaque chunks and for malformed/truncated payloads
+    /// rather than silently producing a different number of rows.
     pub fn as_strings(&self) -> Result<Vec<String>> {
-        let data_str = String::from_utf8(self.data.clone())
-            .map_err(|e| Error::InvalidOperation(format!("Invalid UTF-8 data: {}", e)))?;
-        Ok(data_str.split('\0').map(|s| s.to_string()).collect())
+        if self.metadata.layout != ChunkLayout::Strings {
+            return Err(Error::InvalidOperation(
+                "DataChunk does not carry a string layout; use DataChunk::from_strings to build one"
+                    .to_string(),
+            ));
+        }
+        decode_strings(&self.data)
     }
 
+    /// Extract rows `[start, end)` as a new chunk of the same layout.
+    pub fn slice_rows(&self, start: usize, end: usize) -> Result<DataChunk> {
+        let end = end.min(self.rows());
+        let start = start.min(end);
+        match self.metadata.layout {
+            ChunkLayout::Opaque => Ok(DataChunk::new(self.data[start..end].to_vec())),
+            ChunkLayout::Strings => {
+                let all = self.as_strings()?;
+                Ok(DataChunk::from_strings(all[start..end].to_vec()))
+            }
+        }
+    }
+
+    /// Concatenate chunks that share a layout into a single chunk.
+    ///
+    /// Returns an error for mixed layouts rather than producing a byte blob
+    /// whose row structure no longer matches its contents.
+    pub fn concat(parts: Vec<DataChunk>) -> Result<DataChunk> {
+        let Some(first) = parts.first() else {
+            return Ok(DataChunk::new(Vec::new()));
+        };
+        let layout = first.layout();
+        if parts.iter().any(|p| p.layout() != layout) {
+            return Err(Error::InvalidOperation(
+                "Cannot concatenate chunks with mixed layouts".to_string(),
+            ));
+        }
+        match layout {
+            ChunkLayout::Opaque => {
+                let mut merged = Vec::with_capacity(parts.iter().map(|p| p.len()).sum());
+                for part in parts {
+                    merged.extend_from_slice(&part.data);
+                }
+                Ok(DataChunk::new(merged))
+            }
+            ChunkLayout::Strings => {
+                let mut merged = Vec::with_capacity(parts.iter().map(|p| p.rows()).sum());
+                for part in parts {
+                    merged.extend(part.as_strings()?);
+                }
+                Ok(DataChunk::from_strings(merged))
+            }
+        }
+    }
+
+    /// Recompute the payload checksum and compare it against the stored one.
+    pub fn verify_checksum(&self) -> bool {
+        crate::storage::checksum::checksum64(&self.data) == self.metadata.checksum
+    }
+
+    /// Build a chunk of `size` zero bytes. Intended for tests and benchmarks.
     pub fn new_test_data(size: usize) -> Self {
         let data = vec![0u8; size];
         Self::new(data)
     }
+}
+
+/// Decode a length-prefixed `Strings` payload.
+fn decode_strings(data: &[u8]) -> Result<Vec<String>> {
+    if data.is_empty() {
+        return Ok(Vec::new());
+    }
+    if data.len() < STRINGS_HEADER_LEN {
+        return Err(Error::InvalidOperation(
+            "Truncated string chunk: missing row count header".to_string(),
+        ));
+    }
+    let mut header = [0u8; STRINGS_HEADER_LEN];
+    header.copy_from_slice(&data[..STRINGS_HEADER_LEN]);
+    let row_count = u64::from_le_bytes(header);
+    // Each row costs at least its length prefix, so a row count that cannot
+    // possibly fit in the remaining bytes is corrupt input, not a huge alloc.
+    let max_rows = (data.len() - STRINGS_HEADER_LEN) / STRINGS_LEN_PREFIX;
+    if row_count as usize > max_rows {
+        return Err(Error::InvalidOperation(format!(
+            "Corrupt string chunk: header claims {} rows but only {} can fit in {} bytes",
+            row_count,
+            max_rows,
+            data.len()
+        )));
+    }
+    let row_count = row_count as usize;
+
+    let mut strings = Vec::with_capacity(row_count);
+    let mut offset = STRINGS_HEADER_LEN;
+    for row in 0..row_count {
+        if offset + STRINGS_LEN_PREFIX > data.len() {
+            return Err(Error::InvalidOperation(format!(
+                "Truncated string chunk: missing length prefix for row {}",
+                row
+            )));
+        }
+        let mut len_bytes = [0u8; STRINGS_LEN_PREFIX];
+        len_bytes.copy_from_slice(&data[offset..offset + STRINGS_LEN_PREFIX]);
+        offset += STRINGS_LEN_PREFIX;
+        let len = u64::from_le_bytes(len_bytes) as usize;
+        if offset + len > data.len() {
+            return Err(Error::InvalidOperation(format!(
+                "Truncated string chunk: row {} claims {} bytes, {} remain",
+                row,
+                len,
+                data.len() - offset
+            )));
+        }
+        let s = std::str::from_utf8(&data[offset..offset + len]).map_err(|e| {
+            Error::InvalidOperation(format!("Invalid UTF-8 in string chunk row {}: {}", row, e))
+        })?;
+        strings.push(s.to_string());
+        offset += len;
+    }
+    Ok(strings)
 }
 
 /// Chunk metadata
@@ -297,7 +482,11 @@ impl DataChunk {
 pub struct ChunkMetadata {
     /// Size in bytes
     pub size: usize,
-    /// Checksum for integrity
+    /// Number of logical rows in the payload
+    pub row_count: usize,
+    /// Physical layout of the payload
+    pub layout: ChunkLayout,
+    /// CRC-32C based integrity checksum of the payload
     pub checksum: u64,
     /// Compression type used
     pub compression: CompressionType,
@@ -306,10 +495,12 @@ pub struct ChunkMetadata {
 }
 
 impl ChunkMetadata {
-    fn new(size: usize) -> Self {
+    fn new(data: &[u8], row_count: usize, layout: ChunkLayout) -> Self {
         Self {
-            size,
-            checksum: 0,
+            size: data.len(),
+            row_count,
+            layout,
+            checksum: crate::storage::checksum::checksum64(data),
             compression: CompressionType::None,
             created_at: Instant::now(),
         }
@@ -327,12 +518,28 @@ pub enum CompressionType {
     Gzip,
 }
 
-/// Chunk range specification
+/// Chunk range specification.
+///
+/// # Semantics (contract for every [`StorageStrategy`])
+///
+/// `start` and `end` are **row indices**, half-open (`start..end`), into the
+/// logical append-ordered stream of rows written to one storage handle. Row 0
+/// is the first row of the first `write_chunk`/`append_chunk`; a chunk of `n`
+/// rows advances the stream by `n`.
+///
+/// What a "row" is comes from [`ChunkLayout`]: for `ChunkLayout::Opaque`
+/// payloads one row is one byte (so row ranges coincide with byte ranges), for
+/// `ChunkLayout::Strings` payloads one row is one string.
+///
+/// Before this was pinned down, the three shipped strategies each interpreted
+/// the range differently (byte offsets, string-id range, single data id), so
+/// the same range read different data depending on which strategy happened to
+/// be selected.
 #[derive(Debug, Clone)]
 pub struct ChunkRange {
-    /// Start offset in bytes
+    /// First row index (inclusive)
     pub start: usize,
-    /// End offset in bytes
+    /// Last row index (exclusive)
     pub end: usize,
 }
 
@@ -591,12 +798,16 @@ impl StorageHandle {
 // Use Arc<StorageHandle> if shared ownership is needed
 
 impl Drop for StorageHandle {
+    /// Release this handle's share of the reference count.
+    ///
+    /// Dropping a handle deliberately does **not** delete the underlying
+    /// storage: strategies own their bytes and are torn down explicitly through
+    /// [`StorageStrategy::delete_storage`], which the
+    /// [`crate::storage::unified_manager::UnifiedMemoryManager`] routes to the
+    /// owning strategy. `ref_count` reaching zero here only records that no
+    /// handle refers to the storage any more.
     fn drop(&mut self) {
-        if self.ref_count.fetch_sub(1, Ordering::SeqCst) == 1 {
-            // Last reference, cleanup resources
-            // In a real implementation, this would notify the storage manager
-            // to potentially clean up the underlying storage
-        }
+        self.ref_count.fetch_sub(1, Ordering::SeqCst);
     }
 }
 
@@ -747,6 +958,78 @@ mod tests {
         let chunk = DataChunk::new(data.clone());
         assert_eq!(chunk.len(), 5);
         assert_eq!(chunk.data, data);
+        // Opaque payload: one row per byte.
+        assert_eq!(chunk.rows(), 5);
+        assert_eq!(chunk.layout(), ChunkLayout::Opaque);
+        assert!(chunk.verify_checksum());
+    }
+
+    #[test]
+    fn string_chunk_roundtrip_preserves_nul_and_unicode() {
+        let strings = vec![
+            "plain".to_string(),
+            "with\0embedded\0nul".to_string(),
+            "日本語テキスト".to_string(),
+            String::new(),
+            "€ £ ¥".to_string(),
+        ];
+        let chunk = DataChunk::from_strings(strings.clone());
+        assert_eq!(chunk.rows(), strings.len());
+        assert_eq!(chunk.layout(), ChunkLayout::Strings);
+        assert_eq!(chunk.as_strings().expect("decode"), strings);
+        assert!(chunk.verify_checksum());
+    }
+
+    #[test]
+    fn empty_string_chunk_has_zero_rows() {
+        let chunk = DataChunk::from_strings(Vec::new());
+        assert_eq!(chunk.rows(), 0);
+        assert!(chunk.as_strings().expect("decode").is_empty());
+    }
+
+    #[test]
+    fn truncated_string_chunk_errors() {
+        let chunk = DataChunk::from_strings(vec!["abcdef".to_string()]);
+        let truncated = DataChunk::from_encoded(
+            chunk.data[..chunk.data.len() - 2].to_vec(),
+            ChunkLayout::Strings,
+            1,
+        )
+        .expect("construct");
+        assert!(truncated.as_strings().is_err());
+    }
+
+    #[test]
+    fn corrupt_row_count_is_rejected_without_huge_alloc() {
+        // Header claims u64::MAX rows in a 12-byte buffer.
+        let mut data = u64::MAX.to_le_bytes().to_vec();
+        data.extend_from_slice(&[0u8; 4]);
+        let chunk = DataChunk::from_encoded(data, ChunkLayout::Strings, 0).expect("construct");
+        assert!(chunk.as_strings().is_err());
+    }
+
+    #[test]
+    fn slice_rows_works_for_both_layouts() {
+        let opaque = DataChunk::new(vec![1, 2, 3, 4, 5]);
+        assert_eq!(opaque.slice_rows(1, 4).expect("slice").data, vec![2, 3, 4]);
+
+        let strings = DataChunk::from_strings(vec![
+            "a".to_string(),
+            "bb".to_string(),
+            "ccc".to_string(),
+            "dddd".to_string(),
+        ]);
+        let sliced = strings.slice_rows(1, 3).expect("slice");
+        assert_eq!(
+            sliced.as_strings().expect("decode"),
+            vec!["bb".to_string(), "ccc".to_string()]
+        );
+    }
+
+    #[test]
+    fn as_strings_rejects_opaque_layout() {
+        let chunk = DataChunk::new(b"raw bytes".to_vec());
+        assert!(chunk.as_strings().is_err());
     }
 
     #[test]

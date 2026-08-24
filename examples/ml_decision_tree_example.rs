@@ -15,12 +15,10 @@
 use pandrs::dataframe::DataFrame;
 use pandrs::error::Result;
 use pandrs::ml::models::tree::{
-    DecisionTreeClassifier, DecisionTreeConfig, DecisionTreeConfigBuilder, DecisionTreeRegressor,
-    SplitCriterion,
+    DecisionTreeClassifier, DecisionTreeConfigBuilder, DecisionTreeRegressor, SplitCriterion,
 };
 use pandrs::ml::models::{train_test_split, SupervisedModel};
 use pandrs::series::Series;
-use std::collections::HashMap;
 
 fn main() -> Result<()> {
     println!("=== Decision Tree Examples ===\n");

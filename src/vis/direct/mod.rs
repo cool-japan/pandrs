@@ -4,8 +4,6 @@
 //! easier to create visualizations with less code.
 
 use crate::error::Result;
-#[cfg(feature = "visualization")]
-use crate::optimized::dataframe::OptimizedDataFrame;
 // Import the plotters extension methods
 #[cfg(feature = "visualization")]
 use crate::vis::backward_compat::plotters_ext::PlotSettings;
@@ -426,10 +424,106 @@ impl DataFramePlotExt for DataFrame {
     }
 }
 
-// TODO: Implement conversion from OptimizedDataFrame to DataFrame
-// The OptimizedDataFrame plotting implementation is commented out
-// until a proper conversion method from OptimizedDataFrame to DataFrame
-// is implemented.
+#[cfg(feature = "visualization")]
+impl DataFramePlotExt for crate::optimized::dataframe::OptimizedDataFrame {
+    fn plot_column<P: AsRef<Path>>(
+        &self,
+        column: &str,
+        path: P,
+        title: Option<&str>,
+    ) -> Result<()> {
+        let df = crate::optimized::convert::standard_dataframe(self)?;
+        df.plot_column(column, path, title)
+    }
+
+    fn line_plot<P: AsRef<Path>>(&self, column: &str, path: P, title: Option<&str>) -> Result<()> {
+        let df = crate::optimized::convert::standard_dataframe(self)?;
+        df.line_plot(column, path, title)
+    }
+
+    fn scatter_plot<P: AsRef<Path>>(
+        &self,
+        column: &str,
+        path: P,
+        title: Option<&str>,
+    ) -> Result<()> {
+        let df = crate::optimized::convert::standard_dataframe(self)?;
+        df.scatter_plot(column, path, title)
+    }
+
+    fn bar_plot<P: AsRef<Path>>(&self, column: &str, path: P, title: Option<&str>) -> Result<()> {
+        let df = crate::optimized::convert::standard_dataframe(self)?;
+        df.bar_plot(column, path, title)
+    }
+
+    fn area_plot<P: AsRef<Path>>(&self, column: &str, path: P, title: Option<&str>) -> Result<()> {
+        let df = crate::optimized::convert::standard_dataframe(self)?;
+        df.area_plot(column, path, title)
+    }
+
+    fn box_plot<P: AsRef<Path>>(
+        &self,
+        value_column: &str,
+        category_column: &str,
+        path: P,
+        title: Option<&str>,
+    ) -> Result<()> {
+        let df = crate::optimized::convert::standard_dataframe(self)?;
+        df.box_plot(value_column, category_column, path, title)
+    }
+
+    fn scatter_xy<P: AsRef<Path>>(
+        &self,
+        x_column: &str,
+        y_column: &str,
+        path: P,
+        title: Option<&str>,
+    ) -> Result<()> {
+        let df = crate::optimized::convert::standard_dataframe(self)?;
+        df.scatter_xy(x_column, y_column, path, title)
+    }
+
+    fn multi_line_plot<P: AsRef<Path>>(
+        &self,
+        columns: &[&str],
+        path: P,
+        title: Option<&str>,
+    ) -> Result<()> {
+        let df = crate::optimized::convert::standard_dataframe(self)?;
+        df.multi_line_plot(columns, path, title)
+    }
+
+    fn plot_svg<P: AsRef<Path>>(
+        &self,
+        column: &str,
+        path: P,
+        plot_kind: PlotKind,
+        title: Option<&str>,
+    ) -> Result<()> {
+        let df = crate::optimized::convert::standard_dataframe(self)?;
+        let compat_kind = match plot_kind {
+            crate::vis::config::PlotKind::Line => {
+                crate::vis::backward_compat::plotters_ext::PlotKind::Line
+            }
+            crate::vis::config::PlotKind::Scatter => {
+                crate::vis::backward_compat::plotters_ext::PlotKind::Scatter
+            }
+            crate::vis::config::PlotKind::Bar => {
+                crate::vis::backward_compat::plotters_ext::PlotKind::Bar
+            }
+            crate::vis::config::PlotKind::Histogram => {
+                crate::vis::backward_compat::plotters_ext::PlotKind::Histogram
+            }
+            crate::vis::config::PlotKind::BoxPlot => {
+                crate::vis::backward_compat::plotters_ext::PlotKind::BoxPlot
+            }
+            crate::vis::config::PlotKind::Area => {
+                crate::vis::backward_compat::plotters_ext::PlotKind::Area
+            }
+        };
+        df.plot_svg(column, path, compat_kind, title)
+    }
+}
 
 // Fallback implementations when visualization is not enabled
 #[cfg(not(feature = "visualization"))]
@@ -722,5 +816,79 @@ impl DataFramePlotExt for crate::optimized::dataframe::OptimizedDataFrame {
             "Visualization feature is not enabled. Recompile with --feature visualization"
                 .to_string(),
         ))
+    }
+}
+
+#[cfg(all(test, feature = "visualization"))]
+mod tests {
+    #[allow(unused_imports)]
+    use super::*;
+    use crate::column::{Column, Float64Column};
+    use crate::optimized::dataframe::OptimizedDataFrame;
+
+    #[test]
+    fn test_optimized_dataframe_plot_ext_line_plot() {
+        let mut opt_df = OptimizedDataFrame::new();
+        let values = vec![1.0_f64, 2.0, 3.0, 4.0, 5.0];
+        opt_df
+            .add_column(
+                "values".to_string(),
+                Column::Float64(Float64Column::new(values)),
+            )
+            .expect("Failed to add column");
+
+        let tmp_dir = std::env::temp_dir();
+        let path = tmp_dir.join("test_opt_df_line_plot.png");
+
+        let result = opt_df.line_plot("values", &path, Some("Test Line Plot"));
+        assert!(
+            result.is_ok(),
+            "line_plot should succeed: {:?}",
+            result.err()
+        );
+    }
+
+    #[test]
+    fn test_optimized_dataframe_plot_ext_scatter_plot() {
+        let mut opt_df = OptimizedDataFrame::new();
+        let values = vec![10.0_f64, 20.0, 30.0, 40.0, 50.0];
+        opt_df
+            .add_column(
+                "data".to_string(),
+                Column::Float64(Float64Column::new(values)),
+            )
+            .expect("Failed to add column");
+
+        let tmp_dir = std::env::temp_dir();
+        let path = tmp_dir.join("test_opt_df_scatter_plot.png");
+
+        let result = opt_df.scatter_plot("data", &path, Some("Test Scatter Plot"));
+        assert!(
+            result.is_ok(),
+            "scatter_plot should succeed: {:?}",
+            result.err()
+        );
+    }
+
+    #[test]
+    fn test_optimized_dataframe_plot_ext_plot_column() {
+        let mut opt_df = OptimizedDataFrame::new();
+        let values = vec![5.0_f64, 10.0, 15.0, 20.0];
+        opt_df
+            .add_column(
+                "metrics".to_string(),
+                Column::Float64(Float64Column::new(values)),
+            )
+            .expect("Failed to add column");
+
+        let tmp_dir = std::env::temp_dir();
+        let path = tmp_dir.join("test_opt_df_plot_column.png");
+
+        let result = opt_df.plot_column("metrics", &path, None);
+        assert!(
+            result.is_ok(),
+            "plot_column should succeed: {:?}",
+            result.err()
+        );
     }
 }

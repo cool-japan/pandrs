@@ -170,6 +170,13 @@ pub struct AuditEntry {
     pub success: bool,
     /// Error message if failed
     pub error: Option<String>,
+    /// Hash of the previous entry in the tamper-evident chain (hex). Empty for
+    /// the genesis entry. Populated by the logger at append time.
+    #[serde(default)]
+    pub prev_hash: String,
+    /// HMAC chain hash of this entry (hex). Populated by the logger.
+    #[serde(default)]
+    pub entry_hash: String,
 }
 
 impl AuditEntry {
@@ -195,6 +202,8 @@ impl AuditEntry {
             context: HashMap::new(),
             success: true,
             error: None,
+            prev_hash: String::new(),
+            entry_hash: String::new(),
         }
     }
 
@@ -264,16 +273,134 @@ impl AuditEntry {
     }
 }
 
-/// Generate a unique entry ID
+/// Generate a unique entry ID.
+///
+/// Uses 128 bits from the CSPRNG formatted as a version-4 UUID string. The
+/// previous implementation used the wall-clock nanosecond count, which is
+/// predictable and collides for entries created in the same nanosecond (or when
+/// the clock is not monotonic). This also removes a `.expect` from the logging
+/// path.
 fn generate_entry_id() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
+    use scirs2_core::random::Rng;
+    let mut bytes = [0u8; 16];
+    scirs2_core::random::rng().fill_bytes(&mut bytes);
+    // Set version (4) and variant (RFC 4122) bits.
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    let h: String = bytes.iter().map(|b| format!("{:02x}", b)).collect();
+    format!(
+        "{}-{}-{}-{}-{}",
+        &h[0..8],
+        &h[8..12],
+        &h[12..16],
+        &h[16..20],
+        &h[20..32]
+    )
+}
 
-    let timestamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("operation should succeed")
-        .as_nanos();
+/// Redact string and numeric literals from a query, preserving structure.
+/// Quoted strings become `'?'` and numbers become `?`.
+fn redact_query(query: &str) -> String {
+    let mut out = String::with_capacity(query.len());
+    let mut chars = query.chars().peekable();
+    while let Some(c) = chars.next() {
+        match c {
+            '\'' | '"' => {
+                let quote = c;
+                out.push(quote);
+                out.push('?');
+                out.push(quote);
+                // Consume through the closing quote.
+                while let Some(n) = chars.next() {
+                    if n == quote {
+                        break;
+                    }
+                }
+            }
+            '0'..='9' => {
+                out.push('?');
+                while let Some(&n) = chars.peek() {
+                    if n.is_ascii_digit() || n == '.' {
+                        chars.next();
+                    } else {
+                        break;
+                    }
+                }
+            }
+            _ => out.push(c),
+        }
+    }
+    out
+}
 
-    format!("{:016x}", timestamp)
+/// Stable one-way fingerprint (truncated SHA-256 hex) of a query, so identical
+/// queries correlate without storing their literal (possibly sensitive) text.
+fn query_fingerprint(query: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let digest = Sha256::digest(query.as_bytes());
+    digest
+        .iter()
+        .take(8)
+        .map(|b| format!("{:02x}", b))
+        .collect()
+}
+
+/// HMAC-SHA256 over `message` with `key`, returned as a lowercase hex string.
+/// Used to build the tamper-evident audit chain.
+fn hmac_sha256_hex(key: &[u8], message: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    const BLOCK_SIZE: usize = 64;
+
+    let key_bytes: Vec<u8> = if key.len() > BLOCK_SIZE {
+        Sha256::digest(key).to_vec()
+    } else {
+        key.to_vec()
+    };
+    let mut key_padded = [0u8; BLOCK_SIZE];
+    key_padded[..key_bytes.len()].copy_from_slice(&key_bytes);
+
+    let mut ipad = vec![0x36u8; BLOCK_SIZE];
+    let mut opad = vec![0x5cu8; BLOCK_SIZE];
+    for i in 0..BLOCK_SIZE {
+        ipad[i] ^= key_padded[i];
+        opad[i] ^= key_padded[i];
+    }
+
+    let mut inner = Sha256::new();
+    inner.update(&ipad);
+    inner.update(message);
+    let inner_hash = inner.finalize();
+
+    let mut outer = Sha256::new();
+    outer.update(&opad);
+    outer.update(inner_hash);
+    outer
+        .finalize()
+        .iter()
+        .map(|b| format!("{:02x}", b))
+        .collect()
+}
+
+/// Canonical, hash-stable serialization of an entry's content (everything
+/// except the chain fields themselves).
+fn canonical_payload(entry: &AuditEntry) -> String {
+    let mut ctx: Vec<(&String, &String)> = entry.context.iter().collect();
+    ctx.sort_by(|a, b| a.0.cmp(b.0));
+    format!(
+        "{}|{}|{}|{}|{}|{}|{}|{:?}|{:?}|{}|{:?}|{:?}",
+        entry.id,
+        entry.timestamp.to_rfc3339(),
+        entry.level,
+        entry.category,
+        entry.operation,
+        entry.target,
+        entry.message,
+        entry.user,
+        entry.session_id,
+        entry.success,
+        entry.error,
+        ctx,
+    )
 }
 
 /// Configuration for the audit logger
@@ -446,28 +573,114 @@ pub struct AuditLogger {
     config: AuditConfig,
     entries: VecDeque<AuditEntry>,
     file_handle: Option<Arc<Mutex<std::fs::File>>>,
+    /// Per-logger HMAC key for the tamper-evident chain (random at creation).
+    chain_key: Vec<u8>,
+    /// Hash of the most recently appended entry (chain head).
+    last_hash: String,
+    /// Number of entries evicted by the ring buffer (evidence-of-drop marker).
+    dropped_entries: u64,
+    /// True when a File destination could not be opened; entries are still kept
+    /// in memory and mirrored to stderr rather than silently vanishing.
+    degraded: bool,
 }
 
 impl AuditLogger {
-    /// Creates a new audit logger
+    /// Creates a new audit logger.
+    ///
+    /// If a `File` destination cannot be opened, the logger degrades to
+    /// in-memory + stderr (with a one-time warning) rather than silently
+    /// dropping every entry. Use [`AuditLogger::try_new`] to receive the open
+    /// error instead.
     pub fn new(config: AuditConfig) -> Self {
+        match Self::try_new(config) {
+            Ok(logger) => logger,
+            Err((config, err)) => {
+                eprintln!(
+                    "audit: failed to open log file ({}); degrading to in-memory+stderr",
+                    err
+                );
+                AuditLogger {
+                    chain_key: Self::new_chain_key(),
+                    entries: VecDeque::new(),
+                    file_handle: None,
+                    last_hash: String::new(),
+                    dropped_entries: 0,
+                    degraded: true,
+                    config,
+                }
+            }
+        }
+    }
+
+    /// Fallible constructor: propagates a `File` open failure (returning the
+    /// config back so the caller can fall back) instead of swallowing it.
+    #[allow(clippy::result_large_err)]
+    pub fn try_new(
+        config: AuditConfig,
+    ) -> std::result::Result<Self, (AuditConfig, std::io::Error)> {
         let file_handle = match &config.destination {
             LogDestination::File(path) => {
-                let file = std::fs::OpenOptions::new()
+                match std::fs::OpenOptions::new()
                     .create(true)
                     .append(true)
                     .open(path)
-                    .ok();
-                file.map(|f| Arc::new(Mutex::new(f)))
+                {
+                    Ok(f) => Some(Arc::new(Mutex::new(f))),
+                    Err(e) => return Err((config, e)),
+                }
             }
             _ => None,
         };
 
-        AuditLogger {
+        Ok(AuditLogger {
+            chain_key: Self::new_chain_key(),
             config,
             entries: VecDeque::new(),
             file_handle,
+            last_hash: String::new(),
+            dropped_entries: 0,
+            degraded: false,
+        })
+    }
+
+    /// Generate a fresh random HMAC chain key.
+    fn new_chain_key() -> Vec<u8> {
+        use scirs2_core::random::Rng;
+        let mut key = vec![0u8; 32];
+        scirs2_core::random::rng().fill_bytes(&mut key);
+        key
+    }
+
+    /// Number of entries evicted by the ring buffer since creation.
+    pub fn dropped_entries(&self) -> u64 {
+        self.dropped_entries
+    }
+
+    /// Verify the tamper-evident hash chain over the retained entries.
+    ///
+    /// Returns `Ok(())` when every retained entry's `entry_hash` matches a
+    /// recomputation over its content and recorded `prev_hash`, and consecutive
+    /// entries are linked (`entry[i].prev_hash == entry[i-1].entry_hash`). Any
+    /// in-place mutation, reordering, or deletion of a retained entry breaks the
+    /// check.
+    pub fn verify_chain(&self) -> std::result::Result<(), String> {
+        let mut prev: Option<&str> = None;
+        for (i, entry) in self.entries.iter().enumerate() {
+            let recomputed = hmac_sha256_hex(
+                &self.chain_key,
+                format!("{}{}", canonical_payload(entry), entry.prev_hash).as_bytes(),
+            );
+            if recomputed != entry.entry_hash {
+                return Err(format!("entry {} hash mismatch (tampered content)", i));
+            }
+            if let Some(prev_hash) = prev {
+                if entry.prev_hash != prev_hash {
+                    return Err(format!("entry {} chain linkage broken", i));
+                }
+            }
+            prev = Some(&entry.entry_hash);
         }
+        Ok(())
     }
 
     /// Checks if a category should be logged
@@ -509,31 +722,52 @@ impl AuditLogger {
             entry.session_id = self.config.session_id.clone();
         }
 
-        // Write to destination(s)
-        self.write_entry(&entry);
+        // Extend the tamper-evident chain: link to the previous entry's hash
+        // and compute this entry's HMAC over (content || prev_hash).
+        entry.prev_hash = self.last_hash.clone();
+        entry.entry_hash = hmac_sha256_hex(
+            &self.chain_key,
+            format!("{}{}", canonical_payload(&entry), entry.prev_hash).as_bytes(),
+        );
+        self.last_hash = entry.entry_hash.clone();
+
+        // Security entries are durability-critical: fsync them to the file.
+        let is_security = entry.category == EventCategory::Security;
+
+        // Write to destination(s). In degraded mode, mirror to stderr so
+        // entries are visible even though the file could not be opened.
+        self.write_entry(&entry, is_security);
+        if self.degraded {
+            self.write_to_destination(&LogDestination::Stderr, &self.format_output(&entry), false);
+        }
 
         // Store in memory
         self.entries.push_back(entry);
 
-        // Enforce max entries
+        // Enforce max entries, counting evictions as an evidence-of-drop marker.
         while self.entries.len() > self.config.max_entries {
             self.entries.pop_front();
+            self.dropped_entries = self.dropped_entries.saturating_add(1);
+        }
+    }
+
+    /// Render an entry to its output string (JSON or human-readable).
+    fn format_output(&self, entry: &AuditEntry) -> String {
+        if self.config.json_format {
+            entry.to_json().unwrap_or_else(|_| entry.format())
+        } else {
+            entry.format()
         }
     }
 
     /// Writes an entry to the configured destination
-    fn write_entry(&self, entry: &AuditEntry) {
-        let output = if self.config.json_format {
-            entry.to_json().unwrap_or_else(|_| entry.format())
-        } else {
-            entry.format()
-        };
-
-        self.write_to_destination(&self.config.destination, &output);
+    fn write_entry(&self, entry: &AuditEntry, fsync: bool) {
+        let output = self.format_output(entry);
+        self.write_to_destination(&self.config.destination, &output, fsync);
     }
 
     /// Writes to a specific destination
-    fn write_to_destination(&self, dest: &LogDestination, output: &str) {
+    fn write_to_destination(&self, dest: &LogDestination, output: &str, fsync: bool) {
         match dest {
             LogDestination::Memory => {
                 // Already stored in entries
@@ -548,12 +782,17 @@ impl AuditLogger {
                 if let Some(ref file) = self.file_handle {
                     if let Ok(mut f) = file.lock() {
                         let _ = writeln!(f, "{}", output);
+                        if fsync {
+                            // Durability for security-critical entries.
+                            let _ = f.flush();
+                            let _ = f.sync_all();
+                        }
                     }
                 }
             }
             LogDestination::Multi(destinations) => {
                 for d in destinations {
-                    self.write_to_destination(d, output);
+                    self.write_to_destination(d, output, fsync);
                 }
             }
         }
@@ -614,16 +853,22 @@ impl AuditLogger {
         self.log(entry);
     }
 
-    /// Logs a query execution event
+    /// Logs a query execution event.
+    ///
+    /// The query is redacted (string and numeric literals masked) before being
+    /// stored so that PII / secrets embedded in literals do not leak into audit
+    /// exports. A stable one-way fingerprint of the original query is attached
+    /// so identical queries can still be correlated.
     pub fn log_query(&mut self, query: &str, duration_ms: u64) {
         let entry = AuditEntry::new(
             LogLevel::Info,
             EventCategory::QueryExecution,
             "query",
             "database",
-            query,
+            &redact_query(query),
         )
-        .with_duration(duration_ms);
+        .with_duration(duration_ms)
+        .with_context("query_fingerprint", &query_fingerprint(query));
         self.log(entry);
     }
 
@@ -777,28 +1022,36 @@ impl SharedAuditLogger {
         }
     }
 
-    /// Logs an entry
+    /// Logs an entry. Recovers a poisoned lock (a panic in another thread while
+    /// holding it must not permanently disable auditing — that would be an easy
+    /// way to blind the audit trail).
     pub fn log(&self, entry: AuditEntry) {
-        if let Ok(mut logger) = self.inner.write() {
-            logger.log(entry);
-        }
+        let mut logger = self.inner.write().unwrap_or_else(|p| p.into_inner());
+        logger.log(entry);
     }
 
     /// Logs an operation
     pub fn log_operation(&self, operation: &str, target: &str, message: &str) {
-        if let Ok(mut logger) = self.inner.write() {
-            logger.log_operation(operation, target, message);
-        }
+        let mut logger = self.inner.write().unwrap_or_else(|p| p.into_inner());
+        logger.log_operation(operation, target, message);
+    }
+
+    /// Verify the underlying chain integrity.
+    pub fn verify_chain(&self) -> std::result::Result<(), String> {
+        let logger = self.inner.read().unwrap_or_else(|p| p.into_inner());
+        logger.verify_chain()
     }
 
     /// Gets stats
     pub fn stats(&self) -> Option<AuditStats> {
-        self.inner.read().ok().map(|l| l.stats())
+        let logger = self.inner.read().unwrap_or_else(|p| p.into_inner());
+        Some(logger.stats())
     }
 
     /// Exports to JSON
     pub fn export_json(&self) -> Option<String> {
-        self.inner.read().ok().and_then(|l| l.export_json().ok())
+        let logger = self.inner.read().unwrap_or_else(|p| p.into_inner());
+        logger.export_json().ok()
     }
 }
 

@@ -4,7 +4,7 @@
 //! used in statistical analysis, including normal, t, chi-square, F, and others.
 
 use crate::core::error::{Error, Result};
-use std::f64::consts::{E, PI};
+use std::f64::consts::PI;
 
 /// Trait for probability distributions
 pub trait Distribution {
@@ -37,24 +37,6 @@ impl StandardNormal {
     pub fn new() -> Self {
         StandardNormal
     }
-
-    /// Error function approximation using Abramowitz and Stegun
-    fn erf(x: f64) -> f64 {
-        let a1 = 0.254829592;
-        let a2 = -0.284496736;
-        let a3 = 1.421413741;
-        let a4 = -1.453152027;
-        let a5 = 1.061405429;
-        let p = 0.3275911;
-
-        let sign = if x >= 0.0 { 1.0 } else { -1.0 };
-        let x = x.abs();
-
-        let t = 1.0 / (1.0 + p * x);
-        let y = 1.0 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * (-x * x).exp();
-
-        sign * y
-    }
 }
 
 impl Distribution for StandardNormal {
@@ -63,7 +45,14 @@ impl Distribution for StandardNormal {
     }
 
     fn cdf(&self, x: f64) -> f64 {
-        0.5 * (1.0 + Self::erf(x / 2.0_f64.sqrt()))
+        // Delegates to the crate's single-source-of-truth normal CDF
+        // (`stats::special`, implemented via the regularized incomplete
+        // gamma function). The previous local Abramowitz & Stegun `erf`
+        // approximation was one of several independently-maintained normal
+        // CDF implementations scattered across the `stats` module; this is
+        // both more accurate (~1e-12 vs ~1e-7 relative error) and removes a
+        // duplicate.
+        crate::stats::special::normal_cdf(x)
     }
 
     fn inverse_cdf(&self, p: f64) -> f64 {
@@ -181,7 +170,6 @@ impl Distribution for Normal {
 #[derive(Debug, Clone)]
 pub struct TDistribution {
     pub degrees_of_freedom: f64,
-    standard_normal: StandardNormal,
 }
 
 impl TDistribution {
@@ -192,20 +180,17 @@ impl TDistribution {
             ));
         }
 
-        Ok(TDistribution {
-            degrees_of_freedom,
-            standard_normal: StandardNormal::new(),
-        })
+        Ok(TDistribution { degrees_of_freedom })
     }
 
-    /// Gamma function approximation using Stirling's approximation
+    /// Natural log of the gamma function.
+    ///
+    /// Delegates to the crate's accurate Lanczos implementation in
+    /// `stats::special` (the previous one-term Stirling approximation was
+    /// inaccurate — e.g. `lnΓ(1) = -0.081` instead of `0` — corrupting every
+    /// t / χ² / F PDF built on it).
     fn ln_gamma(x: f64) -> f64 {
-        if x <= 0.0 {
-            return f64::NAN;
-        }
-
-        // Stirling's approximation
-        0.5 * (2.0 * PI / x).ln() + x * (x.ln() - 1.0)
+        crate::stats::special::ln_gamma(x)
     }
 
     /// Beta function B(a,b) = Γ(a)Γ(b)/Γ(a+b)
@@ -222,52 +207,18 @@ impl Distribution for TDistribution {
     }
 
     fn cdf(&self, x: f64) -> f64 {
-        if self.degrees_of_freedom >= 100.0 {
-            // For large df, t-distribution approaches normal
-            return self.standard_normal.cdf(x);
-        }
-
-        // Incomplete beta function approximation for t-distribution CDF
-        // This is a simplified implementation
-        let nu = self.degrees_of_freedom;
-        let t = x;
-
-        if t == 0.0 {
-            return 0.5;
-        }
-
-        // Use approximation for small to moderate degrees of freedom
-        if nu <= 4.0 {
-            // Simple approximation
-            let z = t / (1.0 + t * t / nu).sqrt();
-            0.5 + 0.5 * z * (1.0 - z.abs() / (2.0 + nu))
-        } else {
-            // Better approximation for larger df
-            let correction = 1.0 / (4.0 * nu) * (t * t * t / t.abs() - t / t.abs());
-            self.standard_normal.cdf(t + correction)
-        }
+        // Exact (incomplete-beta) Student-t CDF. The previous ad-hoc
+        // approximation could return values > 1 (an impossible probability).
+        crate::stats::special::student_t_cdf(x, self.degrees_of_freedom)
     }
 
     fn inverse_cdf(&self, p: f64) -> f64 {
         if p <= 0.0 || p >= 1.0 {
             return f64::NAN;
         }
-
-        if self.degrees_of_freedom >= 100.0 {
-            // For large df, use normal approximation
-            return self.standard_normal.inverse_cdf(p);
-        }
-
-        // Approximation for t-distribution inverse CDF
-        let nu = self.degrees_of_freedom;
-        let z = self.standard_normal.inverse_cdf(p);
-
-        // Cornish-Fisher expansion approximation
-        let c1 = z / 4.0;
-        let c2 = (5.0 * z + 16.0 * z.powi(3)) / (96.0);
-        let c3 = (3.0 * z + 19.0 * z.powi(3) + 17.0 * z.powi(5)) / (384.0);
-
-        z + c1 / nu + c2 / nu.powi(2) + c3 / nu.powi(3)
+        // Numerically inverted exact CDF (the prior Cornish-Fisher truncation
+        // was ~36% low for small df, e.g. t₀.₉₇₅(2) = 2.75 vs 4.30).
+        crate::stats::special::student_t_ppf(p, self.degrees_of_freedom)
     }
 
     fn mean(&self) -> f64 {
@@ -306,45 +257,6 @@ impl ChiSquared {
 
         Ok(ChiSquared { degrees_of_freedom })
     }
-
-    /// Incomplete gamma function approximation
-    fn incomplete_gamma_lower(&self, a: f64, x: f64) -> f64 {
-        if x <= 0.0 {
-            return 0.0;
-        }
-
-        // Series expansion for small x
-        if x < a + 1.0 {
-            let mut sum = 1.0;
-            let mut term = 1.0;
-            let mut n = 1.0;
-
-            for _ in 0..100 {
-                term *= x / (a + n - 1.0);
-                sum += term;
-                if term.abs() < 1e-15 {
-                    break;
-                }
-                n += 1.0;
-            }
-
-            x.powf(a) * (-x).exp() * sum / TDistribution::ln_gamma(a).exp()
-        } else {
-            // Continued fraction for large x
-            1.0 - self.incomplete_gamma_upper(a, x)
-        }
-    }
-
-    /// Upper incomplete gamma function
-    fn incomplete_gamma_upper(&self, a: f64, x: f64) -> f64 {
-        // Simplified approximation
-        let t = x / a;
-        if t < 1.0 {
-            1.0 - t.powf(a) * (-t).exp()
-        } else {
-            (-x).exp() * x.powf(a - 1.0) / TDistribution::ln_gamma(a).exp()
-        }
-    }
 }
 
 impl Distribution for ChiSquared {
@@ -363,8 +275,7 @@ impl Distribution for ChiSquared {
             return 0.0;
         }
 
-        let k = self.degrees_of_freedom;
-        self.incomplete_gamma_lower(k / 2.0, x / 2.0)
+        crate::stats::special::chi2_cdf(x, self.degrees_of_freedom)
     }
 
     fn inverse_cdf(&self, p: f64) -> f64 {
@@ -374,14 +285,7 @@ impl Distribution for ChiSquared {
         if p >= 1.0 {
             return f64::INFINITY;
         }
-
-        // Wilson-Hilferty approximation
-        let k = self.degrees_of_freedom;
-        let h = 2.0 / (9.0 * k);
-        let z = StandardNormal::new().inverse_cdf(p);
-
-        let term = 1.0 - h + z * h.sqrt();
-        k * term.powi(3)
+        crate::stats::special::chi2_ppf(p, self.degrees_of_freedom)
     }
 
     fn mean(&self) -> f64 {
@@ -415,33 +319,6 @@ impl FDistribution {
     fn beta(a: f64, b: f64) -> f64 {
         TDistribution::ln_beta(a, b).exp()
     }
-
-    /// Incomplete beta function (simplified approximation)
-    fn incomplete_beta(&self, x: f64, a: f64, b: f64) -> f64 {
-        if x <= 0.0 {
-            return 0.0;
-        }
-        if x >= 1.0 {
-            return 1.0;
-        }
-
-        // Simplified continued fraction approximation
-        let result = x.powf(a) * (1.0 - x).powf(b) / (a * Self::beta(a, b));
-
-        // Series approximation for moderate values
-        let mut sum = 1.0;
-        let mut term = 1.0;
-
-        for n in 1..50 {
-            term *= (a + n as f64 - 1.0) * x / (n as f64);
-            sum += term;
-            if term.abs() < 1e-12 {
-                break;
-            }
-        }
-
-        result * sum
-    }
 }
 
 impl Distribution for FDistribution {
@@ -465,11 +342,7 @@ impl Distribution for FDistribution {
             return 0.0;
         }
 
-        let d1 = self.df1;
-        let d2 = self.df2;
-        let t = d1 * x / (d1 * x + d2);
-
-        self.incomplete_beta(t, d1 / 2.0, d2 / 2.0)
+        crate::stats::special::f_cdf(x, self.df1, self.df2)
     }
 
     fn inverse_cdf(&self, p: f64) -> f64 {
@@ -479,19 +352,9 @@ impl Distribution for FDistribution {
         if p >= 1.0 {
             return f64::INFINITY;
         }
-
-        // Approximation using relationship with chi-squared
-        // For simplicity, use direct calculation to avoid Result propagation
-        // In a production system, this would be implemented more carefully
-        if self.df1 <= 0.0 || self.df2 <= 0.0 {
-            return f64::NAN;
-        }
-
-        // Very basic approximation - chi-squared mean is df
-        let x1_approx = self.df1; // Expected value of chi-squared
-        let x2_approx = self.df2; // Expected value of chi-squared
-
-        (x1_approx / self.df1) / (x2_approx / self.df2)
+        // Numerically inverted exact CDF (the prior stub returned a constant
+        // `1.0` regardless of `p`).
+        crate::stats::special::f_ppf(p, self.df1, self.df2)
     }
 
     fn mean(&self) -> f64 {
@@ -627,25 +490,19 @@ impl Poisson {
         Ok(Poisson { lambda })
     }
 
-    /// Probability mass function
+    /// Probability mass function, computed in log-space as
+    /// `exp(k·ln(λ) − λ − lnΓ(k+1))` — exact for every `k` (`lnΓ(k+1) =
+    /// ln(k!)` via the crate's Lanczos `ln_gamma`), rather than the
+    /// previous direct `λᵏ / k!` with a 1-term Stirling approximation for
+    /// `k > 20` swapped in for the factorial. That approximation was both
+    /// inaccurate (~0.4% relative error) and unstable for large `k` (`k!`
+    /// itself overflows `f64` well before `k ≈ 170`, so the direct-division
+    /// form breaks down exactly where Stirling was supposed to save it);
+    /// staying in log-space until the final `exp` avoids the overflow
+    /// entirely.
     pub fn pmf(&self, k: usize) -> f64 {
         let k_f = k as f64;
-        (-self.lambda).exp() * self.lambda.powf(k_f) / Self::factorial(k)
-    }
-
-    /// Factorial function
-    fn factorial(n: usize) -> f64 {
-        if n <= 1 {
-            return 1.0;
-        }
-
-        // Use Stirling's approximation for large n
-        if n > 20 {
-            let n_f = n as f64;
-            (2.0 * PI * n_f).sqrt() * (n_f / E).powf(n_f)
-        } else {
-            (1..=n).map(|i| i as f64).product()
-        }
+        (k_f * self.lambda.ln() - self.lambda - crate::stats::special::ln_gamma(k_f + 1.0)).exp()
     }
 }
 
@@ -783,5 +640,42 @@ mod tests {
         assert!(dist.pmf(0) > 0.0);
         assert!(dist.pmf(1) > 0.0);
         assert!(dist.pmf(3) > 0.0);
+    }
+
+    /// `scipy.stats.poisson.pmf` reference values (scipy 1.17), including
+    /// `k = 170` and `k = 480` — magnitudes where the previous
+    /// Stirling-for-`k>20` implementation's direct `λᵏ / k!` division would
+    /// already have overflowed `f64` (`k!` exceeds `f64::MAX` around
+    /// `k ≈ 170`).
+    #[test]
+    fn test_poisson_pmf_matches_scipy() {
+        let close_rel =
+            |actual: f64, expected: f64, tol: f64| ((actual - expected) / expected).abs() < tol;
+
+        assert!(close_rel(
+            Poisson::new(3.0).expect("valid lambda").pmf(5),
+            0.10081881344492458,
+            1e-9
+        ));
+        assert!(close_rel(
+            Poisson::new(10.0).expect("valid lambda").pmf(25),
+            2.9269109009328616e-05,
+            1e-9
+        ));
+        assert!(close_rel(
+            Poisson::new(50.0).expect("valid lambda").pmf(45),
+            0.045826241434197924,
+            1e-9
+        ));
+        assert!(close_rel(
+            Poisson::new(100.0).expect("valid lambda").pmf(170),
+            5.1258962876176525e-11,
+            1e-6
+        ));
+        assert!(close_rel(
+            Poisson::new(500.0).expect("valid lambda").pmf(480),
+            0.012137592474089706,
+            1e-9
+        ));
     }
 }

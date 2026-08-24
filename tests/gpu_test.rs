@@ -45,11 +45,11 @@ mod tests {
                 .as_ref()
                 .unwrap_or(&"Unknown".to_string())
         );
-        if status.total_memory.is_some() {
-            println!("Total memory: {} bytes", status.total_memory.unwrap());
+        if let Some(total_memory) = status.total_memory {
+            println!("Total memory: {} bytes", total_memory);
         }
-        if status.free_memory.is_some() {
-            println!("Free memory: {} bytes", status.free_memory.unwrap());
+        if let Some(free_memory) = status.free_memory {
+            println!("Free memory: {} bytes", free_memory);
         }
     }
 

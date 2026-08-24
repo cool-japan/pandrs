@@ -202,14 +202,27 @@ impl DataFrameGroupBy {
             }
         }
 
+        // Materialize every grouping column ONCE up front. Previously each
+        // column was re-fetched (a full `Vec<String>` clone of the column)
+        // on every row of the outer loop below -- O(rows) work repeated
+        // `rows` times, i.e. O(rows^2 * group_columns) total. Measured:
+        // 500 rows 5.153ms / 1,000 21.512ms / 2,000 122.275ms / 4,000
+        // 582.751ms / 16,000 ~14,300ms (~O(n^2.06-2.51)). Hoisting to
+        // O(rows * group_columns) mirrors the same fix already applied to
+        // `ApplyExt::apply` (Axis::Row) in `src/dataframe/apply.rs`.
+        let group_column_values: Vec<Vec<String>> = group_by_columns
+            .iter()
+            .map(|col_name| df.get_column_string_values(col_name))
+            .collect::<Result<Vec<_>>>()?;
+
         // Create groups based on the grouping columns
+        let row_count = df.row_count();
         let mut groups: HashMap<Vec<String>, Vec<usize>> = HashMap::new();
 
-        for row_idx in 0..df.row_count() {
+        for row_idx in 0..row_count {
             let mut key = Vec::with_capacity(group_by_columns.len());
 
-            for col_name in &group_by_columns {
-                let col_values = df.get_column_string_values(col_name)?;
+            for col_values in &group_column_values {
                 if row_idx < col_values.len() {
                     key.push(col_values[row_idx].clone());
                 } else {
@@ -281,13 +294,39 @@ impl DataFrameGroupBy {
             result.add_column(group_col.clone(), group_series)?;
         }
 
+        // Materialize each distinct target column ONCE, not once per group.
+        // Previously `calculate_aggregation` called
+        // `self.df.get_column_string_values(column)` itself, from inside
+        // the `for indices in self.groups.values()` loop below -- so a
+        // column referenced by one named aggregation was re-fetched (a full
+        // column clone) once per group, i.e. O(groups * rows) instead of
+        // O(rows) for that column.
+        let mut column_cache: HashMap<&str, Vec<String>> = HashMap::new();
+        for agg in &named_aggs {
+            if !column_cache.contains_key(agg.column.as_str()) {
+                let values = self.df.get_column_string_values(&agg.column)?;
+                column_cache.insert(agg.column.as_str(), values);
+            }
+        }
+
         // Apply each named aggregation
         for agg in &named_aggs {
             let mut agg_values = Vec::new();
+            let column_values = column_cache.get(agg.column.as_str()).ok_or_else(|| {
+                Error::InvalidValue(format!(
+                    "internal error: column '{}' was not pre-materialized in column_cache",
+                    agg.column
+                ))
+            })?;
 
             for indices in self.groups.values() {
-                let agg_result =
-                    self.calculate_aggregation(&agg.column, agg.func, indices, &agg.custom_fn)?;
+                let agg_result = self.calculate_aggregation(
+                    &agg.column,
+                    agg.func,
+                    indices,
+                    &agg.custom_fn,
+                    column_values,
+                )?;
                 agg_values.push(agg_result.to_string());
             }
 
@@ -423,47 +462,219 @@ impl DataFrameGroupBy {
         self.create_subset_dataframe(&filtered_indices)
     }
 
-    /// Transform groups using a function
+    /// Transform groups using a function.
+    ///
+    /// Like pandas' `GroupBy.transform`, `func` must return a DataFrame
+    /// with exactly one output row per input row of the group it was given
+    /// (a reduction like `.mean()` must be broadcast back to the group's
+    /// shape by `func` itself). The result is realigned to `self.df`'s
+    /// original row order.
     pub fn transform<F>(&self, func: F) -> Result<DataFrame>
     where
         F: Fn(&DataFrame) -> Result<DataFrame>,
     {
+        let row_count = self.df.row_count();
         let mut transformed_parts = Vec::new();
+        // Original row index that each row of the (group-order)
+        // concatenation of `transformed_parts` corresponds to.
+        let mut original_index_of: Vec<usize> = Vec::with_capacity(row_count);
 
         for indices in self.groups.values() {
             let group_df = self.create_group_dataframe(indices)?;
             let transformed = func(&group_df)?;
+
+            if transformed.row_count() != indices.len() {
+                return Err(Error::InvalidValue(format!(
+                    "transform function must return exactly one row per input row: \
+                     group had {} row(s) but the transform produced {}",
+                    indices.len(),
+                    transformed.row_count()
+                )));
+            }
+
+            original_index_of.extend_from_slice(indices);
             transformed_parts.push(transformed);
         }
 
-        // Concatenate all transformed parts
-        self.concatenate_dataframes(transformed_parts)
+        // `self.groups` (a HashMap) iterates in an arbitrary, not
+        // input-order, sequence, so the straightforward concatenation of
+        // `transformed_parts` is ordered by that arbitrary group order --
+        // not by `self.df`'s original row order. pandas' `transform`
+        // always returns a result aligned to the input's row order, so
+        // re-project every concatenated row back to its original position
+        // rather than handing back this group-shuffled order.
+        let concatenated = self.concatenate_dataframes(transformed_parts)?;
+
+        if row_count == 0 {
+            return Ok(concatenated);
+        }
+
+        // `self.groups` partitions every row index in `0..row_count`
+        // exactly once, so `original_index_of` is a permutation of
+        // `0..row_count` and this inversion is total.
+        let mut position_of_original = vec![0usize; row_count];
+        for (position, &original_idx) in original_index_of.iter().enumerate() {
+            position_of_original[original_idx] = position;
+        }
+
+        let mut result = DataFrame::new();
+        for col_name in concatenated.column_names() {
+            let col_values = concatenated.get_column_string_values(col_name)?;
+            let mut realigned = Vec::with_capacity(row_count);
+            for orig_idx in 0..row_count {
+                let position = position_of_original[orig_idx];
+                let value = col_values.get(position).ok_or_else(|| {
+                    Error::InvalidValue(format!(
+                        "transform realignment out of bounds: position {} for column '{}' ({} rows)",
+                        position,
+                        col_name,
+                        col_values.len()
+                    ))
+                })?;
+                realigned.push(value.clone());
+            }
+            let series = Series::new(realigned, Some(col_name.to_string()))?;
+            result.add_column(col_name.to_string(), series)?;
+        }
+
+        Ok(result)
     }
 
-    /// Calculate aggregation for a column and group
+    /// Calculate aggregation for a column and group.
+    ///
+    /// `column_values` is the full column, already materialized as strings
+    /// and indexed by original row index -- callers hoist this once per
+    /// column (see `agg`) rather than re-fetching it for every group, which
+    /// used to make aggregation O(groups * rows) instead of O(rows) per
+    /// column.
     fn calculate_aggregation(
         &self,
         column: &str,
         func: AggFunc,
         indices: &[usize],
         custom_fn: &Option<CustomAggFn>,
+        column_values: &[String],
     ) -> Result<f64> {
-        let column_values = self.df.get_column_string_values(column)?;
+        // `Count` and `Nunique` describe the rows themselves (how many rows,
+        // how many distinct rendered values) rather than a numeric summary, so
+        // -- working on any column, numeric or not, as they do in pandas --
+        // they never require a successful f64 parse. Unlike the numeric
+        // reductions below, NEITHER applies the `skipna` NA exclusion:
+        //
+        //   * base `Count` reports the group's ROW count (its `size`) and
+        //     DELIBERATELY differs from the typed/split `group_by` path, whose
+        //     `count_valid` returns the number of non-missing (non-`NaN`/
+        //     non-NULL) observations. The base column is materialized as plain
+        //     strings with no accompanying null mask, so there is no reliable
+        //     per-type NA test to reproduce that here -- e.g. for a `String`
+        //     column no string value is unambiguously "missing". Callers that
+        //     need the non-missing count on a numeric column should use the
+        //     typed path (or `count` a column after dropping its NAs).
+        //   * base `Nunique` counts distinct RENDERED cell strings, so a
+        //     missing numeric cell's "NaN" text is counted as one distinct
+        //     value where pandas' `nunique()` would drop it. There is no
+        //     `AggregateOp::Nunique` on the typed path, so there is no parity
+        //     target to align this against; it is left as a known divergence.
+        match func {
+            AggFunc::Count => return Ok(indices.len() as f64),
+            AggFunc::Nunique => {
+                let mut unique: Vec<&String> = indices
+                    .iter()
+                    .filter_map(|&idx| column_values.get(idx))
+                    .collect();
+                unique.sort();
+                unique.dedup();
+                return Ok(unique.len() as f64);
+            }
+            _ => {}
+        }
 
-        // Extract numeric values for this group
-        let group_values: Vec<f64> = indices
-            .iter()
-            .filter_map(|&idx| {
-                if idx < column_values.len() {
-                    column_values[idx].parse::<f64>().ok()
-                } else {
-                    None
-                }
-            })
-            .collect();
+        // Every remaining aggregation (Sum/Mean/Min/Max/Std/Var/Median/
+        // First/Last/Custom) is inherently numeric. A cell that fails to
+        // parse as f64 is a genuine data problem for a numeric aggregation
+        // -- e.g. a truly non-numeric string in what's supposed to be a
+        // numeric column -- so fail loudly instead of silently dropping it
+        // from the group via `.parse().ok()` (which used to shrink the
+        // group without telling anyone and skew every remaining
+        // aggregate), mirroring `DataFrame::get_column_numeric_values`'s
+        // existing convention.
+        //
+        // A legitimate *missing* numeric value renders as the literal text
+        // "NaN" (see `get_column_string_values`), which `str::parse::<f64>`
+        // accepts and round-trips to `f64::NAN`. Such missing cells are
+        // EXCLUDED from the accumulation below (pandas `skipna=True`),
+        // exactly as the typed/split `group_by` path excludes them: its
+        // `float_values` helper filters `!value.is_nan()` and
+        // `Float64Column::mean` divides by the count of non-`NaN`
+        // observations. Excluding here, at construction, makes every numeric
+        // reduction that follows (mean, sum, min, max, std, var, median,
+        // first, last, custom) skip missing values uniformly -- so e.g.
+        // mean over [10, NaN, 20] is 15.0 (the NaN is dropped from BOTH the
+        // running sum AND the divisor), not the propagated `NaN` this path
+        // used to return, and an all-`NaN` `min`/`max` no longer leaks the
+        // `+-INF` fold seed. Only `NaN` is treated as missing: legitimate
+        // `+-inf` observations are kept, matching the typed path (whose
+        // filter is `!is_nan()`, not `is_finite()`).
+        let mut group_values = Vec::with_capacity(indices.len());
+        for &idx in indices {
+            let raw = column_values.get(idx).ok_or_else(|| {
+                Error::InvalidValue(format!(
+                    "Row index {} out of bounds for column '{}' ({} rows)",
+                    idx,
+                    column,
+                    column_values.len()
+                ))
+            })?;
+            let value = raw.trim().parse::<f64>().map_err(|_| {
+                Error::InvalidValue(format!(
+                    "Value '{}' in column '{}' cannot be converted to numeric for aggregation '{}'",
+                    raw,
+                    column,
+                    func.as_str()
+                ))
+            })?;
+            // `NaN` is the base DataFrame's missing-value marker: skip it so
+            // it is excluded from every numeric aggregation (skipna=True),
+            // consistent with the typed path's null semantics.
+            if value.is_nan() {
+                continue;
+            }
+            group_values.push(value);
+        }
 
         if group_values.is_empty() {
-            return Ok(0.0);
+            // Reached when the group is entirely missing: every cell parsed
+            // to the `NaN` marker and was skipped above (an all-NA group).
+            // (`DataFrameGroupBy::new` never creates a zero-row group -- every
+            // key in `self.groups` had at least one row index pushed onto it
+            // -- so an empty `indices` is not the cause.) Honor pandas' own
+            // per-function convention for an all-missing group, matching the
+            // typed/split path's `Ok(Some(0.0))` for `sum` and `Ok(None)` ->
+            // NULL cell for the undefined reductions:
+            //   * `Sum` of nothing is the additive identity, 0.0.
+            //   * `Custom` still runs, on the empty slice -- the typed path's
+            //     `aggregate_custom_impl` calls `custom_fn(&[])` for an
+            //     all-missing group rather than short-circuiting, so a caller
+            //     counting observations sees 0, not a fabricated `NaN`.
+            //   * every other reduction is undefined for an all-missing group
+            //     -> `f64::NAN`, the base DataFrame's missing marker (the
+            //     typed path emits a real NULL; both mean "no value", never a
+            //     misleading 0.0). This is also what turns an all-`NaN`
+            //     `min`/`max` into `NaN` instead of the `+-INF` the numeric
+            //     `fold` seed would otherwise leak.
+            return match func {
+                AggFunc::Sum => Ok(0.0),
+                AggFunc::Custom => {
+                    if let Some(custom_fn) = custom_fn {
+                        Ok(custom_fn(&group_values))
+                    } else {
+                        Err(Error::InvalidValue(
+                            "Custom function not provided".to_string(),
+                        ))
+                    }
+                }
+                _ => Ok(f64::NAN),
+            };
         }
 
         match func {
@@ -473,10 +684,11 @@ impl DataFrameGroupBy {
             AggFunc::Max => Ok(group_values
                 .iter()
                 .fold(f64::NEG_INFINITY, |a, &b| a.max(b))),
-            AggFunc::Count => Ok(group_values.len() as f64),
             AggFunc::Std => {
                 if group_values.len() <= 1 {
-                    Ok(0.0)
+                    // pandas: std/var with the default ddof=1 is undefined
+                    // (NaN) for a single observation, not 0.0.
+                    Ok(f64::NAN)
                 } else {
                     let mean = group_values.iter().sum::<f64>() / group_values.len() as f64;
                     let variance = group_values
@@ -489,7 +701,7 @@ impl DataFrameGroupBy {
             }
             AggFunc::Var => {
                 if group_values.len() <= 1 {
-                    Ok(0.0)
+                    Ok(f64::NAN)
                 } else {
                     let mean = group_values.iter().sum::<f64>() / group_values.len() as f64;
                     Ok(group_values
@@ -509,16 +721,12 @@ impl DataFrameGroupBy {
                     Ok(sorted[mid])
                 }
             }
-            AggFunc::First => Ok(group_values[0]),
+            AggFunc::First => group_values.first().copied().ok_or_else(|| {
+                Error::InvalidValue("Cannot compute First aggregation on empty group".to_string())
+            }),
             AggFunc::Last => group_values.last().copied().ok_or_else(|| {
                 Error::InvalidValue("Cannot compute Last aggregation on empty group".to_string())
             }),
-            AggFunc::Nunique => {
-                let mut unique_values = group_values;
-                unique_values.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-                unique_values.dedup();
-                Ok(unique_values.len() as f64)
-            }
             AggFunc::Custom => {
                 if let Some(custom_fn) = custom_fn {
                     Ok(custom_fn(&group_values))
@@ -527,6 +735,17 @@ impl DataFrameGroupBy {
                         "Custom function not provided".to_string(),
                     ))
                 }
+            }
+            AggFunc::Count | AggFunc::Nunique => {
+                // Unreachable via the public API: both are returned early
+                // above, before any numeric parsing. Kept as a real `Err`
+                // rather than `unreachable!()` so a future edit that
+                // removes the early return fails safely instead of
+                // panicking.
+                Err(Error::InvalidValue(format!(
+                    "internal error: AggFunc::{:?} should have been handled before numeric parsing",
+                    func
+                )))
             }
         }
     }
@@ -549,7 +768,7 @@ impl DataFrameGroupBy {
                 .collect();
 
             let group_series = Series::new(group_values, Some(col_name.clone()))?;
-            group_df.add_column(col_name, group_series)?;
+            group_df.add_column(col_name.clone(), group_series)?;
         }
 
         Ok(group_df)
@@ -573,7 +792,7 @@ impl DataFrameGroupBy {
                 .collect();
 
             let subset_series = Series::new(subset_values, Some(col_name.clone()))?;
-            subset_df.add_column(col_name, subset_series)?;
+            subset_df.add_column(col_name.clone(), subset_series)?;
         }
 
         Ok(subset_df)
@@ -588,16 +807,37 @@ impl DataFrameGroupBy {
         let mut result = DataFrame::new();
         let first_df = &dataframes[0];
 
+        // Every part must expose the same column set. Previously only
+        // `first_df.column_names()` was consulted, so a `func` (from
+        // `transform`/`filter`) that returned a different set of columns
+        // for some group would have those columns silently dropped from
+        // the output -- with no indication anything was lost.
+        let expected_columns: std::collections::HashSet<&String> =
+            first_df.column_names().iter().collect();
+        for (i, df) in dataframes.iter().enumerate().skip(1) {
+            let these_columns: std::collections::HashSet<&String> =
+                df.column_names().iter().collect();
+            if these_columns != expected_columns {
+                return Err(Error::InvalidValue(format!(
+                    "cannot concatenate group results with mismatched columns: \
+                     part 0 has {:?}, part {} has {:?}",
+                    first_df.column_names(),
+                    i,
+                    df.column_names()
+                )));
+            }
+        }
+
         for col_name in first_df.column_names() {
             let mut all_values = Vec::new();
 
             for df in &dataframes {
-                let column_values = df.get_column_string_values(&col_name)?;
+                let column_values = df.get_column_string_values(col_name)?;
                 all_values.extend(column_values);
             }
 
-            let concat_series = Series::new(all_values, Some(col_name.clone()))?;
-            result.add_column(col_name, concat_series)?;
+            let concat_series = Series::new(all_values, Some(col_name.to_string()))?;
+            result.add_column(col_name.to_string(), concat_series)?;
         }
 
         Ok(result)
@@ -624,7 +864,7 @@ impl GroupByExt for DataFrame {
     }
 }
 
-/// Helper macros for creating aggregation specifications
+// Helper macros for creating aggregation specifications
 
 /// Create a named aggregation
 #[macro_export]

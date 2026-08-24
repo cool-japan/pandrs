@@ -52,11 +52,13 @@ pub struct PartitionMetadata {
 #[derive(Debug, Clone)]
 pub struct PartitionStatistics {
     /// Column statistics (min/max values, nulls, etc.)
+    #[allow(dead_code)] // reserved for future use
     column_statistics: Vec<ColumnStatistics>,
 }
 
 /// Statistics about a column in a partition
 #[derive(Debug, Clone)]
+#[allow(dead_code)] // reserved for future use
 pub struct ColumnStatistics {
     /// Column name
     name: String,

@@ -2,44 +2,58 @@
 //!
 //! 🤖 Generated with [SplitRS](https://github.com/cool-japan/splitrs)
 
-/// Pandas compatibility extension trait for DataFrame
-use super::super::trait_def::PandasCompatExt;
-use super::super::types::{Axis, CorrelationMatrix, DescribeStats, RankMethod, SeriesValue};
 use crate::core::error::Result;
 use crate::dataframe::base::DataFrame;
+#[cfg(test)]
 use crate::series::Series;
-use std::collections::{HashMap, HashSet};
 
-// Helper function for selecting rows by indices
+// Helper function for selecting rows by indices.
+//
+// Delegates to `DataFrame::sample`, which downcasts each column's boxed
+// storage to its concrete element type (f64/i64/i32/f32/String/bool) before
+// selecting rows. This preserves the column's real dtype instead of
+// re-inferring it from stringified values -- the previous implementation
+// routed every column through `get_column_numeric_values` first, which
+// happily *parses* a `Series<String>` column of e.g. `"007"` into `7.0`,
+// silently turning text data into floats (and losing leading zeros / any
+// non-numeric strings entirely, since those rows were dropped by the
+// `filter_map`). `sample` tries the `String` downcast before ever attempting
+// numeric parsing, so text columns stay text.
+//
+// The row index (when the source frame carries an explicit one) is
+// preserved too: `sample` only rebuilds the columns, so we additionally
+// slice the index labels the same way and re-attach them. If the same
+// source row is selected more than once (e.g. `sample(n, replace=true)`),
+// the sliced labels would contain duplicates, which `Index` rejects -- in
+// that case we leave the result on the default positional index rather
+// than fail the whole selection, matching the previous (index-dropping)
+// behavior for that one case.
 pub(super) fn select_rows_by_indices(df: &DataFrame, indices: &[usize]) -> Result<DataFrame> {
-    let mut new_df = DataFrame::new();
-    for col_name in df.column_names() {
-        if let Ok(values) = df.get_column_numeric_values(&col_name) {
-            let selected: Vec<f64> = indices
-                .iter()
-                .filter_map(|&i| values.get(i).copied())
-                .collect();
-            new_df.add_column(
-                col_name.clone(),
-                Series::new(selected, Some(col_name.clone()))?,
-            )?;
-        } else if let Ok(values) = df.get_column_string_values(&col_name) {
+    let mut new_df = df.sample(indices)?;
+
+    if let Some(labels) = df.get_index().string_values() {
+        if labels.len() == df.row_count() && !labels.is_empty() {
             let selected: Vec<String> = indices
                 .iter()
-                .filter_map(|&i| values.get(i).cloned())
+                .filter_map(|&i| labels.get(i).cloned())
                 .collect();
-            new_df.add_column(
-                col_name.clone(),
-                Series::new(selected, Some(col_name.clone()))?,
-            )?;
+            if selected.len() == indices.len() {
+                if let Ok(new_index) = crate::index::Index::<String>::new(selected) {
+                    new_df.set_index(new_index)?;
+                }
+            }
         }
     }
+
     Ok(new_df)
 }
 
 #[cfg(test)]
 mod tests {
+    use super::super::super::trait_def::PandasCompatExt;
+    use super::super::super::types::{Axis, RankMethod};
     use super::*;
+    use std::collections::HashMap;
     fn create_test_df() -> DataFrame {
         let mut df = DataFrame::new();
         df.add_column(

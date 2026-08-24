@@ -1,7 +1,7 @@
 use chrono::TimeZone;
 use std::collections::HashMap;
 
-use crate::error::Result;
+use crate::error::{PandRSError, Result};
 use crate::temporal::{Frequency, Temporal, TimeSeries};
 
 /// Structure representing resampling operations
@@ -20,12 +20,11 @@ impl<'a, T: Temporal> Resample<'a, T> {
         Resample { series, frequency }
     }
 
-    /// Resample using mean
+    /// Resample using mean. Empty buckets are `NA`, not `0.0` — see
+    /// [`Resample::aggregate`], which never invokes the aggregator on an empty
+    /// bucket.
     pub fn mean(&self) -> Result<TimeSeries<T>> {
         self.aggregate(|values| {
-            if values.is_empty() {
-                return 0.0;
-            }
             let sum: f64 = values.iter().sum();
             sum / values.len() as f64
         })
@@ -38,92 +37,80 @@ impl<'a, T: Temporal> Resample<'a, T> {
 
     /// Resample using maximum
     pub fn max(&self) -> Result<TimeSeries<T>> {
-        self.aggregate(|values| {
-            if values.is_empty() {
-                return f64::NAN;
-            }
-            let mut max = values[0];
-            for &value in &values[1..] {
-                if value > max {
-                    max = value;
-                }
-            }
-            max
-        })
+        self.aggregate(|values| values.iter().copied().fold(f64::NEG_INFINITY, f64::max))
     }
 
     /// Resample using minimum
     pub fn min(&self) -> Result<TimeSeries<T>> {
-        self.aggregate(|values| {
-            if values.is_empty() {
-                return f64::NAN;
-            }
-            let mut min = values[0];
-            for &value in &values[1..] {
-                if value < min {
-                    min = value;
-                }
-            }
-            min
-        })
+        self.aggregate(|values| values.iter().copied().fold(f64::INFINITY, f64::min))
     }
 
-    /// Resample using a custom aggregation function
+    /// Resample using a custom aggregation function.
+    ///
+    /// Mirrors `temporal::resample::Resample::aggregate`: the result is gapless
+    /// at the requested frequency (buckets with no observation are `NA::NA`,
+    /// not omitted, so the index really is uniform), the aggregator is never
+    /// called with an empty slice, and an out-of-range bucket start is reported
+    /// as an error rather than an `.expect(...)` panic.
     pub fn aggregate<F>(&self, aggregator: F) -> Result<TimeSeries<T>>
     where
         F: Fn(Vec<f64>) -> f64,
     {
+        let timestamps = self.series.timestamps();
+        if timestamps.is_empty() {
+            return TimeSeries::new(Vec::new(), Vec::new(), self.series.name().cloned())
+                .map(|ts| ts.with_frequency(self.frequency.clone()));
+        }
+
+        let freq_seconds = self.frequency.to_seconds();
+        if freq_seconds <= 0 {
+            return Err(PandRSError::Consistency(format!(
+                "Resampling frequency must be positive, got {freq_seconds} seconds"
+            )));
+        }
+
         // Group by period
         let mut period_groups: HashMap<i64, Vec<f64>> = HashMap::new();
-        let freq_seconds = self.frequency.to_seconds();
+        let start_seconds = timestamps[0].to_utc().timestamp();
+        let mut last_period = 0_i64;
 
-        // Assign each data point to the appropriate period
-        let start_time = self.series.timestamps()[0].to_utc();
-        let start_seconds = start_time.timestamp();
+        for (i, timestamp) in timestamps.iter().enumerate() {
+            let ts_seconds = timestamp.to_utc().timestamp();
+            let period = (ts_seconds - start_seconds).div_euclid(freq_seconds);
+            last_period = last_period.max(period);
 
-        for (i, timestamp) in self.series.timestamps().iter().enumerate() {
-            if let Some(value) = match self.series.values()[i] {
-                crate::na::NA::Value(v) => Some(v),
-                crate::na::NA::NA => None,
-            } {
-                // Calculate which period it belongs to
-                let ts_seconds = timestamp.to_utc().timestamp();
-                let offset = ts_seconds - start_seconds;
-                let period = offset / freq_seconds;
-
-                // Add to that period's group
-                period_groups
-                    .entry(period)
-                    .or_insert_with(Vec::new)
-                    .push(value);
+            if let crate::na::NA::Value(value) = self.series.values()[i] {
+                period_groups.entry(period).or_default().push(value);
             }
         }
 
-        // Sort periods in chronological order
-        let mut periods: Vec<i64> = period_groups.keys().cloned().collect();
-        periods.sort();
+        let bucket_count = (last_period + 1).max(0) as usize;
+        let mut result_values = Vec::with_capacity(bucket_count);
+        let mut result_timestamps = Vec::with_capacity(bucket_count);
 
-        // Create aggregation results
-        let mut result_values = Vec::with_capacity(periods.len());
-        let mut result_timestamps = Vec::with_capacity(periods.len());
-
-        for period in periods {
-            // Aggregate data for this period
-            if let Some(values) = period_groups.get(&period) {
-                let agg_value = aggregator(values.clone());
-                result_values.push(crate::na::NA::Value(agg_value));
-
-                // Calculate the representative time for this period
-                let period_start_seconds = start_seconds + period * freq_seconds;
-                let period_time = chrono::Utc.timestamp_opt(period_start_seconds, 0).single().expect("operation should succeed");
-
-                // Convert to the appropriate type
-                let period_timestamp = T::from_str(&period_time.to_rfc3339())?;
-                result_timestamps.push(period_timestamp);
+        for period in 0..=last_period {
+            match period_groups.get(&period) {
+                Some(values) if !values.is_empty() => {
+                    result_values.push(crate::na::NA::Value(aggregator(values.clone())));
+                }
+                _ => result_values.push(crate::na::NA::NA),
             }
+
+            let period_start_seconds = start_seconds + period * freq_seconds;
+            let period_time = match chrono::Utc.timestamp_opt(period_start_seconds, 0) {
+                chrono::LocalResult::Single(t) => t,
+                chrono::LocalResult::Ambiguous(earliest, _) => earliest,
+                chrono::LocalResult::None => {
+                    return Err(PandRSError::Consistency(format!(
+                        "Resampled bucket start {period_start_seconds} is outside the \
+                         representable timestamp range"
+                    )))
+                }
+            };
+
+            result_timestamps.push(T::from_str(&period_time.to_rfc3339())?);
         }
 
-        // Create a new time series
         TimeSeries::new(
             result_values,
             result_timestamps,

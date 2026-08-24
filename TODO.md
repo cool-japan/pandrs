@@ -2,14 +2,123 @@
 
 ## Current Release
 
-**Version:** 0.4.0
-**Release Date:** June 2026
-**Status:** Production Ready — Full SciRS2-Core Integration Release
-**Test Coverage:** 1893 tests passing (nextest, scirs2 features), zero clippy warnings
+**Version:** 0.4.1
+**Status:** Release-ready — `0.4.1` is the current release target on this branch; all quality gates pass (see Testing & Quality below).
+**Last updated:** 2026-08-24
+**Test Coverage:** 2817 tests passing (`cargo nextest run --features all-safe`), 110 doc tests passing + 19 ignored (`cargo test --doc --features all-safe`). `cargo clippy --features all-safe -- -D warnings` clean (`clippy::correctness`/`suspicious`/`perf` enforced; `style`/`complexity` allowed — see CONTRIBUTING.md).
+
+---
+
+> **2026-08-19 update:** the audit below (2026-06-20) and its "✅ RESOLVED &
+> verified" section were the *first* pass. A second, independent, more
+> exhaustive audit — the "Productionization" effort, run in four waves —
+> found and fixed a further round of correctness bugs and honesty gaps
+> across the whole crate; the June audit's "all resolved" framing undersold
+> what was still broken. The itemized Wave 1-4 fix list lives in
+> `CHANGELOG.md`'s `[0.4.1]` entry (the 2026-08-19 addendum). The
+> "Known Limitations / Future Work" section near the end of *this* file is
+> the current, accurate list of what remains open — treat it, not the audit
+> prose below, as the source of truth for open gaps.
+
+## ⚠️ Code Honesty Audit (2026-06-20) — Reddit-critique verification & remediation backlog
+
+A public critique alleged COOLJAPAN crates ship (1) "name-only" GPU backends, (2) stubs / fabricated-result functions, and (3) non-idiomatic, allocation-heavy code. A 7-track read-only audit of PandRS confirms the critique is **substantially TRUE in specific subsystems** and **false/overstated in others**. Verdict and backlog below; every item carries a verified `file:line`. NOTE: several items marked "✓ Completed" later in this file (GPU/CUDA, Parquet compression, Arrow integration) are in fact **stubs or fabrications** — see below.
+
+### Verdict per pillar
+- **GPU 看板倒れ — PARTLY TRUE.** Default build honestly ships *no* GPU API (cfg'd out), and there is **no** Metal/ROCm/Vulkan/OpenCL/TPU overclaim, and it is **f64** (not the alleged Float32). BUT the `cuda`-gated code launches **zero** real kernels/cuBLAS calls; every device path errors-after-alloc or silently runs CPU, and several `gpu_*` APIs return fabricated values (`gpu_sum`→`0.0`, `gpu_corr`→input clone, multivariate LR→`0.1*i`) plus a hardcoded "2.5× speedup" metric.
+- **Stubs / fabricated results — TRUE (the serious one).** `todo!()`/`unimplemented!()` = 0 (clean), but ~193 "simplified" / ~127 NotImplemented / ~112 "placeholder" markers hide many functions that **silently return wrong data**: a broken `chi2_sf` (1-char sign bug → every χ² test "never significant"), `to_arrow()` fabricating data from row indices, `from_csv` returning hardcoded Alice/Bob/Charlie, joins that infinite-recurse, fake LZ4/ZSTD that *grows* data, ARIMA with hardcoded coefficients, ML serving returning `42.0`.
+- **Non-idiomatic / allocation — PARTLY TRUE.** Real & severe: **O(N²·C)** quadratic allocation in `apply`/`drop_duplicates` (column re-materialized per row); core `Series`/`Column` miss `Index`/`IntoIterator`/`FromIterator`/`Extend`/`Display`. But the `[T;N]` charge is **misguided** (columnar data is correctly heap-backed), and the "panic-happy `.expect()`" charge is **false** (≈2755/2997 expects are test-only; 38 `unwrap()` total — the crate is `Result`-disciplined).
+
+### ✅ RESOLVED & verified (2026-06-20) — integrated on branch 0.4.1; **1818 default / 1853 scirs2 tests pass; clippy clean; cuda compiles**
+
+All six remediation clusters are implemented (real algorithms preferred; honest `Error::NotImplemented` only where a real impl needs external infra) and merged. Commits: `ca026df` stats, `da2072f` time_series, `83f63f7` dataframe, `abde6aa` ml, `84a5f32` gpu, `94761eb` storage.
+
+- **Stats (Tier 0/1).** New single-source-of-truth `src/stats/special.rs` (Lanczos lnΓ; NR `gser`/`gcf` incomplete-gamma, `betacf` incomplete-beta; exact normal/χ²/t/F CDF·SF·quantile, unit-tested). Fixed the `chi2_sf` **sign bug** in BOTH `hypothesis.rs` and `time_series/stats.rs`; routed all T/χ²/F CDFs+quantiles, `inference` p-value fns, and OLS p-values (now Student-t) through it. Kills the >1 probability, the constant-1.0 F-quantile, and the always-significant χ².
+- **time_series.** Real ARIMA (Levinson-Durbin via SarimaForecaster), real ADF OLS regression, real Durbin-Levinson PACF, Savitzky-Golay + natural cubic spline + seasonal fill + aggregation-aware resample, real isolation-forest outlier detection, Higuchi fractal dim + LZ76. Real p-values (incl. Royston Shapiro-Wilk). Honest `NotImplemented` for Kalman/Hodrick-Prescott/LOWESS/STL/X-13 (no more silent substitution).
+- **core DataFrame/Arrow/IO.** Real `to_arrow` (from actual data + real type inference), real CSV/JSON/Parquet (de)serialization, real hash joins, real `.xs()`/`.select()`/`agg()`, real `is_numeric_column`/`is_categorical`/`filter`/`set_index`/`add_row`, `get_categorical` no longer `transmute`s, real parquet rename + predicate filter.
+- **ML.** Real model-serving inference from stored weights (was `42.0`/`class_a`), real pipeline + backward_compat scalers/encoders/imputers (was `df.clone()`/`std=10%·mean`), real `SelectKBest::FRegression` F-stat, GridSearch/RandomizedSearch refit `best_estimator_`.
+- **GPU.** Silent no-ops (`gpu_sum`→0.0, `gpu_corr`→clone, decomps→identity, LR→`0.1·i`) → honest `NotImplemented` or **real** (Jacobi eigen/SVD, normal-equation LR). Removed fabricated 2.5× speedup + benchmark "speedup"; real cudarc-0.19 device queries. (Verified on a real CUDA toolkit/GPU present in the env: 17 cuda tests pass.)
+- **storage.** Real Pure-Rust LZ4 + ZSTD via **COOLJAPAN OxiARC** (`oxiarc_lz4`/`oxiarc_zstd`) — was copying data verbatim (it GREW), with fabricated 2.5/multiplier ratios. Ratios now measured from real bytes; round-trip+shrink test added.
+- **Allocation (Tier 2 headline).** `apply.rs` `apply(Row)`/`duplicated`/`drop_duplicates` materialize each column once (O(N²·C)→O(N·C)).
+
+**Still open (deferred, lower priority):** idiom polish (`column_names()`→`&[String]`; add `Index`/`IntoIterator`/`FromIterator`/`Extend`/`Display` to `Series`/`Column`); demote blanket `[workspace.lints.rust] allow`; `column_store.rs` `BitPacked` raw-byte no-op (true bit-packing N/A for opaque bytes).
+*(Done: `time_series/stats.rs` split into `stats.rs` 1660 + `stats_normality.rs` 369 + `stats_tests.rs` 111, all under the 2000-line guideline — commit `ae9c531`.)*
+
+---
+*The tiered findings below are the original audit backlog, retained for reference / traceability.*
+
+### TIER 0 — CRITICAL: silently returns WRONG data to users (corrupts analysis)
+- [x] `stats/hypothesis.rs:841` `chi2_sf` continued-fraction **sign bug** `an = ia*(ia-a)` → returns ≈1.0 for almost all inputs; **every** χ² p-value (Ljung-Box, Friedman, KW, independence, GoF) is wrong. *(1-char fix; headline v0.4.1 claim is currently false.)*
+- [x] `stats/inference/mod.rs:113` `chi2_to_pvalue` → returns ≈0 always (public `chi_square_test` always "significant"). Route through fixed `chi2_sf`.
+- [x] `arrow_integration.rs:133` `series_to_arrow_array` + `:113` `infer_arrow_type` — `to_arrow()` **fabricates** column data from row index / infers type from column *name*. All Arrow/Flight/batch output is fake.
+- [x] `dataframe/serialize.rs:41` `from_csv` ignores path, returns hardcoded `Alice/Bob/Charlie`.
+- [x] `dataframe/join.rs:76,88,105` `inner/left/outer_join` — `#[allow(unconditional_recursion)]`, return empty / stack-overflow. `join`+`right_join` dispatch here.
+- [x] `storage/unified_column_store.rs:73,115` fake `Lz4`/`Zstd` engines copy data verbatim (+len byte → **grows**); `Zstd` is the **default** codec (`:34`). Same in `adaptive_string_pool.rs:898,914`. Fabricated ratios (`:925`→`2.5`, `:879` multipliers).
+- [x] `dataframe/multi_index_cross_section.rs:299` `select_rows`→`.xs()/.select()/.sort_index()` return clone of ALL rows; `:430` `extract_column_values`→`agg()` aggregates all-zeros.
+- [x] `dataframe/base.rs:1258` `is_numeric_column`→`false` always; `:946` `set_index`/`set_multi_index` no-op; `:1136` `is_categorical`→true for every column; `:1051` `filter`→empty; `:1230` `get_categorical<T>` unsound `transmute`.
+- [x] `time_series/forecasting.rs:850` `ArimaForecaster::fit` hardcodes `ar=0.5, ma=0.3` (never estimates). Delegate to real `SarimaForecaster` (Levinson-Durbin already exists).
+- [x] `ml/serving/serialization.rs:286` `perform_prediction` ignores loaded weights, returns `42.0` / `class_a:0.7`.
+- [x] `ml/backward_compat/preprocessing.rs:60` StandardScaler std = `mean*0.1`; OneHot/Polynomial/Binner/Imputer/FeatureSelector (`:313,352,388,437,486`) return input unchanged.
+- [x] `io/parquet.rs:1455` schema-evolution rename writes literal `"renamed_from_X"` as cell values; `:1515` `apply_predicate_filters` returns unfiltered data.
+
+### TIER 1 — HIGH: wrong numbers / fabricated stats (less central API)
+- [x] `stats/distributions.rs:475` `FDistribution::inverse_cdf`→constant `1.0`; `:224` `TDistribution::cdf` can return >1 (impossible prob); `:251` t-quantile 36% low; `:201` 1-term Stirling `ln_gamma` corrupts all t/χ²/F PDFs. Replace with Lanczos log-gamma + real incomplete beta/gamma (Lentz CF).
+- [x] `stats/regression/mod.rs:164` OLS p-values use `normal_cdf` not t-distribution (anti-conservative).
+- [x] `stats/hypothesis.rs:719` Shapiro-Wilk W coefficients fabricated (`0.7071`, `0.5/(i+1)`).
+  - **Goal:** Replace fabricated W coefficients (0.7071 / 0.5/(i+1)) with real Royston (1992) algorithm; share code with time_series/stats_normality.rs where the real impl already exists.
+  - **Files:** src/stats/hypothesis.rs; possibly src/time_series/stats_normality.rs
+  - **Tests:** known-W fixture, normal-data non-rejection, skewed-data rejection
+- [x] `time_series/analysis.rs:614,727` ADF builds regression design matrix then **discards** it, returns one-sample t-test of differenced mean; `:904` PACF Durbin-Levinson `denominator=1.0` hardcoded (wrong for lag≥2); `:960` second Ljung-Box still hardcoded ladder.
+- [x] `time_series` silent algorithm substitution (return error or implement): `preprocessing.rs` Spline→linear(`:704`), Kalman→exp-smooth(`:1150`), HP→MA(`:1155`), Savitzky-Golay→MA(`:1135`), Lowess→MA(`:1145`), SeasonalFill→ffill(`:766`), `resample` ignores aggregation(`:609`); `decomposition.rs:248,254` STL/X13→classical; `preprocessing.rs:884` IsolationForest→`vec![]` (always "no outliers").
+- [x] `time_series/forecasting.rs:217` SMA residual-std hardcoded `1.0` → fabricated confidence intervals.
+- [x] ~10 hardcoded p-value ladders in `time_series/stats.rs` (`:970,787,860,1395,1432,1509,1709,1780`) + `analysis.rs:749,971`. `stats.rs:94 normal_sf` is correct but **dead code** — wire it into Runs/Variance-Ratio.
+- [x] `ml/pipeline/mod.rs:88,131` PipelineStage transformers all `df.clone()`; StandardScaler `fit` reads numeric cols as `Series<String>` (errors on real data).
+- [x] GPU honesty: `dataframe/gpu/mod.rs:34`, `series/gpu/mod.rs:30`, `gpu/cuda.rs:937(to_cpu→zeros),693(sort→unsorted)`, `gpu/advanced_ops.rs:107(QR/SVD/eigen/inverse→identity)`, `stats/gpu.rs:461(LR→0.1*i)`, `dataframe/gpu_window.rs:263(fake 2.5×)`. Convert silent no-ops to `Error::NotImplemented`; delete fabricated metrics; fix stale "cudarc 0.18.x" strings; drop unused `half::f16`.
+- [x] `gpu/cuda.rs:206,368,452,536,621,867` non-CUDA fallback matmul/elementwise/reduce paths return `Array2::zeros(...)` — silent wrong data. Implement real CPU computation or honest Error::NotImplemented.
+  - **Files:** src/gpu/cuda.rs
+  - **Tests:** CPU-fallback matmul unit test (cuda-gated)
+
+### TIER 2 — MEDIUM: performance / idiom (matches "allocation-heavy" critique)
+- [x] `dataframe/apply.rs:79,222,298,353` call `get_column_string_values` (`base.rs:576`, full-column `Vec<String>` copy) **inside the row loop** → **O(N²·C)**. Hoist column extraction out of the loop.
+- [x] `dataframe/base.rs:366` `column_names()->Vec<String>` clones at 20+ loop sites → return `&[String]`.
+  - **Goal:** Return &[String] instead of cloned Vec<String>; fix ~20 call sites
+  - **Files:** src/dataframe/base.rs and call sites
+- [x] Whole-object clones for 1-column ops: `dataframe/window.rs:71`, `categorical.rs:148`, `series/base.rs:167,177,187` accessors clone entire Series.
+  - **Goal:** Cut whole-object clones in 1-column ops/accessors
+  - **Files:** src/dataframe/window.rs, src/dataframe/categorical.rs, src/series/base.rs
+- [x] Add idiomatic traits to `series/base.rs` `Series<T>` & `core/column.rs` `Column`: `Index<usize>`, `IntoIterator for &`, `FromIterator`, `Extend`, `Display`.
+  - **Goal:** Add Index<usize>, IntoIterator for &, FromIterator, Extend, Display to Series<T> and Column
+  - **Files:** src/series/base.rs, src/core/column.rs
+
+### TIER 3 — policy / hygiene
+- [x] `Cargo.toml:132` `[workspace.lints.rust]` blanket `allow(dead_code, unused_variables, unused_imports)` masks real stubs (e.g. `core/column.rs:80` `Column::from_any` ignores input). Demote to `warn`, fix churn properly.
+  - **Goal:** Demote dead_code/unused_variables/unused_imports from allow→warn; fix root causes if ≤30 sites, else revert+flag. Also remove verified-orphaned src/ml/backward_compat/ sibling files.
+  - **Files:** Cargo.toml; src/ml/backward_compat/ (orphaned files removal)
+- [x] `Cargo.toml:24,~93` root lists `rand`/`ndarray` as direct deps (manifest drift; `src` uses `scirs2_core::*`). One stray `ml/backward_compat/dimension_reduction.rs:669 rand::rngs::StdRng`. Remove/scrub. *(orphaned file; scirs2_core re-exports used in compiled code; no live drift)*
+- [x] `distributed/ballista/cluster.rs:11` references undeclared `ballista_client` crate (latent build break under `distributed`); `dataframe.rs:585` silently selects dead Ballista engine.
+  - **Goal:** Remove ballista_client field (undeclared crate → build break under --features distributed); return Error::NotImplemented for non-datafusion engine selection
+  - **Files:** src/distributed/ballista/cluster.rs, src/distributed/dataframe.rs
+- [x] `connectors/local.rs:240` path-traversal guard computes `canonical_base` then never enforces it (dead security check).
+  - **Goal:** Enforce canonical_base containment check in resolve(); reject ../escape paths
+  - **Files:** src/connectors/local.rs
+  - **Tests:** in-base resolves OK; ../escape rejected (use temp_dir() for base)
+- [x] `core/column.rs:78` Column::from_any ignores its input and always returns an empty Int64Column — every clone_column() loses all data and mis-types the column.
+  - **Goal:** downcast::<Column>() (common path) with defensive fallbacks for bare column structs; fix the silent data-loss bug
+  - **Files:** src/core/column.rs
+  - **Tests:** clone_column() round-trips data and type for each of the 4 column kinds
+
+### CONFIRMED-HONEST (no action — critique does NOT apply)
+- ML v0.4.1 "real algorithm" claims **all verified true**: PCA(Jacobi), t-SNE(real GD), DBSCAN(BFS), Agglomerative(4 linkages), IsolationForest(real trees), LOF, OLS, IRLS LogisticRegression, RocAuc(Mann-Whitney), chi2/MI scores, RobustScaler/QuantileTransformer/PowerTransformer, GridSearch/RandomizedSearch CV.
+- `stats.rs` χ² tests (Ljung-Box/Box-Pierce/Breusch-Godfrey/Friedman/KW/JarqueBera) use the real `chi2_sf` (correct *once the sign bug above is fixed*); descriptive stats, OLS coefficients/R², rank statistics, Binomial/Poisson, `normal_sf`, Acklam normal-quantile — all real.
+- `SarimaForecaster` (real Levinson-Durbin + AIC AutoArima), ExponentialSmoothing, Mann-Kendall, entropy/Hurst/DFA features — real.
+- `schema_evolution/migrator.rs` — real (deliberately avoids the broken `is_numeric_column` stub).
+- Cloud connectors (`connectors/cloud.rs`) — honest real `object_store` or clean `NotImplemented`; Ballista — honest `NotImplemented`. `.expect()` is test-only; crate is `Result`-disciplined.
+
+---
 
 ### Acknowledged upstream Pure Rust tech debt (feature-gated; default build unaffected)
 - `parquet` / `distributed` / `flight` pull `flate2`/`zstd`/`lz4_flex`/`snap`/`bzip2`/`brotli`/`miniz_oxide` via upstream arrow/parquet/datafusion/async-compression.
-- `cloud-storage` pulls `ring` (C+asm) via `object_store 0.13.2` — upstream uses `ring::{hmac,digest,signature,rand}` directly and exposes `ring::error` in public API (see `/tmp/pandrs_rustls_phase2_report.md`).
+- `cloud-storage` pulls `ring` (C+asm) via `object_store 0.14.1` (bumped from 0.13.2 in Wave 3, closing RUSTSEC-2026-0194/0195) — upstream uses `ring::{hmac,digest,signature,rand}` directly and exposes `ring::error` in public API. Separately, `object_store` 0.14's `reqwest` now builds with `rustls-no-provider`; this crate installs `rustls::crypto::ring::default_provider()` once before the first cloud client is built (`src/connectors/cloud.rs`) — see the Wave 4 entry in CHANGELOG.md.
 
 ## Completed Features (v0.1.0)
 
@@ -251,22 +360,127 @@
   - cumcount() for cumulative non-NA count
   - nth() for accessing rows with negative indexing
 
-## Known Issues & Limitations
+## Known Limitations / Future Work
 
-### Performance
-- GPU kernel coverage could be expanded
-- Some edge cases in distributed processing need refinement
-- Note: Large string operations have been optimized with SIMD acceleration
+Current, accurate list of open gaps (last verified 2026-08-19, Wave 4 of the
+productionization effort). Every item below is sourced to a specific file or
+a specific verification command — nothing here is a guess.
+
+### API surface
+
+- **Categorical public API gap:** `CategoricalExt` trait and
+  `astype_categorical` are not public; the underlying operations
+  (`is_categorical`/`get_categorical`/`from_categoricals`/`value_counts`/
+  `add_categories`/`remove_categories`/`add_na_series_as_categorical`) exist
+  only as inherent `DataFrame` methods. Wiring a public trait was attempted
+  and reverted in Wave 3 (`E0592` method-resolution collisions plus a
+  companion-column convention mismatch) — this is future feature work, not
+  a regression.
+- **`sample` shadow:** the inherent `DataFrame::sample(&[usize])`
+  (positional take) shadows `PandasCompatExt::sample(n, replace)`. Renaming
+  either is a breaking change and needs a project decision before 0.5.0.
+- **`E0034` trait-import ambiguity:** importing `PandasCompatExt` and
+  `AdvancedIndexingExt` together makes `iloc`/`at`/`head` ambiguous at the
+  call site (both traits provide a same-named method on `DataFrame`). This
+  is inherent to Rust's trait method resolution, not fixable by renaming the
+  traits themselves — the `prelude` module itself avoids the collision by
+  not importing both at once. Workaround: import only one of the two
+  traits, or disambiguate with `Trait::method(&df, ..)`.
+
+### Correctness — ✅ RESOLVED (2026-08-24)
+
+- **`hierarchical_groupby.rs` carried the same NaN-propagation bug the base
+  `groupby_single` path was fixed for in Wave 4 — now fixed.**
+  `calculate_hierarchical_aggregation`, `cross_level_agg`, and
+  `nested_transform` used to parse-then-accumulate with no `is_nan()`
+  filter, so a `NaN` cell propagated through the whole aggregate instead of
+  being excluded (pandas `skipna=True`), the same way the base path used to
+  before its Wave 4 fix. A second, related divergence found alongside it —
+  `.parse().ok()` silently dropping non-numeric cells instead of erroring
+  loudly, unlike the base path it otherwise mirrors — is fixed too. All
+  three functions now route through a new shared helper,
+  `parse_hierarchical_numeric_pairs`, which excludes `NaN` per pandas
+  `skipna=True` and errors loudly on genuinely non-numeric cells instead of
+  silently dropping them. Proven by 9 passing regression tests in
+  `tests/hierarchical_groupby_nan_w4_regression_test.rs`.
+  (`src/dataframe/pandas_compat/groupby.rs` was checked separately and was
+  already correct — it filters `!v.is_nan()` in every reduction; no action
+  was needed there.)
+
+### Performance / SIMD
+
+- `simd_stats` (variance/std/covariance/correlation/skewness/kurtosis/
+  dot-product/L2-norm/weighted-mean, `optimized::jit::simd_stats`) and
+  `simd_string` (`optimized::jit::simd_string`) are real, tested, public
+  API — but **not called from the main `DataFrame`/`Series` statistics or
+  string-accessor paths** (see the "Wiring status" doc comment at the top
+  of `src/optimized/jit/simd_stats.rs`). The element-wise
+  `SIMDFloat64Ops`/`SIMDInt64Ops` column traits
+  (`src/column/simd_operations.rs`) are in the same state: implemented,
+  public, and exported from `pandrs::column`, but zero call sites anywhere
+  in normal DataFrame/column arithmetic. Only the `sum` reduction
+  (`OptimizedDataFrame::sum_simd`, in `src/optimized/direct_aggregations.rs`)
+  is wired into a main-path method today; `mean_simd`/`min_simd`/`max_simd`
+  on that same fast path are scalar by design (see below), not "unwired."
+  Wiring `simd_variance_f64` into `optimized::split_dataframe::group::operations`'s
+  `var`/`std` would close this gap for the highest-value case; it is a
+  real, scoped perf task, not started.
+- Within `src/optimized/jit/simd.rs` (the aggregation kernels
+  `direct_aggregations.rs` calls), only `sum_f64`/`sum_i64` have a
+  hand-written AVX2 kernel. `mean`/`min`/`max` there are scalar on every
+  target *by design*: their pandas `skipna=True` contract (skip `NaN`, keep
+  `±inf`, preserve the sign of zero) does not line up with the x86
+  `MINPD`/`MAXPD` tie-break rules, so a vector kernel could not be made
+  bit-identical without more work than it would save.
+- **AVX2 kernels have never executed on any host available during
+  development** — no AVX2 hardware; SSE2+scalar was exercised under
+  Rosetta, scalar on aarch64. Bit-identity with the scalar reference rests
+  on a construction argument in the source (see the "Bit-identity contract"
+  doc comments), not an on-hardware measurement. Needs an AVX2 CI/dev host
+  to actually verify.
+- No NEON, no AVX-512 anywhere in the crate. Scalar (still
+  auto-vectorizable by the compiler) is the fallback on every non-`x86_64`
+  target, and on `x86_64` without AVX2.
+
+### GPU / JIT
+
+- `gpu_window.rs` (`gpu_rolling(...).mean()` etc., behind
+  `cuda_available`): **fixed in Wave 4** — now returns real `f64`-typed
+  columns (was `String`-typed) and honors a caller-supplied `ddof`. Its
+  `#[cfg(cuda_available)]` real-GPU dispatch branch still has no kernel for
+  `.min()`/`.max()` (honest `Err`, not a fabricated result).
+- As of the two most-recent "CUDA" commits, `dataframe::gpu_window` (and
+  its `crate::gpu` dependency) are gated behind `cuda_available` even under
+  `--features all-safe` — `cargo nextest run --features all-safe
+  gpu_window` currently matches **zero** tests. Earlier documentation
+  described this as "the all-safe (CPU-fallback) path"; that framing is no
+  longer accurate as written. Needs an explicit decision: correct the
+  module's framing to "cuda-only", or loosen the `#[cfg]` gate so the CPU
+  fallback is reachable without the CUDA toolkit.
+- `jit_core.rs`: `jit()` performs no real Cranelift compilation. This is an
+  intentional, documented fallback (not a fabrication — it says so in its
+  own doc comment), but it is also not the JIT the name implies.
+  Implementing real Cranelift codegen here is a large, separate decision,
+  out of scope for Waves 1-4.
+- **CUDA path is unverifiable on macOS** — `build.rs` compiles it out
+  entirely on this platform, and there is no CUDA-capable host in the
+  current dev environment. Needs a CUDA-capable Linux/Windows host to
+  verify.
 
 ### Compatibility
-- Minor differences in floating-point precision compared to pandas
-- Some advanced pandas features not yet implemented
-- Excel formula preservation not supported
 
-### Documentation
-- API documentation needs expansion
-- More comprehensive examples needed
-- Performance tuning guide in progress
+- Minor floating-point precision differences vs. pandas remain expected
+  (different reduction order / underlying library implementations).
+- Excel formula preservation is not supported — read/write is values-only.
+
+### Process / CI
+
+- Repository policy currently permits only `pypi-publish.yml` and
+  `npm-publish.yml` under `.github/workflows/` — there is **no** CI
+  workflow that runs build/test/clippy/fmt on pull requests. Contributors
+  must run those checks locally before requesting review (see
+  CONTRIBUTING.md). This is an accepted policy constraint, not a bug, and
+  not expected to change without an explicit policy decision.
 
 ## Roadmap
 
@@ -505,16 +719,16 @@ We welcome contributions in the following areas:
 ## Testing & Quality
 
 ### Current Status
-- 1813 tests passing (nextest) + 117 doc tests
-- Comprehensive property-based testing
-- Continuous integration with GitHub Actions
-- Regular performance regression testing
+- 2817 tests passing (`cargo nextest run --features all-safe`) + 110 doc tests passing (19 ignored)
+- Property-based / regression testing for every Wave 1-4 fix (see `tests/*_w{1,2,3,4}_regression_test.rs`)
+- **No CI on pull requests** — repo policy permits only the release-publish workflows (`pypi-publish.yml`/`npm-publish.yml`); see "Process / CI" under Known Limitations above
+- Benchmark suite available (`cargo bench`, see BENCHMARKING.md); not run on a schedule (no CI)
 
 ### Quality Metrics
 - Zero compiler warnings policy ✓
-- Clippy lints enforced ✓
+- Clippy `correctness` (deny) / `suspicious` / `perf` (warn) enforced on the library, `style`/`complexity` intentionally allowed — see CONTRIBUTING.md ✓
 - Rustfmt formatting required ✓
-- Documentation coverage tracked
+- `RUSTDOCFLAGS="-D warnings" cargo doc --no-deps` clean on both `all-safe` and the docs.rs feature set ✓
 
 ## Release Process
 
@@ -525,11 +739,11 @@ We welcome contributions in the following areas:
 4. Gather user feedback
 
 ### Release Criteria
-- [x] All tests passing (1818 nextest + 118 doc tests)
-- [x] No critical bugs
-- [x] Documentation complete
-- [x] Performance benchmarks met
-- [x] Ready for publication to crates.io
+- [x] All tests passing (2817 nextest + 110 doc tests, 19 ignored)
+- [x] No known critical bugs (see Known Limitations above for the open, non-critical gaps)
+- [x] Documentation builds clean (`cargo doc -D warnings`, both feature sets)
+- [x] `cargo publish --dry-run --allow-dirty --features all-safe` packaging verified (2026-08-19: 529 files, 9.0 MiB / 1.8 MiB compressed)
+- [ ] Actually published to crates.io — publishing is a separate release-management decision, not yet made
 
 ## Community
 
@@ -547,5 +761,41 @@ We welcome contributions in the following areas:
 
 ---
 
-Last Updated: 2026-04-19
+Last Updated: 2026-08-24
 Maintainer: COOLJAPAN OU (Team Kitasan)
+
+## Stubs to implement (added 2026-06-12 by /cooljapan-stub-check)
+
+- [x] `pandrs-py_bindings`: `py_bindings/src/py_gpu.rs:298` — implement GPU acceleration in `PyOptimizedDataFrame::gpu_accelerate` (currently no-op clone)
+  - Priority: P2 | Scope: medium | Hint: none
+  - **Goal:** Replace fabricated-zero outputs with real CPU computation via non-CUDA-gated pandrs APIs
+  - **Files:** py_bindings/src/py_gpu.rs
+  - **Tests:** corr diagonal=1 & symmetric; LR recovers known line; kmeans inertia≥0 & labels in range
+- [x] `pandrs-py_bindings`: `py_bindings/src/py_gpu.rs:317` — implement GPU correlation matrix computation
+  - Priority: P2 | Scope: medium | Hint: none
+  - **Goal:** Replace fabricated-zero outputs with real CPU computation via non-CUDA-gated pandrs APIs
+  - **Files:** py_bindings/src/py_gpu.rs
+  - **Tests:** corr diagonal=1 & symmetric; LR recovers known line; kmeans inertia≥0 & labels in range
+- [x] `pandrs-py_bindings`: `py_bindings/src/py_gpu.rs:347` — implement GPU PCA
+  - Priority: P2 | Scope: medium | Hint: none
+  - **Goal:** Replace fabricated-zero outputs with real CPU computation via non-CUDA-gated pandrs APIs
+  - **Files:** py_bindings/src/py_gpu.rs
+  - **Tests:** corr diagonal=1 & symmetric; LR recovers known line; kmeans inertia≥0 & labels in range
+- [x] `pandrs-py_bindings`: `py_bindings/src/py_gpu.rs:388` — implement GPU k-means clustering
+  - Priority: P2 | Scope: medium | Hint: none
+  - **Goal:** Replace fabricated-zero outputs with real CPU computation via non-CUDA-gated pandrs APIs
+  - **Files:** py_bindings/src/py_gpu.rs
+  - **Tests:** corr diagonal=1 & symmetric; LR recovers known line; kmeans inertia≥0 & labels in range
+- [x] `pandrs-py_bindings`: `py_bindings/src/py_gpu.rs:418` — implement GPU linear regression
+  - Priority: P2 | Scope: medium | Hint: none
+  - **Goal:** Replace fabricated-zero outputs with real CPU computation via non-CUDA-gated pandrs APIs
+  - **Files:** py_bindings/src/py_gpu.rs
+  - **Tests:** corr diagonal=1 & symmetric; LR recovers known line; kmeans inertia≥0 & labels in range
+- [x] `pandrs`: `src/vis/direct/mod.rs:429` — implement `OptimizedDataFrame → DataFrame` conversion to enable direct plotting on OptimizedDataFrame
+  - Priority: P2 | Scope: small | Hint: none
+  - **Goal:** Use standard_dataframe() converter then delegate to DataFrame plotting impls
+  - **Files:** src/vis/direct/mod.rs
+- [x] `pandrs`: `src/distributed/schema_validator/validation.rs:345` — implement window function validation when window module is enabled
+  - Priority: P2 | Scope: small | Hint: none
+  - **Goal:** Validate referenced columns exist & have compatible types for window functions
+  - **Files:** src/distributed/schema_validator/validation.rs

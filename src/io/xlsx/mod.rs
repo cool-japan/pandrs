@@ -18,6 +18,7 @@ mod cell;
 mod error;
 mod reader;
 mod schema;
+mod styles;
 mod writer;
 
 use std::collections::HashMap;
@@ -27,8 +28,7 @@ use crate::column::{BooleanColumn, Column, Float64Column, Int64Column, StringCol
 use crate::error::Result;
 use crate::optimized::split_dataframe::core::OptimizedDataFrame as SplitDataFrame;
 
-use self::cell::XlsxCellValue;
-use self::reader::{load_workbook, LoadedWorkbook};
+use self::reader::LoadedSheet;
 use self::writer::{write_xlsx, SheetPayload};
 
 /// Write a single-sheet xlsx file from a [`SplitDataFrame`].
@@ -64,7 +64,8 @@ pub(crate) fn write_split_dataframe_sheets<P: AsRef<Path>>(
     write_xlsx(path, &payloads)
 }
 
-/// Read a sheet from an .xlsx file into a [`SplitDataFrame`].
+/// Read a sheet from an .xlsx file into a [`SplitDataFrame`]. Only the
+/// requested sheet's XML is parsed — see `reader`'s module docs.
 pub(crate) fn read_split_dataframe<P: AsRef<Path>>(
     path: P,
     sheet_name: Option<&str>,
@@ -72,24 +73,26 @@ pub(crate) fn read_split_dataframe<P: AsRef<Path>>(
     skip_rows: usize,
     use_cols: Option<&[&str]>,
 ) -> Result<SplitDataFrame> {
-    let wb = load_workbook(path)?;
-    let sheet = select_sheet(&wb, sheet_name)?;
-    build_dataframe_from_sheet(sheet, header, skip_rows, use_cols)
+    let handle = reader::open_workbook(path)?;
+    let idx = handle.sheet_index(sheet_name)?;
+    let sheet = handle.load_sheet(idx)?;
+    build_dataframe_from_sheet(&sheet, header, skip_rows, use_cols)
 }
 
-/// List all sheet names in a workbook, in workbook order.
+/// List all sheet names in a workbook, in workbook order. No worksheet body
+/// is parsed to answer this.
 pub(crate) fn list_sheets<P: AsRef<Path>>(path: P) -> Result<Vec<String>> {
-    let wb = load_workbook(path)?;
-    Ok(wb.sheet_names)
+    let handle = reader::open_workbook(path)?;
+    Ok(handle.sheet_names)
 }
 
 /// Lightweight snapshot of a sheet (name, row count, column count).
 pub(crate) fn sheet_dimensions<P: AsRef<Path>>(path: P) -> Result<Vec<(String, usize, usize)>> {
-    let wb = load_workbook(path)?;
-    let out = wb
-        .sheets
+    let handle = reader::open_workbook(path)?;
+    let sheets = handle.load_all()?;
+    let out = sheets
         .iter()
-        .map(|s| (s.name.clone(), s.rows.len(), s.cols))
+        .map(|s| (s.name.clone(), s.row_count, s.col_count))
         .collect();
     Ok(out)
 }
@@ -101,56 +104,46 @@ pub(crate) fn read_all_sheets<P: AsRef<Path>>(
     skip_rows: usize,
     use_cols: Option<&[&str]>,
 ) -> Result<HashMap<String, SplitDataFrame>> {
-    let wb = load_workbook(path)?;
+    let handle = reader::open_workbook(path)?;
+    let sheets = handle.load_all()?;
     let mut out = HashMap::new();
-    for sheet in &wb.sheets {
+    for sheet in &sheets {
         let df = build_dataframe_from_sheet(sheet, header, skip_rows, use_cols)?;
         out.insert(sheet.name.clone(), df);
     }
     Ok(out)
 }
 
-/// Choose a sheet from a loaded workbook by name or default to the first.
-fn select_sheet<'a>(wb: &'a LoadedWorkbook, name: Option<&str>) -> Result<&'a reader::LoadedSheet> {
-    match name {
-        Some(n) => wb
-            .sheets
-            .iter()
-            .find(|s| s.name == n)
-            .ok_or_else(|| self::error::io_err(format!("xlsx: sheet '{n}' not found"))),
-        None => wb
-            .sheets
-            .first()
-            .ok_or_else(|| self::error::io_err("xlsx: workbook contains no sheets".to_string())),
-    }
+/// Convert a zero-indexed column number into its A1 letter sequence (e.g.
+/// `0 -> "A"`, `26 -> "AA"`). Exposed for the `excel` facade's sheet-range
+/// formatting, which needs the same bijective base-26 encoding the writer
+/// uses internally (correct beyond the 26th column, unlike a naive
+/// single-letter-only approximation).
+pub(crate) fn column_letters(col: usize) -> String {
+    self::cell::col_letters(col)
 }
 
 /// Turn a parsed sheet into a SplitDataFrame, performing pandrs-style
 /// type inference per column.
 fn build_dataframe_from_sheet(
-    sheet: &reader::LoadedSheet,
+    sheet: &LoadedSheet,
     header: bool,
     skip_rows: usize,
     use_cols: Option<&[&str]>,
 ) -> Result<SplitDataFrame> {
-    let row_count = sheet.rows.len();
-    let col_count = sheet.cols;
+    let row_count = sheet.row_count;
+    let col_count = sheet.col_count;
 
     // Resolve column names.
     let mut column_names: Vec<String> = Vec::new();
     if header && row_count > skip_rows {
-        let header_row = &sheet.rows[skip_rows];
-        for (i, cell) in header_row.iter().enumerate() {
-            let s = cell.to_display_string();
+        for i in 0..col_count {
+            let s = sheet.get(skip_rows, i).to_display_string();
             if s.is_empty() {
                 column_names.push(format!("Column{}", i + 1));
             } else {
                 column_names.push(s);
             }
-        }
-        // Pad in case header row is shorter than the actual width.
-        while column_names.len() < col_count {
-            column_names.push(format!("Column{}", column_names.len() + 1));
         }
     } else {
         for i in 0..col_count {
@@ -171,18 +164,13 @@ fn build_dataframe_from_sheet(
 
     let data_start = if header { skip_rows + 1 } else { skip_rows };
 
-    // Collect data per column.
+    // Collect data per column. Bounded by `row_count * col_count`, which the
+    // reader's density guard has already established is not wildly
+    // disproportionate to the sheet's actual populated-cell count.
     let mut column_data: Vec<Vec<String>> = vec![Vec::new(); col_count];
-    for row in sheet.rows.iter().skip(data_start) {
-        for (c, cell) in row.iter().enumerate() {
-            if c < column_data.len() {
-                column_data[c].push(cell.to_display_string());
-            }
-        }
-        // Right-pad short rows so that every column sees the same number of
-        // entries. Empty cells become the empty string.
-        for c in row.len()..col_count {
-            column_data[c].push(String::new());
+    for r in data_start..row_count {
+        for (c, data) in column_data.iter_mut().enumerate() {
+            data.push(sheet.get(r, c).to_display_string());
         }
     }
 
@@ -206,45 +194,82 @@ fn build_dataframe_from_sheet(
     Ok(df)
 }
 
-/// Pandas-style column-type inference copied from the existing read paths.
+/// Pandas-style column-type inference copied from the existing read paths,
+/// extended to preserve NA/missing-ness instead of fabricating placeholder
+/// values.
 ///
 /// Priority:
-/// 1. All non-empty values parse as i64 → `Int64`.
-/// 2. All non-empty values parse as f64 → `Float64`.
-/// 3. All non-empty values are boolean-shaped → `Boolean`.
+/// 1. All non-blank values parse as i64 → `Int64`.
+/// 2. All non-blank values parse as f64 → `Float64`.
+/// 3. All non-blank values are boolean-shaped → `Boolean`.
 /// 4. Fallback → `String`.
+///
+/// A blank cell (empty after trimming) never contributes a fabricated `0`,
+/// `0.0`, or `false` value: every one of pandrs' concrete column types
+/// (`Int64Column`, `Float64Column`, `BooleanColumn`, `StringColumn`) can
+/// carry a null bitmask via `with_nulls`, so a blank cell is recorded as a
+/// genuine NA there instead. There is consequently no case here where "the
+/// column type cannot represent NA" — if that ever changes for a future
+/// column type, the fallback is to keep it as a String column, since a
+/// blank string cell is already unambiguous (an empty string) without
+/// needing a bitmask.
 fn infer_column(data: &[String]) -> Column {
+    let is_missing: Vec<bool> = data.iter().map(|s| s.trim().is_empty()).collect();
+    let has_nulls = is_missing.iter().any(|&b| b);
     let non_empty: Vec<&str> = data
         .iter()
-        .map(|s| s.as_str())
-        .filter(|s| !s.trim().is_empty())
+        .zip(is_missing.iter())
+        .filter(|(_, &missing)| !missing)
+        .map(|(s, _)| s.as_str())
         .collect();
+
     if non_empty.is_empty() {
-        return Column::String(StringColumn::new(data.to_vec()));
+        // Every cell is blank: nothing to infer a numeric/boolean type from.
+        return string_column(data, &is_missing, has_nulls);
     }
 
     if non_empty.iter().all(|s| s.trim().parse::<i64>().is_ok()) {
         let v: Vec<i64> = data
             .iter()
-            .map(|s| s.trim().parse::<i64>().unwrap_or(0))
+            .map(|s| s.trim().parse::<i64>().unwrap_or_default())
             .collect();
-        return Column::Int64(Int64Column::new(v));
+        return if has_nulls {
+            Column::Int64(Int64Column::with_nulls(v, is_missing))
+        } else {
+            Column::Int64(Int64Column::new(v))
+        };
     }
 
     if non_empty.iter().all(|s| s.trim().parse::<f64>().is_ok()) {
         let v: Vec<f64> = data
             .iter()
-            .map(|s| s.trim().parse::<f64>().unwrap_or(0.0))
+            .map(|s| s.trim().parse::<f64>().unwrap_or_default())
             .collect();
-        return Column::Float64(Float64Column::new(v));
+        return if has_nulls {
+            Column::Float64(Float64Column::with_nulls(v, is_missing))
+        } else {
+            Column::Float64(Float64Column::new(v))
+        };
     }
 
     if non_empty.iter().all(|s| looks_like_bool(s)) {
         let v: Vec<bool> = data.iter().map(|s| parse_bool_cell(s.trim())).collect();
-        return Column::Boolean(BooleanColumn::new(v));
+        return if has_nulls {
+            Column::Boolean(BooleanColumn::with_nulls(v, is_missing))
+        } else {
+            Column::Boolean(BooleanColumn::new(v))
+        };
     }
 
-    Column::String(StringColumn::new(data.to_vec()))
+    string_column(data, &is_missing, has_nulls)
+}
+
+fn string_column(data: &[String], is_missing: &[bool], has_nulls: bool) -> Column {
+    if has_nulls {
+        Column::String(StringColumn::with_nulls(data.to_vec(), is_missing.to_vec()))
+    } else {
+        Column::String(StringColumn::new(data.to_vec()))
+    }
 }
 
 fn looks_like_bool(s: &str) -> bool {
@@ -313,5 +338,46 @@ mod facade_tests {
         assert!(cols.iter().any(|n| n == "score"));
         assert!(cols.iter().any(|n| n == "active"));
         Ok(())
+    }
+
+    #[test]
+    fn infer_column_preserves_na_instead_of_fabricating_zero() {
+        let data = vec!["1".to_string(), "".to_string(), "3".to_string()];
+        let col = infer_column(&data);
+        match col {
+            Column::Int64(c) => {
+                assert_eq!(c.get(0).unwrap(), Some(1));
+                assert_eq!(c.get(1).unwrap(), None, "blank cell must be NA, not 0");
+                assert_eq!(c.get(2).unwrap(), Some(3));
+            }
+            other => panic!("expected Int64 column, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn infer_column_preserves_na_for_float_and_bool() {
+        let floats = vec!["1.5".to_string(), "".to_string(), "3.5".to_string()];
+        match infer_column(&floats) {
+            Column::Float64(c) => {
+                assert_eq!(c.get(1).unwrap(), None, "blank cell must be NA, not 0.0");
+            }
+            other => panic!("expected Float64 column, got {other:?}"),
+        }
+
+        let bools = vec!["true".to_string(), "".to_string(), "false".to_string()];
+        match infer_column(&bools) {
+            Column::Boolean(c) => {
+                assert_eq!(c.get(1).unwrap(), None, "blank cell must be NA, not false");
+            }
+            other => panic!("expected Boolean column, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn column_letters_handles_more_than_26_columns() {
+        assert_eq!(column_letters(0), "A");
+        assert_eq!(column_letters(25), "Z");
+        assert_eq!(column_letters(26), "AA");
+        assert_eq!(column_letters(27), "AB");
     }
 }

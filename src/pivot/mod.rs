@@ -7,7 +7,15 @@ use crate::dataframe::DataFrame;
 use crate::error::{PandRSError, Result};
 use crate::series::Series;
 
-/// Aggregation function types
+/// Aggregation functions supported by pivot tables.
+///
+/// This is intentionally a *narrower* enum than
+/// [`crate::dataframe::groupby::AggFunc`]: it lists only the functions a pivot
+/// table can compute (`Sum`, `Mean`, `Min`, `Max`, `Count`). Keeping it
+/// separate preserves compile-time safety — a pivot call cannot be handed an
+/// aggregation (e.g. `Median`, `Std`) that the pivot engine does not implement.
+/// Use [`crate::dataframe::groupby::AggFunc`] for the full GroupBy aggregation
+/// set.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AggFunction {
     /// Sum
@@ -249,8 +257,12 @@ impl DataFrame {
         pivot.execute()
     }
 
-    /// Group by specified column
-    pub fn groupby(&self, by: &str) -> Result<GroupBy> {
+    /// Group by a single column for pivot-style aggregation.
+    ///
+    /// Named `groupby_pivot` (not `groupby`) so it does not shadow the
+    /// multi-key [`crate::dataframe::groupby::GroupByExt::groupby`] trait
+    /// method, letting `df.groupby(&["col"])` resolve to the trait.
+    pub fn groupby_pivot(&self, by: &str) -> Result<GroupBy> {
         if !self.contains_column(by) {
             return Err(PandRSError::Column(format!(
                 "Grouping column '{}' not found",

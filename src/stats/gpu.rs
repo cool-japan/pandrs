@@ -1,17 +1,23 @@
-//! GPU-accelerated statistical functions
+//! Statistical functions with optional GPU dispatch
 //!
-//! This module provides GPU-accelerated implementations of statistical functions.
-//! These implementations leverage the GPU for significant performance improvements
-//! on large datasets.
+//! This module is intended to provide GPU-accelerated statistical functions.
+//! However, cudarc 0.19.x does not expose the cuBLAS/cuSOLVER routines required
+//! for true GPU kernels, so the numerical work below is currently performed on
+//! the **CPU** (via `scirs2_core::ndarray`). The "GPU" code paths exist so a real
+//! CUDA implementation can be slotted in later; they are documented honestly as
+//! CPU computations and never fabricate results.
 
 use crate::error::{Error, Result};
 use crate::gpu::operations::{GpuMatrix, GpuVector};
-use crate::gpu::{get_gpu_manager, init_gpu, GpuError};
+use crate::gpu::{get_gpu_manager, init_gpu};
 use crate::stats::DescriptiveStats;
 use scirs2_core::ndarray::{Array1, Array2};
 use std::collections::HashMap;
 
-/// Compute correlation matrix using GPU acceleration when available
+/// Compute the correlation matrix.
+///
+/// Dispatches between two code paths based on data size, but both currently
+/// compute on the CPU (cudarc exposes no CUDA kernel here). The result is real.
 pub fn correlation_matrix(data: &Array2<f64>) -> Result<Array2<f64>> {
     let gpu_manager = get_gpu_manager()?;
     let use_gpu = gpu_manager.is_available()
@@ -26,12 +32,10 @@ pub fn correlation_matrix(data: &Array2<f64>) -> Result<Array2<f64>> {
     }
 }
 
-/// GPU implementation of correlation matrix computation
+/// "GPU" correlation matrix path. Currently computes on the CPU via ndarray (no
+/// CUDA kernel is dispatched); kept separate so a real GPU path can be added.
 fn correlation_matrix_gpu(data: &Array2<f64>) -> Result<Array2<f64>> {
     let (n_rows, n_cols) = data.dim();
-
-    // Create a GpuMatrix from the input data
-    let gpu_data = GpuMatrix::new(data.clone());
 
     // Calculate column means
     let mut means = Vec::with_capacity(n_cols);
@@ -51,8 +55,9 @@ fn correlation_matrix_gpu(data: &Array2<f64>) -> Result<Array2<f64>> {
     // Create a GPU matrix for the centered data
     let gpu_centered = GpuMatrix::new(centered_data);
 
-    // Compute covariance matrix: X'X / (n-1)
-    // This uses GPU-accelerated matrix multiplication if available
+    // Compute covariance matrix: X'X / (n-1).
+    // NOTE: this uses ndarray's CPU matrix multiplication; no CUDA kernel is
+    // dispatched despite the surrounding GpuMatrix wrappers.
     let cov_matrix = gpu_centered.data.t().dot(&gpu_centered.data) / (n_rows - 1) as f64;
 
     // Convert covariance matrix to correlation matrix
@@ -118,7 +123,10 @@ fn correlation_matrix_cpu(data: &Array2<f64>) -> Result<Array2<f64>> {
     Ok(corr_matrix)
 }
 
-/// Compute covariance matrix using GPU acceleration when available
+/// Compute the covariance matrix.
+///
+/// Dispatches between two code paths based on data size, but both currently
+/// compute on the CPU (cudarc exposes no CUDA kernel here). The result is real.
 pub fn covariance_matrix(data: &Array2<f64>) -> Result<Array2<f64>> {
     let gpu_manager = get_gpu_manager()?;
     let use_gpu = gpu_manager.is_available()
@@ -133,12 +141,10 @@ pub fn covariance_matrix(data: &Array2<f64>) -> Result<Array2<f64>> {
     }
 }
 
-/// GPU implementation of covariance matrix computation
+/// "GPU" covariance matrix path. Currently computes on the CPU via ndarray (no
+/// CUDA kernel is dispatched); kept separate so a real GPU path can be added.
 fn covariance_matrix_gpu(data: &Array2<f64>) -> Result<Array2<f64>> {
     let (n_rows, n_cols) = data.dim();
-
-    // Create a GpuMatrix from the input data
-    let gpu_data = GpuMatrix::new(data.clone());
 
     // Calculate column means
     let mut means = Vec::with_capacity(n_cols);
@@ -158,8 +164,9 @@ fn covariance_matrix_gpu(data: &Array2<f64>) -> Result<Array2<f64>> {
     // Create a GPU matrix for the centered data
     let gpu_centered = GpuMatrix::new(centered_data);
 
-    // Compute covariance matrix: X'X / (n-1)
-    // This uses GPU-accelerated matrix multiplication if available
+    // Compute covariance matrix: X'X / (n-1).
+    // NOTE: this uses ndarray's CPU matrix multiplication; no CUDA kernel is
+    // dispatched despite the surrounding GpuMatrix wrappers.
     let cov_matrix = gpu_centered.data.t().dot(&gpu_centered.data) / (n_rows - 1) as f64;
 
     Ok(cov_matrix)
@@ -203,13 +210,19 @@ fn covariance_matrix_cpu(data: &Array2<f64>) -> Result<Array2<f64>> {
     Ok(cov_matrix)
 }
 
-/// Compute principal component analysis (PCA) using GPU acceleration when available
+/// Compute principal component analysis (PCA).
+///
+/// The covariance matrix and its eigendecomposition are both computed on the
+/// CPU; cudarc does not expose cuSOLVER, so no GPU eigensolver is available.
+/// This computes **real** principal components (replacing a previous version
+/// that returned identity/ones placeholders).
+///
+/// Returns `(components, explained_variance)` where `components` has shape
+/// `n_components x n_features` (one principal component per row, ordered by
+/// decreasing explained variance) and `explained_variance` holds the
+/// corresponding eigenvalues of the covariance matrix.
 pub fn pca(data: &Array2<f64>, n_components: usize) -> Result<(Array2<f64>, Array1<f64>)> {
-    // For simplicity, in this implementation we'll just compute the covariance matrix
-    // using GPU acceleration, but use CPU for eigenvalue decomposition.
-    // A full GPU implementation would use GPU-accelerated eigenvalue decomposition as well.
-
-    // Center the data
+    // Center the data.
     let (n_rows, n_cols) = data.dim();
     let mut centered_data = data.clone();
 
@@ -220,22 +233,36 @@ pub fn pca(data: &Array2<f64>, n_components: usize) -> Result<(Array2<f64>, Arra
         }
     }
 
-    // Compute covariance matrix (using GPU if available)
+    // Covariance matrix (n_cols x n_cols, symmetric).
     let cov_matrix = covariance_matrix(&centered_data)?;
 
-    // Perform eigenvalue decomposition (on CPU for now)
-    // In a real implementation, this would use a GPU-accelerated library like cuSOLVER
+    // Real eigendecomposition of the symmetric covariance matrix using the
+    // cyclic Jacobi method (shared with `crate::gpu::advanced_ops`). Eigenvalues
+    // are returned in descending order with eigenvectors as columns.
+    let (eigenvalues, eigenvectors) =
+        crate::gpu::advanced_ops::jacobi_symmetric_eigen(&cov_matrix)?;
 
-    // For this example, we're simplifying and returning placeholders
-    // A real implementation would compute actual eigenvectors and eigenvalues
+    let n_components = n_components.min(n_cols);
 
-    let components = Array2::eye(n_components.min(n_cols));
-    let explained_variance = Array1::ones(n_components.min(n_cols));
+    // Explained variance = the top eigenvalues.
+    let mut explained_variance = Array1::zeros(n_components);
+    for c in 0..n_components {
+        explained_variance[c] = eigenvalues[c];
+    }
+
+    // Principal components: the top eigenvectors, one component per row.
+    let mut components = Array2::zeros((n_components, n_cols));
+    for c in 0..n_components {
+        components.row_mut(c).assign(&eigenvectors.column(c));
+    }
 
     Ok((components, explained_variance))
 }
 
-/// GPU-accelerated descriptive statistics
+/// Descriptive statistics (CPU computation).
+///
+/// Named `*_gpu` for historical reasons, but the reductions run on the CPU via
+/// ndarray; no CUDA kernel is dispatched. The result is real.
 pub fn describe_gpu(data: &[f64]) -> Result<DescriptiveStats> {
     if data.is_empty() {
         return Err(Error::EmptyData("Input data is empty".into()));
@@ -250,14 +277,14 @@ pub fn describe_gpu(data: &[f64]) -> Result<DescriptiveStats> {
         let data_array = Array1::from_vec(data.to_vec());
         let gpu_data = GpuVector::new(data_array);
 
-        // Use GPU-accelerated functions to compute statistics
-        // (Some operations would still be done on CPU for simplicity)
+        // NOTE: these reductions use ndarray's CPU implementation; the
+        // GpuVector wrapper does not currently dispatch a CUDA kernel.
         let count = data.len();
 
-        // Sum using GPU
+        // Sum (CPU).
         let sum = gpu_data.data.sum();
 
-        // Mean using GPU
+        // Mean (CPU).
         let mean = sum / count as f64;
 
         // Find min and max
@@ -273,7 +300,7 @@ pub fn describe_gpu(data: &[f64]) -> Result<DescriptiveStats> {
             }
         }
 
-        // Calculate variance using GPU for sum of squared differences
+        // Sum of squared differences for the variance (CPU reduction).
         let mut var_data = Vec::with_capacity(count);
         for &val in data.iter() {
             var_data.push((val - mean).powi(2));
@@ -376,10 +403,14 @@ fn ensure_gpu_available() -> Result<()> {
     Ok(())
 }
 
-/// Perform GPU-accelerated linear regression
+/// Perform ordinary least-squares linear regression.
 ///
 /// # Description
-/// Computes linear regression coefficients and statistics using GPU acceleration.
+/// Computes real linear regression coefficients and statistics by solving the
+/// normal equations. The linear algebra runs on the CPU; cudarc exposes no
+/// cuSOLVER/cuBLAS routines, so no CUDA kernel is dispatched. `p_values` are
+/// reported as NaN (not computed) rather than fabricated. Requires a GPU device
+/// to be present (see `ensure_gpu_available`).
 ///
 /// # Example
 /// ```
@@ -424,46 +455,25 @@ pub fn linear_regression(
         }
     }
 
-    // Create GPU matrices
+    // Wrap the data in GPU matrix types. Note: the matrix products below use
+    // ndarray's CPU `dot` (no CUDA kernel is dispatched); the wrappers exist so
+    // a real GPU path can be added later.
     let gpu_x = GpuMatrix::new(design_matrix);
     let gpu_y = GpuVector::new(Array1::from_vec(y.to_vec()));
 
-    // Calculate X^T * X
+    // Calculate Xᵀ·X (on the CPU).
     let xtx = gpu_x.data.t().dot(&gpu_x.data);
 
-    // Calculate X^T * y
+    // Calculate Xᵀ·y (on the CPU).
     let xty = gpu_x.data.t().dot(&gpu_y.data);
 
-    // Calculate inverse of X^T * X
-    // In a real implementation, this would use a GPU-accelerated library like cuSOLVER
-    // For simplicity, we'll compute this on CPU
-
-    // Extract coefficients (simplified for example)
-    let mut coefficients = vec![0.0; n_cols + 1];
-
-    // In a real implementation, these would be calculated by solving the linear system:
-    // (X^T * X) * beta = X^T * y
-
-    // For demonstration, we'll compute a simple linear regression manually
-    if n_cols == 1 {
-        let sum_x: f64 = x.iter().sum();
-        let sum_y: f64 = y.iter().sum();
-        let sum_xx: f64 = x.iter().map(|&xi| xi * xi).sum();
-        let sum_xy: f64 = x.iter().zip(y.iter()).map(|(&xi, &yi)| xi * yi).sum();
-
-        let n = n_rows as f64;
-        let slope = (n * sum_xy - sum_x * sum_y) / (n * sum_xx - sum_x * sum_x);
-        let intercept = (sum_y - slope * sum_x) / n;
-
-        coefficients[0] = intercept;
-        coefficients[1] = slope;
-    } else {
-        // For multivariate regression, this is a placeholder
-        // A real implementation would solve the system of equations
-        for i in 0..(n_cols + 1) {
-            coefficients[i] = 0.1 * (i as f64);
-        }
-    }
+    // Solve the normal equations (XᵀX)·beta = Xᵀy for the regression
+    // coefficients. The linear algebra runs on the CPU (cudarc exposes no
+    // cuSOLVER); this is a real least-squares solution for both the univariate
+    // and multivariate cases, replacing the previous fabricated placeholders.
+    let xtx_inv = invert_matrix(&xtx)?;
+    let beta = xtx_inv.dot(&xty);
+    let coefficients: Vec<f64> = beta.to_vec();
 
     // Extract intercept and feature coefficients
     let intercept = coefficients[0];
@@ -491,8 +501,11 @@ pub fn linear_regression(
     let adj_r_squared =
         1.0 - ((1.0 - r_squared) * (n_rows as f64 - 1.0) / (n_rows as f64 - n_cols as f64 - 1.0));
 
-    // Calculate p-values (simplified)
-    let p_values = vec![0.05; n_cols + 1];
+    // p-values require a Student's t-distribution CDF, which is not available in
+    // this build (scirs2-stats is behind a separate feature). Rather than
+    // fabricating a constant significance level, report NaN to make explicit
+    // that the p-values are not computed here.
+    let p_values = vec![f64::NAN; n_cols + 1];
 
     Ok(crate::stats::LinearRegressionResult {
         intercept,
@@ -505,10 +518,12 @@ pub fn linear_regression(
     })
 }
 
-/// Calculate feature importance using GPU-accelerated methods
+/// Calculate feature importance from correlation with the target.
 ///
 /// # Description
-/// Estimates feature importance using GPU-accelerated metrics.
+/// Estimates feature importance as the absolute Pearson correlation between each
+/// feature and the target. This is a real computation performed on the CPU; no
+/// CUDA kernel is dispatched despite the module name.
 ///
 /// # Example
 /// ```
@@ -589,10 +604,12 @@ pub fn feature_importance(x: &Array2<f64>, y: &[f64]) -> Result<HashMap<usize, f
     Ok(importance)
 }
 
-/// Perform k-means clustering using GPU acceleration
+/// Perform k-means clustering.
 ///
 /// # Description
-/// Implements k-means clustering algorithm accelerated with GPU.
+/// Implements Lloyd's k-means clustering algorithm. The computation runs on the
+/// CPU (cudarc exposes no kernel for this); despite the module name no GPU work
+/// is dispatched. The result is a real clustering.
 ///
 /// # Example
 /// ```
@@ -658,8 +675,7 @@ pub fn kmeans(
         }
     }
 
-    // Main k-means loop (simplified CPU implementation)
-    // In a real GPU implementation, this would be done on the GPU
+    // Main k-means loop (real CPU implementation; no GPU kernel is dispatched).
     let mut labels = vec![0; n_rows];
     let mut inertia = 0.0;
 
@@ -738,6 +754,77 @@ pub fn kmeans(
     }
 
     Ok((centroids, labels, inertia))
+}
+
+/// Invert a square matrix on the CPU using Gauss-Jordan elimination with
+/// partial pivoting. Returns an error if the matrix is singular.
+fn invert_matrix(matrix: &Array2<f64>) -> Result<Array2<f64>> {
+    let (n, m) = matrix.dim();
+    if n != m {
+        return Err(Error::DimensionMismatch(format!(
+            "Matrix must be square for inversion, got {:?}",
+            (n, m)
+        )));
+    }
+
+    // Build the augmented matrix [A | I].
+    let mut augmented = Array2::zeros((n, 2 * n));
+    for i in 0..n {
+        for j in 0..n {
+            augmented[[i, j]] = matrix[[i, j]];
+        }
+        augmented[[i, i + n]] = 1.0;
+    }
+
+    for i in 0..n {
+        // Partial pivoting: find the row with the largest pivot magnitude.
+        let mut max_val = augmented[[i, i]].abs();
+        let mut max_row = i;
+        for k in (i + 1)..n {
+            if augmented[[k, i]].abs() > max_val {
+                max_val = augmented[[k, i]].abs();
+                max_row = k;
+            }
+        }
+
+        if max_val < 1e-12 {
+            return Err(Error::Computation(
+                "Matrix is singular and cannot be inverted".to_string(),
+            ));
+        }
+
+        if max_row != i {
+            for j in 0..(2 * n) {
+                augmented.swap([i, j], [max_row, j]);
+            }
+        }
+
+        // Scale the pivot row.
+        let pivot = augmented[[i, i]];
+        for j in 0..(2 * n) {
+            augmented[[i, j]] /= pivot;
+        }
+
+        // Eliminate the pivot column from every other row.
+        for k in 0..n {
+            if k != i {
+                let factor = augmented[[k, i]];
+                for j in 0..(2 * n) {
+                    augmented[[k, j]] -= factor * augmented[[i, j]];
+                }
+            }
+        }
+    }
+
+    // Extract the right half, which now holds A⁻¹.
+    let mut inverse = Array2::zeros((n, n));
+    for i in 0..n {
+        for j in 0..n {
+            inverse[[i, j]] = augmented[[i, j + n]];
+        }
+    }
+
+    Ok(inverse)
 }
 
 #[cfg(test)]

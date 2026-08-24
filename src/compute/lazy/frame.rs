@@ -8,9 +8,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::column::{
-    BooleanColumn, Column, ColumnTrait, ColumnType, Float64Column, Int64Column, StringColumn,
-};
+use crate::column::{BooleanColumn, Column, ColumnTrait, Float64Column, Int64Column, StringColumn};
 use crate::core::error::{Error, Result};
 use crate::optimized::dataframe::OptimizedDataFrame;
 use crate::optimized::operations::JoinType;

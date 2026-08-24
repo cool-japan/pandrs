@@ -6,6 +6,7 @@
 use super::graph::RelationshipGraph;
 use super::schema::PermissionSchema;
 use super::types::{Object, Relation, RelationTuple, Subject};
+use crate::audit::{AuditEntry, EventCategory, LogLevel, SharedAuditLogger};
 use crate::error::{Error, Result};
 use std::sync::{Arc, RwLock};
 
@@ -14,8 +15,16 @@ use std::sync::{Arc, RwLock};
 pub struct RebacManager {
     /// Relationship graph
     graph: Arc<RwLock<RelationshipGraph>>,
-    /// Permission schema
+    /// Permission schema. Defaults to an *empty* schema so that resolution is
+    /// the flat/primitive model (direct + hierarchical + subject-set tuples).
+    /// Supply a populated schema via [`RebacManager::with_schema`] to enable
+    /// Zanzibar-style rewrite rules (`ComputedUserset`, `TupleToUserset`,
+    /// `Union`, `Intersection`, `Exclusion`).
     schema: PermissionSchema,
+    /// Optional security audit sink. When set, relation grants/revocations are
+    /// emitted as `Security` audit entries so authorization changes are
+    /// recorded alongside authentication events.
+    audit: Option<SharedAuditLogger>,
 }
 
 impl RebacManager {
@@ -23,7 +32,8 @@ impl RebacManager {
     pub fn new() -> Self {
         RebacManager {
             graph: Arc::new(RwLock::new(RelationshipGraph::new())),
-            schema: PermissionSchema::default(),
+            schema: PermissionSchema::new(),
+            audit: None,
         }
     }
 
@@ -32,6 +42,7 @@ impl RebacManager {
         RebacManager {
             graph: Arc::new(RwLock::new(RelationshipGraph::new())),
             schema,
+            audit: None,
         }
     }
 
@@ -39,7 +50,31 @@ impl RebacManager {
     pub fn with_cache_size(cache_size: usize) -> Self {
         RebacManager {
             graph: Arc::new(RwLock::new(RelationshipGraph::with_cache_size(cache_size))),
-            schema: PermissionSchema::default(),
+            schema: PermissionSchema::new(),
+            audit: None,
+        }
+    }
+
+    /// Attach a shared audit logger. Relation grants/revocations will be
+    /// recorded as `Security` audit entries.
+    pub fn with_audit_logger(mut self, logger: SharedAuditLogger) -> Self {
+        self.audit = Some(logger);
+        self
+    }
+
+    /// Emit a `Security` audit entry describing a relation change.
+    fn audit_relation_change(&self, operation: &str, subject: &str, relation: &str, object: &str) {
+        if let Some(ref logger) = self.audit {
+            let entry = AuditEntry::new(
+                LogLevel::Warn,
+                EventCategory::Security,
+                operation,
+                object,
+                &format!("{} {} {} {}", operation, subject, relation, object),
+            )
+            .with_user(subject)
+            .with_context("relation", relation);
+            logger.log(entry);
         }
     }
 
@@ -52,17 +87,33 @@ impl RebacManager {
         let object = Object::parse(object)
             .map_err(|e| Error::InvalidInput(format!("Invalid object: {}", e)))?;
 
+        let audit = (
+            subject.to_string_format(),
+            relation.name.clone(),
+            object.to_string_format(),
+        );
         let tuple = RelationTuple::new(subject, relation, object);
 
-        let mut graph = self
-            .graph
-            .write()
-            .map_err(|_| Error::InvalidOperation("Failed to acquire write lock".to_string()))?;
+        {
+            let mut graph = self
+                .graph
+                .write()
+                .map_err(|_| Error::InvalidOperation("Failed to acquire write lock".to_string()))?;
 
-        graph.add_tuple(tuple)
+            graph.add_tuple(tuple)?;
+        }
+
+        self.audit_relation_change("rebac.grant", &audit.0, &audit.1, &audit.2);
+        Ok(())
     }
 
-    /// Revoke a relationship (remove a tuple)
+    /// Revoke a relationship (remove a tuple).
+    ///
+    /// Revocation is idempotent: removing a grant that is already absent
+    /// succeeds (the desired end-state — "this grant does not exist" — is
+    /// reached) rather than erroring. Real failures (a poisoned lock) still
+    /// propagate, so the RBAC compat layer can surface them instead of
+    /// silently dropping them.
     pub fn revoke(&self, subject: &str, relation: &str, object: &str) -> Result<()> {
         let subject = Subject::parse(subject)
             .map_err(|e| Error::InvalidInput(format!("Invalid subject: {}", e)))?;
@@ -71,14 +122,26 @@ impl RebacManager {
         let object = Object::parse(object)
             .map_err(|e| Error::InvalidInput(format!("Invalid object: {}", e)))?;
 
+        let audit = (
+            subject.to_string_format(),
+            relation.name.clone(),
+            object.to_string_format(),
+        );
         let tuple = RelationTuple::new(subject, relation, object);
 
-        let mut graph = self
-            .graph
-            .write()
-            .map_err(|_| Error::InvalidOperation("Failed to acquire write lock".to_string()))?;
+        {
+            let mut graph = self
+                .graph
+                .write()
+                .map_err(|_| Error::InvalidOperation("Failed to acquire write lock".to_string()))?;
 
-        graph.remove_tuple(&tuple)
+            if graph.contains_tuple(&tuple) {
+                graph.remove_tuple(&tuple)?;
+            }
+        }
+
+        self.audit_relation_change("rebac.revoke", &audit.0, &audit.1, &audit.2);
+        Ok(())
     }
 
     /// Check if subject has permission (relation) on object
@@ -95,7 +158,7 @@ impl RebacManager {
             .read()
             .map_err(|_| Error::InvalidOperation("Failed to acquire read lock".to_string()))?;
 
-        graph.check(&subject, &relation, &object)
+        graph.check(&subject, &relation, &object, &self.schema)
     }
 
     /// Async version of check_access (for tokio compatibility)
@@ -252,7 +315,7 @@ impl RebacManager {
             let obj = Object::parse(object)
                 .map_err(|e| Error::InvalidInput(format!("Invalid object: {}", e)))?;
 
-            let result = graph.check(&subj, &rel, &obj)?;
+            let result = graph.check(&subj, &rel, &obj, &self.schema)?;
             results.push(result);
         }
 

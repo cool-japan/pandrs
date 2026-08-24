@@ -13,13 +13,7 @@
 #[cfg(cuda_available)]
 use pandrs::error::Result;
 #[cfg(cuda_available)]
-use pandrs::gpu::operations::{GpuMatrix, GpuVector};
-#[cfg(cuda_available)]
-use pandrs::gpu::{get_gpu_manager, init_gpu, GpuConfig, GpuManager};
-#[cfg(cuda_available)]
-use pandrs::DataFrame;
-#[cfg(cuda_available)]
-use pandrs::Series;
+use pandrs::gpu::{get_gpu_manager, init_gpu};
 #[cfg(cuda_available)]
 use scirs2_core::ndarray::{Array1, Array2};
 #[cfg(cuda_available)]

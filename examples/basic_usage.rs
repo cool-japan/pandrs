@@ -8,7 +8,7 @@ fn main() -> Result<()> {
     println!("=== PandRS Basic Usage Example ===");
 
     // Creating Series
-    let mut ages = Series::new(vec![30, 25, 40], Some("age".to_string()))?;
+    let mut ages = Series::new(vec![30i64, 25, 40], Some("age".to_string()))?;
     let heights = Series::new(vec![180, 175, 182], Some("height".to_string()))?;
     let names = Series::new(
         vec![

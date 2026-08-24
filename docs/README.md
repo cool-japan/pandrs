@@ -15,10 +15,10 @@ If you're new to PandRS, start with these essential guides:
 
 ### 🌐 Integration & Ecosystem
 - **[Ecosystem Integration Guide](ECOSYSTEM_INTEGRATION_GUIDE.md)** - Connect with external systems
-  - Database connectivity (PostgreSQL, SQLite, MySQL)
-  - Cloud storage integration (AWS S3, Google Cloud, Azure)
+  - Cloud storage integration (AWS S3, Google Cloud, Azure, MinIO)
   - Apache Arrow interoperability
-  - Python bindings with pandas compatibility
+  - Python bindings (`py_bindings/`) with pandas-compatible surface
+  - *(There is no SQL/database feature — see the guide for what's actually there.)*
 
 ## Performance & Optimization
 
@@ -75,23 +75,25 @@ PandRS offers multiple performance optimization layers. Choose the features that
 ```toml
 [dependencies]
 # Basic usage
-pandrs = "0.3.0"
+pandrs = "0.4.1"
 
 # With performance features
-pandrs = { version = "0.3.0", features = ["cuda", "distributed", "jit"] }
+pandrs = { version = "0.4.1", features = ["cuda", "distributed", "jit"] }
 
-# All available features
-pandrs = { version = "0.3.0", features = ["all-safe"] }
+# Most features except CUDA/WASM/distributed (recommended for local dev)
+pandrs = { version = "0.4.1", features = ["all-safe"] }
 ```
 
 #### Feature Flags
 | Feature | Description | When to Use |
 |---------|-------------|-------------|
-| `cuda` | GPU acceleration | Large datasets, window operations |
+| `cuda` | GPU acceleration (needs the CUDA toolkit) | Large datasets, window operations |
 | `distributed` | DataFusion distributed processing | Multi-node deployments |
-| `jit` | Just-In-Time compilation | Custom aggregations |
+| `jit` | Named-closure custom aggregations (see [JIT_COMPILATION.md](JIT_COMPILATION.md) for exactly what this does today) | Custom aggregations |
 | `parquet` | Parquet file format support | Analytical workloads |
-| `python` | Python bindings | Pandas interoperability |
+| `cloud-storage` | S3 / GCS / Azure / MinIO | Cloud-native pipelines |
+
+*(There is no `python` Cargo feature — the Python bindings are a separate crate, `py_bindings/`, built independently with maturin; see the Ecosystem Integration Guide.)*
 
 #### Basic Usage Patterns
 ```rust
@@ -104,11 +106,10 @@ df.add_string_column("name", vec!["Alice".to_string(), "Bob".to_string(), "Carol
 
 // Basic operations
 let mean_id = df.mean("id")?;
-let grouped = df.group_by(&["category"])?.sum(&["value"])?;
 
-// I/O operations  
+// I/O operations (round-trip through the *same* DataFrame type)
 df.to_csv("output.csv", true)?;
-let loaded_df = pandrs::io::read_csv("input.csv", true)?;
+let loaded_df = OptimizedDataFrame::from_csv("output.csv", true)?;
 ```
 
 ## Learning Path
@@ -157,7 +158,7 @@ let loaded_df = pandrs::io::read_csv("input.csv", true)?;
 - Data warehouse integration
 - Real-time analytics
 
-**Recommended features:** Database connectivity, cloud storage, Python integration
+**Recommended features:** cloud storage, Python integration (no built-in database connectivity — see the Ecosystem Integration Guide)
 
 ### 🏭 Industrial IoT
 - Sensor data processing
@@ -184,7 +185,7 @@ cargo test --doc
 ### Running Examples
 ```bash
 # Basic DataFrame operations
-cargo run --example dataframe_basics
+cargo run --example optimized_dataframe_example
 
 # Performance demonstrations
 cargo run --example performance_demo --features jit
@@ -224,10 +225,9 @@ cargo run --example ecosystem_integration_demo --features distributed
 
 ## Version Information
 
-- **Current Version**: 0.3.0
-- **API Stability**: Stable for 0.3.x releases
-- **Performance**: Production-ready with 345+ passing tests
-- **Features**: Complete DataFrame API with advanced analytics capabilities
+- **Current Version**: 0.4.1 (pre-1.0 — see [docs/LTS_POLICY.md](LTS_POLICY.md) for what that means for compatibility)
+- **Testing**: 2700+ tests passing via `cargo nextest run --features all-safe` (see [BENCHMARKING.md](../BENCHMARKING.md) and the top-level [README.md](../README.md) for current figures — they drift release to release, so this file doesn't pin an exact count)
+- **Features**: DataFrame API with analytics, ML, GPU (CUDA, optional), and distributed (DataFusion, optional) capabilities
 
 ## External Resources
 
@@ -235,13 +235,13 @@ cargo run --example ecosystem_integration_demo --features distributed
 - **[SciRS2](https://github.com/cool-japan/scirs)** - Rust-native SciPy equivalent
 - **[NumRS2](https://github.com/cool-japan/numrs)** - NumPy-style arrays for Rust
 - **[Apache Arrow](https://arrow.apache.org/)** - Columnar in-memory analytics
-- **[DataFusion](https://github.com/apache/arrow-datafusion)** - Distributed query engine
+- **[DataFusion](https://datafusion.apache.org/)** - Distributed query engine
 
 ### Ecosystem
-- **Python**: Seamless pandas interoperability
-- **Jupyter**: Rich HTML displays and progress bars
-- **Cloud**: Native AWS S3, Google Cloud, Azure support
-- **Databases**: PostgreSQL, SQLite, MySQL connectivity
+- **Python**: `py_bindings/` — a real pyo3 crate with a pandas-compatible surface (`DataFrame`, `Series`, `OptimizedDataFrame`, `LazyFrame`, GPU bindings)
+- **Jupyter**: `src/jupyter` — HTML table rendering/styling (light/dark config), magics registration, `describe_to_json` (no built-in progress bars)
+- **Cloud**: AWS S3, Google Cloud Storage, Azure Blob, MinIO (`cloud-storage` feature)
+- *(No built-in database connectivity.)*
 
 ---
 

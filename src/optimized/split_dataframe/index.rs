@@ -49,15 +49,6 @@ impl OptimizedDataFrame {
         Ok(())
     }
 
-    /// Set column as index
-    ///
-    /// # Arguments
-    /// * `column_name` - Name of column to set as index
-    /// * `drop` - Whether to drop the original column
-    ///
-    /// # Returns
-    /// * `Result<()>` - Ok if successful, error otherwise
-
     /// Set string index (from existing index object)
     ///
     /// # Arguments

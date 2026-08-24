@@ -9,9 +9,28 @@
 use crate::core::error::{Error, Result};
 use crate::time_series::core::{DateTimeIndex, Frequency, TimeSeries, TimeSeriesData};
 use crate::time_series::forecasting::{ForecastMetrics, ForecastResult, Forecaster};
-use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
+use crate::time_series::stats::normal_critical_value;
 use std::collections::HashMap;
+
+/// One differencing pass applied during `fit`, kept so that forecasts made on
+/// the differenced scale can be integrated back to the scale of the original
+/// series.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DiffKind {
+    /// `Δyₜ = yₜ − yₜ₋₁`
+    Regular,
+    /// `Δ_m yₜ = yₜ − yₜ₋ₘ`
+    Seasonal(usize),
+}
+
+/// A differencing pass together with the series it consumed, i.e. the levels
+/// the inverse operator needs as its starting condition.
+#[derive(Debug, Clone)]
+struct IntegrationStage {
+    kind: DiffKind,
+    /// The series *before* this pass was applied.
+    history: Vec<f64>,
+}
 
 /// SARIMA (Seasonal ARIMA) model
 /// ARIMA(p,d,q)(P,D,Q)\[m\]
@@ -47,6 +66,10 @@ pub struct SarimaForecaster {
     index: Option<DateTimeIndex>,
     /// Differenced series
     differenced_series: Option<Vec<f64>>,
+    /// Differencing passes applied during `fit`, in application order, each
+    /// carrying the levels needed to invert it. Forecasts are produced on the
+    /// differenced scale and integrated back through these in reverse.
+    integration_stages: Option<Vec<IntegrationStage>>,
     /// Residual standard deviation
     residual_std: Option<f64>,
     /// Log likelihood
@@ -83,6 +106,7 @@ impl SarimaForecaster {
             residuals: None,
             index: None,
             differenced_series: None,
+            integration_stages: None,
             residual_std: None,
             log_likelihood: None,
             n_params,
@@ -94,38 +118,127 @@ impl SarimaForecaster {
         Self::new(p, d, q, 0, 0, 0, 1)
     }
 
-    /// Apply differencing to the series
-    fn difference(&self, values: &[f64], order: usize) -> Vec<f64> {
+    /// Apply the model's `d` regular and `D` seasonal differencing passes,
+    /// recording each pass with the levels it consumed so `forecast` can
+    /// integrate back to the original scale.
+    fn difference_with_stages(&self, values: &[f64]) -> (Vec<f64>, Vec<IntegrationStage>) {
+        let mut stages = Vec::with_capacity(self.d + self.seasonal_d);
         let mut result = values.to_vec();
-        for _ in 0..order {
+
+        for _ in 0..self.d {
             if result.len() <= 1 {
                 break;
             }
-            result = result.windows(2).map(|w| w[1] - w[0]).collect();
+            let next = result.windows(2).map(|w| w[1] - w[0]).collect();
+            stages.push(IntegrationStage {
+                kind: DiffKind::Regular,
+                history: std::mem::replace(&mut result, next),
+            });
         }
-        result
-    }
 
-    /// Apply seasonal differencing
-    fn seasonal_difference(&self, values: &[f64], order: usize, period: usize) -> Vec<f64> {
-        let mut result = values.to_vec();
-        for _ in 0..order {
-            if result.len() <= period {
-                break;
+        if self.seasonal_period > 1 {
+            let period = self.seasonal_period;
+            for _ in 0..self.seasonal_d {
+                if result.len() <= period {
+                    break;
+                }
+                let next = result
+                    .iter()
+                    .skip(period)
+                    .zip(result.iter())
+                    .map(|(curr, prev)| curr - prev)
+                    .collect();
+                stages.push(IntegrationStage {
+                    kind: DiffKind::Seasonal(period),
+                    history: std::mem::replace(&mut result, next),
+                });
             }
-            result = result
-                .iter()
-                .skip(period)
-                .zip(result.iter())
-                .map(|(curr, prev)| curr - prev)
-                .collect();
         }
-        result
+
+        (result, stages)
     }
 
-    /// Estimate AR parameters using Yule-Walker equations (simplified)
+    /// Invert the recorded differencing passes, mapping forecasts made on the
+    /// fully differenced scale back to the scale of the original series.
+    ///
+    /// Without this step an `ARIMA(p, 1, q)` fitted to a series around 35
+    /// returned forecasts around 0.5 — the *change* per period — which is what
+    /// the `d` in ARIMA's name is supposed to undo. The same operator is
+    /// applied to the interval bounds via [`Self::integrated_psi_weights`].
+    fn integrate(stages: &[IntegrationStage], differenced: Vec<f64>) -> Vec<f64> {
+        let mut current = differenced;
+
+        for stage in stages.iter().rev() {
+            match stage.kind {
+                DiffKind::Regular => {
+                    // yₜ = Δyₜ + yₜ₋₁, seeded from the last observed level.
+                    let Some(&seed) = stage.history.last() else {
+                        continue;
+                    };
+                    let mut level = seed;
+                    current = current
+                        .into_iter()
+                        .map(|delta| {
+                            level += delta;
+                            level
+                        })
+                        .collect();
+                }
+                DiffKind::Seasonal(period) => {
+                    // yₜ = Δ_m yₜ + yₜ₋ₘ, seeded from the last `m` levels.
+                    if stage.history.len() < period {
+                        continue;
+                    }
+                    let tail = &stage.history[stage.history.len() - period..];
+                    let mut integrated: Vec<f64> = Vec::with_capacity(current.len());
+                    for (i, delta) in current.iter().enumerate() {
+                        let previous = if i >= period {
+                            integrated[i - period]
+                        } else {
+                            tail[i]
+                        };
+                        integrated.push(delta + previous);
+                    }
+                    current = integrated;
+                }
+            }
+        }
+
+        current
+    }
+
+    /// Estimate AR parameters at lags `1..=order` by Yule-Walker.
     fn estimate_ar_params(&self, values: &[f64], order: usize) -> Vec<f64> {
-        if order == 0 || values.len() < order + 1 {
+        self.estimate_ar_params_at_stride(values, order, 1)
+    }
+
+    /// Estimate **seasonal** AR parameters, i.e. the coefficients on lags
+    /// `period, 2·period, …, order·period`.
+    ///
+    /// The seasonal AR coefficients are *applied* at multiples of the seasonal
+    /// period in both `fit` and `forecast`, so they must be *estimated* from
+    /// the autocorrelations at those same lags. Estimating them at lags
+    /// `1..=P` (as this code previously did, by calling the non-seasonal
+    /// estimator) fitted the short-lag dependence and then used it as though it
+    /// described the year-over-year dependence — for monthly data with
+    /// `m = 12`, the coefficient measured at lag 1 was applied at lag 12.
+    fn estimate_seasonal_ar_params(&self, values: &[f64], order: usize, period: usize) -> Vec<f64> {
+        if period <= 1 {
+            return self.estimate_ar_params(values, order);
+        }
+        self.estimate_ar_params_at_stride(values, order, period)
+    }
+
+    /// Yule-Walker estimation on the autocorrelations sampled every `stride`
+    /// lags (`stride = 1` for the ordinary AR polynomial, `stride = m` for the
+    /// seasonal one).
+    fn estimate_ar_params_at_stride(
+        &self,
+        values: &[f64],
+        order: usize,
+        stride: usize,
+    ) -> Vec<f64> {
+        if order == 0 || stride == 0 || values.len() < order * stride + 1 {
             return vec![];
         }
 
@@ -140,7 +253,8 @@ impl SarimaForecaster {
         }
 
         let mut autocorr = Vec::with_capacity(order + 1);
-        for lag in 0..=order {
+        for step in 0..=order {
+            let lag = step * stride;
             let cov: f64 = centered
                 .iter()
                 .take(n - lag)
@@ -190,9 +304,29 @@ impl SarimaForecaster {
         }
     }
 
-    /// Estimate MA parameters using innovation algorithm (simplified)
-    fn estimate_ma_params(&self, values: &[f64], order: usize, ar_residuals: &[f64]) -> Vec<f64> {
-        if order == 0 || ar_residuals.len() < order + 1 {
+    /// Estimate MA parameters at lags `1..=order` from the residual
+    /// autocorrelations.
+    fn estimate_ma_params(&self, _values: &[f64], order: usize, ar_residuals: &[f64]) -> Vec<f64> {
+        Self::estimate_ma_params_at_stride(order, ar_residuals, 1)
+    }
+
+    /// Estimate **seasonal** MA parameters, i.e. the coefficients on the
+    /// innovations at lags `period, 2·period, …, order·period` — the lags at
+    /// which `fit` and `forecast` apply them (see
+    /// [`Self::estimate_seasonal_ar_params`] for why the lag has to match).
+    fn estimate_seasonal_ma_params(
+        &self,
+        order: usize,
+        ar_residuals: &[f64],
+        period: usize,
+    ) -> Vec<f64> {
+        let stride = if period <= 1 { 1 } else { period };
+        Self::estimate_ma_params_at_stride(order, ar_residuals, stride)
+    }
+
+    /// Residual-autocorrelation MA estimation at every `stride`-th lag.
+    fn estimate_ma_params_at_stride(order: usize, ar_residuals: &[f64], stride: usize) -> Vec<f64> {
+        if order == 0 || stride == 0 || ar_residuals.len() < order * stride + 1 {
             return vec![];
         }
 
@@ -207,7 +341,8 @@ impl SarimaForecaster {
         }
 
         let mut ma_params = Vec::with_capacity(order);
-        for lag in 1..=order {
+        for step in 1..=order {
+            let lag = step * stride;
             let cov: f64 = centered
                 .iter()
                 .take(n - lag)
@@ -222,6 +357,82 @@ impl SarimaForecaster {
         }
 
         ma_params
+    }
+
+    /// Psi-weights of the model's own forecast recursion, on the **differenced**
+    /// scale: `ψ₀ = 1` and
+    /// `ψ_h = Σⱼ φⱼ·ψ_{h−1−j} + Σⱼ Φⱼ·ψ_{h−(j+1)m} + θ_h + Θ_h`,
+    /// matching term for term the additive AR/MA/SAR/SMA recursion used in
+    /// [`Forecaster::forecast`].
+    fn psi_weights(&self, horizon: usize) -> Vec<f64> {
+        let ar = self.ar_params.as_deref().unwrap_or(&[]);
+        let ma = self.ma_params.as_deref().unwrap_or(&[]);
+        let sar = self.seasonal_ar_params.as_deref().unwrap_or(&[]);
+        let sma = self.seasonal_ma_params.as_deref().unwrap_or(&[]);
+        let period = self.seasonal_period.max(1);
+
+        let mut psi = vec![0.0; horizon.max(1)];
+        psi[0] = 1.0;
+
+        for h in 1..psi.len() {
+            let mut value = 0.0;
+            for (j, &phi) in ar.iter().enumerate() {
+                if h >= j + 1 {
+                    value += phi * psi[h - j - 1];
+                }
+            }
+            for (j, &phi) in sar.iter().enumerate() {
+                let lag = (j + 1) * period;
+                if h >= lag {
+                    value += phi * psi[h - lag];
+                }
+            }
+            if h <= ma.len() {
+                value += ma[h - 1];
+            }
+            for (j, &theta) in sma.iter().enumerate() {
+                if h == (j + 1) * period {
+                    value += theta;
+                }
+            }
+            psi[h] = value;
+        }
+
+        psi
+    }
+
+    /// Apply the integration operator to the differenced-scale psi-weights, so
+    /// the forecast-error variance is expressed on the scale of the original
+    /// series: each regular differencing pass becomes a cumulative sum, each
+    /// seasonal pass a cumulative sum along the residue class modulo `m`.
+    ///
+    /// Without this, an `ARIMA(p, 1, q)`'s intervals were the intervals of the
+    /// *differenced* series and did not widen at the `√h` rate the integrated
+    /// process actually has.
+    fn integrated_psi_weights(&self, horizon: usize, stages: &[IntegrationStage]) -> Vec<f64> {
+        let mut psi = self.psi_weights(horizon);
+
+        for stage in stages.iter().rev() {
+            match stage.kind {
+                DiffKind::Regular => {
+                    let mut running = 0.0;
+                    for value in psi.iter_mut() {
+                        running += *value;
+                        *value = running;
+                    }
+                }
+                DiffKind::Seasonal(period) => {
+                    if period == 0 {
+                        continue;
+                    }
+                    for i in period..psi.len() {
+                        psi[i] += psi[i - period];
+                    }
+                }
+            }
+        }
+
+        psi
     }
 
     /// Calculate log-likelihood (Gaussian)
@@ -286,17 +497,9 @@ impl Forecaster for SarimaForecaster {
             ));
         }
 
-        // Apply differencing
-        let mut working_series = values.clone();
-
-        // Non-seasonal differencing
-        working_series = self.difference(&working_series, self.d);
-
-        // Seasonal differencing
-        if self.seasonal_d > 0 && self.seasonal_period > 1 {
-            working_series =
-                self.seasonal_difference(&working_series, self.seasonal_d, self.seasonal_period);
-        }
+        // Apply the `d` regular then `D` seasonal differencing passes, keeping
+        // the levels each pass consumed so `forecast` can integrate back.
+        let (working_series, integration_stages) = self.difference_with_stages(&values);
 
         // Estimate AR parameters
         let ar_params = self.estimate_ar_params(&working_series, self.p);
@@ -316,15 +519,16 @@ impl Forecaster for SarimaForecaster {
         // Estimate MA parameters
         let ma_params = self.estimate_ma_params(&working_series, self.q, &ar_residuals);
 
-        // Estimate seasonal parameters (simplified)
+        // Estimate seasonal parameters at multiples of the seasonal period —
+        // the lags at which they are applied below.
         let seasonal_ar_params = if self.seasonal_p > 0 {
-            self.estimate_ar_params(&working_series, self.seasonal_p)
+            self.estimate_seasonal_ar_params(&working_series, self.seasonal_p, self.seasonal_period)
         } else {
             vec![]
         };
 
         let seasonal_ma_params = if self.seasonal_q > 0 {
-            self.estimate_ma_params(&working_series, self.seasonal_q, &ar_residuals)
+            self.estimate_seasonal_ma_params(self.seasonal_q, &ar_residuals, self.seasonal_period)
         } else {
             vec![]
         };
@@ -384,6 +588,7 @@ impl Forecaster for SarimaForecaster {
         self.residuals = Some(residuals);
         self.index = Some(ts.index.clone());
         self.differenced_series = Some(working_series);
+        self.integration_stages = Some(integration_stages);
         self.residual_std = Some(residual_std);
         self.log_likelihood = Some(log_likelihood);
 
@@ -405,6 +610,10 @@ impl Forecaster for SarimaForecaster {
             .ok_or_else(|| Error::InvalidOperation("Model not fitted".to_string()))?;
         let differenced = self
             .differenced_series
+            .as_ref()
+            .ok_or_else(|| Error::InvalidOperation("Model not fitted".to_string()))?;
+        let integration_stages = self
+            .integration_stages
             .as_ref()
             .ok_or_else(|| Error::InvalidOperation("Model not fitted".to_string()))?;
         let residuals = self
@@ -485,16 +694,30 @@ impl Forecaster for SarimaForecaster {
             forecast_dates.push(last_date + duration * i as i32);
         }
 
-        // Calculate prediction intervals (with increasing uncertainty)
-        let residual_std = self.residual_std.unwrap_or(1.0);
-        let z_score = get_z_score(confidence_level);
+        // Integrate the differenced-scale forecasts back onto the scale of the
+        // original series (the "I" of ARIMA). Skipped entirely before this
+        // fix, so a `d = 1` model reported period-over-period *changes* as if
+        // they were levels.
+        let forecasts = Self::integrate(integration_stages, forecasts);
+
+        // Prediction intervals from the model's own psi-weights:
+        //   Var(ŷ_{n+h} − y_{n+h}) = σ² · Σ_{j<h} Ψ_j²
+        // with Ψ the psi-weights carried through the same integration operator
+        // as the point forecasts. For a pure random walk (`d = 1`, no ARMA
+        // terms) this reduces to the familiar σ·√h.
+        let residual_std = self
+            .residual_std
+            .ok_or_else(|| Error::InvalidOperation("Model not fitted".to_string()))?;
+        let z_score = normal_critical_value(confidence_level)?;
+        let psi = self.integrated_psi_weights(periods, integration_stages);
 
         let mut lower_values = Vec::with_capacity(periods);
         let mut upper_values = Vec::with_capacity(periods);
 
+        let mut variance_sum = 0.0;
         for (h, &forecast) in forecasts.iter().enumerate() {
-            // Prediction interval widens with horizon
-            let margin = z_score * residual_std * ((h + 1) as f64).sqrt();
+            variance_sum += psi.get(h).copied().unwrap_or(0.0).powi(2);
+            let margin = z_score * residual_std * variance_sum.sqrt();
             lower_values.push(forecast - margin);
             upper_values.push(forecast + margin);
         }
@@ -553,7 +776,14 @@ impl Forecaster for SarimaForecaster {
         params
     }
 
-    fn fit_metrics(&self, ts: &TimeSeries) -> Result<ForecastMetrics> {
+    /// In-sample fit metrics.
+    ///
+    /// **Scale note:** the model is estimated on the differenced series, so
+    /// `mae` / `mse` / `rmse` are residual statistics on that *differenced*
+    /// scale — the natural scale for judging the ARMA fit. Point forecasts from
+    /// [`Forecaster::forecast`] are integrated back to the level scale, so the
+    /// two are not directly comparable for `d > 0` or `D > 0`.
+    fn fit_metrics(&self, _ts: &TimeSeries) -> Result<ForecastMetrics> {
         let fitted = self
             .fitted_values
             .as_ref()
@@ -969,16 +1199,6 @@ impl Forecaster for AutoArima {
             .as_ref()
             .ok_or_else(|| Error::InvalidOperation("No model fitted".to_string()))?;
         model.fit_metrics(ts)
-    }
-}
-
-/// Helper function to get z-score for confidence level
-fn get_z_score(confidence_level: f64) -> f64 {
-    match (confidence_level * 100.0) as i32 {
-        90 => 1.645,
-        95 => 1.96,
-        99 => 2.576,
-        _ => 1.96,
     }
 }
 

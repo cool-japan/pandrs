@@ -1,8 +1,6 @@
-use std::fmt::Debug;
-
 use crate::core::error::{Error, Result};
 use crate::dataframe::base::DataFrame;
-use crate::series::base::Series;
+use crate::dataframe::indexing::AdvancedIndexingExt;
 
 /// View of a DataFrame column
 #[derive(Debug, Clone)]
@@ -58,7 +56,7 @@ pub trait ViewExt {
 }
 
 impl ViewExt for DataFrame {
-    fn get_column_view<'a>(&'a self, column_name: &str) -> Result<ColumnView<'a>> {
+    fn get_column_view<'a>(&'a self, _column_name: &str) -> Result<ColumnView<'a>> {
         // This would be implemented later
         Err(Error::NotImplemented(
             "get_column_view not implemented yet".to_string(),
@@ -66,12 +64,15 @@ impl ViewExt for DataFrame {
     }
 
     fn head(&self, n: usize) -> Result<Self> {
-        // This would be implemented later
-        Ok(DataFrame::new())
+        // Delegate to the real positional-selection implementation in `indexing`.
+        let row_count = self.row_count();
+        self.iloc().get_range(0..n.min(row_count))
     }
 
     fn tail(&self, n: usize) -> Result<Self> {
-        // This would be implemented later
-        Ok(DataFrame::new())
+        // Delegate to the real positional-selection implementation in `indexing`.
+        let row_count = self.row_count();
+        let start = if n >= row_count { 0 } else { row_count - n };
+        self.iloc().get_range(start..row_count)
     }
 }

@@ -5,9 +5,62 @@ use std::sync::Arc;
 
 use crate::core::column::ColumnTrait;
 use crate::error::{Error, Result};
-use crate::ml::pipeline::{Pipeline, PipelineStage, PipelineTransformer};
-use crate::ml::preprocessing::{MinMaxScaler, OneHotEncoder, StandardScaler};
+use crate::ml::feature_engineering::{combinations_with_replacement, monomial_name};
 use crate::optimized::OptimizedDataFrame;
+
+/// Estimate the in-memory footprint of `df` in bytes, summed across all
+/// columns.
+///
+/// `optimized::dataframe::OptimizedDataFrame` (the type used throughout
+/// this module) does not expose a `memory_usage()` method of its own --
+/// unlike the separate, legacy `split_dataframe::OptimizedDataFrame` type
+/// -- so this walks the public per-column view API directly, using the
+/// same per-type size accounting the legacy type's `memory_usage()` uses
+/// internally.
+fn estimate_memory_usage(df: &OptimizedDataFrame) -> usize {
+    let mut total = 0usize;
+    for name in df.column_names() {
+        let Ok(view) = df.column(name) else {
+            continue;
+        };
+        total += match view.column() {
+            crate::column::Column::Int64(col) => col.len() * std::mem::size_of::<Option<i64>>(),
+            crate::column::Column::Float64(col) => col.len() * std::mem::size_of::<Option<f64>>(),
+            crate::column::Column::Boolean(col) => col.len() * std::mem::size_of::<Option<bool>>(),
+            crate::column::Column::String(col) => {
+                let mut size = col.len() * std::mem::size_of::<Option<String>>();
+                for i in 0..col.len() {
+                    if let Ok(Some(s)) = col.get(i) {
+                        size += s.len();
+                    }
+                }
+                size
+            }
+        };
+    }
+    total
+}
+
+/// Compute the value at quantile `q` (in `[0,1]`) of pre-sorted data using
+/// linear interpolation between the two nearest order statistics (matches
+/// `numpy.quantile`'s default interpolation, and the convention used by
+/// `RobustScaler`/`QuantileTransformer` in
+/// [`feature_engineering`](crate::ml::feature_engineering)).
+fn interpolated_quantile(sorted: &[f64], q: f64) -> f64 {
+    let n = sorted.len();
+    if n == 0 {
+        return 0.0;
+    }
+    if n == 1 {
+        return sorted[0];
+    }
+    let q = q.clamp(0.0, 1.0);
+    let pos = q * (n - 1) as f64;
+    let lo = pos.floor() as usize;
+    let hi = (pos.ceil() as usize).min(n - 1);
+    let frac = pos - lo as f64;
+    sorted[lo] + frac * (sorted[hi] - sorted[lo])
+}
 
 /// Advanced pipeline stage that can handle complex transformations
 pub trait AdvancedPipelineStage: Send + Sync {
@@ -103,13 +156,15 @@ impl AdvancedPipeline {
     pub fn execute(&mut self, df: OptimizedDataFrame) -> Result<OptimizedDataFrame> {
         let mut current_df = df;
 
-        // Validate all stages first
         for stage in &self.stages {
+            // Validate against the frame as it stands right before this
+            // stage runs, not the pipeline's original input. Validating
+            // every stage up front against the initial frame (as this
+            // used to do) rejected any pipeline where a later stage's
+            // required column is only created by an earlier stage --
+            // exactly the chaining this pipeline exists to support.
             stage.validate(&current_df)?;
-        }
 
-        // Execute stages
-        for stage in &self.stages {
             let start_time = std::time::Instant::now();
             let input_rows = current_df.row_count();
 
@@ -120,7 +175,7 @@ impl AdvancedPipeline {
             if self.monitoring_enabled {
                 let duration = start_time.elapsed();
                 let output_rows = current_df.row_count();
-                let memory_usage = 0; // current_df.memory_usage().values().sum();
+                let memory_usage = estimate_memory_usage(&current_df);
 
                 let execution = StageExecution {
                     stage_name: stage.metadata().name,
@@ -381,6 +436,14 @@ impl AdvancedPipelineStage for FeatureEngineeringStage {
 }
 
 impl FeatureEngineeringStage {
+    /// Generate the full polynomial feature basis up to `degree` from
+    /// `columns`: every distinct monomial of total degree `2..=degree`
+    /// formed from those columns (e.g. degree 3 over `[x, y]` includes not
+    /// just `x^2`, `x^3` but the cross terms `x*y`, `x^2*y`, `x*y^2`, and
+    /// so on) -- the same basis `sklearn.preprocessing.PolynomialFeatures`
+    /// generates. Previously this produced only pure per-column powers
+    /// (`x^2`, `x^3`, ...) with no cross terms at all, which is not a
+    /// polynomial *basis* so much as a list of univariate power features.
     fn create_polynomial_features(
         &self,
         df: &OptimizedDataFrame,
@@ -389,24 +452,37 @@ impl FeatureEngineeringStage {
     ) -> Result<OptimizedDataFrame> {
         let mut result_df = df.clone();
 
+        // Requested columns that are missing or non-numeric are silently
+        // excluded from the expansion (mirrors this method's pre-existing
+        // "skip what isn't a Float64 column" behavior) rather than erroring
+        // the whole stage over one categorical column mixed in with
+        // numeric ones.
+        let mut names: Vec<String> = Vec::new();
+        let mut values: Vec<Vec<f64>> = Vec::new();
         for column in columns {
             if let Ok(column_view) = df.column(column) {
                 if let crate::column::Column::Float64(float_col) = column_view.column() {
-                    for d in 2..=degree {
-                        let new_col_name = format!("{}^{}", column, d);
-                        let polynomial_values: Vec<f64> = (0..float_col.len())
-                            .map(|i| {
-                                if let Ok(Some(v)) = float_col.get(i) {
-                                    v.powf(d as f64)
-                                } else {
-                                    0.0
-                                }
-                            })
-                            .collect();
-
-                        result_df.add_float_column(&new_col_name, polynomial_values)?;
-                    }
+                    let col_values: Vec<f64> = (0..float_col.len())
+                        .map(|i| float_col.get(i).ok().flatten().unwrap_or(0.0))
+                        .collect();
+                    names.push(column.clone());
+                    values.push(col_values);
                 }
+            }
+        }
+
+        if names.is_empty() || degree < 2 {
+            return Ok(result_df);
+        }
+        let n_rows = values[0].len();
+
+        for d in 2..=degree {
+            for combo in combinations_with_replacement(names.len(), d as usize) {
+                let new_col_name = monomial_name(&combo, &names);
+                let polynomial_values: Vec<f64> = (0..n_rows)
+                    .map(|row| combo.iter().map(|&idx| values[idx][row]).product())
+                    .collect();
+                result_df.add_float_column(&new_col_name, polynomial_values)?;
             }
         }
 
@@ -454,13 +530,26 @@ impl FeatureEngineeringStage {
     ) -> Result<OptimizedDataFrame> {
         let mut result_df = df.clone();
 
+        if bins == 0 {
+            return Err(Error::InvalidValue(
+                "Binning requires at least 1 bin".to_string(),
+            ));
+        }
+
         if let Ok(column_view) = df.column(column) {
             if let crate::column::Column::Float64(float_col) = column_view.column() {
                 let values: Vec<f64> = (0..float_col.len())
                     .filter_map(|i| float_col.get(i).ok().flatten())
                     .collect();
 
-                let bin_edges = match strategy {
+                if values.is_empty() {
+                    return Err(Error::InvalidValue(format!(
+                        "Column '{}' has no non-null values to bin",
+                        column
+                    )));
+                }
+
+                let bin_edges: Vec<f64> = match strategy {
                     BinningStrategy::EqualWidth => {
                         let min_val = values.iter().fold(f64::INFINITY, |a, &b| a.min(b));
                         let max_val = values.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b));
@@ -468,30 +557,64 @@ impl FeatureEngineeringStage {
                         (0..=bins).map(|i| min_val + (i as f64) * step).collect()
                     }
                     BinningStrategy::EqualFrequency => {
+                        // Empirical quantile edges at i/bins, i=0..=bins,
+                        // via linear interpolation between order
+                        // statistics. The previous integer-stride
+                        // (`len / bins`) approach truncated instead of
+                        // interpolating, so the top edge routinely landed
+                        // short of the actual maximum, leaving the last
+                        // bin's true upper bound uncovered.
                         let mut sorted_values = values.clone();
                         sorted_values
                             .sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-                        let step = sorted_values.len() / bins as usize;
                         (0..=bins)
-                            .map(|i| {
-                                let idx = (i as usize * step).min(sorted_values.len() - 1);
-                                sorted_values[idx]
-                            })
+                            .map(|i| interpolated_quantile(&sorted_values, i as f64 / bins as f64))
                             .collect()
                     }
-                    BinningStrategy::Quantile(quantiles) => quantiles.clone(),
+                    BinningStrategy::Quantile(quantiles) => {
+                        // Quantile fractions (e.g. 0.25) must be converted
+                        // to actual empirical data values before use as
+                        // bin edges -- using the fractions themselves as
+                        // data-space edges (as before) put almost every
+                        // real-valued column entirely in the last bin.
+                        let mut sorted_values = values.clone();
+                        sorted_values
+                            .sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+                        quantiles
+                            .iter()
+                            .map(|&q| interpolated_quantile(&sorted_values, q))
+                            .collect()
+                    }
                 };
 
+                if bin_edges.len() < 2 {
+                    return Err(Error::InvalidValue(
+                        "Binning requires at least 2 bin edges (e.g. a non-empty \
+                         `BinningStrategy::Quantile` list)"
+                            .to_string(),
+                    ));
+                }
+
                 let new_col_name = format!("{}_binned", column);
+                let n_bins = bin_edges.len() - 1;
+                // `bin_edges` has `n_bins + 1` entries; `bin_edges[0]` and
+                // `bin_edges[n_bins]` are the two outer bounds (not
+                // partition points), so the `n_bins - 1` *interior* edges
+                // are `bin_edges[1..n_bins]`. A value's label is the count
+                // of interior edges it is at-or-beyond -- verified against
+                // `sklearn.preprocessing.KBinsDiscretizer(encode='ordinal')`
+                // (e.g. edges `[-2,-1,0,1]` bin `[-2,-1,0,1]` to
+                // `[0,1,2,2]`: a value sitting exactly on an interior edge
+                // belongs to the bin ABOVE it, not below). The previous
+                // scan direction (`val <= edge`, first match wins) put
+                // boundary values in the bin *below* instead, and also
+                // gave the exact minimum its own singleton bin.
+                let interior_edges = &bin_edges[1..n_bins];
                 let binned_values: Vec<i64> = (0..float_col.len())
                     .map(|i| {
                         if let Ok(Some(val)) = float_col.get(i) {
-                            for (bin_idx, &edge) in bin_edges.iter().enumerate() {
-                                if val <= edge {
-                                    return bin_idx as i64;
-                                }
-                            }
-                            (bin_edges.len() - 1) as i64
+                            let label = interior_edges.iter().filter(|&&edge| val >= edge).count();
+                            label as i64
                         } else {
                             -1 // Missing value indicator
                         }

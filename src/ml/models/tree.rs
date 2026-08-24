@@ -6,8 +6,46 @@
 use crate::dataframe::DataFrame;
 use crate::error::{Error, Result};
 use crate::ml::models::{ModelEvaluator, ModelMetrics, SupervisedModel};
+use scirs2_core::random::rngs::StdRng;
+use scirs2_core::random::Rng;
+use scirs2_core::random::SeedableRng;
+use scirs2_core::random::SliceRandom;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+
+/// Build a seeded RNG when `seed` is given, otherwise one seeded from the
+/// system entropy source — matching the pattern established at
+/// `stats::sampling::seeded_rng` / `optimized::split_dataframe::row_ops::sample_rows`.
+fn seeded_rng(seed: Option<u64>) -> StdRng {
+    match seed {
+        Some(seed_val) => StdRng::seed_from_u64(seed_val),
+        None => {
+            let mut seed_bytes = [0u8; 32];
+            scirs2_core::random::rng().fill_bytes(&mut seed_bytes);
+            StdRng::from_seed(seed_bytes)
+        }
+    }
+}
+
+/// Median of a slice of values (sorts a scratch copy; does not mutate `values`).
+/// Used for the MAE splitting criterion, whose impurity- and leaf-minimizing
+/// constant is the median rather than the mean. `pub(crate)` so the gradient
+/// boosting ensemble (`models::ensemble`) can reuse it for LAD/absolute-error
+/// terminal-region updates and initial-prediction computation, which are
+/// minimized by the same statistic.
+pub(crate) fn median_of(values: &[f64]) -> f64 {
+    if values.is_empty() {
+        return 0.0;
+    }
+    let mut sorted = values.to_vec();
+    sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let n = sorted.len();
+    if n % 2 == 1 {
+        sorted[n / 2]
+    } else {
+        (sorted[n / 2 - 1] + sorted[n / 2]) / 2.0
+    }
+}
 
 /// Criterion for splitting nodes
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -238,7 +276,17 @@ impl DecisionTreeClassifier {
             .sum::<f64>()
     }
 
-    /// Calculate entropy
+    /// Calculate entropy.
+    ///
+    /// Uses the natural logarithm (nats), not `log2` (bits) as sklearn's
+    /// default `criterion="entropy"` documentation states. This is a
+    /// deliberate, harmless convention difference: for split *selection*
+    /// the two are equivalent because `log2(p) = ln(p) / ln(2)`, i.e. the
+    /// nats-based entropy is exactly `ln(2)` times the bits-based one, a
+    /// uniform positive rescaling that never changes which candidate split
+    /// maximizes information gain. Only the raw magnitude reported via
+    /// `impurity`/feature importances differs from a bits-based
+    /// implementation, not any decision made from it.
     fn entropy(class_counts: &[usize], total: usize) -> f64 {
         if total == 0 {
             return 0.0;
@@ -263,13 +311,19 @@ impl DecisionTreeClassifier {
         }
     }
 
-    /// Find the best split for a node
+    /// Find the best split for a node.
+    ///
+    /// When `max_features` is configured, the candidate feature subset is
+    /// redrawn from `rng` at *every* call (i.e. at every node), matching the
+    /// standard Random Forest node-level feature resampling scheme rather
+    /// than a single subset fixed for the whole tree.
     fn find_best_split(
         &self,
         x: &[Vec<f64>],
         y: &[f64],
         indices: &[usize],
         n_features: usize,
+        rng: &mut StdRng,
     ) -> Option<(usize, f64, Vec<usize>, Vec<usize>, f64)> {
         if indices.len() < self.config.min_samples_split {
             return None;
@@ -286,17 +340,13 @@ impl DecisionTreeClassifier {
         let mut best_gain = 0.0;
         let mut best_split: Option<(usize, f64, Vec<usize>, Vec<usize>, f64)> = None;
 
-        // Select features to consider
+        // Select features to consider: a fresh random subset drawn from `rng`
+        // for this node (real per-node resampling, not one fixed permutation
+        // reused at every node of the tree).
         let features_to_consider: Vec<usize> = if let Some(max_features) = self.config.max_features
         {
-            // Random subset of features
-            let seed = self.config.random_seed.unwrap_or(42);
             let mut feature_indices: Vec<usize> = (0..n_features).collect();
-            // Simple shuffle using seed
-            for i in (1..feature_indices.len()).rev() {
-                let j = ((seed as usize + i * 17) % (i + 1)) as usize;
-                feature_indices.swap(i, j);
-            }
+            feature_indices.shuffle(rng);
             feature_indices
                 .into_iter()
                 .take(max_features.min(n_features))
@@ -364,13 +414,17 @@ impl DecisionTreeClassifier {
         best_split
     }
 
-    /// Build the tree recursively
+    /// Build the tree recursively. `rng` is threaded through the whole
+    /// recursion so that `max_features` feature subsampling is resampled at
+    /// every node from a single real random stream, rather than fixed once
+    /// per tree.
     fn build_tree(
         &mut self,
         x: &[Vec<f64>],
         y: &[f64],
         indices: Vec<usize>,
         depth: usize,
+        rng: &mut StdRng,
     ) -> usize {
         // Calculate class counts for this node
         let mut class_counts = vec![0usize; self.n_classes];
@@ -413,7 +467,7 @@ impl DecisionTreeClassifier {
         // Find best split
         let n_features = x[0].len();
         if let Some((feature_idx, threshold, left_indices, right_indices, _gain)) =
-            self.find_best_split(x, y, &indices, n_features)
+            self.find_best_split(x, y, &indices, n_features, rng)
         {
             // Create split node
             let mut node = TreeNode::new_split(feature_idx, threshold, total, impurity, depth);
@@ -424,8 +478,8 @@ impl DecisionTreeClassifier {
             self.nodes.push(node);
 
             // Build children
-            let left_child_idx = self.build_tree(x, y, left_indices, depth + 1);
-            let right_child_idx = self.build_tree(x, y, right_indices, depth + 1);
+            let left_child_idx = self.build_tree(x, y, left_indices, depth + 1, rng);
+            let right_child_idx = self.build_tree(x, y, right_indices, depth + 1, rng);
 
             self.nodes[node_idx].left_child = Some(left_child_idx);
             self.nodes[node_idx].right_child = Some(right_child_idx);
@@ -561,8 +615,9 @@ impl SupervisedModel for DecisionTreeClassifier {
         // Get feature columns
         self.feature_names = train_data
             .column_names()
-            .into_iter()
-            .filter(|c| c != target_column)
+            .iter()
+            .filter(|c| c.as_str() != target_column)
+            .cloned()
             .collect();
 
         if self.feature_names.is_empty() {
@@ -592,7 +647,8 @@ impl SupervisedModel for DecisionTreeClassifier {
         // Build tree
         let indices: Vec<usize> = (0..x.len()).collect();
         self.nodes.clear();
-        self.build_tree(&x, &y, indices, 0);
+        let mut rng = seeded_rng(self.config.random_seed);
+        self.build_tree(&x, &y, indices, 0, &mut rng);
 
         // Calculate feature importances
         self.calculate_feature_importances();
@@ -655,12 +711,55 @@ impl ModelEvaluator for DecisionTreeClassifier {
 
     fn cross_validate(
         &self,
-        _data: &DataFrame,
-        _target: &str,
-        _folds: usize,
+        data: &DataFrame,
+        target: &str,
+        folds: usize,
     ) -> Result<Vec<ModelMetrics>> {
-        // Simplified implementation
-        Ok(vec![])
+        if folds < 2 {
+            return Err(Error::InvalidInput(
+                "Number of folds must be at least 2".into(),
+            ));
+        }
+
+        let n = data.nrows();
+        if n < folds {
+            return Err(Error::InvalidInput(
+                "Number of samples must be at least equal to the number of folds".into(),
+            ));
+        }
+
+        let fold_size = n / folds;
+        let mut all_metrics: Vec<ModelMetrics> = Vec::with_capacity(folds);
+
+        for fold_idx in 0..folds {
+            let test_start = fold_idx * fold_size;
+            let test_end = if fold_idx == folds - 1 {
+                n
+            } else {
+                (fold_idx + 1) * fold_size
+            };
+
+            let test_indices: Vec<usize> = (test_start..test_end).collect();
+            let train_indices: Vec<usize> = (0..n)
+                .filter(|&i| i < test_start || i >= test_end)
+                .collect();
+
+            if train_indices.is_empty() || test_indices.is_empty() {
+                return Err(Error::InvalidInput(
+                    "A fold resulted in empty train or test set".into(),
+                ));
+            }
+
+            let train_df = data.sample(&train_indices)?;
+            let test_df = data.sample(&test_indices)?;
+
+            let mut model = self.clone();
+            model.fit(&train_df, target)?;
+            let fold_metrics = model.evaluate(&test_df, target)?;
+            all_metrics.push(fold_metrics);
+        }
+
+        Ok(all_metrics)
     }
 }
 
@@ -705,13 +804,19 @@ impl DecisionTreeRegressor {
         values.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / values.len() as f64
     }
 
-    /// Calculate MAE for a set of values
+    /// Calculate MAE (mean absolute deviation) for a set of values.
+    ///
+    /// CART's MAE criterion measures dispersion around the *median*, since
+    /// the median (not the mean) is the constant that minimizes mean
+    /// absolute deviation. This matches `calculate_mae`'s dispersion measure
+    /// with the leaf/impurity-minimizing statistic actually used by
+    /// [`build_tree`] when `criterion == SplitCriterion::MAE`.
     fn calculate_mae(values: &[f64]) -> f64 {
         if values.is_empty() {
             return 0.0;
         }
-        let mean = values.iter().sum::<f64>() / values.len() as f64;
-        values.iter().map(|v| (v - mean).abs()).sum::<f64>() / values.len() as f64
+        let median = median_of(values);
+        values.iter().map(|v| (v - median).abs()).sum::<f64>() / values.len() as f64
     }
 
     /// Calculate impurity based on criterion
@@ -723,13 +828,71 @@ impl DecisionTreeRegressor {
         }
     }
 
-    /// Find the best split for a node
+    /// Calculate feature importances (mean impurity decrease, weighted by the
+    /// fraction of samples routed through each split), normalized to sum to
+    /// 1. Mirrors [`DecisionTreeClassifier::calculate_feature_importances`]
+    /// exactly: the formula only depends on `TreeNode::{impurity,n_samples}`,
+    /// which mean the same thing for a regression tree's MSE/MAE impurity as
+    /// for a classification tree's Gini/entropy impurity. Previously this had
+    /// no counterpart on the regressor at all, so `feature_importances()`
+    /// unconditionally returned `None` and `RandomForestRegressor` had no
+    /// real importances to average across trees.
+    fn calculate_feature_importances(&mut self) {
+        let mut importances = vec![0.0f64; self.feature_names.len()];
+        let total_samples = self.nodes.first().map(|n| n.n_samples).unwrap_or(1) as f64;
+
+        for node in &self.nodes {
+            if !node.is_leaf {
+                if let (Some(feature_idx), Some(left_idx), Some(right_idx)) =
+                    (node.feature_index, node.left_child, node.right_child)
+                {
+                    let left_node = &self.nodes[left_idx];
+                    let right_node = &self.nodes[right_idx];
+
+                    let weighted_impurity_decrease = (node.n_samples as f64 / total_samples)
+                        * (node.impurity
+                            - (left_node.n_samples as f64 / node.n_samples as f64)
+                                * left_node.impurity
+                            - (right_node.n_samples as f64 / node.n_samples as f64)
+                                * right_node.impurity);
+
+                    if feature_idx < importances.len() {
+                        importances[feature_idx] += weighted_impurity_decrease;
+                    }
+                }
+            }
+        }
+
+        let sum: f64 = importances.iter().sum();
+        if sum > 0.0 {
+            for imp in &mut importances {
+                *imp /= sum;
+            }
+        }
+
+        let importance_map: HashMap<String, f64> = self
+            .feature_names
+            .iter()
+            .zip(importances.iter())
+            .map(|(name, &imp)| (name.clone(), imp))
+            .collect();
+
+        self.feature_importances_ = Some(importance_map);
+    }
+
+    /// Find the best split for a node.
+    ///
+    /// When `max_features` is configured, the candidate feature subset is
+    /// redrawn from `rng` at *every* call (i.e. at every node), matching the
+    /// standard Random Forest node-level feature resampling scheme rather
+    /// than considering all features unconditionally.
     fn find_best_split(
         &self,
         x: &[Vec<f64>],
         y: &[f64],
         indices: &[usize],
         n_features: usize,
+        rng: &mut StdRng,
     ) -> Option<(usize, f64, Vec<usize>, Vec<usize>, f64)> {
         if indices.len() < self.config.min_samples_split {
             return None;
@@ -741,7 +904,24 @@ impl DecisionTreeRegressor {
         let mut best_gain = 0.0;
         let mut best_split: Option<(usize, f64, Vec<usize>, Vec<usize>, f64)> = None;
 
-        for feature_idx in 0..n_features {
+        // Select features to consider: a fresh random subset drawn from
+        // `rng` for this node (real per-node resampling). Previously this
+        // loop ignored `max_features` entirely, which made every tree in a
+        // RandomForestRegressor consider all features and (combined with the
+        // formerly-fake bootstrap) produce provably identical trees.
+        let features_to_consider: Vec<usize> = if let Some(max_features) = self.config.max_features
+        {
+            let mut feature_indices: Vec<usize> = (0..n_features).collect();
+            feature_indices.shuffle(rng);
+            feature_indices
+                .into_iter()
+                .take(max_features.min(n_features))
+                .collect()
+        } else {
+            (0..n_features).collect()
+        };
+
+        for &feature_idx in &features_to_consider {
             let mut feature_values: Vec<f64> = indices
                 .iter()
                 .map(|&idx| x[idx][feature_idx])
@@ -794,22 +974,41 @@ impl DecisionTreeRegressor {
         best_split
     }
 
-    /// Build the tree recursively
+    /// Build the tree recursively.
+    ///
+    /// `rng` is threaded through the recursion for per-node `max_features`
+    /// resampling (see [`find_best_split`]). `root_impurity` is the impurity
+    /// of the *entire* training set, computed once before the top-level
+    /// call; the stopping rule below compares each node's impurity against
+    /// it (a relative threshold) rather than a fixed absolute constant, so
+    /// that trees fit on large-magnitude targets (where MSE routinely sits
+    /// far above `1e-10`) and trees fit on near-constant targets both stop
+    /// splitting at a consistent, scale-appropriate point.
     fn build_tree(
         &mut self,
         x: &[Vec<f64>],
         y: &[f64],
         indices: Vec<usize>,
         depth: usize,
+        rng: &mut StdRng,
+        root_impurity: f64,
     ) -> usize {
         let values: Vec<f64> = indices.iter().map(|&i| y[i]).collect();
-        let prediction = values.iter().sum::<f64>() / values.len() as f64;
+        // The constant that minimizes each criterion's own loss: the mean
+        // minimizes MSE, the median minimizes MAE. Using the mean
+        // unconditionally previously made the MAE criterion's leaf values
+        // inconsistent with the impurity it was supposedly minimizing.
+        let prediction = match self.config.criterion {
+            SplitCriterion::MAE => median_of(&values),
+            _ => values.iter().sum::<f64>() / values.len() as f64,
+        };
         let impurity = self.calculate_impurity(&values);
         let total = indices.len();
 
+        let relative_eps = (root_impurity * 1e-10).max(0.0);
         let should_stop = self.config.max_depth.map(|d| depth >= d).unwrap_or(false)
             || total < self.config.min_samples_split
-            || impurity < 1e-10;
+            || impurity <= relative_eps;
 
         if should_stop {
             let node = TreeNode::new_leaf(prediction, None, total, impurity, depth);
@@ -820,7 +1019,7 @@ impl DecisionTreeRegressor {
 
         let n_features = x[0].len();
         if let Some((feature_idx, threshold, left_indices, right_indices, _gain)) =
-            self.find_best_split(x, y, &indices, n_features)
+            self.find_best_split(x, y, &indices, n_features, rng)
         {
             let mut node = TreeNode::new_split(feature_idx, threshold, total, impurity, depth);
             node.prediction = prediction;
@@ -828,8 +1027,9 @@ impl DecisionTreeRegressor {
             let node_idx = self.nodes.len();
             self.nodes.push(node);
 
-            let left_child_idx = self.build_tree(x, y, left_indices, depth + 1);
-            let right_child_idx = self.build_tree(x, y, right_indices, depth + 1);
+            let left_child_idx = self.build_tree(x, y, left_indices, depth + 1, rng, root_impurity);
+            let right_child_idx =
+                self.build_tree(x, y, right_indices, depth + 1, rng, root_impurity);
 
             self.nodes[node_idx].left_child = Some(left_child_idx);
             self.nodes[node_idx].right_child = Some(right_child_idx);
@@ -843,29 +1043,117 @@ impl DecisionTreeRegressor {
         }
     }
 
-    /// Predict for a single sample
-    fn predict_single(&self, sample: &[f64]) -> f64 {
+    /// Resolve the leaf-node index a sample would route to.
+    ///
+    /// Bounded to `nodes.len() + 1` iterations: a well-formed tree always
+    /// reaches a leaf in at most `nodes.len()` hops, so exceeding that bound
+    /// means the node links are corrupt (dangling `left_child`/`right_child`
+    /// producing a cycle). Previously this traversal fell back to node `0`
+    /// via `unwrap_or(0)` on any missing link, which could spin forever if
+    /// node 0 was itself an internal node; it now surfaces a `Result`
+    /// instead of ever looping unboundedly.
+    fn leaf_index_single(&self, sample: &[f64]) -> Result<usize> {
         if self.nodes.is_empty() {
-            return 0.0;
+            return Err(Error::InvalidOperation(
+                "Decision tree has no nodes (model not fitted)".to_string(),
+            ));
         }
 
-        let mut node_idx = 0;
-        loop {
-            let node = &self.nodes[node_idx];
+        let mut node_idx = 0usize;
+        for _ in 0..=self.nodes.len() {
+            let node = self.nodes.get(node_idx).ok_or_else(|| {
+                Error::InvalidOperation(format!(
+                    "Corrupt decision tree: node index {} out of range",
+                    node_idx
+                ))
+            })?;
 
             if node.is_leaf {
-                return node.prediction;
+                return Ok(node_idx);
             }
 
-            let feature_idx = node.feature_index.unwrap_or(0);
-            let threshold = node.threshold.unwrap_or(0.0);
+            let feature_idx = node.feature_index.ok_or_else(|| {
+                Error::InvalidOperation(
+                    "Corrupt decision tree: internal node missing feature_index".to_string(),
+                )
+            })?;
+            let threshold = node.threshold.ok_or_else(|| {
+                Error::InvalidOperation(
+                    "Corrupt decision tree: internal node missing threshold".to_string(),
+                )
+            })?;
 
-            if sample[feature_idx] <= threshold {
-                node_idx = node.left_child.unwrap_or(0);
+            node_idx = if sample.get(feature_idx).copied().unwrap_or(f64::NAN) <= threshold {
+                node.left_child.ok_or_else(|| {
+                    Error::InvalidOperation(
+                        "Corrupt decision tree: internal node missing left_child".to_string(),
+                    )
+                })?
             } else {
-                node_idx = node.right_child.unwrap_or(0);
-            }
+                node.right_child.ok_or_else(|| {
+                    Error::InvalidOperation(
+                        "Corrupt decision tree: internal node missing right_child".to_string(),
+                    )
+                })?
+            };
         }
+
+        Err(Error::InvalidOperation(
+            "Decision tree traversal exceeded the node count; the tree structure is corrupt \
+             (cyclic child links)"
+                .to_string(),
+        ))
+    }
+
+    /// Predict for a single sample
+    fn predict_single(&self, sample: &[f64]) -> Result<f64> {
+        let leaf_idx = self.leaf_index_single(sample)?;
+        Ok(self.nodes[leaf_idx].prediction)
+    }
+
+    /// Return the leaf-node index each row of `data` routes to (analogous to
+    /// scikit-learn's `tree.apply`). Exposed so ensembles (e.g. gradient
+    /// boosting with the LAD/absolute-error loss) can recompute a
+    /// terminal-region statistic — such as the median residual — that
+    /// differs from the value the tree stored while fitting.
+    pub fn leaf_indices(&self, data: &DataFrame) -> Result<Vec<usize>> {
+        if !self.is_fitted {
+            return Err(Error::InvalidOperation("Model not fitted".to_string()));
+        }
+        let x = self.get_feature_matrix(data)?;
+        x.iter()
+            .map(|sample| self.leaf_index_single(sample))
+            .collect()
+    }
+
+    /// Overwrite the stored prediction value of a leaf node.
+    ///
+    /// Returns `Err` if `node_idx` is out of range or does not name a leaf,
+    /// since silently mutating a split node's placeholder `prediction`
+    /// field (which routing never reads) would look like it worked while
+    /// actually doing nothing.
+    pub fn set_leaf_prediction(&mut self, node_idx: usize, value: f64) -> Result<()> {
+        let n_nodes = self.nodes.len();
+        let node = self.nodes.get_mut(node_idx).ok_or_else(|| {
+            Error::InvalidInput(format!(
+                "Node index {} is out of range (tree has {} nodes)",
+                node_idx, n_nodes
+            ))
+        })?;
+        if !node.is_leaf {
+            return Err(Error::InvalidInput(format!(
+                "Node {} is not a leaf; refusing to overwrite an internal split node's \
+                 placeholder prediction value",
+                node_idx
+            )));
+        }
+        node.prediction = value;
+        Ok(())
+    }
+
+    /// Get the tree nodes.
+    pub fn nodes(&self) -> &[TreeNode] {
+        &self.nodes
     }
 
     /// Get feature matrix from DataFrame
@@ -898,8 +1186,9 @@ impl SupervisedModel for DecisionTreeRegressor {
     fn fit(&mut self, train_data: &DataFrame, target_column: &str) -> Result<()> {
         self.feature_names = train_data
             .column_names()
-            .into_iter()
-            .filter(|c| c != target_column)
+            .iter()
+            .filter(|c| c.as_str() != target_column)
+            .cloned()
             .collect();
 
         if self.feature_names.is_empty() {
@@ -913,7 +1202,10 @@ impl SupervisedModel for DecisionTreeRegressor {
 
         let indices: Vec<usize> = (0..x.len()).collect();
         self.nodes.clear();
-        self.build_tree(&x, &y, indices, 0);
+        let mut rng = seeded_rng(self.config.random_seed);
+        let root_impurity = self.calculate_impurity(&y);
+        self.build_tree(&x, &y, indices, 0, &mut rng, root_impurity);
+        self.calculate_feature_importances();
         self.is_fitted = true;
 
         Ok(())
@@ -925,7 +1217,10 @@ impl SupervisedModel for DecisionTreeRegressor {
         }
 
         let x = self.get_feature_matrix(data)?;
-        let predictions: Vec<f64> = x.iter().map(|sample| self.predict_single(sample)).collect();
+        let predictions: Vec<f64> = x
+            .iter()
+            .map(|sample| self.predict_single(sample))
+            .collect::<Result<Vec<f64>>>()?;
 
         Ok(predictions)
     }
@@ -954,15 +1249,8 @@ impl ModelEvaluator for DecisionTreeRegressor {
         metrics.add_metric("mse", mse);
         metrics.add_metric("rmse", mse.sqrt());
 
-        // R²
-        let y_mean = actual.iter().sum::<f64>() / actual.len() as f64;
-        let ss_tot: f64 = actual.iter().map(|a| (a - y_mean).powi(2)).sum();
-        let ss_res: f64 = predictions
-            .iter()
-            .zip(&actual)
-            .map(|(p, a)| (a - p).powi(2))
-            .sum();
-        let r2 = 1.0 - ss_res / ss_tot;
+        // R²: see `models::r2_score_guarded` for the zero-`ss_tot` edge case.
+        let r2 = crate::ml::models::r2_score_guarded(&predictions, &actual);
         metrics.add_metric("r2", r2);
 
         Ok(metrics)
@@ -970,11 +1258,11 @@ impl ModelEvaluator for DecisionTreeRegressor {
 
     fn cross_validate(
         &self,
-        _data: &DataFrame,
-        _target: &str,
-        _folds: usize,
+        data: &DataFrame,
+        target: &str,
+        folds: usize,
     ) -> Result<Vec<ModelMetrics>> {
-        Ok(vec![])
+        crate::ml::models::contiguous_kfold_cross_validate(self, data, target, folds)
     }
 }
 

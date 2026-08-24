@@ -105,6 +105,19 @@ impl<T: Display> Display for NA<T> {
 }
 
 // PartialEq implementation
+//
+// `NA::NA == NA::NA` is `true` here, which intentionally diverges from
+// pandas/IEEE-754 `NaN` semantics (where `NaN != NaN`). This crate's `NA` is
+// an explicit missing-value *sentinel* (closer to SQL `NULL` under a
+// `IS [NOT] DISTINCT FROM` comparison, or Rust's own `Option::None ==
+// Option::None`) rather than a floating-point payload, and treating all NAs
+// as mutually equal is load-bearing: `groupby` keys on `NA<T>` (directly, or
+// via any structure hashing/equating it) rely on this so that every NA row
+// lands in a single group instead of each NA comparing unequal to every
+// other NA -- which is also why `Hash` (below) must agree with this `Eq`
+// (hashing every `NA::NA` to the same tag) rather than being pandas/NaN-like.
+// Do not silently change this to NaN-style irreflexive equality without
+// auditing every groupby/dedup/join call site that keys on `NA<T>`.
 impl<T: PartialEq> PartialEq for NA<T> {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
@@ -119,30 +132,46 @@ impl<T: PartialEq> PartialEq for NA<T> {
 impl<T: Eq> Eq for NA<T> {}
 
 // PartialOrd implementation
+//
+// `NA` sorts *last* regardless of comparison direction (`NA::NA` compares
+// `Greater` than every `Value`), matching this crate's other sort paths
+// (see `optimized/split_dataframe/sort.rs`, which documents and implements
+// the same `na_position="last"` convention pandas defaults to) and pandas'
+// own default. Do not reintroduce "NA sorts first" here without updating
+// every other sort implementation in lockstep -- a mismatch is exactly the
+// kind of silent, hard-to-spot inconsistency this comment exists to prevent.
 impl<T: PartialOrd> PartialOrd for NA<T> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         match (self, other) {
             (NA::Value(a), NA::Value(b)) => a.partial_cmp(b),
             (NA::NA, NA::NA) => Some(Ordering::Equal),
-            (NA::NA, _) => Some(Ordering::Less), // Define NA as always less than other values
-            (_, NA::NA) => Some(Ordering::Greater),
+            (NA::NA, _) => Some(Ordering::Greater), // NA sorts last (pandas na_position="last").
+            (_, NA::NA) => Some(Ordering::Less),
         }
     }
 }
 
 // Ord implementation (when T: Ord)
+//
+// Mirrors `PartialOrd` above: NA sorts last. Keep both impls in sync.
 impl<T: Ord> Ord for NA<T> {
     fn cmp(&self, other: &Self) -> Ordering {
         match (self, other) {
             (NA::Value(a), NA::Value(b)) => a.cmp(b),
             (NA::NA, NA::NA) => Ordering::Equal,
-            (NA::NA, _) => Ordering::Less,
-            (_, NA::NA) => Ordering::Greater,
+            (NA::NA, _) => Ordering::Greater,
+            (_, NA::NA) => Ordering::Less,
         }
     }
 }
 
 // Hash implementation
+//
+// Every `NA::NA` hashes to the same value (tag `1`, no payload), agreeing
+// with the `PartialEq`/`Eq` impls above: values that compare equal must
+// hash equal, so `NA::NA == NA::NA` requires this. This is what lets
+// `HashMap`/`HashSet`-based groupby bucket all-NA keys together instead of
+// scattering them (or, worse, breaking the hash/eq contract).
 impl<T: Hash> Hash for NA<T> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         match self {

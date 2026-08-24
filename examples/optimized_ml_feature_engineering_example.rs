@@ -11,8 +11,6 @@ use pandrs::optimized::OptimizedDataFrame;
 #[cfg(feature = "optimized")]
 use pandrs::{DataFrame, PandRSError, Series};
 #[cfg(feature = "optimized")]
-use scirs2_core::random::Rng;
-#[cfg(feature = "optimized")]
 use scirs2_core::random::RngExt;
 
 #[cfg(not(feature = "optimized"))]

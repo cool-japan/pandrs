@@ -1,7 +1,6 @@
 //! Classification model evaluation metrics
 
 use crate::error::{Error, Result};
-use std::cmp::Ordering;
 
 #[cfg(test)]
 mod tests {

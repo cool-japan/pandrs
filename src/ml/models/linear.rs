@@ -4,8 +4,10 @@
 
 use crate::dataframe::DataFrame;
 use crate::error::{Error, Result};
+use crate::ml::models::selection::{
+    err_on_unknown_params, parse_param_bool, parse_param_f64, parse_param_usize, TunableModel,
+};
 use crate::ml::models::{ModelEvaluator, ModelMetrics, SupervisedModel};
-use crate::series::Series;
 use std::collections::HashMap;
 use std::time::Instant;
 
@@ -50,8 +52,19 @@ fn vec_multiply_transpose(a: &[Vec<f64>], y: &[f64]) -> Vec<f64> {
     result
 }
 
-/// Invert a square matrix using Gauss-Jordan elimination with partial pivoting.
-fn matrix_inverse(matrix: &[Vec<f64>]) -> Result<Vec<Vec<f64>>> {
+/// Solve the square linear system `A x = b` by Gaussian elimination with partial
+/// pivoting and back substitution.
+///
+/// Solving the normal equations directly is both cheaper and numerically better
+/// conditioned than forming `A^{-1}` and multiplying by it, which is why both
+/// `LinearRegression::fit` and the IRLS loop below call this instead of inverting.
+///
+/// The singularity test is *relative* to the magnitude of the system
+/// (`n · ε · max|A_ij|`) rather than an absolute `1e-10`: an absolute threshold
+/// rejects perfectly well-conditioned systems whose entries are simply small
+/// (e.g. features measured in millivolts) and accepts singular ones whose entries
+/// are large.
+fn solve_linear_system(matrix: &[Vec<f64>], rhs: &[f64]) -> Result<Vec<f64>> {
     let n = matrix.len();
 
     if n == 0 {
@@ -64,71 +77,94 @@ fn matrix_inverse(matrix: &[Vec<f64>]) -> Result<Vec<Vec<f64>>> {
         }
     }
 
-    // Create augmented matrix [A|I]
-    let mut augmented = Vec::with_capacity(n);
-    for i in 0..n {
-        let mut row = Vec::with_capacity(2 * n);
-        row.extend_from_slice(&matrix[i]);
-        for j in 0..n {
-            row.push(if i == j { 1.0 } else { 0.0 });
-        }
-        augmented.push(row);
+    if rhs.len() != n {
+        return Err(Error::DimensionMismatch(format!(
+            "Right-hand side has length {} but the matrix is {}x{}",
+            rhs.len(),
+            n,
+            n
+        )));
     }
 
-    // Gauss-Jordan elimination
-    for i in 0..n {
-        // Pivot selection
-        let mut max_row = i;
-        let mut max_val = augmented[i][i].abs();
+    // Scale of the system, used for a relative singularity threshold.
+    let scale = matrix
+        .iter()
+        .flat_map(|row| row.iter())
+        .fold(0.0_f64, |acc, &v| acc.max(v.abs()));
+    let tol = (n as f64) * f64::EPSILON * scale.max(f64::MIN_POSITIVE);
 
-        for j in i + 1..n {
-            let abs_val = augmented[j][i].abs();
-            if abs_val > max_val {
-                max_row = j;
-                max_val = abs_val;
+    // Augmented matrix [A | b]
+    let mut aug: Vec<Vec<f64>> = Vec::with_capacity(n);
+    for (i, row) in matrix.iter().enumerate() {
+        let mut augmented_row = Vec::with_capacity(n + 1);
+        augmented_row.extend_from_slice(row);
+        augmented_row.push(rhs[i]);
+        aug.push(augmented_row);
+    }
+
+    // Forward elimination with partial pivoting
+    for col in 0..n {
+        let mut pivot_row = col;
+        let mut pivot_val = aug[col][col].abs();
+        for r in col + 1..n {
+            let candidate = aug[r][col].abs();
+            if candidate > pivot_val {
+                pivot_row = r;
+                pivot_val = candidate;
             }
         }
 
-        if max_val < 1e-10 {
+        if pivot_val <= tol {
             return Err(Error::Computation(
-                "Matrix is singular (inverse does not exist)".into(),
+                "Linear system is singular (or numerically indistinguishable from \
+                 singular); the design matrix likely has collinear or constant columns"
+                    .into(),
             ));
         }
 
-        if max_row != i {
-            augmented.swap(i, max_row);
+        if pivot_row != col {
+            aug.swap(col, pivot_row);
         }
 
-        let pivot = augmented[i][i];
-        for j in 0..2 * n {
-            augmented[i][j] /= pivot;
-        }
-
-        for j in 0..n {
-            if j != i {
-                let factor = augmented[j][i];
-                for k in 0..2 * n {
-                    augmented[j][k] -= factor * augmented[i][k];
-                }
+        let pivot = aug[col][col];
+        for r in col + 1..n {
+            let factor = aug[r][col] / pivot;
+            if factor == 0.0 {
+                continue;
+            }
+            for k in col..=n {
+                aug[r][k] -= factor * aug[col][k];
             }
         }
     }
 
-    // Extract right half (inverse matrix)
-    let mut inverse = vec![vec![0.0; n]; n];
-    for i in 0..n {
-        for j in 0..n {
-            inverse[i][j] = augmented[i][j + n];
+    // Back substitution
+    let mut solution = vec![0.0_f64; n];
+    for i in (0..n).rev() {
+        let mut acc = aug[i][n];
+        for j in i + 1..n {
+            acc -= aug[i][j] * solution[j];
         }
+        solution[i] = acc / aug[i][i];
     }
 
-    Ok(inverse)
+    Ok(solution)
 }
 
-/// Sigmoid function σ(x) = 1 / (1 + e^{-x}).
+/// Sigmoid function σ(x) = 1 / (1 + e^{-x}), evaluated without overflow.
+///
+/// The naive `1 / (1 + exp(-x))` overflows `exp` for large negative `x`
+/// (`exp(800)` = `inf`, so the result becomes exactly `0.0` and its logarithm
+/// `-inf`). Branching on the sign keeps the exponent argument non-positive in
+/// both halves, which is exactly representable.
 #[inline]
 fn sigmoid(x: f64) -> f64 {
-    1.0 / (1.0 + (-x).exp())
+    if x >= 0.0 {
+        1.0 / (1.0 + (-x).exp())
+    } else {
+        let e = x.exp();
+        e / (1.0 + e)
+    }
 }
 
 /// L2 norm of a slice.
@@ -164,15 +200,27 @@ fn linear_predictor(x_rows: &[Vec<f64>], beta: &[f64]) -> Vec<f64> {
 /// Linear regression model
 ///
 /// Implements ordinary least squares linear regression.
+///
+/// # Feature normalisation
+///
+/// With `normalize = true` the design matrix is standardised (zero mean, unit
+/// variance) *for the solve only*; the fitted coefficients are then transformed
+/// back into the original feature units, so [`coefficients`](Self::coefficients),
+/// [`intercept`](Self::intercept) and [`SupervisedModel::predict`] all speak the
+/// same units as the raw input data. (Previously the scaling was applied during
+/// `fit` and never at predict time, so a normalised model predicted from raw
+/// features with standardised coefficients.) Normalisation requires
+/// `fit_intercept = true`: the mean shift it introduces can only be absorbed by an
+/// intercept term.
 #[derive(Debug, Clone)]
 pub struct LinearRegression {
-    /// Coefficients (weights) for each feature
+    /// Coefficients (weights) for each feature, always in the original feature units
     pub coefficients: Option<HashMap<String, f64>>,
     /// Intercept (bias) term
     pub intercept: Option<f64>,
     /// Whether to fit the intercept
     pub fit_intercept: bool,
-    /// Whether to normalize features
+    /// Whether to standardise features for the solve (see the type-level docs)
     pub normalize: bool,
     /// Feature names
     feature_names: Option<Vec<String>>,
@@ -226,8 +274,12 @@ impl LinearRegression {
             .map(|(&actual, &pred)| (actual - pred).powi(2))
             .sum();
 
+        // A constant target has no variance to explain. Reporting R² = 1.0
+        // regardless of the residuals credited a model that predicts the wrong
+        // constant with a perfect score; mirror `metrics::regression::r2_score`
+        // and only call it perfect when the residuals really are zero.
         if ss_tot == 0.0 {
-            return Ok(1.0);
+            return Ok(if ss_res == 0.0 { 1.0 } else { 0.0 });
         }
 
         Ok(1.0 - ss_res / ss_tot)
@@ -284,10 +336,24 @@ impl SupervisedModel for LinearRegression {
             x_matrix.push(feature_values.to_vec());
         }
 
-        // Optional feature normalisation
+        let start_idx = if self.fit_intercept { 1 } else { 0 };
+
+        // Optional feature standardisation. The (mean, std) pair actually applied to
+        // each feature column is recorded so the solved coefficients can be mapped
+        // back into the original feature units below; a column left untouched
+        // (constant, i.e. zero standard deviation) records the identity transform
+        // (0, 1) so the back-transform is exact for it too.
+        let mut scaling: Vec<(f64, f64)> = Vec::with_capacity(feature_names.len());
         if self.normalize {
-            let start = if self.fit_intercept { 1 } else { 0 };
-            for col in x_matrix[start..].iter_mut() {
+            if !self.fit_intercept {
+                return Err(Error::InvalidInput(
+                    "normalize = true requires fit_intercept = true: centring the features \
+                     shifts the response by a constant that only an intercept term can absorb"
+                        .into(),
+                ));
+            }
+
+            for col in x_matrix[start_idx..].iter_mut() {
                 let mean = col.iter().sum::<f64>() / n as f64;
                 let variance = col.iter().map(|&x| (x - mean).powi(2)).sum::<f64>() / n as f64;
                 let std_dev = variance.sqrt();
@@ -295,34 +361,43 @@ impl SupervisedModel for LinearRegression {
                     for v in col.iter_mut() {
                         *v = (*v - mean) / std_dev;
                     }
+                    scaling.push((mean, std_dev));
+                } else {
+                    scaling.push((0.0, 1.0));
                 }
             }
         }
 
-        // Normal equation: β = (X'X)^{-1} X'y
+        // Normal equations: (X'X) β = X'y, solved directly rather than by forming
+        // (X'X)^{-1} explicitly.
         let xt_x = matrix_multiply_transpose(&x_matrix, &x_matrix);
-        let xt_x_inv = matrix_inverse(&xt_x)?;
         let xt_y = vec_multiply_transpose(&x_matrix, &y_values);
+        let beta_coefs = solve_linear_system(&xt_x, &xt_y)?;
 
-        let mut beta_coefs = vec![0.0; x_matrix.len()];
-        for i in 0..beta_coefs.len() {
-            for j in 0..xt_y.len() {
-                beta_coefs[i] += xt_x_inv[i][j] * xt_y[j];
+        let mut coefficients = HashMap::new();
+
+        if self.normalize {
+            // Back-transform: ŷ = b₀ + Σ b_j (x_j - m_j)/s_j
+            //                   = (b₀ - Σ (b_j/s_j)·m_j) + Σ (b_j/s_j)·x_j
+            let mut intercept = beta_coefs[0];
+            for (i, feature_name) in feature_names.iter().enumerate() {
+                let (mean, std_dev) = scaling[i];
+                let coef = beta_coefs[start_idx + i] / std_dev;
+                intercept -= coef * mean;
+                coefficients.insert(feature_name.clone(), coef);
+            }
+            self.intercept = Some(intercept);
+        } else {
+            if self.fit_intercept {
+                self.intercept = Some(beta_coefs[0]);
+            } else {
+                self.intercept = None;
+            }
+            for (i, feature_name) in feature_names.iter().enumerate() {
+                coefficients.insert(feature_name.clone(), beta_coefs[start_idx + i]);
             }
         }
 
-        let start_idx = if self.fit_intercept { 1 } else { 0 };
-
-        if self.fit_intercept {
-            self.intercept = Some(beta_coefs[0]);
-        } else {
-            self.intercept = None;
-        }
-
-        let mut coefficients = HashMap::new();
-        for (i, feature_name) in feature_names.iter().enumerate() {
-            coefficients.insert(feature_name.clone(), beta_coefs[start_idx + i]);
-        }
         self.coefficients = Some(coefficients);
 
         Ok(())
@@ -447,8 +522,15 @@ impl ModelEvaluator for LinearRegression {
             .map(|(&pred, &actual)| (actual - pred).powi(2))
             .sum();
 
+        // Constant target: only a residual-free prediction earns R² = 1.0 (mirrors
+        // `metrics::regression::r2_score`). Returning 1.0 unconditionally scored a
+        // model that missed a constant target as perfect.
         let r2 = if ss_tot == 0.0 {
-            1.0
+            if ss_res == 0.0 {
+                1.0
+            } else {
+                0.0
+            }
         } else {
             1.0 - ss_res / ss_tot
         };
@@ -464,6 +546,9 @@ impl ModelEvaluator for LinearRegression {
         Ok(metrics)
     }
 
+    /// K-fold cross-validation over *contiguous* folds, matching
+    /// `sklearn.model_selection.KFold`'s default (`shuffle=False`). Callers whose rows
+    /// are ordered by the target should shuffle the DataFrame before calling this.
     fn cross_validate(
         &self,
         data: &DataFrame,
@@ -529,6 +614,25 @@ impl ModelEvaluator for LinearRegression {
     }
 }
 
+impl TunableModel for LinearRegression {
+    /// Apply a hyperparameter combination from a grid search.
+    ///
+    /// Recognised keys: `fit_intercept`, `normalize`. Values are applied on top of the
+    /// model's current configuration; anything else is an error (see
+    /// [`TunableModel`]'s contract).
+    fn set_params(&mut self, params: &HashMap<String, String>) -> Result<()> {
+        let mut unknown = Vec::new();
+        for (key, value) in params {
+            match key.as_str() {
+                "fit_intercept" => self.fit_intercept = parse_param_bool(key, value)?,
+                "normalize" => self.normalize = parse_param_bool(key, value)?,
+                _ => unknown.push(key.clone()),
+            }
+        }
+        err_on_unknown_params("LinearRegression", unknown)
+    }
+}
+
 // ---------------------------------------------------------------------------
 // LogisticRegression
 // ---------------------------------------------------------------------------
@@ -536,7 +640,24 @@ impl ModelEvaluator for LinearRegression {
 /// Logistic regression model for binary classification.
 ///
 /// Uses Iteratively Reweighted Least Squares (IRLS) for fitting with optional
-/// L2 (Ridge) regularisation controlled by the `c` parameter (inverse of λ).
+/// L2 (Ridge) regularisation controlled by the `c` parameter.
+///
+/// # Regularisation convention
+///
+/// `c` is scikit-learn's inverse regularisation strength: the fitted objective is
+///
+/// ```text
+///   minimise   Σ_i −log p(y_i | x_i)  +  (1 / (2·C)) · ‖w‖²
+/// ```
+///
+/// i.e. the penalty weight is `λ = 1/C`, applied to the *feature* coefficients only —
+/// the intercept is never penalised. Concretely, `λ` is added to the diagonal of the
+/// IRLS normal equations `(X'WX + λD) β = X'Wz` with `D = diag(0, 1, …, 1)`, which is
+/// the exact Newton step for the penalised objective. Set `c = f64::INFINITY` (or call
+/// [`without_regularization`](Self::without_regularization)) for an unpenalised fit.
+///
+/// This replaces an earlier post-hoc uniform shrinkage of the unpenalised solution,
+/// which was not L2 regularisation at all and whose effect vanished as `n` grew.
 #[derive(Debug, Clone)]
 pub struct LogisticRegression {
     /// Coefficients (weights) for each feature
@@ -545,7 +666,7 @@ pub struct LogisticRegression {
     pub intercept: Option<f64>,
     /// Whether to fit the intercept
     pub fit_intercept: bool,
-    /// Regularization strength (C parameter, inverse of regularization strength)
+    /// Inverse L2 regularisation strength (`λ = 1/c`); `f64::INFINITY` disables the penalty
     pub c: f64,
     /// Maximum number of IRLS iterations
     pub max_iter: usize,
@@ -575,6 +696,31 @@ impl LogisticRegression {
         self
     }
 
+    /// Disable L2 regularisation entirely (equivalent to `with_regularization(f64::INFINITY)`)
+    pub fn without_regularization(mut self) -> Self {
+        self.c = f64::INFINITY;
+        self
+    }
+
+    /// L2 penalty weight `λ = 1/C` used in the IRLS normal equations.
+    ///
+    /// `c = +∞` means "no penalty" (`λ = 0`). Non-positive or NaN values are rejected
+    /// rather than silently producing a negative (anti-)penalty.
+    fn regularization_lambda(&self) -> Result<f64> {
+        if self.c.is_nan() || self.c <= 0.0 {
+            return Err(Error::InvalidInput(format!(
+                "LogisticRegression: C must be a positive number (or f64::INFINITY for an \
+                 unregularised fit), got {}",
+                self.c
+            )));
+        }
+        if self.c.is_infinite() {
+            Ok(0.0)
+        } else {
+            Ok(1.0 / self.c)
+        }
+    }
+
     /// Set maximum number of IRLS iterations
     pub fn with_max_iter(mut self, max_iter: usize) -> Self {
         self.max_iter = max_iter;
@@ -601,9 +747,17 @@ impl LogisticRegression {
     /// target vector `y` (length n).  Returns the fitted β vector of length p.
     /// When `fit_intercept` is true, β[0] is the intercept and β[1..] are the
     /// per-feature coefficients.
+    ///
+    /// Each iteration solves the penalised normal equations
+    /// `(X'WX + λD) β_new = X'W z` with working response `z = η + W⁻¹(y − μ)`,
+    /// `λ = 1/C` and `D = diag(0, 1, …, 1)` (intercept unpenalised) — the exact
+    /// Newton step for the L2-penalised log-likelihood.
     fn irls_fit(&self, x_rows: &[Vec<f64>], y: &[f64]) -> Result<Vec<f64>> {
         let n = x_rows.len();
         let p = if n > 0 { x_rows[0].len() } else { 0 };
+
+        let lambda = self.regularization_lambda()?;
+        let intercept_offset = if self.fit_intercept { 1 } else { 0 };
 
         // Initialise β = 0
         let mut beta = vec![0.0_f64; p];
@@ -636,34 +790,24 @@ impl LogisticRegression {
             }
             let zw: Vec<f64> = (0..n).map(|i| w_sqrt[i] * z[i]).collect();
 
-            // (Xw'Xw) and its inverse
-            let xwt_xw = matrix_multiply_transpose(&xw_cols, &xw_cols);
-            let xwt_xw_inv = matrix_inverse(&xwt_xw).map_err(|_| {
-                Error::Computation(
-                    "IRLS: X'WX is singular; try increasing regularisation (lower C) \
-                     or reducing feature dimensionality"
-                        .into(),
-                )
-            })?;
+            // X'WX, with the L2 penalty added to the diagonal of the feature block
+            // (the intercept column, index 0 when fitted, stays unpenalised).
+            let mut xwt_xw = matrix_multiply_transpose(&xw_cols, &xw_cols);
+            for (j, row) in xwt_xw.iter_mut().enumerate().skip(intercept_offset) {
+                row[j] += lambda;
+            }
 
             // Xw' zw
             let xwt_zw = vec_multiply_transpose(&xw_cols, &zw);
 
-            // β_new = (Xw'Xw)^{-1} Xw'zw
-            let mut beta_new = vec![0.0_f64; p];
-            for i in 0..p {
-                for j in 0..p {
-                    beta_new[i] += xwt_xw_inv[i][j] * xwt_zw[j];
-                }
-            }
-
-            // L2 regularisation: shrink non-intercept coefficients by factor
-            //   1 / (1 + 1/(C·n))
-            let intercept_offset = if self.fit_intercept { 1 } else { 0 };
-            let reg_factor = 1.0 / (1.0 + 1.0 / (self.c * (n as f64)));
-            for j in intercept_offset..p {
-                beta_new[j] *= reg_factor;
-            }
+            // β_new solves (X'WX + λD) β_new = X'W z
+            let beta_new = solve_linear_system(&xwt_xw, &xwt_zw).map_err(|_| {
+                Error::Computation(
+                    "IRLS: X'WX + λI is singular; try increasing regularisation (lower C) \
+                     or reducing feature dimensionality"
+                        .into(),
+                )
+            })?;
 
             // Convergence: relative change in β
             let delta: Vec<f64> = beta_new
@@ -769,8 +913,36 @@ impl SupervisedModel for LogisticRegression {
             return Err(Error::InvalidValue("No data to train on".into()));
         }
 
-        // Clamp labels to [0, 1]
-        let y: Vec<f64> = y_raw.iter().map(|&v| v.clamp(0.0, 1.0)).collect();
+        // Validate that the target really is binary {0, 1}.
+        //
+        // Clamping to [0, 1] (what this used to do) silently turned a three-class
+        // target {0, 1, 2} into {0, 1} and a continuous target into a mixture of
+        // saturated ends, then reported classification metrics for a problem the
+        // caller never posed. Encode labels explicitly before fitting instead.
+        let mut has_zero = false;
+        let mut has_one = false;
+        for (idx, &value) in y_raw.iter().enumerate() {
+            if value == 0.0 {
+                has_zero = true;
+            } else if value == 1.0 {
+                has_one = true;
+            } else {
+                return Err(Error::InvalidValue(format!(
+                    "LogisticRegression requires a binary target encoded as 0.0/1.0; \
+                     column '{}' contains {} at row {}",
+                    target_column, value, idx
+                )));
+            }
+        }
+        if !(has_zero && has_one) {
+            return Err(Error::InvalidValue(format!(
+                "LogisticRegression requires both classes to be present in the training \
+                 target; column '{}' contains only {}",
+                target_column,
+                if has_one { "1.0" } else { "0.0" }
+            )));
+        }
+        let y: Vec<f64> = y_raw.to_vec();
 
         // Build column-major design matrix (intercept column first when applicable)
         let mut x_cols: Vec<Vec<f64>> = Vec::new();
@@ -842,6 +1014,28 @@ impl SupervisedModel for LogisticRegression {
         } else {
             None
         }
+    }
+}
+
+impl TunableModel for LogisticRegression {
+    /// Apply a hyperparameter combination from a grid search.
+    ///
+    /// Recognised keys: `C` (or `c`), `fit_intercept`, `max_iter`, `tol`. Values are
+    /// applied on top of the model's current configuration; anything else is an error.
+    fn set_params(&mut self, params: &HashMap<String, String>) -> Result<()> {
+        let mut unknown = Vec::new();
+        for (key, value) in params {
+            match key.as_str() {
+                // scikit-learn spells the inverse regularisation strength "C"; the
+                // lowercase form matches this struct's own field name.
+                "C" | "c" => self.c = parse_param_f64(key, value)?,
+                "fit_intercept" => self.fit_intercept = parse_param_bool(key, value)?,
+                "max_iter" => self.max_iter = parse_param_usize(key, value)?,
+                "tol" => self.tol = parse_param_f64(key, value)?,
+                _ => unknown.push(key.clone()),
+            }
+        }
+        err_on_unknown_params("LogisticRegression", unknown)
     }
 }
 
@@ -986,6 +1180,7 @@ impl ModelEvaluator for LogisticRegression {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::series::Series;
 
     /// Linearly separable dataset: 5 samples near 0.0 (class 0), 5 near 5.0 (class 1).
     fn make_separable_df() -> DataFrame {

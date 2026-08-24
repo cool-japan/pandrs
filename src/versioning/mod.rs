@@ -7,7 +7,15 @@
 //! - Record the history of operations performed on data
 //! - Trace the lineage of data back to its sources
 //! - Compare differences between versions
-//! - Create snapshots and checkpoints
+//! - Record schema-only versions cheaply ([`DataFrameVersioning::create_version`]),
+//!   or take a genuine data snapshot you can restore later
+//!   ([`DataFrameVersioning::create_snapshot`] + [`SnapshotStore`](crate::versioning::SnapshotStore))
+//!
+//! `create_version`/`create_named_version` capture schema metadata only --
+//! they do not preserve the underlying data and cannot back a rollback.
+//! `create_snapshot`/`create_named_snapshot` are the ones that do: they
+//! clone the DataFrame's actual data into a [`SnapshotStore`](crate::versioning::SnapshotStore), which
+//! `SnapshotStore::restore` later hands back out.
 //!
 //! # Quick Start
 //!
@@ -128,16 +136,134 @@ pub use tracker::{LineageConfig, LineageTracker, SharedLineageTracker, TrackerSt
 use crate::DataFrame;
 use std::collections::HashMap;
 
+/// An in-memory store of full DataFrame snapshots, keyed by [`VersionId`].
+///
+/// [`LineageTracker`] only ever sees a [`DataVersion`]'s **schema** (column
+/// names/types/row count) -- it has no dependency on [`DataFrame`] and never
+/// receives the underlying cell data, so it cannot honestly claim to
+/// "snapshot" or "roll back" anything. This store is the actual
+/// data-capturing counterpart: [`DataFrameVersioning::create_snapshot`]
+/// clones the full `DataFrame` into it, and [`Self::restore`] hands that
+/// clone back out -- a genuine rollback target, unlike
+/// [`DataFrameVersioning::create_version`], which only ever records schema
+/// metadata. Like [`LineageTracker`] itself, this is a plain in-memory
+/// store with no persistence.
+#[derive(Debug, Clone, Default)]
+pub struct SnapshotStore {
+    snapshots: HashMap<VersionId, DataFrame>,
+}
+
+impl SnapshotStore {
+    /// Creates a new, empty snapshot store.
+    pub fn new() -> Self {
+        SnapshotStore {
+            snapshots: HashMap::new(),
+        }
+    }
+
+    /// Stores (or replaces) the snapshot for `id`.
+    pub fn store(&mut self, id: VersionId, df: DataFrame) {
+        self.snapshots.insert(id, df);
+    }
+
+    /// Retrieves the snapshot for `id`, if one was stored.
+    pub fn restore(&self, id: &VersionId) -> Option<&DataFrame> {
+        self.snapshots.get(id)
+    }
+
+    /// Removes and returns the snapshot for `id`, if one was stored.
+    pub fn remove(&mut self, id: &VersionId) -> Option<DataFrame> {
+        self.snapshots.remove(id)
+    }
+
+    /// Returns whether a snapshot is stored for `id`.
+    pub fn contains(&self, id: &VersionId) -> bool {
+        self.snapshots.contains_key(id)
+    }
+
+    /// Number of snapshots currently stored.
+    pub fn len(&self) -> usize {
+        self.snapshots.len()
+    }
+
+    /// Whether the store holds no snapshots.
+    pub fn is_empty(&self) -> bool {
+        self.snapshots.is_empty()
+    }
+}
+
+/// Compute a real SHA-256 hash over a DataFrame's rendered contents, for
+/// [`DataFrameVersioning::create_snapshot`]'s `data_hash` when
+/// [`crate::versioning::LineageConfig::compute_hashes`] is enabled.
+///
+/// Every column's name and every value's string representation are fed
+/// through the hasher in a fixed (sorted) column order with separators, so
+/// the result is deterministic and column-order-independent inputs don't
+/// collide with each other. Columns whose element type can't be rendered to
+/// a string (see `DataFrame::get_column_string_values`) are skipped rather
+/// than failing the whole hash -- this is a change-detection fingerprint,
+/// not a cryptographic commitment to every byte of the DataFrame.
+fn compute_data_hash(df: &DataFrame) -> String {
+    use sha2::{Digest, Sha256};
+
+    let mut hasher = Sha256::new();
+    let mut columns = df.column_names().to_vec();
+    columns.sort();
+    for col_name in &columns {
+        hasher.update(col_name.as_bytes());
+        hasher.update([0u8]);
+        if let Ok(values) = df.get_column_string_values(col_name) {
+            for v in values {
+                hasher.update(v.as_bytes());
+                hasher.update([0u8]);
+            }
+        }
+        hasher.update([0xFFu8]); // column separator
+    }
+    // `Sha256::finalize()`'s output type doesn't implement `LowerHex`
+    // itself, so hex-encode byte by byte instead of `format!("{:x}", ..)`.
+    hasher
+        .finalize()
+        .iter()
+        .map(|b| format!("{:02x}", b))
+        .collect::<String>()
+}
+
 /// Extension trait for DataFrame to integrate with versioning
 pub trait DataFrameVersioning {
     /// Creates a DataSchema from this DataFrame
     fn to_schema(&self) -> DataSchema;
 
-    /// Creates a versioned snapshot of this DataFrame
+    /// Records this DataFrame's **schema** (column names, types, row count)
+    /// as a new version in `tracker`.
+    ///
+    /// This captures metadata only, not the underlying cell data -- despite
+    /// the name, it is not a data snapshot and cannot back a rollback. Use
+    /// [`Self::create_snapshot`] when you need the actual data preserved
+    /// and retrievable later.
     fn create_version(&self, tracker: &mut LineageTracker) -> VersionId;
 
-    /// Creates a versioned snapshot with a name
+    /// Same as [`Self::create_version`], with a human-readable name attached.
     fn create_named_version(&self, tracker: &mut LineageTracker, name: &str) -> VersionId;
+
+    /// Records this DataFrame's schema in `tracker` **and** stores a full
+    /// clone of its data in `store`, so it can later be retrieved via
+    /// [`SnapshotStore::restore`] -- a genuine rollback target, unlike
+    /// [`Self::create_version`]. If `tracker`'s
+    /// [`LineageConfig::compute_hashes`] is enabled, the registered
+    /// version's `data_hash` is a real SHA-256 over the DataFrame's
+    /// contents (see `compute_data_hash`); otherwise `data_hash` stays
+    /// `None`, exactly as [`Self::create_version`] leaves it.
+    fn create_snapshot(&self, tracker: &mut LineageTracker, store: &mut SnapshotStore)
+        -> VersionId;
+
+    /// Same as [`Self::create_snapshot`], with a human-readable name attached.
+    fn create_named_snapshot(
+        &self,
+        tracker: &mut LineageTracker,
+        store: &mut SnapshotStore,
+        name: &str,
+    ) -> VersionId;
 }
 
 impl DataFrameVersioning for DataFrame {
@@ -146,10 +272,21 @@ impl DataFrameVersioning for DataFrame {
         let types: HashMap<String, String> = columns
             .iter()
             .map(|col| {
+                // This DataFrame model has no distinct physical
+                // representation for "categorical" data: a categorical
+                // series is converted to a plain `Series<String>` the
+                // moment it's added (see
+                // `DataFrame::add_na_series_as_categorical`), so a
+                // genuinely categorical column and an ordinary string
+                // column are indistinguishable here after the fact.
+                // Labelling every string column "Categorical" (the
+                // previous behaviour) wasn't a real type distinction, just
+                // a mislabeling of 100% of string columns; "String" is the
+                // honest answer for both.
                 let type_str = if self.is_numeric_column(col) {
                     "f64"
-                } else if self.is_categorical(col) {
-                    "Categorical"
+                } else if self.get_column::<bool>(col).is_ok() {
+                    "bool"
                 } else {
                     "String"
                 };
@@ -157,7 +294,7 @@ impl DataFrameVersioning for DataFrame {
             })
             .collect();
 
-        DataSchema::new(columns, types, self.row_count())
+        DataSchema::new(columns.to_vec(), types, self.row_count())
     }
 
     fn create_version(&self, tracker: &mut LineageTracker) -> VersionId {
@@ -170,6 +307,37 @@ impl DataFrameVersioning for DataFrame {
         let schema = self.to_schema();
         let version = DataVersion::new(schema).with_name(name);
         tracker.register_version(version)
+    }
+
+    fn create_snapshot(
+        &self,
+        tracker: &mut LineageTracker,
+        store: &mut SnapshotStore,
+    ) -> VersionId {
+        let schema = self.to_schema();
+        let mut version = DataVersion::new(schema);
+        if tracker.config().compute_hashes {
+            version.data_hash = Some(compute_data_hash(self));
+        }
+        let id = tracker.register_version(version);
+        store.store(id.clone(), self.clone());
+        id
+    }
+
+    fn create_named_snapshot(
+        &self,
+        tracker: &mut LineageTracker,
+        store: &mut SnapshotStore,
+        name: &str,
+    ) -> VersionId {
+        let schema = self.to_schema();
+        let mut version = DataVersion::new(schema).with_name(name);
+        if tracker.config().compute_hashes {
+            version.data_hash = Some(compute_data_hash(self));
+        }
+        let id = tracker.register_version(version);
+        store.store(id.clone(), self.clone());
+        id
     }
 }
 
@@ -287,6 +455,52 @@ mod tests {
 
         assert_eq!(schema.columns.len(), 2);
         assert_eq!(schema.row_count, 3);
+        // "name" is a plain string column: it must be reported as "String",
+        // not fabricated as "Categorical" (this DataFrame model has no
+        // physical way to tell the two apart, so claiming "Categorical" for
+        // every string column was never a real type distinction).
+        assert_eq!(schema.types.get("name").map(String::as_str), Some("String"));
+        assert_eq!(schema.types.get("value").map(String::as_str), Some("f64"));
+    }
+
+    #[test]
+    fn test_create_snapshot_stores_real_data_and_hash() {
+        let df = create_test_dataframe();
+        let mut tracker = LineageTracker::with_config(LineageConfig {
+            compute_hashes: true,
+            ..LineageConfig::default()
+        });
+        let mut store = SnapshotStore::new();
+
+        let id = df.create_snapshot(&mut tracker, &mut store);
+
+        // The tracker's own record is still schema-only...
+        let version = tracker.get_version(&id).expect("version");
+        assert_eq!(version.schema.row_count, 3);
+        // ...but a real hash was computed (compute_hashes was on)...
+        assert!(version.data_hash.is_some());
+        // ...and the actual data is retrievable from the snapshot store,
+        // which is what makes this a genuine rollback target.
+        let restored = store.restore(&id).expect("snapshot present");
+        assert_eq!(restored.row_count(), 3);
+        assert_eq!(
+            restored.get_column_string_values("name").expect("name"),
+            df.get_column_string_values("name").expect("name")
+        );
+    }
+
+    #[test]
+    fn test_create_version_never_populates_data_hash() {
+        // Even with compute_hashes on, the schema-only path has no data to
+        // hash and must not fabricate one.
+        let df = create_test_dataframe();
+        let mut tracker = LineageTracker::with_config(LineageConfig {
+            compute_hashes: true,
+            ..LineageConfig::default()
+        });
+        let id = df.create_version(&mut tracker);
+        let version = tracker.get_version(&id).expect("version");
+        assert!(version.data_hash.is_none());
     }
 
     #[test]

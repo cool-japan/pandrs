@@ -1,423 +1,131 @@
 # GPU Acceleration Guide
 
-PandRS provides CUDA-based GPU acceleration for window operations and large-scale data processing, offering significant performance improvements for computational workloads.
+This guide is a concise, verified-against-source description of the `cuda`
+feature. It is deliberately shorter than an exhaustive API reference — for
+anything beyond the basics below, use the real, compiling example files
+listed at the end rather than a hand-copied snippet, since GPU code can't be
+compile-checked on every machine (it needs the CUDA toolkit and CUDA
+hardware) and this guide would otherwise risk repeating the same kind of
+unverifiable claims it's trying to fix.
 
-## Overview
-
-GPU acceleration in PandRS focuses on window operations (rolling, expanding, exponentially weighted moving averages) where the parallel nature of GPU computing provides substantial benefits over CPU-only processing.
-
-## Getting Started
-
-### Prerequisites
-
-- NVIDIA GPU with CUDA Compute Capability 3.5 or higher
-- CUDA Toolkit 11.0 or later installed
-- Sufficient GPU memory for your datasets
-
-### Installation
-
-Enable GPU acceleration by adding the `cuda` feature:
+## Enabling It
 
 ```toml
 [dependencies]
-pandrs = { version = "0.3.0", features = ["cuda"] }
+pandrs = { version = "0.4.1", features = ["cuda"] }
 ```
 
-Build with CUDA support:
+Building with `cuda` links against `cudarc`, which needs the **CUDA
+toolkit** installed. Without a CUDA-capable GPU at runtime, code using this
+feature is designed to fall back to CPU (see "CPU Fallback" below) — but
+the *build* still needs the toolkit present.
 
-```bash
-cargo build --features cuda
-```
+## Core Types
 
-### Quick Start
+`pandrs::gpu`:
+
+- **`GpuConfig`** — a plain struct with public fields and a `Default` impl.
+  **There is no builder** (`GpuConfig::new().with_x(...)` does not exist):
+  ```rust
+  use pandrs::gpu::GpuConfig;
+
+  let config = GpuConfig {
+      memory_limit: 1_000_000_000, // 1GB, in bytes
+      min_size_threshold: 25_000,  // below this element count, stay on CPU
+      device_id: 0,
+      fallback_to_cpu: true,
+      ..Default::default()
+  };
+  ```
+  Defaults: `enabled: true`, `memory_limit: 1GB`, `device_id: 0`,
+  `fallback_to_cpu: true`, `use_pinned_memory: true`,
+  `min_size_threshold: 10_000`.
+
+- **`GpuContext::new(config: GpuConfig) -> Self`** — `is_available()`,
+  `get_device_status() -> GpuDeviceStatus`, `should_use_gpu(size: usize) -> bool`,
+  `config() -> &GpuConfig`.
+
+- **`GpuDeviceStatus`** — `available: bool`, `cuda_version: Option<String>`,
+  `device_name: Option<String>`, `total_memory: Option<usize>`,
+  `free_memory: Option<usize>`, `core_count: Option<usize>`.
+
+- **Free functions**: `init_gpu() -> Result<GpuDeviceStatus>`,
+  `init_gpu_with_config(config: GpuConfig) -> Result<GpuDeviceStatus>`,
+  `get_gpu_manager() -> Result<GpuManager>`.
 
 ```rust
-use pandrs::optimized::OptimizedDataFrame;
-use pandrs::dataframe::gpu_window::GpuWindowContext;
-
-// Create sample data
-let mut df = OptimizedDataFrame::new();
-df.add_float_column("prices", (1..=100000).map(|i| i as f64).collect())?;
-
-// Initialize GPU context
-let gpu_context = GpuWindowContext::new()?;
-
-// GPU-accelerated window operations
-let rolling_mean = df.gpu_rolling(50, &gpu_context).mean()?;
-let expanding_sum = df.gpu_expanding(&gpu_context).sum()?;
-let ewm_mean = df.gpu_ewm(0.1, &gpu_context).mean()?;
-
-println!("GPU operations completed successfully!");
-```
-
-## Supported Operations
-
-### Rolling Window Operations
-
-Rolling operations calculate statistics over a moving window of fixed size:
-
-```rust
-let gpu_context = GpuWindowContext::new()?;
-
-// Rolling statistics
-let rolling_mean = df.gpu_rolling(20, &gpu_context).mean()?;
-let rolling_sum = df.gpu_rolling(20, &gpu_context).sum()?;
-let rolling_std = df.gpu_rolling(20, &gpu_context).std()?;
-let rolling_var = df.gpu_rolling(20, &gpu_context).var()?;
-let rolling_min = df.gpu_rolling(20, &gpu_context).min()?;
-let rolling_max = df.gpu_rolling(20, &gpu_context).max()?;
-```
-
-### Expanding Window Operations
-
-Expanding operations calculate statistics over all previous data points:
-
-```rust
-// Expanding statistics
-let expanding_mean = df.gpu_expanding(&gpu_context).mean()?;
-let expanding_sum = df.gpu_expanding(&gpu_context).sum()?;
-let expanding_std = df.gpu_expanding(&gpu_context).std()?;
-let expanding_var = df.gpu_expanding(&gpu_context).var()?;
-```
-
-### Exponentially Weighted Moving Operations
-
-EWM operations give more weight to recent observations:
-
-```rust
-// EWM with different decay parameters
-let ewm_fast = df.gpu_ewm(0.1, &gpu_context).mean()?;  // Fast decay
-let ewm_slow = df.gpu_ewm(0.01, &gpu_context).mean()?; // Slow decay
-
-// EWM statistics
-let ewm_sum = df.gpu_ewm(0.05, &gpu_context).sum()?;
-let ewm_std = df.gpu_ewm(0.05, &gpu_context).std()?;
-let ewm_var = df.gpu_ewm(0.05, &gpu_context).var()?;
-```
-
-## Performance Optimization
-
-### Automatic GPU Selection
-
-PandRS automatically decides whether to use GPU acceleration based on data size and operation complexity:
-
-**Default Thresholds:**
-- Standard operations (mean, sum): 50,000 elements
-- Complex operations (std, var, EWM): 25,000 elements
-- Memory-bound operations (min, max): 100,000 elements
-
-### Custom GPU Configuration
-
-You can customize GPU behavior with `GpuConfig`:
-
-```rust
-use pandrs::dataframe::gpu_window::{GpuConfig, GpuWindowContext};
-
-let gpu_config = GpuConfig::new()
-    .with_memory_limit(1_000_000_000)    // 1GB GPU memory limit
-    .with_threshold(25_000)              // Lower activation threshold
-    .with_device_id(0)                   // Use specific GPU device
-    .with_cache_size(100);               // Cache up to 100 operations
-
-let gpu_context = GpuWindowContext::with_config(gpu_config)?;
-```
-
-### Performance Monitoring
-
-Monitor GPU performance with built-in statistics:
-
-```rust
-// Get performance statistics
-let stats = gpu_context.get_statistics();
-println!("GPU operations: {}", stats.gpu_execution_count);
-println!("CPU fallbacks: {}", stats.cpu_fallback_count);
-println!("Average speedup: {:.2}x", stats.average_speedup);
-println!("GPU memory usage: {} MB", stats.gpu_memory_usage_mb);
-```
-
-## Advanced Usage
-
-### Batch Processing for Large Datasets
-
-For datasets larger than GPU memory, use chunked processing:
-
-```rust
-let chunk_size = 1_000_000;  // Process 1M elements at a time
-let chunks = df.chunk_by_size(chunk_size)?;
-
-let mut results = Vec::new();
-for chunk in chunks {
-    let chunk_result = chunk.gpu_rolling(50, &gpu_context).mean()?;
-    results.push(chunk_result);
-}
-
-let final_result = OptimizedDataFrame::concat(results)?;
-```
-
-### Multi-GPU Support
-
-Use multiple GPUs for very large workloads:
-
-```rust
-use pandrs::dataframe::gpu_window::MultiGpuContext;
-
-// Initialize multi-GPU context
-let multi_gpu = MultiGpuContext::new(&[0, 1, 2, 3])?; // Use GPUs 0-3
-
-// Distribute work across GPUs
-let result = df.multi_gpu_rolling(100, &multi_gpu).mean()?;
-```
-
-### Memory Management
-
-Optimize GPU memory usage:
-
-```rust
-// Monitor memory usage
-let memory_info = gpu_context.memory_info()?;
-println!("Available: {} MB", memory_info.available_mb);
-println!("Used: {} MB", memory_info.used_mb);
-
-// Clear GPU cache when needed
-gpu_context.clear_cache()?;
-
-// Set memory pressure callbacks
-gpu_context.on_memory_pressure(|| {
-    println!("GPU memory pressure detected, clearing cache");
-    gpu_context.clear_cache().ok();
-});
-```
-
-## Real-World Examples
-
-### Financial Time Series Analysis
-
-```rust
-use pandrs::optimized::OptimizedDataFrame;
-use pandrs::dataframe::gpu_window::GpuWindowContext;
-
-// Load financial data
-let mut financial_df = OptimizedDataFrame::new();
-financial_df.add_float_column("price", load_stock_prices())?;
-financial_df.add_float_column("volume", load_volumes())?;
-
-let gpu_context = GpuWindowContext::new()?;
-
-// Calculate technical indicators with GPU acceleration
-let sma_20 = financial_df.gpu_rolling(20, &gpu_context).mean()?;    // 20-day SMA
-let sma_50 = financial_df.gpu_rolling(50, &gpu_context).mean()?;    // 50-day SMA
-let volatility = financial_df.gpu_rolling(252, &gpu_context).std()?; // Annual volatility
-
-// Volume-weighted average price (VWAP)
-let vwap = financial_df
-    .gpu_rolling(20, &gpu_context)
-    .apply_custom(|window| {
-        let prices = window.column("price")?.as_float64().unwrap();
-        let volumes = window.column("volume")?.as_float64().unwrap();
-        
-        let mut total_volume = 0.0;
-        let mut weighted_sum = 0.0;
-        
-        for i in 0..prices.len() {
-            if let (Some(price), Some(volume)) = (prices.get(i)?, volumes.get(i)?) {
-                weighted_sum += price * volume;
-                total_volume += volume;
-            }
-        }
-        
-        Ok(if total_volume > 0.0 { weighted_sum / total_volume } else { 0.0 })
-    })?;
-
-println!("Technical indicators calculated with GPU acceleration");
-```
-
-### Real-Time Data Processing
-
-```rust
-use pandrs::streaming::{StreamProcessor, GpuStreamConfig};
-
-// Set up real-time GPU processing
-let stream_config = GpuStreamConfig::new()
-    .with_window_size(1000)
-    .with_gpu_context(gpu_context)
-    .with_batch_size(10000);
-
-let mut processor = StreamProcessor::new(stream_config);
-
-// Process incoming data in real-time
-processor.on_data(|batch| {
-    let rolling_avg = batch.gpu_rolling(50, &gpu_context).mean()?;
-    let alerts = rolling_avg.filter("value > threshold")?;
-    
-    if !alerts.is_empty() {
-        send_alerts(alerts)?;
-    }
-    
-    Ok(())
-});
-
-// Start processing stream
-processor.start().await?;
-```
-
-### Machine Learning Feature Engineering
-
-```rust
-// Prepare features for ML models using GPU acceleration
-let features = raw_data
-    .gpu_rolling(30, &gpu_context).mean()?           // 30-period moving average
-    .join(&raw_data.gpu_rolling(30, &gpu_context).std()?)  // 30-period volatility
-    .join(&raw_data.gpu_ewm(0.1, &gpu_context).mean()?)    // Fast EWM
-    .join(&raw_data.gpu_ewm(0.01, &gpu_context).mean()?)   // Slow EWM
-    .join(&raw_data.gpu_expanding(&gpu_context).max()?);    // Expanding maximum
-
-// Add lagged features
-let lagged_features = features.shift_multiple(&[1, 2, 3, 5, 10])?;
-let final_features = features.join(&lagged_features)?;
-
-println!("ML features engineered with GPU acceleration");
-```
-
-## Performance Benchmarks
-
-### Typical Performance Gains
-
-| Operation | Dataset Size | CPU Time | GPU Time | Speedup |
-|-----------|--------------|----------|----------|---------|
-| Rolling Mean | 100K | 15ms | 6ms | 2.5x |
-| Rolling Std | 100K | 45ms | 12ms | 3.8x |
-| Rolling Mean | 1M | 150ms | 35ms | 4.3x |
-| Rolling Std | 1M | 450ms | 85ms | 5.3x |
-| EWM Mean | 1M | 200ms | 45ms | 4.4x |
-
-### Benchmarking Your Workload
-
-```rust
-use std::time::Instant;
-
-// Benchmark CPU vs GPU performance
-let start = Instant::now();
-let cpu_result = df.rolling(50).mean()?;
-let cpu_time = start.elapsed();
-
-let start = Instant::now();
-let gpu_result = df.gpu_rolling(50, &gpu_context).mean()?;
-let gpu_time = start.elapsed();
-
-println!("CPU time: {:?}", cpu_time);
-println!("GPU time: {:?}", gpu_time);
-println!("Speedup: {:.2}x", cpu_time.as_secs_f64() / gpu_time.as_secs_f64());
-
-// Verify results are equivalent
-assert!(cpu_result.approx_equal(&gpu_result, 1e-10));
-```
-
-## Troubleshooting
-
-### Common Issues
-
-**CUDA Not Found:**
-```bash
-# Set CUDA paths
-export CUDA_HOME=/usr/local/cuda
-export PATH=$CUDA_HOME/bin:$PATH
-export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
-```
-
-**Out of GPU Memory:**
-```rust
-// Reduce memory usage
-let gpu_config = GpuConfig::new()
-    .with_memory_limit(500_000_000)    // Reduce memory limit
-    .with_cache_size(10);              // Smaller cache
-
-// Or use chunked processing
-let chunks = df.chunk_by_memory_size(100_000_000)?; // 100MB chunks
-```
-
-**Poor Performance on Small Datasets:**
-```rust
-// Lower GPU threshold for small datasets
-let gpu_config = GpuConfig::new()
-    .with_threshold(1_000);  // Use GPU for datasets > 1K elements
-```
-
-### GPU Information
-
-```rust
-// Check GPU capabilities
-let gpu_info = gpu_context.device_info()?;
-println!("GPU: {}", gpu_info.name);
-println!("Memory: {} MB", gpu_info.total_memory_mb);
-println!("CUDA Version: {}", gpu_info.cuda_version);
-println!("Compute Capability: {}.{}", gpu_info.major, gpu_info.minor);
-```
-
-### Performance Debugging
-
-```rust
-// Enable detailed GPU logging
-let gpu_config = GpuConfig::new()
-    .with_debug_mode(true)
-    .with_profiling(true);
-
-// Check performance warnings
-let warnings = gpu_context.get_warnings();
-for warning in warnings {
-    println!("Performance warning: {}", warning);
+use pandrs::gpu::{init_gpu_with_config, GpuConfig};
+
+let status = init_gpu_with_config(GpuConfig::default())?;
+if status.available {
+    println!("GPU: {:?}, {} cores", status.device_name, status.core_count.unwrap_or(0));
+} else {
+    println!("No CUDA GPU detected — code should fall back to CPU");
 }
 ```
 
-## Best Practices
+This part is verified against `src/gpu/mod.rs` directly and should compile
+with the `cuda` feature enabled and the CUDA toolkit installed.
 
-1. **Use for Large Datasets**: GPU acceleration is most beneficial for datasets > 50K elements
-2. **Batch Operations**: Group multiple operations to amortize GPU setup costs
-3. **Monitor Memory**: Keep GPU memory usage below 80% for optimal performance
-4. **Profile First**: Measure CPU vs GPU performance for your specific workloads
-5. **Handle Fallbacks**: Ensure your code works when GPU acceleration fails
-6. **Warm Up GPU**: Run a small operation first to initialize CUDA context
+## CPU Fallback
 
-## Integration with Other Features
+`fallback_to_cpu` (default `true`) is the intended behavior when no GPU is
+present or a GPU op fails — this repository's CHANGELOG for 0.4.1 lists
+"real CPU fallbacks for non-CUDA GPU paths" as a fix that landed, so treat
+this as a real, exercised code path rather than aspirational. If you build
+without the `cuda` feature at all, GPU-accelerated entry points are not
+compiled in — check each module for its own `#[cfg(feature = "cuda")]`
+gating before assuming a function is always present.
 
-### With JIT Compilation
+## Where GPU Acceleration Actually Lives
 
-```rust
-// Combine GPU and JIT for maximum performance
-let custom_indicator = jit("rsi", |values: Vec<f64>| -> f64 {
-    // Custom RSI calculation
-    calculate_rsi(&values, 14)
-});
+Real, `cuda`-gated GPU code exists in several places — this guide doesn't
+attempt to enumerate every method signature (they change; the example files
+below are kept in sync with the real API by virtue of being compiled):
 
-// Use GPU for window operations, JIT for custom calculations
-let windows = df.gpu_rolling(20, &gpu_context).collect_windows()?;
-let rsi_values = windows.iter()
-    .map(|window| custom_indicator.execute(window.values()))
-    .collect();
-```
+- **Window operations**: `src/dataframe/gpu_window.rs` (`GpuWindowContext`, rolling/expanding/EWM helpers)
+- **ML algorithms**: `src/ml/gpu.rs` — real `linear_regression`, `kmeans`, `pca` (and others) with GPU/CPU paths
+- **Stats**: `src/stats/gpu.rs`
+- **Matrix ops**: `src/gpu/multi_gpu.rs`, `src/gpu/cuda.rs`
+- **Python bindings**: `py_bindings/src/py_gpu.rs` — real pyo3 classes (`GpuConfig`, `GpuDeviceStatus`, `GpuMatrix`) exposing GPU-accelerated PCA, k-means, linear regression, and correlation to Python
 
-### With Distributed Processing
+> **Known issue, not a doc problem:** as of this writing, chaining
+> `GpuWindowContext`-based rolling windows into `.mean()` on a DataFrame
+> (`df.gpu_rolling(window, &ctx).mean()`) returns a DataFrame of **string**
+> data rather than the numeric result you'd expect
+> (`src/dataframe/gpu_window.rs`, the `.mean()`/`.sum()` adapter methods
+> around the `WindowOperationResult` conversion). This is a source bug, not
+> something this doc can paper over — until it's fixed, verify any
+> DataFrame-level `gpu_rolling(...).<agg>()` result's column type before
+> trusting it in production code. The lower-level `GpuWindowContext` methods
+> that take `&[f64]` directly (e.g. computing on a column's raw slice) are
+> not affected by this specific bug.
 
-```rust
-// Distribute GPU work across multiple nodes
-let distributed_config = DistributedConfig::new()
-    .with_gpu_acceleration(true)
-    .with_gpu_config(gpu_config);
+## Performance Thresholds
 
-let dist_df = df.to_distributed(distributed_config)?;
-let result = dist_df.gpu_rolling(100).mean()?.execute()?;
-```
+`GpuContext::should_use_gpu(size)` and `GpuConfig::min_size_threshold`
+(default 10,000 elements) gate whether an operation goes to the GPU.
+`GpuWindowContext` has its own, separate default `gpu_threshold_size` (also
+50,000 in the struct's `Default` impl) for **window** operations
+specifically — these are two different thresholds, not one shared setting;
+check `src/gpu/mod.rs` and `src/dataframe/gpu_window.rs` respectively if you
+need the exact current numbers, since they're plain struct fields that can
+change between releases without this doc being updated in lockstep.
 
-## Future Roadmap
+## Verified Examples
 
-Planned GPU acceleration improvements:
+Run these directly (`cargo run --example <name> --features cuda`, requires
+a CUDA-capable GPU and toolkit at runtime, not just build time):
 
-- **Tensor Operations**: Matrix multiplication and linear algebra operations
-- **Custom Kernels**: User-defined CUDA kernels for specialized operations
-- **Memory Optimization**: Advanced memory pooling and compression
-- **Multi-Stream Processing**: Concurrent GPU operations
-- **AMD GPU Support**: OpenCL/ROCm support for AMD GPUs
-- **Quantized Computing**: FP16 and INT8 operations for memory efficiency
+- `examples/gpu_dataframe_api_example.rs`, `examples/gpu_dataframe_example.rs`
+- `examples/gpu_window_operations_example.rs`
+- `examples/gpu_matrix_example.rs`
+- `examples/gpu_ml_example.rs`, `examples/gpu_stats_example.rs`
+- `examples/gpu_benchmark_example.rs`
 
----
-
-*For the latest GPU acceleration features and performance improvements, visit the [PandRS GitHub repository](https://github.com/cool-japan/pandrs).*
+These are part of the example suite built under `--features all-safe`
+(which includes everything except CUDA/WASM/distributed) as
+stub/no-GPU-path binaries; the actual GPU code paths inside them are only
+exercised on CUDA-capable CI/hardware, which this guide cannot verify from
+a docs-only pass — treat "compiles under `all-safe`" and "the GPU path
+inside actually runs correctly on real hardware" as two different claims.

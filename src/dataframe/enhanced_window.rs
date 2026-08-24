@@ -5,13 +5,16 @@
 
 use crate::core::error::{Error, Result};
 use crate::dataframe::base::DataFrame;
-use crate::series::window::{Expanding, Rolling, WindowClosed, EWM};
+use crate::series::window::WindowClosed;
 use crate::series::{Series, WindowExt, WindowOps};
 use chrono::{Duration, NaiveDateTime};
 use std::any::Any;
-use std::collections::HashMap;
 
 /// Advanced rolling window configuration for DataFrames
+///
+/// `window_size`, `min_periods`, `center`, and `closed` are all threaded
+/// through to and honored by [`crate::series::window::Rolling`]
+/// (`Rolling::apply_window_op` in `src/series/window.rs`).
 #[derive(Debug, Clone)]
 pub struct DataFrameRolling {
     pub window_size: usize,
@@ -75,6 +78,12 @@ impl DataFrameExpanding {
 }
 
 /// Advanced EWM configuration for DataFrames
+///
+/// `alpha`/`span`/`halflife`, `adjust`, and `ignore_na` are all threaded
+/// through to and honored by [`crate::series::window::EWM`] (see
+/// `EWM::get_alpha` and `ewm_recursion` in `src/series/window.rs`), matching
+/// pandas' `adjust = true` (weighted-average) default from
+/// [`DataFrameEWM::new`].
 #[derive(Debug, Clone)]
 pub struct DataFrameEWM {
     pub alpha: Option<f64>,
@@ -306,7 +315,18 @@ impl<'a> DataFrameRollingOps<'a> {
                 .center(self.config.center)
                 .closed(self.config.closed);
 
-            let result_series = rolling.apply(func)?;
+            // `Rolling::apply` returns one `Option<f64>` per input row
+            // (`None` where `min_periods` wasn't met, keeping the result
+            // aligned with the input rather than silently shortening it).
+            // Render `None` as `NaN`, matching every other window result
+            // column in this module.
+            let applied = rolling.apply(func)?;
+            let f64_values: Vec<f64> = applied
+                .values()
+                .iter()
+                .map(|&v| v.unwrap_or(f64::NAN))
+                .collect();
+            let result_series = Series::new(f64_values, applied.name().cloned())?;
             let result_column_name = format!("{}_{}", column_name, "custom");
             result_df.add_column(result_column_name, result_series.to_string_series()?)?;
         }
@@ -421,6 +441,17 @@ impl<'a> DataFrameRollingOps<'a> {
             // Get all numeric columns
             Ok(self.dataframe.get_numeric_column_names())
         }
+    }
+
+    /// The configuration this op-set was built with (window size,
+    /// min_periods, center, closed, target columns).
+    ///
+    /// Exposed at `pub(crate)` visibility so sibling modules in this crate
+    /// -- e.g. `jit_window`, which needs the real window configuration to
+    /// build a correct JIT cache key instead of a hardcoded placeholder --
+    /// can read it without duplicating these fields.
+    pub(crate) fn config(&self) -> &'a DataFrameRolling {
+        self.config
     }
 }
 
@@ -568,6 +599,12 @@ impl<'a> DataFrameExpandingOps<'a> {
             Ok(self.dataframe.get_numeric_column_names())
         }
     }
+
+    /// The configuration this op-set was built with. See
+    /// [`DataFrameRollingOps::config`] for why this is `pub(crate)`.
+    pub(crate) fn config(&self) -> &'a DataFrameExpanding {
+        self.config
+    }
 }
 
 // Implementation for DataFrameEWMOps
@@ -687,6 +724,12 @@ impl<'a> DataFrameEWMOps<'a> {
             Ok(self.dataframe.get_numeric_column_names())
         }
     }
+
+    /// The configuration this op-set was built with. See
+    /// [`DataFrameRollingOps::config`] for why this is `pub(crate)`.
+    pub(crate) fn config(&self) -> &'a DataFrameEWM {
+        self.config
+    }
 }
 
 // Implementation for DataFrameTimeRolling
@@ -751,7 +794,7 @@ impl<'a> DataFrameTimeRolling<'a> {
     ) -> Result<Vec<f64>> {
         let mut result = Vec::with_capacity(datetime_series.len());
 
-        for (i, current_time) in datetime_series.values().iter().enumerate() {
+        for (_i, current_time) in datetime_series.values().iter().enumerate() {
             let window_start = *current_time - self.window;
 
             // Collect values within the time window
@@ -788,27 +831,26 @@ impl<'a> DataFrameTimeRolling<'a> {
 }
 
 impl DataFrame {
-    /// Helper method to get a column as `Series<f64>`
+    /// Helper method to get a column as `Series<f64>`, regardless of its
+    /// underlying storage type.
+    ///
+    /// This used to accept *only* `Series<String>` columns (parsing each
+    /// value's text), so any DataFrame column that was actually stored as
+    /// `Series<f64>`/`Series<i64>`/etc. -- the normal case for numeric data
+    /// built via `Series::new(vec![1.0, 2.0, ...])` -- always failed with
+    /// `ColumnNotFound`, even though the column existed. That silently made
+    /// [`DataFrame::get_numeric_column_names`] return an empty list for
+    /// every "real" numeric DataFrame, which in turn made every
+    /// rolling/expanding/EWM/time-rolling operation below add zero columns
+    /// and return `Ok` -- a no-op with no error.
+    ///
+    /// Delegates to [`DataFrame::get_column_numeric_values`], which
+    /// downcasts the column's actual element type once (`f64`, `i64`,
+    /// `i32`, `f32`, `bool` directly, or `String` via `str::parse`) instead
+    /// of assuming a single storage type.
     pub fn get_column_as_f64(&self, column_name: &str) -> Result<Series<f64>> {
-        // Try to get the column as a string series first, then parse to f64
-        if let Ok(string_series) = self.get_column::<String>(column_name) {
-            // Parse string values to f64
-            let mut f64_values = Vec::new();
-            for value in string_series.values() {
-                match value.parse::<f64>() {
-                    Ok(val) => f64_values.push(val),
-                    Err(_) => {
-                        return Err(Error::InvalidValue(format!(
-                            "Cannot convert column '{}' to numeric",
-                            column_name
-                        )))
-                    }
-                }
-            }
-            return Series::new(f64_values, Some(column_name.to_string()));
-        }
-
-        Err(Error::ColumnNotFound(column_name.to_string()))
+        let values = self.get_column_numeric_values(column_name)?;
+        Series::new(values, Some(column_name.to_string()))
     }
 
     /// Helper method to get all numeric column names
@@ -817,8 +859,8 @@ impl DataFrame {
 
         for column_name in self.column_names() {
             // Try to convert to f64 to check if numeric
-            if self.get_column_as_f64(&column_name).is_ok() {
-                numeric_columns.push(column_name);
+            if self.get_column_as_f64(column_name).is_ok() {
+                numeric_columns.push(column_name.clone());
             }
         }
 

@@ -7,17 +7,24 @@ authors.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "Python bindings for PandRS (Rust implementation of pandas-like DataFrame)"
+readme = "README.md"
+# Distributed to PyPI as a wheel via maturin (.github/workflows/pypi-publish.yml),
+# never to crates.io — it is an extension module, not a reusable Rust crate.
+publish = false
 
 [lib]
 name = "pandrs"
 crate-type = ["cdylib"]
+# The extension module and the root `pandrs` crate both emit a lib named `pandrs`;
+# suppressing rustdoc here avoids a workspace `cargo doc` output-filename collision.
+doc = false
 
 [dependencies]
-pandrs = { path = "..", default-features = false }
-pyo3 = { version = "0.25.0", features = ["abi3-py38", "multiple-pymethods"] }
-numpy = "0.25.0"
-# pinned to 0.16.1 - numpy 0.25 ABI requires this; root uses 0.17.2 via workspace
-ndarray = "0.16.1"
+pandrs = { path = "..", version = "0.4.1", default-features = false }
+pyo3 = { workspace = true }
+numpy = "0.29.0"
+# 0.17.2 - required by numpy 0.29's ABI; matches root's ndarray version
+ndarray = "0.17.2"
 
 [features]
 # Dropped `sql` — py_bindings/src has no SQL code; pandrs has no top-level `sql`

@@ -6,10 +6,8 @@
 // pub mod backward_compat;
 // pub use backward_compat::*;
 
-use std::sync::Arc;
-
 use crate::distributed::core::config::DistributedConfig;
-use crate::distributed::core::partition::{Partition, PartitionSet};
+use crate::distributed::core::partition::PartitionSet;
 use crate::error::Result;
 
 /// Interface for distributed execution engines

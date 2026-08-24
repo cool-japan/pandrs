@@ -5,8 +5,6 @@
 //! comparison corrections for robust statistical analysis.
 
 use crate::core::error::{Error, Result};
-use crate::dataframe::DataFrame;
-use crate::series::Series;
 use crate::stats::distributions::{ChiSquared, Distribution, FDistribution, TDistribution};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -159,9 +157,20 @@ pub fn one_sample_ttest(
     let df = n - 1.0;
 
     let t_dist = TDistribution::new(df)?;
+    // `TwoSided`/`Greater` route through `stats::special`'s direct survival
+    // functions, never `1.0 - t_dist.cdf(...)`: `cdf` itself already returns
+    // `1.0 - half_tail` internally for a nonnegative argument (see
+    // `special::student_t_cdf`'s doc comment), so subtracting that
+    // already-rounded result from `1.0` *again* here double-cancels and
+    // silently reports `p_value = 0.0` for any strongly-significant (large
+    // |t|) result — see `special::student_t_sf`'s doc comment for the exact
+    // mechanism. `Less` needs no such fix: `cdf` at a negative argument is
+    // already a direct, well-conditioned tail computation.
     let p_value = match alternative {
-        AlternativeHypothesis::TwoSided => 2.0 * (1.0 - t_dist.cdf(t_statistic.abs())),
-        AlternativeHypothesis::Greater => 1.0 - t_dist.cdf(t_statistic),
+        AlternativeHypothesis::TwoSided => {
+            crate::stats::special::student_t_two_sided_p(t_statistic, df)
+        }
+        AlternativeHypothesis::Greater => crate::stats::special::student_t_sf(t_statistic, df),
         AlternativeHypothesis::Less => t_dist.cdf(t_statistic),
     };
 
@@ -243,9 +252,14 @@ pub fn independent_ttest(
     };
 
     let t_dist = TDistribution::new(df)?;
+    // See `one_sample_ttest`'s doc comment above for why `TwoSided`/`Greater`
+    // must route through `special`'s direct survival functions rather than
+    // `1.0 - t_dist.cdf(...)`.
     let p_value = match alternative {
-        AlternativeHypothesis::TwoSided => 2.0 * (1.0 - t_dist.cdf(t_statistic.abs())),
-        AlternativeHypothesis::Greater => 1.0 - t_dist.cdf(t_statistic),
+        AlternativeHypothesis::TwoSided => {
+            crate::stats::special::student_t_two_sided_p(t_statistic, df)
+        }
+        AlternativeHypothesis::Greater => crate::stats::special::student_t_sf(t_statistic, df),
         AlternativeHypothesis::Less => t_dist.cdf(t_statistic),
     };
 
@@ -400,7 +414,7 @@ pub fn one_way_anova(groups: &[&[f64]]) -> Result<TestResult> {
     // Degrees of freedom
     let df_between = k - 1.0;
     let df_within = n_total as f64 - k;
-    let df_total = n_total as f64 - 1.0;
+    let _df_total = n_total as f64 - 1.0;
 
     // Mean squares
     let ms_between = ss_between / df_between;
@@ -409,9 +423,15 @@ pub fn one_way_anova(groups: &[&[f64]]) -> Result<TestResult> {
     // F-statistic
     let f_statistic = ms_between / ms_within;
 
-    // P-value
+    // P-value, via `special::f_sf` directly — not `1.0 - f_dist.cdf(...)`.
+    // `cdf`'s own `betai` evaluation already collapses to a single `f64`
+    // indistinguishable from `1.0` once the true tail probability is small
+    // enough (the same cancellation `special::f_sf`'s doc comment describes
+    // for `f_sf(1e4, 10, 10)`), so re-subtracting it from `1.0` here would
+    // silently report `p_value = 0.0` for any highly significant ANOVA
+    // result instead of the true (still nonzero) tail probability.
     let f_dist = FDistribution::new(df_between, df_within)?;
-    let p_value = 1.0 - f_dist.cdf(f_statistic);
+    let p_value = crate::stats::special::f_sf(f_statistic, df_between, df_within);
 
     // Critical value
     let critical_value = f_dist.inverse_cdf(0.95);
@@ -511,9 +531,11 @@ pub fn chi_square_independence(observed: &[Vec<f64>]) -> Result<TestResult> {
     // Degrees of freedom
     let df = (rows - 1) * (cols - 1);
 
-    // P-value
+    // P-value, via `special::chi2_sf` directly — see `one_way_anova`'s doc
+    // comment above for why `1.0 - chi_sq_dist.cdf(...)` would silently
+    // report `p_value = 0.0` for a strongly-significant chi-square statistic.
     let chi_sq_dist = ChiSquared::new(df as f64)?;
-    let p_value = 1.0 - chi_sq_dist.cdf(chi_square);
+    let p_value = crate::stats::special::chi2_sf(chi_square, df as f64);
 
     // Critical value
     let critical_value = chi_sq_dist.inverse_cdf(0.95);
@@ -630,9 +652,14 @@ pub fn correlation_test(
             }
         }
     } else {
+        // See `one_sample_ttest`'s doc comment for why `TwoSided`/`Greater`
+        // must route through `special`'s direct survival functions rather
+        // than `1.0 - t_dist.cdf(...)`.
         match alternative {
-            AlternativeHypothesis::TwoSided => 2.0 * (1.0 - t_dist.cdf(t_statistic.abs())),
-            AlternativeHypothesis::Greater => 1.0 - t_dist.cdf(t_statistic),
+            AlternativeHypothesis::TwoSided => {
+                crate::stats::special::student_t_two_sided_p(t_statistic, df)
+            }
+            AlternativeHypothesis::Greater => crate::stats::special::student_t_sf(t_statistic, df),
             AlternativeHypothesis::Less => t_dist.cdf(t_statistic),
         }
     };
@@ -703,62 +730,125 @@ pub fn shapiro_wilk_test(data: &[f64]) -> Result<TestResult> {
         ));
     }
 
-    // Sort the data
+    // Sort the data.
     let mut sorted_data = data.to_vec();
     sorted_data.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
 
-    // Calculate sample mean and standard deviation
-    let mean = data.iter().sum::<f64>() / n as f64;
-    let variance = data.iter().map(|&x| (x - mean).powi(2)).sum::<f64>() / (n - 1) as f64;
-    let std_dev = variance.sqrt();
+    let an = n as f64;
+    let mean = sorted_data.iter().sum::<f64>() / an;
+    let ss: f64 = sorted_data.iter().map(|x| (x - mean).powi(2)).sum();
+    let std_dev = (ss / (n - 1) as f64).sqrt();
 
-    // This is a simplified implementation
-    // Full Shapiro-Wilk requires complex coefficients that depend on sample size
-    // For a complete implementation, we'd need lookup tables or algorithms for these coefficients
-
-    // Simplified W statistic calculation (approximation)
-    let mut w_numerator = 0.0;
-    let k = n / 2;
-
-    // Approximate coefficients (this is a simplification)
-    for i in 0..k {
-        let coeff = if i == 0 {
-            0.7071
-        } else {
-            0.5 / (i as f64 + 1.0)
-        };
-        w_numerator += coeff * (sorted_data[n - 1 - i] - sorted_data[i]);
+    if ss <= 0.0 {
+        // Degenerate case: all values identical → W = 1, p = 1.
+        let mut additional_info = HashMap::new();
+        additional_info.insert("n".to_string(), an);
+        additional_info.insert("mean".to_string(), mean);
+        additional_info.insert("std_dev".to_string(), std_dev);
+        return Ok(TestResult {
+            statistic: 1.0,
+            p_value: 1.0,
+            degrees_of_freedom: None,
+            critical_value: Some(0.95),
+            effect_size: None,
+            effect_size_interpretation: None,
+            confidence_interval: None,
+            test_name: "Shapiro-Wilk normality test (approximation)".to_string(),
+            alternative: AlternativeHypothesis::Greater,
+            reject_null: false,
+            additional_info,
+        });
     }
 
-    let w_denominator = (n - 1) as f64 * variance;
-    let w_statistic = w_numerator.powi(2) / w_denominator;
+    // Royston (1992) AS R94: compute normal-score weights.
+    let n2 = n / 2;
+    let mut m = vec![0.0_f64; n2 + 1]; // 1-indexed; m[0] unused
+    let mut summ2 = 0.0;
+    for i in 1..=n2 {
+        let mi = sw_inv_normal_cdf((i as f64 - 0.375) / (an + 0.25));
+        m[i] = mi;
+        summ2 += mi * mi;
+    }
+    summ2 *= 2.0;
+    let ssumm2 = summ2.sqrt();
+    let rsn = 1.0 / an.sqrt();
 
-    // P-value via the log-transformation approximation (Royston 1992):
-    //   y = log(1 − W),  then z = (y − μ(n)) / σ(n)
-    // where μ and σ are polynomial approximations in n.
-    // One-sided p = Φ_upper(z) = normal_sf(z), clamped to [1e-10, 1].
-    let w_clamped = w_statistic.clamp(1e-10, 1.0 - 1e-10);
-    let y = (1.0 - w_clamped).ln();
-    let nf = n as f64;
-    // Polynomial approximations for μ(n) and σ(n) valid for n in [3, 5000].
-    let mu = -0.0006714 * nf + 0.025054 * nf.sqrt() - 0.39978;
-    let sigma = (0.04198 * nf + 0.0006714 * nf.ln() - 0.8853)
-        .exp()
-        .max(1e-10);
-    let z = (y - mu) / sigma;
-    let p_value = normal_sf(z).clamp(1e-10, 1.0);
+    // Polynomial corrections for the two extreme weights.
+    let c1 = [0.0, 0.221157, -0.147981, -2.071190, 4.434685, -2.706056];
+    let c2 = [0.0, 0.042981, -0.293762, -1.752461, 5.682633, -3.582633];
+
+    let mut a = vec![0.0_f64; n2 + 1];
+    let a1 = sw_poly(&c1, rsn) - m[1] / ssumm2;
+    let (i1, fac) = if n > 5 {
+        let a2 = sw_poly(&c2, rsn) - m[2] / ssumm2;
+        a[2] = a2;
+        let f = ((summ2 - 2.0 * m[1] * m[1] - 2.0 * m[2] * m[2])
+            / (1.0 - 2.0 * a1 * a1 - 2.0 * a2 * a2))
+            .sqrt();
+        (3_usize, f)
+    } else {
+        let f = ((summ2 - 2.0 * m[1] * m[1]) / (1.0 - 2.0 * a1 * a1)).sqrt();
+        (2_usize, f)
+    };
+    a[1] = a1;
+    if fac.is_finite() && fac > 0.0 {
+        for i in i1..=n2 {
+            a[i] = -m[i] / fac;
+        }
+    }
+
+    // W = (Σ aᵢ (x₍n+1−i₎ − x₍ᵢ₎))² / SS
+    let mut numerator = 0.0;
+    for i in 1..=n2 {
+        numerator += a[i] * (sorted_data[n - i] - sorted_data[i - 1]);
+    }
+    let w_statistic = (numerator * numerator / ss).min(1.0);
+
+    // Royston's p-value transform (multi-branch, AS R94).
+    //
+    // Both branches clamp only to the valid `[0, 1]` probability range, not
+    // to an arbitrary `1e-10` floor (as this used to): the `n == 3` branch
+    // is an *exact* closed form (not an asymptotic approximation), for
+    // which a `W` at its theoretical minimum for `n = 3` (`W = 0.75`)
+    // legitimately computes `p = 0.0` exactly, and the general branch's
+    // `normal_sf` is itself accurate deep into the tail (see `special.rs`),
+    // so there is no numerical-safety reason to launder a genuinely tiny
+    // (or exactly zero) computed p-value into a fabricated `1e-10` —
+    // exactly the anti-pattern already removed from the Kolmogorov-Smirnov
+    // test's old `.max(0.001)` floor in `nonparametric.rs`.
+    let p_value = if n == 3 {
+        let pi6 = 6.0 / std::f64::consts::PI;
+        let stqr = (0.75_f64).sqrt().asin();
+        (pi6 * (w_statistic.sqrt().asin() - stqr)).clamp(0.0, 1.0)
+    } else {
+        let w1 = 1.0 - w_statistic;
+        let z = if n <= 11 {
+            let gamma = -2.273 + 0.459 * an;
+            let mu = sw_poly(&[0.5440, -0.39978, 0.025054, -6.714e-4], an);
+            let sigma = sw_poly(&[1.3822, -0.77857, 0.062767, -0.0020322], an).exp();
+            let y = -(gamma - w1.ln()).ln();
+            (y - mu) / sigma
+        } else {
+            let ln_an = an.ln();
+            let mu = sw_poly(&[-1.5861, -0.31082, -0.083751, 0.0038915], ln_an);
+            let sigma = sw_poly(&[-0.4803, -0.082676, 0.0030302], ln_an).exp();
+            let y = w1.ln();
+            (y - mu) / sigma
+        };
+        crate::stats::special::normal_sf(z).clamp(0.0, 1.0)
+    };
 
     let mut additional_info = HashMap::new();
-    additional_info.insert("n".to_string(), n as f64);
+    additional_info.insert("n".to_string(), an);
     additional_info.insert("mean".to_string(), mean);
     additional_info.insert("std_dev".to_string(), std_dev);
-    additional_info.insert("note".to_string(), 1.0); // Indicates this is an approximation
+    additional_info.insert("note".to_string(), 1.0_f64);
 
     Ok(TestResult {
         statistic: w_statistic,
         p_value,
         degrees_of_freedom: None,
-        critical_value: Some(0.95), // Conventional threshold
+        critical_value: Some(0.95),
         effect_size: None,
         effect_size_interpretation: None,
         confidence_interval: None,
@@ -769,117 +859,69 @@ pub fn shapiro_wilk_test(data: &[f64]) -> Result<TestResult> {
     })
 }
 
-// ─── Native distribution helpers ────────────────────────────────────────────
-// These are self-contained so this module can be compiled without feature flags.
+// ─── Royston (1992) Shapiro-Wilk helpers ────────────────────────────────────
 
-/// Lanczos approximation for the natural logarithm of the gamma function.
-fn log_gamma(x: f64) -> f64 {
-    let g = 7.0_f64;
-    let c = [
-        0.99999999999980993_f64,
-        676.5203681218851,
-        -1259.1392167224028,
-        771.32342877765313,
-        -176.61502916214059,
-        12.507343278686905,
-        -0.13857109526572012,
-        9.9843695780195716e-6,
-        1.5056327351493116e-7,
+/// Horner evaluation of a polynomial `c[0] + c[1]·x + c[2]·x² + …`.
+fn sw_poly(coeffs: &[f64], x: f64) -> f64 {
+    coeffs.iter().rev().fold(0.0, |acc, &c| acc * x + c)
+}
+
+/// Inverse standard-normal CDF (probit) via Acklam's rational approximation
+/// (relative error < 1.2e-9). Used for the Shapiro-Wilk normal scores.
+fn sw_inv_normal_cdf(p: f64) -> f64 {
+    if p <= 0.0 {
+        return f64::NEG_INFINITY;
+    }
+    if p >= 1.0 {
+        return f64::INFINITY;
+    }
+    const A: [f64; 6] = [
+        -3.969683028665376e+01,
+        2.209460984245205e+02,
+        -2.759285104469687e+02,
+        1.383577518672690e+02,
+        -3.066479806614716e+01,
+        2.506628277459239e+00,
     ];
+    const B: [f64; 5] = [
+        -5.447609879822406e+01,
+        1.615858368580409e+02,
+        -1.556989798598866e+02,
+        6.680131188771972e+01,
+        -1.328068155288572e+01,
+    ];
+    const C: [f64; 6] = [
+        -7.784894002430293e-03,
+        -3.223964580411365e-01,
+        -2.400758277161838e+00,
+        -2.549732539343734e+00,
+        4.374664141464968e+00,
+        2.938163982698783e+00,
+    ];
+    const D: [f64; 4] = [
+        7.784695709041462e-03,
+        3.224671290700398e-01,
+        2.445134137142996e+00,
+        3.754408661907416e+00,
+    ];
+    let plow = 0.02425;
+    let phigh = 1.0 - plow;
 
-    if x < 0.5 {
-        // Reflection formula: Γ(x)Γ(1−x) = π/sin(πx)
-        std::f64::consts::PI.ln() - (std::f64::consts::PI * x).sin().ln() - log_gamma(1.0 - x)
+    if p < plow {
+        let q = (-2.0 * p.ln()).sqrt();
+        (((((C[0] * q + C[1]) * q + C[2]) * q + C[3]) * q + C[4]) * q + C[5])
+            / ((((D[0] * q + D[1]) * q + D[2]) * q + D[3]) * q + 1.0)
+    } else if p <= phigh {
+        let q = p - 0.5;
+        let r = q * q;
+        (((((A[0] * r + A[1]) * r + A[2]) * r + A[3]) * r + A[4]) * r + A[5]) * q
+            / (((((B[0] * r + B[1]) * r + B[2]) * r + B[3]) * r + B[4]) * r + 1.0)
     } else {
-        let z = x - 1.0;
-        let mut s = c[0];
-        for (i, &ci) in c[1..].iter().enumerate() {
-            s += ci / (z + (i as f64) + 1.0);
-        }
-        let t = z + g + 0.5;
-        0.5 * (2.0 * std::f64::consts::PI).ln() + (z + 0.5) * t.ln() - t + s.ln()
+        let q = (-2.0 * (1.0 - p).ln()).sqrt();
+        -(((((C[0] * q + C[1]) * q + C[2]) * q + C[3]) * q + C[4]) * q + C[5])
+            / ((((D[0] * q + D[1]) * q + D[2]) * q + D[3]) * q + 1.0)
     }
 }
-
-/// Regularized upper incomplete gamma function Q(a, x) = 1 − P(a, x).
-///
-/// Uses the series expansion for the lower function when x ≤ a+1, and the
-/// continued-fraction (Lentz) expansion for the upper function otherwise.
-fn regularized_gamma_upper(a: f64, x: f64) -> f64 {
-    if x < 0.0 || a <= 0.0 {
-        return 1.0;
-    }
-    if x == 0.0 {
-        return 1.0;
-    }
-    if x <= a + 1.0 {
-        // Series expansion for P(a,x); return 1-P.
-        let log_prefix = a * x.ln() - x - log_gamma(a);
-        let mut term = 1.0 / a;
-        let mut sum = term;
-        for n in 1..200 {
-            term *= x / (a + n as f64);
-            sum += term;
-            if term.abs() < sum.abs() * 1e-14 {
-                break;
-            }
-        }
-        let p = (log_prefix + sum.ln()).exp().min(1.0);
-        (1.0 - p).max(0.0)
-    } else {
-        // Lentz continued-fraction expansion for Q(a,x):
-        // Q = e^{-x} * x^a / Γ(a) * CF
-        let log_prefix = a * x.ln() - x - log_gamma(a);
-        // CF via modified Lentz: 1/(x-a+1+ 1*(1-a)/(x-a+3+ 2*(2-a)/(x-a+5+…)))
-        let tiny = 1e-300_f64;
-        let mut c = tiny;
-        let d0 = 1.0 / (x - a + 1.0 + tiny);
-        let mut f = d0;
-        let mut d = d0;
-        for i in 1..200_usize {
-            let ia = i as f64;
-            let an = ia * (ia - a);
-            let bn = x - a + 1.0 + 2.0 * ia;
-            d = 1.0 / (bn + an * d);
-            c = bn + an / c;
-            let delta = c * d;
-            f *= delta;
-            if (delta - 1.0).abs() < 1e-14 {
-                break;
-            }
-        }
-        (log_prefix + f.abs().ln()).exp().max(0.0).min(1.0)
-    }
-}
-
-/// Chi-squared survival function: P(X > x | df) = Q(df/2, x/2).
-pub(crate) fn chi2_sf(x: f64, df: f64) -> f64 {
-    if x <= 0.0 {
-        return 1.0;
-    }
-    regularized_gamma_upper(df / 2.0, x / 2.0)
-}
-
-/// Complementary error function using Abramowitz & Stegun 7.1.26 polynomial.
-fn erfc_approx(x: f64) -> f64 {
-    let t = 1.0 / (1.0 + 0.3275911 * x.abs());
-    let poly = t
-        * (0.254829592
-            + t * (-0.284496736 + t * (1.421413741 + t * (-1.453152027 + t * 1.061405429))));
-    let erfc_abs = poly * (-x * x).exp();
-    if x >= 0.0 {
-        erfc_abs
-    } else {
-        2.0 - erfc_abs
-    }
-}
-
-/// Standard normal survival function: P(Z > x) = erfc(x/√2) / 2.
-pub(crate) fn normal_sf(x: f64) -> f64 {
-    (erfc_approx(x / std::f64::consts::SQRT_2) / 2.0).clamp(0.0, 1.0)
-}
-
-// ─── End distribution helpers ────────────────────────────────────────────────
 
 /// Multiple comparison correction methods
 #[derive(Debug, Clone)]
@@ -1045,5 +1087,87 @@ mod tests {
 
         let medium_correlation = EffectSize::PearsonR(0.4);
         assert_eq!(medium_correlation.interpretation(), "Medium");
+    }
+
+    #[test]
+    fn test_shapiro_wilk_known_sample() {
+        // Sample: [6.0, 1.0, -1.0, 3.0, 2.0]
+        // Royston AS R94 normal-score weights for n=5 give W ≈ 0.984.
+        // (The old fabricated-coefficient code returned a different, incorrect value.)
+        let data = [6.0_f64, 1.0, -1.0, 3.0, 2.0];
+        let result = shapiro_wilk_test(&data).expect("shapiro_wilk_test should succeed");
+        // W should be close to 0.984 (within 0.01 tolerance)
+        assert!(
+            (result.statistic - 0.984).abs() < 0.01,
+            "W = {}, expected ≈ 0.984",
+            result.statistic
+        );
+        // p-value should be > 0.05 (cannot reject normality for this small, unremarkable sample)
+        assert!(
+            result.p_value > 0.05,
+            "p = {}, expected > 0.05",
+            result.p_value
+        );
+    }
+
+    #[test]
+    fn test_shapiro_wilk_normal_data() {
+        // Hard-coded normal-ish sample (mean≈0, std≈1), large enough for stable p.
+        let data = [
+            0.1_f64, 0.5, 1.2, -0.3, -0.8, 0.6, 1.1, -0.2, 0.4, 0.9, -0.5, 0.3, -1.0, 0.7, -0.4,
+            1.5, -0.6, 0.2, 0.8, -0.1, -0.7, 1.3, -0.9, 0.0, 0.4, -0.3, 0.6, -0.2, 0.1, 0.5,
+        ];
+        let result = shapiro_wilk_test(&data).expect("shapiro_wilk_test should succeed");
+        // Normal data → p-value should be > 0.05
+        assert!(
+            result.p_value > 0.05,
+            "Normal data: p = {}, expected > 0.05",
+            result.p_value
+        );
+    }
+
+    #[test]
+    fn test_shapiro_wilk_skewed_data() {
+        // Heavily right-skewed (exponential-like) → should reject normality.
+        let data = [
+            0.01_f64, 0.05, 0.1, 0.1, 0.15, 0.2, 0.2, 0.3, 0.5, 0.8, 1.2, 2.0, 3.5, 5.0, 8.0,
+        ];
+        let result = shapiro_wilk_test(&data).expect("shapiro_wilk_test should succeed");
+        // Skewed data → p-value should be < 0.05
+        assert!(
+            result.p_value < 0.05,
+            "Skewed data: p = {}, expected < 0.05",
+            result.p_value
+        );
+    }
+
+    #[test]
+    fn test_shapiro_wilk_real_w_coefficients() {
+        // Near-normal data: linear-spaced quantiles are approximately normal.
+        // Real W for approximately-normal data should be > 0.85.
+        let normal_data = vec![-1.5, -0.8, -0.3, 0.1, 0.4, 0.7, 1.0, 1.3, 1.8, 2.2f64];
+        let result = shapiro_wilk_test(&normal_data).expect("shapiro_wilk_test should succeed");
+        assert!(
+            result.statistic > 0.85,
+            "W={} should be > 0.85 for near-normal data",
+            result.statistic
+        );
+        assert!(
+            result.p_value > 0.05,
+            "p={} should be > 0.05 for near-normal data",
+            result.p_value
+        );
+    }
+
+    #[test]
+    fn test_shapiro_wilk_rejects_skewed() {
+        // Cubic-growth data is clearly non-normal (heavy right skew).
+        let skewed: Vec<f64> = (1..=10).map(|i| (i as f64).powi(3)).collect();
+        let result = shapiro_wilk_test(&skewed).expect("shapiro_wilk_test should succeed");
+        assert!(
+            result.statistic < 0.9,
+            "W={} should be < 0.9 for skewed data",
+            result.statistic
+        );
     }
 }

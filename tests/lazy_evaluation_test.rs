@@ -9,8 +9,8 @@
 //! - Error handling
 
 use pandrs::compute::lazy::{
-    AggExpr, BinaryOp, ConstantFolding, DeadCodeElimination, Expr, LazyFrame, LiteralValue,
-    LogicalPlan, Optimizer, OptimizerRule, PredicatePushdown, ProjectionPushdown, UnaryOp,
+    BinaryOp, ConstantFolding, DeadCodeElimination, Expr, LazyFrame, LogicalPlan, Optimizer,
+    OptimizerRule, PredicatePushdown, ProjectionPushdown, UnaryOp,
 };
 use pandrs::optimized::dataframe::OptimizedDataFrame;
 use pandrs::optimized::operations::JoinType;

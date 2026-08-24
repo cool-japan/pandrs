@@ -17,18 +17,17 @@ pub use join::{hash_join_out_of_core, JoinType as OutOfCoreJoinType};
 pub use merge_sort::{external_sort, merge_sorted_chunks};
 pub use out_of_core::{AggOp, DataFormat, OutOfCoreConfig, OutOfCoreReader, OutOfCoreWriter};
 
-use memmap2::{Mmap, MmapMut, MmapOptions};
+use memmap2::{Mmap, MmapOptions};
 use std::collections::HashMap;
-use std::fs::{File, OpenOptions};
-use std::io::{self, BufRead, Read, Seek, SeekFrom, Write};
+use std::fs::File;
+use std::io::{self, BufRead, Read};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use tempfile::tempdir;
 
 use crate::dataframe::DataFrame;
-use crate::error::{Error, PandRSError, Result};
+use crate::error::{Error, Result};
 use crate::optimized::dataframe::OptimizedDataFrame;
-use csv::ReaderBuilder;
 
 /// Configuration for disk-based processing
 #[derive(Debug, Clone)]
@@ -93,11 +92,13 @@ impl MemoryTracker {
     }
 
     /// Get current memory usage
+    #[allow(dead_code)] // reserved for future use
     fn usage(&self) -> usize {
         self.current_usage
     }
 
     /// Check if memory limit is reached
+    #[allow(dead_code)] // reserved for future use
     fn is_limit_reached(&self) -> bool {
         self.current_usage >= self.limit
     }
@@ -166,11 +167,20 @@ impl ChunkedDataFrame {
             }
         }
 
-        // Load the chunk
-        if self.config.use_memory_mapping {
-            self.load_chunk_mmap()?;
+        // Load the chunk. `calculate_total_chunks` only produces an
+        // *estimate* of the chunk count (it derives bytes-per-row from a
+        // sample that includes the header line, which biases the estimate
+        // high), so the loaders themselves report whether real data was
+        // found for this chunk index -- that's the authoritative
+        // end-of-stream signal, not just `chunk_index >= total`.
+        let loaded = if self.config.use_memory_mapping {
+            self.load_chunk_mmap()?
         } else {
-            self.load_chunk_standard()?;
+            self.load_chunk_standard()?
+        };
+
+        if !loaded {
+            return Ok(None);
         }
 
         self.chunk_index += 1;
@@ -209,62 +219,51 @@ impl ChunkedDataFrame {
         Ok(())
     }
 
-    /// Load a chunk using memory mapping
-    fn load_chunk_mmap(&mut self) -> Result<()> {
+    /// Load a chunk using memory mapping.
+    ///
+    /// Returns `Ok(true)` when a chunk was loaded into `self.current_chunk`,
+    /// or `Ok(false)` when this chunk index is past the end of the data (in
+    /// which case `self.current_chunk` is cleared to `None`). Reporting
+    /// end-of-stream explicitly -- rather than falling back to an empty,
+    /// zero-column `DataFrame::new()` -- matters because
+    /// `calculate_total_chunks`'s row estimate can overshoot the real chunk
+    /// count, so this can be reached before `next_chunk`'s
+    /// `chunk_index >= total_chunks` check fires.
+    fn load_chunk_mmap(&mut self) -> Result<bool> {
         let file = File::open(&self.source_path)?;
         let mmap = unsafe { MmapOptions::new().map(&file)? };
 
         // Find the start and end positions for this chunk
         let (start_pos, end_pos) = self.find_chunk_boundaries(&mmap)?;
 
-        // Extract chunk data
-        let chunk_data = if end_pos > start_pos {
-            if self.chunk_index == 0 {
-                // First chunk includes header
-                &mmap[start_pos..end_pos]
-            } else {
-                // For non-first chunks, we need to prepend the header
-                let header_end = mmap.iter().position(|&b| b == b'\n').unwrap_or(0) + 1;
-                let header = &mmap[0..header_end];
-                let data = &mmap[start_pos..end_pos];
+        if end_pos <= start_pos {
+            self.current_chunk = None;
+            return Ok(false);
+        }
 
-                // Combine header and data
-                let mut combined = Vec::new();
-                combined.extend_from_slice(header);
-                combined.extend_from_slice(data);
-
-                // Create a temporary reader from combined data
-                let mut reader = csv::ReaderBuilder::new()
-                    .has_headers(true)
-                    .from_reader(combined.as_slice());
-
-                let df = DataFrame::from_csv_reader(&mut reader, true)?;
-
-                // Track memory usage
-                let estimated_memory = estimate_dataframe_memory(&df);
-                if !self.memory_tracker.allocate(estimated_memory) {
-                    if let Some(prev_chunk) = self.current_chunk.take() {
-                        self.spill_to_disk(prev_chunk)?;
-                        self.memory_tracker.allocate(estimated_memory);
-                    }
-                }
-
-                self.current_chunk = Some(df);
-                return Ok(());
-            }
+        let df = if self.chunk_index == 0 {
+            // First chunk includes the header as-is.
+            let chunk_data = &mmap[start_pos..end_pos];
+            let mut reader = csv::ReaderBuilder::new()
+                .has_headers(true)
+                .from_reader(chunk_data);
+            DataFrame::from_csv_reader(&mut reader, true)?
         } else {
-            &[]
-        };
+            // Non-first chunks don't carry a header in their mapped byte
+            // range, so the real header (the file's first line) is
+            // prepended before parsing. Parsing headerless instead would
+            // make `DataFrame::from_csv_reader` invent synthetic
+            // "column_N" names, breaking column-name consistency with
+            // chunk 0.
+            let header_end = mmap.iter().position(|&b| b == b'\n').unwrap_or(0) + 1;
+            let mut combined = Vec::with_capacity(header_end + (end_pos - start_pos));
+            combined.extend_from_slice(&mmap[0..header_end]);
+            combined.extend_from_slice(&mmap[start_pos..end_pos]);
 
-        // Parse the chunk data (assuming CSV for now)
-        let mut reader = csv::ReaderBuilder::new()
-            .has_headers(self.chunk_index == 0) // Only first chunk has headers
-            .from_reader(chunk_data);
-
-        let df = if chunk_data.is_empty() {
-            DataFrame::new()
-        } else {
-            DataFrame::from_csv_reader(&mut reader, self.chunk_index == 0)?
+            let mut reader = csv::ReaderBuilder::new()
+                .has_headers(true)
+                .from_reader(combined.as_slice());
+            DataFrame::from_csv_reader(&mut reader, true)?
         };
 
         // Track memory usage
@@ -279,30 +278,48 @@ impl ChunkedDataFrame {
         }
 
         self.current_chunk = Some(df);
-        Ok(())
+        Ok(true)
     }
 
-    /// Load a chunk using standard file I/O
-    fn load_chunk_standard(&mut self) -> Result<()> {
+    /// Load a chunk using standard file I/O.
+    ///
+    /// Returns `Ok(true)`/`Ok(false)` with the same end-of-stream meaning as
+    /// [`Self::load_chunk_mmap`].
+    fn load_chunk_standard(&mut self) -> Result<bool> {
         let file = File::open(&self.source_path)?;
         let mut reader = io::BufReader::new(file);
 
-        // Read the appropriate number of lines
-        let mut lines = Vec::new();
-        let mut line_count = 0;
-        let mut line = String::new();
-
-        // If this is the first chunk, we need to include the header
-        if self.chunk_index == 0 {
-            // Read header first
-            reader.read_line(&mut line)?;
-            lines.push(line.clone());
-            line.clear();
-        } else {
-            // Skip to the start of this chunk (skip header + previous chunks)
-            self.skip_to_chunk(&mut reader)?;
+        // Always read the real header first (regardless of chunk index) so
+        // every chunk can be parsed with `has_headers(true)` using the
+        // ORIGINAL column names, instead of parsing later chunks headerless
+        // and letting `DataFrame::from_csv_reader` invent synthetic
+        // "column_N" names for them.
+        let mut header_line = String::new();
+        let header_bytes = reader.read_line(&mut header_line)?;
+        if header_bytes == 0 {
+            // Empty file: no header, no data, no chunks.
+            self.current_chunk = None;
+            return Ok(false);
         }
 
+        if self.chunk_index > 0 {
+            // Skip the data rows already consumed by previous chunks.
+            let lines_to_skip = self.chunk_index * self.config.chunk_size;
+            let mut skip_line = String::new();
+            for _ in 0..lines_to_skip {
+                skip_line.clear();
+                let bytes = reader.read_line(&mut skip_line)?;
+                if bytes == 0 {
+                    break; // End of file reached while skipping.
+                }
+            }
+        }
+
+        let mut lines = Vec::with_capacity(self.config.chunk_size + 1);
+        lines.push(header_line);
+
+        let mut line_count = 0;
+        let mut line = String::new();
         while line_count < self.config.chunk_size {
             line.clear();
             let bytes = reader.read_line(&mut line)?;
@@ -314,17 +331,21 @@ impl ChunkedDataFrame {
             line_count += 1;
         }
 
+        if line_count == 0 {
+            // Nothing left after the header/skip: this chunk index is past
+            // the end of the data. Without this check, a short file would
+            // parse `lines == [header_line]` as a valid (empty) chunk
+            // instead of reporting end-of-stream.
+            self.current_chunk = None;
+            return Ok(false);
+        }
+
         // Parse the chunk data (assuming CSV for now)
         let csv_data = lines.join("");
         let mut csv_reader = csv::ReaderBuilder::new()
-            .has_headers(self.chunk_index == 0) // Only first chunk has headers
+            .has_headers(true)
             .from_reader(csv_data.as_bytes());
-
-        let df = if csv_data.is_empty() {
-            DataFrame::new()
-        } else {
-            DataFrame::from_csv_reader(&mut csv_reader, self.chunk_index == 0)?
-        };
+        let df = DataFrame::from_csv_reader(&mut csv_reader, true)?;
 
         // Track memory usage
         let estimated_memory = estimate_dataframe_memory(&df);
@@ -338,7 +359,7 @@ impl ChunkedDataFrame {
         }
 
         self.current_chunk = Some(df);
-        Ok(())
+        Ok(true)
     }
 
     /// Find the start and end positions of the current chunk in the memory-mapped file
@@ -367,21 +388,49 @@ impl ChunkedDataFrame {
                 }
             }
 
+            // The loop above only advances `end_pos` on a '\n' byte, so a
+            // final CSV row with no trailing newline (common: many writers
+            // omit it) is never counted and its bytes -- between the last
+            // newline found and `file_size` -- are silently dropped from
+            // this mmap path. Detect that case (loop exhausted the file
+            // before reaching `chunk_size` lines, and unconsumed bytes
+            // remain past the last newline) and fold that final partial
+            // line into the chunk instead. When `end_pos` already equals
+            // `file_size` (file ends with a newline) this is a no-op. This
+            // mirrors `load_chunk_standard`'s `BufRead::read_line`, which
+            // already returns a final unterminated line rather than
+            // discarding it, so both loaders agree on row count.
+            if lines_read < self.config.chunk_size && end_pos < file_size {
+                end_pos = file_size;
+            }
+
             Ok((0, end_pos))
         } else {
             // Find the position to start from based on chunk index
             let mut start_pos = header_end;
             let mut lines_skipped = 0;
             let lines_to_skip = self.chunk_index * self.config.chunk_size;
+            let mut reached_start = false;
 
             for i in header_end..file_size {
                 if mmap[i] == b'\n' {
                     lines_skipped += 1;
                     if lines_skipped == lines_to_skip {
                         start_pos = i + 1;
+                        reached_start = true;
                         break;
                     }
                 }
+            }
+
+            if !reached_start {
+                // Fewer data rows exist than needed to reach this chunk's
+                // start offset: this chunk index is past the end of the
+                // file. Return an empty range instead of falling back to
+                // `start_pos == header_end` (the start of chunk 0's data),
+                // which would silently re-emit chunk 0's rows for every
+                // chunk index beyond the real data on a short file.
+                return Ok((file_size, file_size));
             }
 
             // Find the end position for this chunk
@@ -398,28 +447,17 @@ impl ChunkedDataFrame {
                 }
             }
 
+            // Same final-unterminated-line fold as the chunk-0 branch
+            // above: without it, a file whose last row has no trailing
+            // newline would lose that row when it falls in a non-first
+            // chunk too.
+            if lines_read < self.config.chunk_size && end_pos < file_size {
+                end_pos = file_size;
+            }
+
             // For non-first chunks, we need to prepend the header
             Ok((start_pos, end_pos))
         }
-    }
-
-    /// Skip to the start of the current chunk using a reader
-    fn skip_to_chunk<R: Read + BufRead>(&self, reader: &mut R) -> Result<()> {
-        let mut line = String::new();
-
-        // Always skip header first
-        reader.read_line(&mut line)?;
-
-        // Skip lines to get to the current chunk (after header)
-        for _ in 0..(self.chunk_index * self.config.chunk_size) {
-            line.clear();
-            let bytes = reader.read_line(&mut line)?;
-            if bytes == 0 {
-                break; // End of file reached
-            }
-        }
-
-        Ok(())
     }
 
     /// Spill a DataFrame to disk to free up memory
@@ -531,11 +569,14 @@ pub struct DiskBasedDataFrame {
     config: DiskConfig,
     /// Schema information
     schema: DataFrame,
-    /// Memory-mapped file if being used
+    /// Memory-mapped file if being used (held to keep the mapping alive)
+    #[allow(dead_code)] // reserved for future use
     mmap: Option<Mmap>,
-    /// Temporary directory for spilled data
+    /// Temporary directory for spilled data (held to keep the directory alive)
+    #[allow(dead_code)] // reserved for future use
     temp_dir: tempfile::TempDir,
     /// Memory tracker
+    #[allow(dead_code)] // reserved for future use
     memory_tracker: Arc<Mutex<MemoryTracker>>,
 }
 
@@ -651,7 +692,15 @@ pub trait DataFrameOperations {
         transformation: impl Fn(&str, &str, usize) -> Result<String> + Send + Sync,
     ) -> Result<Vec<HashMap<String, String>>>;
 
-    /// Group by a column and aggregate
+    /// Group by a column and aggregate.
+    ///
+    /// For each distinct value of `group_column`, collects every
+    /// `agg_column` value belonging to that group across *all* chunks, then
+    /// calls `agg_func` exactly once on the complete list to produce the
+    /// group's aggregated result. The returned map holds a single-element
+    /// `Vec` per group (the aggregated value) -- the `Vec` shape is kept for
+    /// signature stability, not because more than one value is ever
+    /// produced per group.
     fn group_by(
         &self,
         group_column: &str,
@@ -803,7 +852,14 @@ impl DataFrameOperations for DiskBasedDataFrame {
         }
 
         self.aggregate(
-            // Process each chunk
+            // Process each chunk: collect the raw agg-column values per
+            // group. Aggregation itself is deferred to the combiner below
+            // so `agg_func` runs exactly once per group over its COMPLETE
+            // value list, independent of how the data happens to be
+            // chunked (a chunk-count-dependent partial aggregation would
+            // give a different, silently wrong answer for `chunk_size`
+            // choices, e.g. a `mean` closure can't be correctly re-reduced
+            // from per-chunk partial means).
             |chunk| {
                 let mut grouped_data: HashMap<String, Vec<String>> = HashMap::new();
 
@@ -819,20 +875,24 @@ impl DataFrameOperations for DiskBasedDataFrame {
 
                 Ok(grouped_data)
             },
-            // Combine results by merging the HashMaps
-            |chunk_maps| {
-                let mut result_map: HashMap<String, Vec<String>> = HashMap::new();
+            // Merge every chunk's raw values per group, then apply
+            // `agg_func` exactly once per group over its full value list.
+            move |chunk_maps| {
+                let mut merged: HashMap<String, Vec<String>> = HashMap::new();
 
                 for chunk_map in chunk_maps {
                     for (key, values) in chunk_map {
-                        result_map
-                            .entry(key)
-                            .or_insert_with(Vec::new)
-                            .extend(values);
+                        merged.entry(key).or_insert_with(Vec::new).extend(values);
                     }
                 }
 
-                // Return the result map directly
+                let mut result_map: HashMap<String, Vec<String>> =
+                    HashMap::with_capacity(merged.len());
+                for (key, values) in merged {
+                    let aggregated = agg_func(values)?;
+                    result_map.insert(key, vec![aggregated]);
+                }
+
                 Ok(result_map)
             },
         )

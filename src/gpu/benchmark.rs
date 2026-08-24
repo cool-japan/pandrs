@@ -1,17 +1,25 @@
 //! GPU benchmark utilities
 //!
-//! This module provides utilities for benchmarking GPU acceleration performance
-//! and comparing it with CPU performance.
+//! This module provides utilities for benchmarking the GPU-dispatch path and
+//! comparing it with CPU performance.
+//!
+//! HONESTY NOTE: cudarc 0.19.x does not expose the cuBLAS/cuSOLVER kernels these
+//! benchmarks would need, so the "GPU" code paths currently either fall back to
+//! the CPU or report `NotImplemented`. Because a real GPU-vs-CPU speedup cannot
+//! be measured against a CPU fallback, this module does NOT report a speedup
+//! figure (doing so would be fabricated). Only the real wall-clock times are
+//! recorded, and `gpu_used` means "the GPU-dispatch path was attempted", not
+//! that work ran on the device.
 
-use scirs2_core::ndarray::{Array1, Array2};
+use scirs2_core::ndarray::Array2;
 use std::collections::HashMap;
 use std::fmt;
 use std::time::{Duration, Instant};
 
 use crate::dataframe::DataFrame;
 use crate::error::{Error, Result};
-use crate::gpu::operations::{GpuMatrix, GpuVector};
-use crate::gpu::{get_gpu_manager, GpuConfig, GpuDeviceStatus};
+use crate::gpu::operations::GpuMatrix;
+use crate::gpu::{GpuConfig, GpuDeviceStatus};
 use crate::series::window::{WindowExt, WindowOps};
 use crate::series::Series;
 
@@ -70,7 +78,10 @@ pub struct BenchmarkResult {
     pub operation: BenchmarkOperation,
     /// Size of the data (elements or dimensions)
     pub data_size: String,
-    /// Whether GPU was used
+    /// Whether the GPU-dispatch path was attempted for this run.
+    ///
+    /// NOTE: this does not guarantee the work executed on the device. The
+    /// underlying operation may have fallen back to the CPU.
     pub gpu_used: bool,
     /// Execution time
     pub time: Duration,
@@ -118,8 +129,6 @@ pub struct BenchmarkSummary {
     pub cpu_result: BenchmarkResult,
     /// GPU result (optional)
     pub gpu_result: Option<BenchmarkResult>,
-    /// GPU speedup over CPU
-    pub speedup: Option<f64>,
 }
 
 impl BenchmarkSummary {
@@ -128,17 +137,13 @@ impl BenchmarkSummary {
         let operation = cpu_result.operation;
         let data_size = cpu_result.data_size.clone();
 
-        // Calculate speedup
-        let speedup = gpu_result
-            .as_ref()
-            .map(|gpu| cpu_result.time.as_secs_f64() / gpu.time.as_secs_f64());
-
+        // No speedup is computed: the "GPU" path may fall back to the CPU, so a
+        // CPU/GPU time ratio would be a fabricated GPU speedup.
         BenchmarkSummary {
             operation,
             data_size,
             cpu_result,
             gpu_result,
-            speedup,
         }
     }
 
@@ -150,13 +155,12 @@ impl BenchmarkSummary {
         output.push_str(&format!("CPU Time: {:.2} ms\n", self.cpu_result.time_ms()));
 
         if let Some(gpu_result) = &self.gpu_result {
-            output.push_str(&format!("GPU Time: {:.2} ms\n", gpu_result.time_ms()));
-
-            if let Some(speedup) = self.speedup {
-                output.push_str(&format!("Speedup: {:.2}x\n", speedup));
-            }
+            output.push_str(&format!(
+                "GPU-path Time: {:.2} ms (dispatch path; may fall back to CPU)\n",
+                gpu_result.time_ms()
+            ));
         } else {
-            output.push_str("GPU: Not available\n");
+            output.push_str("GPU: Not available / not implemented\n");
         }
 
         // Add metrics if available
@@ -226,8 +230,10 @@ impl GpuBenchmark {
         let a_data: Vec<f64> = (0..(m * k)).map(|i| (i % 10) as f64).collect();
         let b_data: Vec<f64> = (0..(k * n)).map(|i| (i % 10) as f64).collect();
 
-        let a = Array2::from_shape_vec((m, k), a_data).expect("operation should succeed");
-        let b = Array2::from_shape_vec((k, n), b_data).expect("operation should succeed");
+        let a = Array2::from_shape_vec((m, k), a_data)
+            .map_err(|e| Error::InvalidValue(e.to_string()))?;
+        let b = Array2::from_shape_vec((k, n), b_data)
+            .map_err(|e| Error::InvalidValue(e.to_string()))?;
 
         // Benchmark CPU implementation
         let cpu_start = Instant::now();
@@ -247,15 +253,20 @@ impl GpuBenchmark {
             let gpu_b = GpuMatrix::new(b.clone());
 
             let gpu_start = Instant::now();
-            let _gpu_result = gpu_a.dot(&gpu_b)?;
-            let gpu_time = gpu_start.elapsed();
-
-            Some(BenchmarkResult::new(
-                BenchmarkOperation::MatrixMultiply,
-                format!("{}x{} * {}x{}", m, k, k, n),
-                true,
-                gpu_time,
-            ))
+            // The GPU matmul may be unimplemented or fall back to CPU; on error
+            // record no GPU result rather than failing the benchmark.
+            match gpu_a.dot(&gpu_b) {
+                Ok(_) => {
+                    let gpu_time = gpu_start.elapsed();
+                    Some(BenchmarkResult::new(
+                        BenchmarkOperation::MatrixMultiply,
+                        format!("{}x{} * {}x{}", m, k, k, n),
+                        true,
+                        gpu_time,
+                    ))
+                }
+                Err(_) => None,
+            }
         } else {
             None
         };
@@ -265,7 +276,9 @@ impl GpuBenchmark {
         self.benchmarks.push(summary);
 
         // Return reference to the added summary
-        Ok(self.benchmarks.last().expect("operation should succeed"))
+        self.benchmarks.last().ok_or_else(|| {
+            Error::InvalidOperation("benchmark result missing immediately after push".to_string())
+        })
     }
 
     /// Benchmark element-wise addition
@@ -274,8 +287,10 @@ impl GpuBenchmark {
         let a_data: Vec<f64> = (0..(m * n)).map(|i| (i % 10) as f64).collect();
         let b_data: Vec<f64> = (0..(m * n)).map(|i| (i % 10) as f64).collect();
 
-        let a = Array2::from_shape_vec((m, n), a_data).expect("operation should succeed");
-        let b = Array2::from_shape_vec((m, n), b_data).expect("operation should succeed");
+        let a = Array2::from_shape_vec((m, n), a_data)
+            .map_err(|e| Error::InvalidValue(e.to_string()))?;
+        let b = Array2::from_shape_vec((m, n), b_data)
+            .map_err(|e| Error::InvalidValue(e.to_string()))?;
 
         // Benchmark CPU implementation
         let cpu_start = Instant::now();
@@ -295,15 +310,20 @@ impl GpuBenchmark {
             let gpu_b = GpuMatrix::new(b.clone());
 
             let gpu_start = Instant::now();
-            let _gpu_result = gpu_a.add(&gpu_b)?;
-            let gpu_time = gpu_start.elapsed();
-
-            Some(BenchmarkResult::new(
-                BenchmarkOperation::ElementwiseAdd,
-                format!("{}x{}", m, n),
-                true,
-                gpu_time,
-            ))
+            // The GPU add may be unimplemented or fall back to CPU; on error
+            // record no GPU result rather than failing the benchmark.
+            match gpu_a.add(&gpu_b) {
+                Ok(_) => {
+                    let gpu_time = gpu_start.elapsed();
+                    Some(BenchmarkResult::new(
+                        BenchmarkOperation::ElementwiseAdd,
+                        format!("{}x{}", m, n),
+                        true,
+                        gpu_time,
+                    ))
+                }
+                Err(_) => None,
+            }
         } else {
             None
         };
@@ -313,7 +333,9 @@ impl GpuBenchmark {
         self.benchmarks.push(summary);
 
         // Return reference to the added summary
-        Ok(self.benchmarks.last().expect("operation should succeed"))
+        self.benchmarks.last().ok_or_else(|| {
+            Error::InvalidOperation("benchmark result missing immediately after push".to_string())
+        })
     }
 
     /// Benchmark correlation matrix computation
@@ -350,15 +372,20 @@ impl GpuBenchmark {
                 use crate::dataframe::gpu::DataFrameGpuExt;
 
                 let gpu_start = Instant::now();
-                let _gpu_result = df.gpu_corr(&col_names)?;
-                let gpu_time = gpu_start.elapsed();
-
-                Some(BenchmarkResult::new(
-                    BenchmarkOperation::Correlation,
-                    format!("{}x{}", rows, cols),
-                    true,
-                    gpu_time,
-                ))
+                // The GPU correlation path may be unimplemented; on error record
+                // no GPU result rather than failing the entire benchmark.
+                match df.gpu_corr(&col_names) {
+                    Ok(_) => {
+                        let gpu_time = gpu_start.elapsed();
+                        Some(BenchmarkResult::new(
+                            BenchmarkOperation::Correlation,
+                            format!("{}x{}", rows, cols),
+                            true,
+                            gpu_time,
+                        ))
+                    }
+                    Err(_) => None,
+                }
             }
 
             #[cfg(not(cuda_available))]
@@ -374,7 +401,9 @@ impl GpuBenchmark {
         self.benchmarks.push(summary);
 
         // Return reference to the added summary
-        Ok(self.benchmarks.last().expect("operation should succeed"))
+        self.benchmarks.last().ok_or_else(|| {
+            Error::InvalidOperation("benchmark result missing immediately after push".to_string())
+        })
     }
 
     /// Benchmark linear regression
@@ -425,19 +454,20 @@ impl GpuBenchmark {
                 use crate::dataframe::gpu::DataFrameGpuExt;
 
                 let gpu_start = Instant::now();
-                let gpu_model = df.gpu_linear_regression("y", &feature_cols)?;
-                let gpu_time = gpu_start.elapsed();
-
-                let result = BenchmarkResult::new(
-                    BenchmarkOperation::LinearRegression,
-                    format!("{}x{}", rows, cols),
-                    true,
-                    gpu_time,
-                );
-                // TODO: Fix regression model API to return proper stats
-                // result.add_metric("R2", gpu_model.r_squared);
-
-                Some(result)
+                // The GPU linear-regression path may be unimplemented; on error
+                // record no GPU result rather than failing the benchmark.
+                match df.gpu_linear_regression("y", &feature_cols) {
+                    Ok(_gpu_model) => {
+                        let gpu_time = gpu_start.elapsed();
+                        Some(BenchmarkResult::new(
+                            BenchmarkOperation::LinearRegression,
+                            format!("{}x{}", rows, cols),
+                            true,
+                            gpu_time,
+                        ))
+                    }
+                    Err(_) => None,
+                }
             }
 
             #[cfg(not(cuda_available))]
@@ -453,7 +483,9 @@ impl GpuBenchmark {
         self.benchmarks.push(summary);
 
         // Return reference to the added summary
-        Ok(self.benchmarks.last().expect("operation should succeed"))
+        self.benchmarks.last().ok_or_else(|| {
+            Error::InvalidOperation("benchmark result missing immediately after push".to_string())
+        })
     }
 
     /// Benchmark rolling window operation
@@ -486,20 +518,25 @@ impl GpuBenchmark {
                 use crate::temporal::gpu::SeriesTimeGpuExt;
 
                 let gpu_start = Instant::now();
-                let _gpu_result = series.gpu_rolling(
+                // The GPU rolling-window path may be unimplemented; on error
+                // record no GPU result rather than failing the benchmark.
+                match series.gpu_rolling(
                     window_size,
                     window_size / 2,
                     crate::temporal::window::WindowOperation::Mean,
                     false,
-                )?;
-                let gpu_time = gpu_start.elapsed();
-
-                Some(BenchmarkResult::new(
-                    BenchmarkOperation::RollingWindow,
-                    format!("{} values, window={}", size, window_size),
-                    true,
-                    gpu_time,
-                ))
+                ) {
+                    Ok(_) => {
+                        let gpu_time = gpu_start.elapsed();
+                        Some(BenchmarkResult::new(
+                            BenchmarkOperation::RollingWindow,
+                            format!("{} values, window={}", size, window_size),
+                            true,
+                            gpu_time,
+                        ))
+                    }
+                    Err(_) => None,
+                }
             }
 
             #[cfg(not(cuda_available))]
@@ -515,7 +552,9 @@ impl GpuBenchmark {
         self.benchmarks.push(summary);
 
         // Return reference to the added summary
-        Ok(self.benchmarks.last().expect("operation should succeed"))
+        self.benchmarks.last().ok_or_else(|| {
+            Error::InvalidOperation("benchmark result missing immediately after push".to_string())
+        })
     }
 
     /// Get a summary of all benchmarks
@@ -575,52 +614,82 @@ impl GpuBenchmark {
                 .max()
                 .unwrap_or(0);
 
-            // Add table header
-            output.push_str(&format!(
-                "{:<width_op$} | {:<width_size$} | {:>10} | {:>10} | {:>8}\n",
-                "Operation",
-                "Data Size",
-                "CPU (ms)",
-                "GPU (ms)",
-                "Speedup",
-                width_op = max_op_len,
-                width_size = max_size_len
-            ));
+            // Only show the GPU-path column when at least one benchmark in
+            // this run actually attempted the GPU-dispatch path (`gpu_result
+            // .is_some()`). Printing the column unconditionally, filled with
+            // "N/A" for every single row when the GPU was unavailable (or
+            // every dispatch failed) for the whole run, implies a GPU
+            // comparison was attempted when none was — there is intentionally
+            // no "Speedup" column either, since a real GPU-vs-CPU speedup
+            // cannot be measured against a CPU fallback and reporting one
+            // would be fabricated.
+            let any_gpu = self.benchmarks.iter().any(|b| b.gpu_result.is_some());
 
-            output.push_str(&format!(
-                "{:-<width_op$}-+-{:-<width_size$}-+-{:-<10}-+-{:-<10}-+-{:-<8}\n",
-                "",
-                "",
-                "",
-                "",
-                "",
-                width_op = max_op_len,
-                width_size = max_size_len
-            ));
-
-            // Add benchmark results
-            for benchmark in &self.benchmarks {
-                let gpu_time = benchmark
-                    .gpu_result
-                    .as_ref()
-                    .map(|r| format!("{:.2}", r.time_ms()))
-                    .unwrap_or("N/A".to_string());
-
-                let speedup = benchmark
-                    .speedup
-                    .map(|s| format!("{:.2}x", s))
-                    .unwrap_or("N/A".to_string());
-
+            if any_gpu {
                 output.push_str(&format!(
-                    "{:<width_op$} | {:<width_size$} | {:>10.2} | {:>10} | {:>8}\n",
-                    format!("{}", benchmark.operation),
-                    benchmark.data_size,
-                    benchmark.cpu_result.time_ms(),
-                    gpu_time,
-                    speedup,
+                    "{:<width_op$} | {:<width_size$} | {:>10} | {:>14}\n",
+                    "Operation",
+                    "Data Size",
+                    "CPU (ms)",
+                    "GPU-path (ms)",
                     width_op = max_op_len,
                     width_size = max_size_len
                 ));
+                output.push_str(&format!(
+                    "{:-<width_op$}-+-{:-<width_size$}-+-{:-<10}-+-{:-<14}\n",
+                    "",
+                    "",
+                    "",
+                    "",
+                    width_op = max_op_len,
+                    width_size = max_size_len
+                ));
+
+                for benchmark in &self.benchmarks {
+                    let gpu_time = benchmark
+                        .gpu_result
+                        .as_ref()
+                        .map(|r| format!("{:.2}", r.time_ms()))
+                        .unwrap_or("N/A".to_string());
+
+                    output.push_str(&format!(
+                        "{:<width_op$} | {:<width_size$} | {:>10.2} | {:>14}\n",
+                        format!("{}", benchmark.operation),
+                        benchmark.data_size,
+                        benchmark.cpu_result.time_ms(),
+                        gpu_time,
+                        width_op = max_op_len,
+                        width_size = max_size_len
+                    ));
+                }
+            } else {
+                output.push_str(&format!(
+                    "{:<width_op$} | {:<width_size$} | {:>10}\n",
+                    "Operation",
+                    "Data Size",
+                    "CPU (ms)",
+                    width_op = max_op_len,
+                    width_size = max_size_len
+                ));
+                output.push_str(&format!(
+                    "{:-<width_op$}-+-{:-<width_size$}-+-{:-<10}\n",
+                    "",
+                    "",
+                    "",
+                    width_op = max_op_len,
+                    width_size = max_size_len
+                ));
+
+                for benchmark in &self.benchmarks {
+                    output.push_str(&format!(
+                        "{:<width_op$} | {:<width_size$} | {:>10.2}\n",
+                        format!("{}", benchmark.operation),
+                        benchmark.data_size,
+                        benchmark.cpu_result.time_ms(),
+                        width_op = max_op_len,
+                        width_size = max_size_len
+                    ));
+                }
             }
         }
 

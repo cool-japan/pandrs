@@ -6,9 +6,9 @@
 
 use crate::core::error::{Error, Result};
 use crate::time_series::core::TimeSeries;
+use crate::time_series::spectral::{periodogram, Detrend, Periodogram};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::f64::consts::PI;
 
 /// Feature set containing extracted features
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -276,7 +276,7 @@ impl TimeSeriesFeatureExtractor {
 
         // Median and quantiles
         let mut sorted = values.to_vec();
-        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        sorted.sort_by(|a, b| a.total_cmp(b));
 
         let median = if sorted.len() % 2 == 0 {
             (sorted[sorted.len() / 2 - 1] + sorted[sorted.len() / 2]) / 2.0
@@ -378,37 +378,35 @@ impl TimeSeriesFeatureExtractor {
         })
     }
 
-    /// Extract frequency domain features
+    /// Extract frequency domain features from the real periodogram.
+    ///
+    /// The power spectral density comes from [`crate::time_series::spectral::periodogram`],
+    /// a genuine OxiFFT-backed DFT of the mean-removed series (previously an
+    /// `O(n²)` sum of at most 50 autocorrelation lags against `cos(2π f l)`,
+    /// whose frequency resolution was fixed at `1/50` regardless of series
+    /// length and whose peak therefore did not track the true dominant
+    /// oscillation). Frequencies are in cycles per sample, `k / n` for
+    /// `k = 0..=n/2`.
+    ///
+    /// `dominant_frequency` skips the DC bin: after mean removal DC carries no
+    /// information, and reporting `f = 0` as "the dominant frequency" would be
+    /// meaningless.
     fn extract_frequency_features(&self, values: &[f64]) -> Result<FrequencyFeatures> {
-        // Simplified FFT implementation (in practice, would use a proper FFT library)
-        let n = values.len();
-        let mut psd = Vec::new();
-        let mut frequencies = Vec::new();
+        let spectrum = periodogram(values, Detrend::Mean)?;
+        let Periodogram { frequencies, psd } = spectrum.clone();
 
-        // Calculate power spectral density using autocorrelation method
-        for k in 0..n / 2 {
-            let freq = k as f64 / n as f64;
-            frequencies.push(freq);
+        // Dominant frequency: the strongest non-DC bin. `None` only when the
+        // series is too short to have one, which `periodogram` already
+        // rejects, so this is a defensive NaN rather than a fabricated 0.0.
+        let dominant_frequency = spectrum
+            .dominant_bin()
+            .map(|idx| frequencies[idx])
+            .unwrap_or(f64::NAN);
 
-            let mut power = 0.0;
-            for lag in 0..std::cmp::min(n / 4, 50) {
-                let autocorr = self.calculate_autocorrelation(values, lag)?;
-                power += autocorr * (2.0 * PI * freq * lag as f64).cos();
-            }
-            psd.push(power.abs());
-        }
+        let total_power = spectrum.total_power();
 
-        // Find dominant frequency
-        let dominant_idx = psd
-            .iter()
-            .enumerate()
-            .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
-            .map(|(idx, _)| idx)
-            .unwrap_or(0);
-        let dominant_frequency = frequencies[dominant_idx];
-
-        // Spectral centroid
-        let total_power: f64 = psd.iter().sum();
+        // Spectral centroid: the power-weighted mean frequency. Undefined
+        // (NaN) for a series with no spectral power at all, i.e. a constant.
         let spectral_centroid = if total_power > 0.0 {
             frequencies
                 .iter()
@@ -417,53 +415,82 @@ impl TimeSeriesFeatureExtractor {
                 .sum::<f64>()
                 / total_power
         } else {
-            0.0
+            f64::NAN
         };
 
-        // Spectral bandwidth
+        // Spectral bandwidth: the power-weighted spread about the centroid.
         let spectral_bandwidth = if total_power > 0.0 {
-            frequencies
+            (frequencies
                 .iter()
                 .zip(&psd)
                 .map(|(freq, power)| (freq - spectral_centroid).powi(2) * power)
                 .sum::<f64>()
-                / total_power
+                / total_power)
+                .sqrt()
         } else {
-            0.0
-        }
-        .sqrt();
+            f64::NAN
+        };
 
-        // Spectral rolloff (frequency below which 85% of energy is contained)
-        let mut cumulative_power = 0.0;
-        let rolloff_threshold = 0.85 * total_power;
-        let spectral_rolloff = frequencies
-            .iter()
-            .zip(&psd)
-            .find(|(_, power)| {
-                cumulative_power += *power;
-                cumulative_power >= rolloff_threshold
-            })
-            .map(|(freq, _)| *freq)
-            .unwrap_or(0.5);
+        // Spectral rolloff: the frequency below which 85% of the power lies.
+        let spectral_rolloff = if total_power > 0.0 {
+            let rolloff_threshold = 0.85 * total_power;
+            let mut cumulative_power = 0.0;
+            frequencies
+                .iter()
+                .zip(&psd)
+                .find(|(_, power)| {
+                    cumulative_power += *power;
+                    cumulative_power >= rolloff_threshold
+                })
+                .map(|(freq, _)| *freq)
+                // The cumulative sum reaches the threshold by construction
+                // unless rounding leaves it a hair short; fall back to Nyquist.
+                .unwrap_or_else(|| frequencies.last().copied().unwrap_or(f64::NAN))
+        } else {
+            f64::NAN
+        };
 
-        // Spectral flux (simplified)
-        let spectral_flux = psd
-            .windows(2)
-            .map(|window| (window[1] - window[0]).abs())
-            .sum::<f64>()
-            / psd.len() as f64;
+        // Spectral flux across neighbouring bins (spectral roughness): the
+        // mean absolute bin-to-bin change of the PSD.
+        let spectral_flux = if psd.len() > 1 {
+            psd.windows(2)
+                .map(|window| (window[1] - window[0]).abs())
+                .sum::<f64>()
+                / (psd.len() - 1) as f64
+        } else {
+            f64::NAN
+        };
 
-        // Harmonic-to-noise ratio (simplified)
-        let hnr = if psd.len() > 1 {
-            let signal_power = psd[1..].iter().sum::<f64>();
-            let noise_power = psd[0];
-            if noise_power > 0.0 {
-                10.0 * (signal_power / noise_power).log10()
-            } else {
-                0.0
+        // Harmonic-to-noise ratio: power in the dominant frequency and its
+        // integer harmonics (each bin plus its immediate neighbours, to absorb
+        // spectral leakage) against everything else. The previous version
+        // divided the whole spectrum by the DC bin, which after mean removal
+        // is ~0 and carries no harmonic meaning at all.
+        let hnr = match spectrum.dominant_bin() {
+            Some(base) if base > 0 && total_power > 0.0 => {
+                let mut harmonic_power = 0.0;
+                let mut counted = vec![false; psd.len()];
+                let mut harmonic = base;
+                while harmonic < psd.len() {
+                    let lo = harmonic.saturating_sub(1);
+                    let hi = (harmonic + 1).min(psd.len() - 1);
+                    for (bin, seen) in counted.iter_mut().enumerate().take(hi + 1).skip(lo) {
+                        if !*seen {
+                            *seen = true;
+                            harmonic_power += psd[bin];
+                        }
+                    }
+                    harmonic += base;
+                }
+                let noise_power = total_power - harmonic_power;
+                if noise_power > 0.0 {
+                    10.0 * (harmonic_power / noise_power).log10()
+                } else {
+                    // A pure tone: no residual noise floor to compare against.
+                    f64::INFINITY
+                }
             }
-        } else {
-            0.0
+            _ => f64::NAN,
         };
 
         Ok(FrequencyFeatures {
@@ -478,24 +505,34 @@ impl TimeSeriesFeatureExtractor {
         })
     }
 
-    /// Extract complexity features
+    /// Extract complexity features.
+    ///
+    /// Approximate and sample entropy are computed at the conventional
+    /// tolerance `r = 0.2 · σ` (Pincus 1991; Richman & Moorman 2000), where σ
+    /// is the sample standard deviation of the series. The call sites
+    /// previously passed the *relative* factor `0.2` straight through as the
+    /// absolute Chebyshev radius, so both statistics were scale-dependent
+    /// artefacts: a series in millivolts and the same series in volts got
+    /// wildly different "complexity".
     fn extract_complexity_features(&self, values: &[f64]) -> Result<ComplexityFeatures> {
+        let tolerance = Self::entropy_tolerance(values, 0.2);
+
         // Approximate entropy
-        let approximate_entropy = self.approximate_entropy(values, 2, 0.2)?;
+        let approximate_entropy = self.approximate_entropy(values, 2, tolerance)?;
 
         // Sample entropy
-        let sample_entropy = self.sample_entropy(values, 2, 0.2)?;
+        let sample_entropy = self.sample_entropy(values, 2, tolerance)?;
 
         // Permutation entropy
         let permutation_entropy = self.permutation_entropy(values, 3)?;
 
-        // Spectral entropy (simplified)
+        // Spectral entropy
         let spectral_entropy = self.spectral_entropy(values)?;
 
         // Lempel-Ziv complexity
         let lempel_ziv_complexity = self.lempel_ziv_complexity(values)?;
 
-        // Fractal dimension (box-counting method, simplified)
+        // Fractal dimension (Higuchi)
         let fractal_dimension = self.fractal_dimension(values)?;
 
         // Hurst exponent
@@ -514,6 +551,28 @@ impl TimeSeriesFeatureExtractor {
             hurst_exponent,
             dfa_alpha,
         })
+    }
+
+    /// Chebyshev matching radius for the regularity entropies: `factor · σ`
+    /// with σ the sample (`ddof = 1`) standard deviation.
+    ///
+    /// Returns `NaN` for a series that has no spread (fewer than two points,
+    /// or a constant), which propagates through [`Self::approximate_entropy`]
+    /// and [`Self::sample_entropy`] as "not estimable" instead of silently
+    /// collapsing every comparison onto an all-match / no-match degenerate.
+    fn entropy_tolerance(values: &[f64], factor: f64) -> f64 {
+        let n = values.len();
+        if n < 2 {
+            return f64::NAN;
+        }
+        let mean = values.iter().sum::<f64>() / n as f64;
+        let variance = values.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / (n - 1) as f64;
+        let std_dev = variance.sqrt();
+        if std_dev > 0.0 {
+            factor * std_dev
+        } else {
+            f64::NAN
+        }
     }
 
     /// Count zero crossings (crossings around the mean of the series)
@@ -650,11 +709,14 @@ impl TimeSeriesFeatureExtractor {
                 lower_band.push(lower);
                 band_width.push(upper - lower);
 
-                // %B indicator
+                // %B indicator. A zero-width band (a perfectly flat window)
+                // leaves %B undefined — reporting the band midpoint `0.5`
+                // would claim the price sits exactly between two coincident
+                // bands, so this is NaN.
                 if upper != lower {
                     percent_b.push((values[i] - lower) / (upper - lower));
                 } else {
-                    percent_b.push(0.5);
+                    percent_b.push(f64::NAN);
                 }
             } else {
                 upper_band.push(f64::NAN);
@@ -709,7 +771,7 @@ impl TimeSeriesFeatureExtractor {
             .map(|(x, y)| x * y)
             .sum::<f64>();
         let sum_x2 = x_values.iter().map(|x| x * x).sum::<f64>();
-        let sum_y2 = window_values.iter().map(|y| y * y).sum::<f64>();
+        let _sum_y2 = window_values.iter().map(|y| y * y).sum::<f64>();
 
         let slope = (n * sum_xy - sum_x * sum_y) / (n * sum_x2 - sum_x * sum_x);
 
@@ -735,36 +797,6 @@ impl TimeSeriesFeatureExtractor {
         };
 
         Ok(r_squared)
-    }
-
-    /// Calculate autocorrelation
-    fn calculate_autocorrelation(&self, values: &[f64], lag: usize) -> Result<f64> {
-        if lag >= values.len() {
-            return Ok(0.0);
-        }
-
-        let n = values.len() - lag;
-        let mean = values.iter().sum::<f64>() / values.len() as f64;
-
-        let mut numerator = 0.0;
-        let mut denominator = 0.0;
-
-        for i in 0..n {
-            let dev1 = values[i] - mean;
-            let dev2 = values[i + lag] - mean;
-            numerator += dev1 * dev2;
-        }
-
-        for &val in values {
-            let dev = val - mean;
-            denominator += dev * dev;
-        }
-
-        if denominator == 0.0 {
-            Ok(0.0)
-        } else {
-            Ok(numerator / denominator)
-        }
     }
 
     /// Calculate correlation between two series
@@ -797,10 +829,19 @@ impl TimeSeriesFeatureExtractor {
         }
     }
 
-    /// Calculate approximate entropy
+    /// Calculate the approximate entropy `ApEn(m, r)` (Pincus, 1991).
+    ///
+    /// `r` is the **absolute** Chebyshev matching radius; callers that want the
+    /// conventional relative tolerance should pass
+    /// `Self::entropy_tolerance(values, 0.2)` (i.e. `0.2 · σ`).
+    ///
+    /// Returns `NaN` when the series is shorter than `m + 1` or `r` is not a
+    /// usable radius (non-finite or non-positive — e.g. a constant series has
+    /// no scale to normalize against), because ApEn is genuinely undefined
+    /// there; the previous `Ok(0.0)` reported "perfectly regular" instead.
     fn approximate_entropy(&self, values: &[f64], m: usize, r: f64) -> Result<f64> {
-        if values.len() < m + 1 {
-            return Ok(0.0);
+        if values.len() < m + 1 || !r.is_finite() || r <= 0.0 {
+            return Ok(f64::NAN);
         }
 
         let n = values.len();
@@ -831,14 +872,24 @@ impl TimeSeriesFeatureExtractor {
         if phi.len() == 2 {
             Ok(phi[0] - phi[1])
         } else {
-            Ok(0.0)
+            Ok(f64::NAN)
         }
     }
 
-    /// Calculate sample entropy
+    /// Calculate the sample entropy `SampEn(m, r)` (Richman & Moorman, 2000).
+    ///
+    /// `r` is the **absolute** Chebyshev matching radius (see
+    /// [`Self::approximate_entropy`] and [`Self::entropy_tolerance`]).
+    ///
+    /// Returns `NaN` when the series is shorter than `m + 1`, `r` is unusable,
+    /// or there are no length-`m` template matches at all (`B = 0`, so the
+    /// conditional probability `A/B` has no denominator). Returns `+∞` when
+    /// there are `m`-matches but no `(m+1)`-matches (`A = 0`): that is the
+    /// genuine value of `−ln(A/B)`, and the standard "no estimate available at
+    /// this series length" signal, not a regularity of `0.0`.
     fn sample_entropy(&self, values: &[f64], m: usize, r: f64) -> Result<f64> {
-        if values.len() < m + 1 {
-            return Ok(0.0);
+        if values.len() < m + 1 || !r.is_finite() || r <= 0.0 {
+            return Ok(f64::NAN);
         }
 
         let n = values.len();
@@ -869,35 +920,51 @@ impl TimeSeriesFeatureExtractor {
         }
 
         if b == 0.0 {
-            Ok(0.0)
+            Ok(f64::NAN)
         } else {
             Ok(-(a / b).ln())
         }
     }
 
-    /// Calculate permutation entropy
+    /// Calculate the Bandt-Pompe permutation entropy of embedding dimension
+    /// `order` (Bandt & Pompe, 2002), in nats.
+    ///
+    /// Each length-`order` window is mapped to its **ordinal pattern**: the
+    /// argsort permutation `π` such that `x[i+π₀] ≤ x[i+π₁] ≤ … ≤ x[i+π_{m-1}]`.
+    /// The entropy is the Shannon entropy of the empirical distribution over
+    /// the `order!` possible patterns.
+    ///
+    /// The previous implementation computed the argsort but then discarded it
+    /// (`indices.into_iter().enumerate().map(|(rank, _)| rank)` rebuilds
+    /// `0, 1, …, order-1` no matter what the data was), so every window mapped
+    /// to the same key, the distribution was always a single atom, and the
+    /// function returned exactly `0.0` for every input.
+    ///
+    /// # Errors
+    /// Returns [`Error::InvalidInput`] when `order < 2` (no ordering exists)
+    /// or the series is shorter than `order`.
     fn permutation_entropy(&self, values: &[f64], order: usize) -> Result<f64> {
+        if order < 2 {
+            return Err(Error::InvalidInput(format!(
+                "permutation entropy needs an embedding order of at least 2, got {order}"
+            )));
+        }
         if values.len() < order {
-            return Ok(0.0);
+            return Err(Error::InvalidInput(format!(
+                "permutation entropy of order {order} needs at least {order} observations, got {}",
+                values.len()
+            )));
         }
 
-        let mut permutation_counts = HashMap::new();
+        let mut permutation_counts: HashMap<Vec<usize>, usize> = HashMap::new();
         let total_patterns = values.len() - order + 1;
 
         for i in 0..total_patterns {
             let pattern = &values[i..i + order];
-            let mut indices: Vec<usize> = (0..order).collect();
-            indices.sort_by(|&a, &b| {
-                pattern[a]
-                    .partial_cmp(&pattern[b])
-                    .unwrap_or(std::cmp::Ordering::Equal)
-            });
-
-            let permutation = indices
-                .into_iter()
-                .enumerate()
-                .map(|(rank, _)| rank)
-                .collect::<Vec<_>>();
+            let mut permutation: Vec<usize> = (0..order).collect();
+            // Ties break on position, which keeps the pattern well defined and
+            // deterministic (the Bandt-Pompe convention for equal values).
+            permutation.sort_by(|&a, &b| pattern[a].total_cmp(&pattern[b]).then(a.cmp(&b)));
 
             *permutation_counts.entry(permutation).or_insert(0) += 1;
         }
@@ -913,26 +980,22 @@ impl TimeSeriesFeatureExtractor {
         Ok(entropy)
     }
 
-    /// Calculate spectral entropy
+    /// Calculate the spectral entropy: the Shannon entropy (in nats) of the
+    /// power spectral density normalized to a probability distribution.
+    ///
+    /// Built on the same OxiFFT periodogram as the frequency features, rather
+    /// than on the truncated 20-lag autocorrelation cosine sum this replaced.
     fn spectral_entropy(&self, values: &[f64]) -> Result<f64> {
-        // Calculate power spectral density
-        let mut psd = Vec::new();
-        for k in 0..values.len() / 2 {
-            let mut power = 0.0;
-            for lag in 0..std::cmp::min(values.len() / 4, 20) {
-                let autocorr = self.calculate_autocorrelation(values, lag)?;
-                power += autocorr * (2.0 * PI * k as f64 * lag as f64 / values.len() as f64).cos();
-            }
-            psd.push(power.abs());
+        let spectrum = periodogram(values, Detrend::Mean)?;
+        let total_power = spectrum.total_power();
+        if !(total_power > 0.0) {
+            // A constant series has no spectral content; its normalized
+            // spectrum is undefined rather than "zero entropy".
+            return Ok(f64::NAN);
         }
 
-        // Normalize PSD
-        let total_power: f64 = psd.iter().sum();
-        if total_power == 0.0 {
-            return Ok(0.0);
-        }
-
-        let entropy = psd
+        let entropy = spectrum
+            .psd
             .iter()
             .filter(|&&p| p > 0.0)
             .map(|&p| {
@@ -944,162 +1007,269 @@ impl TimeSeriesFeatureExtractor {
         Ok(entropy)
     }
 
-    /// Calculate Lempel-Ziv complexity (simplified)
+    /// Calculate the normalized Lempel-Ziv complexity (LZ76).
+    ///
+    /// The series is binarized against its **median** (a robust threshold), then
+    /// parsed with the Kaspar-Schuster (1987) realization of the Lempel-Ziv
+    /// (1976) production complexity `c(n)`. The result is normalized by the
+    /// asymptotic upper bound for a `b`-symbol alphabet, `b(n) = n / log_b(n)`
+    /// (here `b = 2`), so a random binary sequence tends to `1.0`:
+    ///     `C = c(n) * log_2(n) / n`.
     fn lempel_ziv_complexity(&self, values: &[f64]) -> Result<f64> {
-        // Convert to binary sequence (simplified)
-        let median = values.iter().sum::<f64>() / values.len() as f64;
-        let binary: Vec<u8> = values
-            .iter()
-            .map(|&x| if x >= median { 1 } else { 0 })
-            .collect();
-
-        let mut complexity = 1;
-        let mut i = 0;
-
-        while i < binary.len() {
-            let mut j = 1;
-            while i + j <= binary.len() {
-                let pattern = &binary[i..i + j];
-                let mut found = false;
-
-                for k in 0..i {
-                    if k + j <= i && &binary[k..k + j] == pattern {
-                        found = true;
-                        break;
-                    }
-                }
-
-                if !found {
-                    break;
-                }
-                j += 1;
-            }
-
-            complexity += 1;
-            i += j;
-        }
-
-        Ok(complexity as f64 / values.len() as f64)
-    }
-
-    /// Calculate fractal dimension (simplified box-counting)
-    fn fractal_dimension(&self, values: &[f64]) -> Result<f64> {
-        if values.is_empty() {
+        let n = values.len();
+        if n < 2 {
             return Ok(0.0);
         }
 
-        // Simplified fractal dimension calculation
-        let min_val = values.iter().cloned().fold(f64::INFINITY, f64::min);
-        let max_val = values.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-        let range = max_val - min_val;
+        // Robust binarization against the true median (not the mean).
+        let median = {
+            let mut sorted = values.to_vec();
+            sorted.sort_by(|a, b| a.total_cmp(b));
+            if sorted.len() % 2 == 0 {
+                (sorted[sorted.len() / 2 - 1] + sorted[sorted.len() / 2]) / 2.0
+            } else {
+                sorted[sorted.len() / 2]
+            }
+        };
+        let s: Vec<u8> = values.iter().map(|&x| u8::from(x >= median)).collect();
 
-        if range == 0.0 {
+        // LZ76 production-complexity count (Kaspar & Schuster, 1987).
+        let mut c = 1usize; // number of distinct productions
+        let mut u = 1usize; // length of the already-reconstructed prefix
+        let mut v = 1usize; // current candidate substring length
+        let mut v_max = 1usize; // longest reproducible substring at this prefix
+        let mut i = 0usize; // pointer scanning the prefix
+        while u + v <= n {
+            if s[i + v - 1] == s[u + v - 1] {
+                v += 1;
+            } else {
+                if v > v_max {
+                    v_max = v;
+                }
+                i += 1;
+                if i == u {
+                    // No prefix substring reproduces the next block: new production.
+                    c += 1;
+                    u += v_max;
+                    i = 0;
+                    v = 1;
+                    v_max = 1;
+                } else {
+                    v = 1;
+                }
+            }
+        }
+        if v != 1 {
+            c += 1;
+        }
+
+        // Normalize by the b(n) = n / log_2(n) upper bound (binary alphabet).
+        let normalized = c as f64 * (n as f64).log2() / n as f64;
+        Ok(normalized)
+    }
+
+    /// Estimate the fractal dimension with Higuchi's method (HFD, 1988).
+    ///
+    /// For each scale `k` the mean curve length `L(k)` of the `k` interleaved
+    /// sub-series is computed; `L(k) ∝ k^{-D}`, so the dimension `D` is the slope
+    /// of `ln L(k)` against `ln(1/k)`. This operates on the temporal structure of
+    /// the signal (unlike amplitude-only box counting) and returns a value in the
+    /// usual `[1, 2]` range for a 1-D time series.
+    ///
+    /// Returns `NaN` when fewer than four observations are available or fewer
+    /// than two scales produce a usable curve length, since the log-log slope
+    /// is then undefined; a **constant** series is the one honest special case
+    /// (`L(k) ≡ 0` at every scale) and is reported as the mathematically
+    /// correct `D = 1.0` for a flat line.
+    fn fractal_dimension(&self, values: &[f64]) -> Result<f64> {
+        let n = values.len();
+        if n < 4 {
+            return Ok(f64::NAN);
+        }
+        let is_constant = values.windows(2).all(|w| w[0] == w[1]);
+        if is_constant {
             return Ok(1.0);
         }
 
-        let mut log_scales = Vec::new();
-        let mut log_counts = Vec::new();
+        // Scales 1..=k_max; cap so every sub-series has at least one increment.
+        let k_max = std::cmp::max(2, std::cmp::min(10, n / 4));
 
-        for &scale in &[2, 4, 8, 16, 32] {
-            if scale < values.len() {
-                let box_size = range / scale as f64;
-                let mut occupied_boxes = std::collections::HashSet::new();
+        let mut ln_inv_k = Vec::new();
+        let mut ln_len = Vec::new();
 
-                for &value in values {
-                    let box_index = ((value - min_val) / box_size).floor() as i32;
-                    occupied_boxes.insert(box_index);
+        for k in 1..=k_max {
+            let mut lk_sum = 0.0;
+            let mut m_count = 0usize;
+
+            // m is 1-based per Higuchi; arrays are 0-based (X(j) == values[j-1]).
+            for m in 1..=k {
+                let num_steps = (n - m) / k; // floor((N - m) / k)
+                if num_steps < 1 {
+                    continue;
                 }
 
-                log_scales.push((1.0 / scale as f64).ln());
-                log_counts.push((occupied_boxes.len() as f64).ln());
+                let mut length = 0.0;
+                for step in 1..=num_steps {
+                    let idx_curr = m + step * k - 1;
+                    let idx_prev = m + (step - 1) * k - 1;
+                    length += (values[idx_curr] - values[idx_prev]).abs();
+                }
+
+                // Normalization factor (N-1) / (num_steps * k), then the 1/k mean.
+                let norm = (n - 1) as f64 / (num_steps as f64 * k as f64);
+                lk_sum += length * norm / k as f64;
+                m_count += 1;
+            }
+
+            if m_count > 0 {
+                let lk = lk_sum / m_count as f64;
+                if lk > 0.0 {
+                    ln_inv_k.push((1.0 / k as f64).ln());
+                    ln_len.push(lk.ln());
+                }
             }
         }
 
-        if log_scales.len() < 2 {
-            return Ok(1.5); // Default fractal dimension
+        if ln_inv_k.len() < 2 {
+            return Ok(f64::NAN);
         }
 
-        // Linear regression to find slope
-        let n = log_scales.len() as f64;
-        let sum_x = log_scales.iter().sum::<f64>();
-        let sum_y = log_counts.iter().sum::<f64>();
-        let sum_xy = log_scales
+        // L(k) ∝ k^{-D} ⇒ ln L = D·ln(1/k) + const, so the slope is D directly.
+        let count = ln_inv_k.len() as f64;
+        let sum_x = ln_inv_k.iter().sum::<f64>();
+        let sum_y = ln_len.iter().sum::<f64>();
+        let sum_xy = ln_inv_k
             .iter()
-            .zip(&log_counts)
+            .zip(&ln_len)
             .map(|(x, y)| x * y)
             .sum::<f64>();
-        let sum_x2 = log_scales.iter().map(|x| x * x).sum::<f64>();
+        let sum_x2 = ln_inv_k.iter().map(|x| x * x).sum::<f64>();
 
-        let slope = (n * sum_xy - sum_x * sum_y) / (n * sum_x2 - sum_x * sum_x);
+        let denom = count * sum_x2 - sum_x * sum_x;
+        if denom.abs() < 1e-12 {
+            return Ok(f64::NAN);
+        }
+        let slope = (count * sum_xy - sum_x * sum_y) / denom;
 
-        Ok(slope.abs())
+        Ok(slope)
     }
 
-    /// Calculate Hurst exponent using R/S analysis
+    /// Estimate the Hurst exponent by rescaled-range (R/S) analysis
+    /// (Hurst 1951; Mandelbrot & Wallis 1969).
+    ///
+    /// For every scale `s` the series is cut into `⌊N/s⌋` **non-overlapping**
+    /// windows; within each window the cumulative deviation from that window's
+    /// own mean gives the range `R`, which is divided by the window's own
+    /// standard deviation `S`. The rescaled ranges are averaged per scale and
+    /// `ln E[R/S]` is regressed on `ln s`; the slope is `H`.
+    ///
+    /// The previous implementation used a hardcoded scale ladder
+    /// `[10, 20, 50, 100]`, evaluated only the **first** window at each scale,
+    /// and rescaled by the *global* mean and standard deviation instead of the
+    /// window's — so it measured how far the prefix drifted from the global
+    /// mean rather than a rescaled range, and produced no estimate at all for
+    /// series shorter than 20 points (falling back to a literal `0.5`).
+    ///
+    /// Returns `NaN` when fewer than two scales yield a usable `R/S` (a series
+    /// under 16 points, or one that is constant inside every window). The
+    /// estimate is clamped to `[0, 1]`, the range in which `H` is defined.
     fn hurst_exponent(&self, values: &[f64]) -> Result<f64> {
-        if values.len() < 10 {
-            return Ok(0.5);
+        let len = values.len();
+        if len < 16 {
+            return Ok(f64::NAN);
         }
 
         let mut log_rs = Vec::new();
-        let mut log_n = Vec::new();
+        let mut log_scale = Vec::new();
 
-        let mean = values.iter().sum::<f64>() / values.len() as f64;
-        let cumulative_devs: Vec<f64> = values
-            .iter()
-            .scan(0.0, |acc, &x| {
-                *acc += x - mean;
-                Some(*acc)
-            })
-            .collect();
+        // Geometric scale ladder from 8 up to N/2, so that every scale has at
+        // least two windows to average over.
+        let mut scale = 8usize;
+        while scale <= len / 2 {
+            let n_windows = len / scale;
+            let mut rs_values = Vec::with_capacity(n_windows);
 
-        for &n in &[10, 20, 50, 100] {
-            if n < values.len() {
-                let range = cumulative_devs[..n]
-                    .iter()
-                    .cloned()
-                    .fold(f64::NEG_INFINITY, f64::max)
-                    - cumulative_devs[..n]
-                        .iter()
-                        .cloned()
-                        .fold(f64::INFINITY, f64::min);
+            for w in 0..n_windows {
+                let window = &values[w * scale..(w + 1) * scale];
+                let mean = window.iter().sum::<f64>() / scale as f64;
+
+                let mut cumulative = 0.0;
+                let mut max_dev = f64::NEG_INFINITY;
+                let mut min_dev = f64::INFINITY;
+                for &x in window {
+                    cumulative += x - mean;
+                    max_dev = max_dev.max(cumulative);
+                    min_dev = min_dev.min(cumulative);
+                }
+                let range = max_dev - min_dev;
 
                 let std_dev =
-                    values[..n].iter().map(|&x| (x - mean).powi(2)).sum::<f64>() / n as f64;
-                let std_dev = std_dev.sqrt();
+                    (window.iter().map(|&x| (x - mean).powi(2)).sum::<f64>() / scale as f64).sqrt();
 
-                if std_dev > 0.0 {
-                    let rs = range / std_dev;
-                    log_rs.push(rs.ln());
-                    log_n.push((n as f64).ln());
+                if std_dev > 0.0 && range > 0.0 {
+                    rs_values.push(range / std_dev);
                 }
             }
+
+            if !rs_values.is_empty() {
+                let mean_rs = rs_values.iter().sum::<f64>() / rs_values.len() as f64;
+                log_rs.push(mean_rs.ln());
+                log_scale.push((scale as f64).ln());
+            }
+
+            // Roughly √2 spacing keeps the ladder dense without repeating scales.
+            let next = (scale as f64 * std::f64::consts::SQRT_2).round() as usize;
+            scale = next.max(scale + 1);
         }
 
-        if log_n.len() < 2 {
-            return Ok(0.5);
+        if log_scale.len() < 2 {
+            return Ok(f64::NAN);
         }
 
-        // Linear regression
-        let n = log_n.len() as f64;
-        let sum_x = log_n.iter().sum::<f64>();
+        // Linear regression of ln E[R/S] on ln s.
+        let n = log_scale.len() as f64;
+        let sum_x = log_scale.iter().sum::<f64>();
         let sum_y = log_rs.iter().sum::<f64>();
-        let sum_xy = log_n.iter().zip(&log_rs).map(|(x, y)| x * y).sum::<f64>();
-        let sum_x2 = log_n.iter().map(|x| x * x).sum::<f64>();
+        let sum_xy = log_scale
+            .iter()
+            .zip(&log_rs)
+            .map(|(x, y)| x * y)
+            .sum::<f64>();
+        let sum_x2 = log_scale.iter().map(|x| x * x).sum::<f64>();
 
-        let hurst = (n * sum_xy - sum_x * sum_y) / (n * sum_x2 - sum_x * sum_x);
+        let denom = n * sum_x2 - sum_x * sum_x;
+        if denom.abs() < 1e-12 {
+            return Ok(f64::NAN);
+        }
+        let hurst = (n * sum_xy - sum_x * sum_y) / denom;
 
-        Ok(hurst.max(0.0).min(1.0))
+        Ok(hurst.clamp(0.0, 1.0))
     }
 
-    /// Detrended fluctuation analysis
+    /// Detrended fluctuation analysis (Peng et al., 1994): the scaling
+    /// exponent `α` of the detrended fluctuation `F(s) ∝ s^α`.
+    ///
+    /// The series is integrated (cumulative sum of deviations from the mean),
+    /// cut into boxes of size `s` **from both ends** so the tail left over by
+    /// `N mod s` still contributes, linearly detrended inside each box, and
+    /// `F(s)` is the root-mean-square residual pooled over all boxes. `ln F(s)`
+    /// is then regressed on `ln s`.
+    ///
+    /// Scales run over a geometric ladder from 4 to `N/4` derived from the
+    /// series length, rather than the fixed `[4, 8, 16, 32, 64]` ladder this
+    /// replaced (which silently produced a single usable scale — and therefore
+    /// the hardcoded `1.0` — for any series shorter than 33 points, and never
+    /// looked past `s = 64` however long the series was).
+    ///
+    /// Returns `NaN` when fewer than two scales are usable.
     fn detrended_fluctuation_analysis(&self, values: &[f64]) -> Result<f64> {
-        if values.len() < 20 {
-            return Ok(1.0);
+        let len = values.len();
+        if len < 16 {
+            return Ok(f64::NAN);
         }
 
-        // Create integrated series
-        let mean = values.iter().sum::<f64>() / values.len() as f64;
+        // Create integrated series (the "profile")
+        let mean = values.iter().sum::<f64>() / len as f64;
         let integrated: Vec<f64> = values
             .iter()
             .scan(0.0, |acc, &x| {
@@ -1108,51 +1278,74 @@ impl TimeSeriesFeatureExtractor {
             })
             .collect();
 
+        // Root-mean-square residual of a least-squares line fitted to one box.
+        let box_residual_ms = |box_data: &[f64]| -> Option<f64> {
+            let n = box_data.len() as f64;
+            let sum_x = (0..box_data.len()).map(|j| j as f64).sum::<f64>();
+            let sum_y = box_data.iter().sum::<f64>();
+            let sum_xy = box_data
+                .iter()
+                .enumerate()
+                .map(|(j, y)| j as f64 * y)
+                .sum::<f64>();
+            let sum_x2 = (0..box_data.len()).map(|j| (j * j) as f64).sum::<f64>();
+
+            let denom = n * sum_x2 - sum_x * sum_x;
+            if denom.abs() < 1e-12 {
+                return None;
+            }
+            let slope = (n * sum_xy - sum_x * sum_y) / denom;
+            let intercept = (sum_y - slope * sum_x) / n;
+
+            Some(
+                box_data
+                    .iter()
+                    .enumerate()
+                    .map(|(j, y)| (y - (slope * j as f64 + intercept)).powi(2))
+                    .sum::<f64>()
+                    / n,
+            )
+        };
+
         let mut log_box_sizes = Vec::new();
         let mut log_fluctuations = Vec::new();
 
-        for &box_size in &[4, 8, 16, 32, 64] {
-            if box_size < values.len() / 4 {
-                let num_boxes = integrated.len() / box_size;
-                let mut fluctuations = Vec::new();
+        let max_box = len / 4;
+        let mut box_size = 4usize;
+        while box_size <= max_box {
+            let num_boxes = len / box_size;
+            let mut mean_squares = Vec::with_capacity(2 * num_boxes);
 
-                for i in 0..num_boxes {
-                    let start = i * box_size;
-                    let end = start + box_size;
-                    let box_data = &integrated[start..end];
-
-                    // Linear detrending
-                    let x_vals: Vec<f64> = (0..box_size).map(|j| j as f64).collect();
-                    let n = box_size as f64;
-                    let sum_x = x_vals.iter().sum::<f64>();
-                    let sum_y = box_data.iter().sum::<f64>();
-                    let sum_xy = x_vals.iter().zip(box_data).map(|(x, y)| x * y).sum::<f64>();
-                    let sum_x2 = x_vals.iter().map(|x| x * x).sum::<f64>();
-
-                    let slope = (n * sum_xy - sum_x * sum_y) / (n * sum_x2 - sum_x * sum_x);
-                    let intercept = (sum_y - slope * sum_x) / n;
-
-                    let fluctuation = x_vals
-                        .iter()
-                        .zip(box_data)
-                        .map(|(x, y)| (y - (slope * x + intercept)).powi(2))
-                        .sum::<f64>()
-                        / n;
-
-                    fluctuations.push(fluctuation.sqrt());
+            // Forward pass, then a backward pass offset by the remainder so the
+            // trailing `len % box_size` samples are not discarded.
+            let offset = len - num_boxes * box_size;
+            for i in 0..num_boxes {
+                let start = i * box_size;
+                if let Some(ms) = box_residual_ms(&integrated[start..start + box_size]) {
+                    mean_squares.push(ms);
                 }
-
-                if !fluctuations.is_empty() {
-                    let avg_fluctuation =
-                        fluctuations.iter().sum::<f64>() / fluctuations.len() as f64;
-                    log_box_sizes.push((box_size as f64).ln());
-                    log_fluctuations.push(avg_fluctuation.ln());
+                if offset > 0 {
+                    let start = offset + i * box_size;
+                    if let Some(ms) = box_residual_ms(&integrated[start..start + box_size]) {
+                        mean_squares.push(ms);
+                    }
                 }
             }
+
+            if !mean_squares.is_empty() {
+                let f_s = (mean_squares.iter().sum::<f64>() / mean_squares.len() as f64).sqrt();
+                if f_s > 0.0 {
+                    log_box_sizes.push((box_size as f64).ln());
+                    log_fluctuations.push(f_s.ln());
+                }
+            }
+
+            let next = (box_size as f64 * std::f64::consts::SQRT_2).round() as usize;
+            box_size = next.max(box_size + 1);
         }
 
         if log_box_sizes.len() < 2 {
-            return Ok(1.0);
+            return Ok(f64::NAN);
         }
 
         // Linear regression
@@ -1166,38 +1359,48 @@ impl TimeSeriesFeatureExtractor {
             .sum::<f64>();
         let sum_x2 = log_box_sizes.iter().map(|x| x * x).sum::<f64>();
 
-        let alpha = (n * sum_xy - sum_x * sum_y) / (n * sum_x2 - sum_x * sum_x);
+        let denom = n * sum_x2 - sum_x * sum_x;
+        if denom.abs() < 1e-12 {
+            return Ok(f64::NAN);
+        }
+        let alpha = (n * sum_xy - sum_x * sum_y) / denom;
 
         Ok(alpha)
     }
 }
 
 impl Default for FrequencyFeatures {
+    /// An *empty* feature set: no spectrum has been computed, so every scalar
+    /// is `NaN` ("not measured") rather than a plausible-looking `0.0`.
     fn default() -> Self {
         Self {
-            dominant_frequency: 0.0,
+            dominant_frequency: f64::NAN,
             psd: Vec::new(),
             frequencies: Vec::new(),
-            spectral_centroid: 0.0,
-            spectral_bandwidth: 0.0,
-            spectral_rolloff: 0.0,
-            spectral_flux: 0.0,
-            hnr: 0.0,
+            spectral_centroid: f64::NAN,
+            spectral_bandwidth: f64::NAN,
+            spectral_rolloff: f64::NAN,
+            spectral_flux: f64::NAN,
+            hnr: f64::NAN,
         }
     }
 }
 
 impl Default for ComplexityFeatures {
+    /// An *empty* feature set: nothing has been estimated yet, so every field
+    /// is `NaN`. The previous defaults (`fractal_dimension: 1.5`,
+    /// `hurst_exponent: 0.5`, `dfa_alpha: 1.0`) were indistinguishable from a
+    /// real measurement of a fractional Brownian motion.
     fn default() -> Self {
         Self {
-            approximate_entropy: 0.0,
-            sample_entropy: 0.0,
-            permutation_entropy: 0.0,
-            spectral_entropy: 0.0,
-            lempel_ziv_complexity: 0.0,
-            fractal_dimension: 1.5,
-            hurst_exponent: 0.5,
-            dfa_alpha: 1.0,
+            approximate_entropy: f64::NAN,
+            sample_entropy: f64::NAN,
+            permutation_entropy: f64::NAN,
+            spectral_entropy: f64::NAN,
+            lempel_ziv_complexity: f64::NAN,
+            fractal_dimension: f64::NAN,
+            hurst_exponent: f64::NAN,
+            dfa_alpha: f64::NAN,
         }
     }
 }
@@ -1207,6 +1410,7 @@ mod tests {
     use super::*;
     use crate::time_series::core::{Frequency, TimeSeriesBuilder};
     use chrono::{TimeZone, Utc};
+    use std::f64::consts::PI;
 
     fn create_test_series() -> TimeSeries {
         let mut builder = TimeSeriesBuilder::new();
@@ -1327,5 +1531,44 @@ mod tests {
         // Should detect peaks and valleys from sinusoidal component
         assert!(features.statistical.peaks > 0);
         assert!(features.statistical.valleys > 0);
+    }
+
+    #[test]
+    fn test_higuchi_fractal_dimension_of_line() {
+        // A perfectly linear ramp is a smooth 1-D curve: Higuchi's L(k) ∝ 1/k,
+        // so the fractal dimension must be ≈ 1.0.
+        let extractor = TimeSeriesFeatureExtractor::new();
+        let line: Vec<f64> = (0..64).map(|i| 2.0 * i as f64 + 1.0).collect();
+        let fd = extractor
+            .fractal_dimension(&line)
+            .expect("operation should succeed");
+        assert!(
+            (fd - 1.0).abs() < 0.05,
+            "FD of a line should be ~1.0, got {fd}"
+        );
+    }
+
+    #[test]
+    fn test_lempel_ziv_orders_constant_below_alternating() {
+        // A constant sequence has minimal LZ complexity; an alternating
+        // sequence is far less compressible, so it must score higher.
+        let extractor = TimeSeriesFeatureExtractor::new();
+        let constant = vec![5.0_f64; 40];
+        let alternating: Vec<f64> = (0..40)
+            .map(|i| if i % 2 == 0 { 4.0 } else { 6.0 })
+            .collect();
+
+        let lz_const = extractor
+            .lempel_ziv_complexity(&constant)
+            .expect("operation should succeed");
+        let lz_alt = extractor
+            .lempel_ziv_complexity(&alternating)
+            .expect("operation should succeed");
+
+        assert!(lz_const >= 0.0);
+        assert!(
+            lz_alt > lz_const,
+            "alternating LZ ({lz_alt}) should exceed constant LZ ({lz_const})"
+        );
     }
 }

@@ -1,9 +1,16 @@
 # PandRS Benchmarking Infrastructure
 
-**Version**: 0.3.0
-**Last Updated**: December 2025
+**Version**: 0.4.1
 
-This document describes the comprehensive benchmarking infrastructure for PandRS, designed to measure performance, detect regressions, and guide optimization efforts. All benchmarks are validated and ready for production performance evaluation.
+This document describes the benchmarking infrastructure for PandRS
+(Criterion-based, `harness = false`, declared under `[[bench]]` in
+`Cargo.toml`). There are **12 bench binaries** under `benches/`; this file
+documents the 5 most commonly used ones in detail below, plus a full list of
+all 12 further down. Sample numbers shown anywhere in this document
+(throughput figures, regression-alert text, etc.) are illustrative output
+*format*, not measured results — run the benchmarks yourself for real
+numbers, and see the caveats under "Memory Tracking" and "Establishing
+Baselines" below before trusting any single run.
 
 ## Benchmark Suites
 
@@ -51,12 +58,11 @@ Automated performance regression detection system with baseline comparison.
 
 **Usage:**
 ```bash
-# Run regression tests
 cargo bench --bench regression_benchmark
-
-# Establish new baseline (run after performance improvements)
-cargo test regression_benchmark::tests::test_baseline_creation
 ```
+
+*(There is no working "establish new baseline" command today — see
+"Establishing Baselines" below.)*
 
 ### 3. Profiling Benchmark (`profiling_benchmark.rs`)
 
@@ -103,6 +109,21 @@ Original comprehensive benchmark suite with basic performance testing.
 cargo bench --bench comprehensive_benchmark
 ```
 
+### Other Benchmark Suites
+
+The remaining 7 of the 12 `[[bench]]` targets in `Cargo.toml`, run the same
+way (`cargo bench --bench <name>`):
+
+| Bench | Covers |
+|-------|--------|
+| `comparison_benchmark` | DataFrame creation, GroupBy, filtering, sorting, joins, string ops, aggregation — sized to line up with the Python `pandas_benchmark.py` / `polars_benchmark.py` scripts (see [README.md](README.md#performance) for how those relate) |
+| `pandas_comparison_benchmark` | A Rust re-implementation of pandas-equivalent operations, timed in isolation — it does **not** invoke real pandas; use `pandas_benchmark.py` for that |
+| `comprehensive_features_benchmark` | DataFrame creation, column management, string-pool effects, I/O, distributed processing, series ops, memory usage, aggregation, type conversion, error handling |
+| `ml_benchmarks` | Decision trees, ensemble methods, neural network training |
+| `query_optimizer_benchmarks` | Query-plan optimization techniques |
+| `multitenancy_benchmarks` | Tenant management and data-isolation operations |
+| `simd_string_benchmarks` | SIMD-accelerated vs. scalar string operations |
+
 ## Benchmark Configuration
 
 ### Feature Flags
@@ -117,33 +138,34 @@ cargo bench --features parquet
 cargo bench --features all-safe
 ```
 
-### Environment Variables
+### Criterion Configuration
 
-```bash
-# Set number of iterations
-export CRITERION_SAMPLE_SIZE=50
+There are no `CRITERION_SAMPLE_SIZE` / `CRITERION_HTML` environment
+variables — Criterion doesn't read either of those. What's actually true:
 
-# Generate HTML reports
-export CRITERION_HTML=1
-```
+- **HTML reports**: PandRS depends on `criterion` with the `html_reports`
+  feature enabled in `Cargo.toml`, so HTML output under
+  `target/criterion/` is generated automatically on every `cargo bench` run
+  — no configuration needed.
+- **Sample size / other run parameters**: pass Criterion's own CLI flags
+  after `--`, e.g. `cargo bench --bench comprehensive_benchmark -- --sample-size 50`.
+  Run `cargo bench --bench <name> -- --help` for the full flag list for that
+  binary.
 
 ## Performance Baselines
 
-### Establishing Baselines
+### Establishing Baselines (currently not wired to a runnable command)
 
-```rust
-// In regression_benchmark.rs
-#[test]
-fn test_baseline_creation() {
-    establish_baseline();
-}
-```
-
-Run this test after making performance improvements to update the baseline:
-
-```bash
-cargo test regression_benchmark::tests::test_baseline_creation
-```
+`regression_benchmark.rs` contains an `establish_baseline()` helper and a
+`#[test] fn test_baseline_creation()` that calls it, but this bench target
+is declared `harness = false` in `Cargo.toml` — which means its own `main()`
+(from `criterion_main!`) replaces the standard test harness, so `#[test]`
+functions inside it are not runnable via `cargo test` the normal way.
+`cargo test regression_benchmark::tests::test_baseline_creation` (a command
+that appeared in earlier versions of this document) does not work. Until
+this is wired up, treat `establish_baseline()` as source you'd invoke by
+temporarily calling it from the bench's own `main`, not as a documented CLI
+command.
 
 ### Baseline Format
 
@@ -168,14 +190,27 @@ Baselines are stored in JSON format with the following structure:
 
 ### Regression Alerts
 
-The system automatically detects performance regressions:
+`regression_benchmark.rs`'s 5 registered bench functions print a warning
+(format below) when a `benchmark_baseline.json` file is present and the
+current run is more than 10% slower than the recorded baseline for that
+operation. This detection code runs for real on every
+`cargo bench --bench regression_benchmark` invocation — but per the note
+above, there is currently no clean, documented way to *create* that
+baseline file in the first place, so treat this as "the mechanism exists in
+source" rather than "there's a baseline checked in for you to compare
+against."
 
 ```
 ⚠️  REGRESSION DETECTED in aggregation_sum: 15.3% slower
 ⚠️  REGRESSION DETECTED in parallel_groupby: 12.7% slower
 ```
 
+*(Example output format — the specific percentages above are illustrative, not measured.)*
+
 ### Throughput Reporting
+
+Example output format from the benches that print throughput lines
+(illustrative, not measured):
 
 ```
 📊 Pattern: random, Size: 100000, Time: 45.2ms, Memory: 2048576 bytes, Peak: 3145728 bytes
@@ -206,30 +241,30 @@ The system automatically detects performance regressions:
 
 ## Integration with CI/CD
 
-### Automated Regression Detection
+**No CI workflow currently runs benchmarks.** The only workflow in
+`.github/workflows/` (`pypi-publish.yml`) builds and publishes Python wheels
+on version tags; it does not run `cargo bench`. The YAML below is an
+illustrative sketch of what a benchmarks workflow *could* look like if one
+is added later — it is not wired up today and referencing it as `.yml` is
+not a claim that the file exists.
 
 ```yaml
-# .github/workflows/benchmarks.yml
+# Illustrative only — not a workflow that exists in this repo today.
 - name: Run Performance Benchmarks
   run: |
     cargo bench --bench regression_benchmark
     # Fail if regressions detected (exit code handling)
 ```
 
-### Performance Tracking
-
-```yaml
-- name: Store Benchmark Results
-  run: |
-    cargo bench --bench enhanced_comprehensive_benchmark -- --output-format json
-    # Upload results to performance monitoring service
-```
-
 ## Troubleshooting
 
 ### Common Issues
 
-1. **Memory Allocator**: Memory tracking requires custom allocator setup
+1. **Memory Allocator**: `profiling_benchmark.rs` defines a `TrackingAllocator`,
+   but its `#[global_allocator]` registration is currently commented out in
+   that file — so the memory-usage numbers that benchmark prints are not
+   measuring real allocations right now. Treat any "Memory:"/"Peak:" output
+   from `profiling_benchmark` as inert until that's re-enabled.
 2. **Feature Flags**: Some benchmarks require specific features (e.g., parquet)
 3. **System Resources**: Large dataset benchmarks may require sufficient RAM
 

@@ -60,61 +60,62 @@ pub fn register_builtin_plugins() -> Result<()> {
 
 /// Obtain a read-only snapshot of the global registry wrapped in an Arc.
 ///
-/// The returned Arc holds a clone of the current registry state so callers
-/// can build pipelines without holding the global lock.
+/// The returned Arc holds a **new** `PluginRegistry` populated with clones
+/// of the same plugin `Arc`s the global registry holds (cheap: only the
+/// `Arc` pointers are cloned, not plugin data), so callers can build
+/// pipelines without holding the global lock for the pipeline's lifetime.
+///
+/// # Non-reentrancy
+///
+/// This acquires `GLOBAL_REGISTRY`'s read lock directly, exactly once (it
+/// does not call [`with_global_registry`], specifically so this function
+/// alone can never self-deadlock). `std::sync::RwLock` is not reentrant in
+/// general, though: do not call this function, [`with_global_registry`], or
+/// any `register_*`/`unregister_*` helper below from inside a closure
+/// passed to [`with_global_registry_mut`] on the same thread. That thread
+/// already holds the write lock, and any nested lock attempt -- read or
+/// write -- blocks waiting for a lock the same thread is already holding,
+/// which can never be released.
 pub fn global_registry() -> Result<Arc<PluginRegistry>> {
-    // We can't return &'static data easily without poisoning issues, so we clone.
-    // This is intentional: pipelines are short-lived and the clone is cheap
-    // (only Arc pointers are cloned, not plugin data).
     let registry = GLOBAL_REGISTRY.read().map_err(|_| Error::LockPoisoned {
         context: "global registry read lock".to_string(),
     })?;
 
-    // Build a fresh PluginRegistry and re-populate from the global one.
-    // Since we cannot clone PluginRegistry directly (dyn traits aren't Clone),
-    // we instead return the internal state via a newtype wrapper.
-    // As a practical approach we use a separate Arc-wrapped copy mechanism:
-    drop(registry);
-
-    // Alternative: expose a method on PluginRegistry to snapshot itself.
-    // For now we use the simpler approach of returning an Arc to a new registry
-    // that shares the same plugin Arcs.
-    with_global_registry(|r| {
-        let mut snapshot = PluginRegistry::new();
-        // Re-register everything from the global
-        for meta in r.list_plugins() {
-            // We can only re-add plugins whose Arc we still hold.
-            // The registry stores Arcs, so list_by_type + get_* works.
-            let _ = meta; // handled below by type
+    let mut snapshot = PluginRegistry::new();
+    for name in registry
+        .list_plugins()
+        .iter()
+        .map(|m| m.name.clone())
+        .collect::<Vec<_>>()
+    {
+        if let Some(p) = registry.get_source(&name) {
+            let _ = snapshot.register_source(p);
         }
-        // Populate by plugin type
-        for name in r
-            .list_plugins()
-            .iter()
-            .map(|m| m.name.clone())
-            .collect::<Vec<_>>()
-        {
-            if let Some(p) = r.get_source(&name) {
-                let _ = snapshot.register_source(p);
-            }
-            if let Some(p) = r.get_sink(&name) {
-                let _ = snapshot.register_sink(p);
-            }
-            if let Some(p) = r.get_transform(&name) {
-                let _ = snapshot.register_transform(p);
-            }
-            if let Some(p) = r.get_aggregator(&name) {
-                let _ = snapshot.register_aggregator(p);
-            }
-            if let Some(p) = r.get_validator(&name) {
-                let _ = snapshot.register_validator(p);
-            }
+        if let Some(p) = registry.get_sink(&name) {
+            let _ = snapshot.register_sink(p);
         }
-        Ok(Arc::new(snapshot))
-    })
+        if let Some(p) = registry.get_transform(&name) {
+            let _ = snapshot.register_transform(p);
+        }
+        if let Some(p) = registry.get_aggregator(&name) {
+            let _ = snapshot.register_aggregator(p);
+        }
+        if let Some(p) = registry.get_validator(&name) {
+            let _ = snapshot.register_validator(p);
+        }
+    }
+    Ok(Arc::new(snapshot))
 }
 
 /// Execute a closure with a read reference to the global registry.
+///
+/// # Non-reentrancy
+///
+/// See [`global_registry`]'s note: do not call this, `global_registry`, or
+/// `with_global_registry_mut` from inside `f` here or inside a closure
+/// passed to `with_global_registry_mut` -- `GLOBAL_REGISTRY` is a plain
+/// `RwLock` with no reentrancy tracking, so a nested lock attempt on the
+/// same thread deadlocks against the lock that same thread already holds.
 pub fn with_global_registry<F, T>(f: F) -> Result<T>
 where
     F: FnOnce(&PluginRegistry) -> Result<T>,
@@ -126,6 +127,14 @@ where
 }
 
 /// Execute a closure with a mutable reference to the global registry.
+///
+/// # Non-reentrancy
+///
+/// `f` must not call [`global_registry`], [`with_global_registry`], or this
+/// function again (directly or transitively) on the same thread: this
+/// function holds `GLOBAL_REGISTRY`'s write lock for the duration of `f`,
+/// and `std::sync::RwLock` is not reentrant, so any nested lock attempt
+/// blocks forever on a lock this thread already holds.
 pub fn with_global_registry_mut<F, T>(f: F) -> Result<T>
 where
     F: FnOnce(&mut PluginRegistry) -> Result<T>,
@@ -159,4 +168,81 @@ pub fn register_aggregator(plugin: Arc<dyn AggregatorPlugin>) -> Result<()> {
 /// Register a custom validator plugin into the global registry.
 pub fn register_validator(plugin: Arc<dyn ValidatorPlugin>) -> Result<()> {
     with_global_registry_mut(|r| r.register_validator(plugin))
+}
+
+/// Unregister a data source plugin from the global registry by name.
+pub fn unregister_source(name: &str) -> Result<Option<Arc<dyn DataSourcePlugin>>> {
+    with_global_registry_mut(|r| Ok(r.unregister_source(name)))
+}
+
+/// Unregister a data sink plugin from the global registry by name.
+pub fn unregister_sink(name: &str) -> Result<Option<Arc<dyn DataSinkPlugin>>> {
+    with_global_registry_mut(|r| Ok(r.unregister_sink(name)))
+}
+
+/// Unregister a transform plugin from the global registry by name.
+pub fn unregister_transform(name: &str) -> Result<Option<Arc<dyn TransformPlugin>>> {
+    with_global_registry_mut(|r| Ok(r.unregister_transform(name)))
+}
+
+/// Unregister an aggregator plugin from the global registry by name.
+pub fn unregister_aggregator(name: &str) -> Result<Option<Arc<dyn AggregatorPlugin>>> {
+    with_global_registry_mut(|r| Ok(r.unregister_aggregator(name)))
+}
+
+/// Unregister a validator plugin from the global registry by name.
+pub fn unregister_validator(name: &str) -> Result<Option<Arc<dyn ValidatorPlugin>>> {
+    with_global_registry_mut(|r| Ok(r.unregister_validator(name)))
+}
+
+/// Replace (hot-swap) a data source plugin in the global registry, even if
+/// one is already registered under the same name.
+pub fn replace_source(
+    plugin: Arc<dyn DataSourcePlugin>,
+) -> Result<Option<Arc<dyn DataSourcePlugin>>> {
+    with_global_registry_mut(|r| Ok(r.replace_source(plugin)))
+}
+
+/// Replace (hot-swap) a data sink plugin in the global registry, even if
+/// one is already registered under the same name.
+pub fn replace_sink(plugin: Arc<dyn DataSinkPlugin>) -> Result<Option<Arc<dyn DataSinkPlugin>>> {
+    with_global_registry_mut(|r| Ok(r.replace_sink(plugin)))
+}
+
+/// Replace (hot-swap) a transform plugin in the global registry, even if
+/// one is already registered under the same name.
+pub fn replace_transform(
+    plugin: Arc<dyn TransformPlugin>,
+) -> Result<Option<Arc<dyn TransformPlugin>>> {
+    with_global_registry_mut(|r| Ok(r.replace_transform(plugin)))
+}
+
+/// Replace (hot-swap) an aggregator plugin in the global registry, even if
+/// one is already registered under the same name.
+pub fn replace_aggregator(
+    plugin: Arc<dyn AggregatorPlugin>,
+) -> Result<Option<Arc<dyn AggregatorPlugin>>> {
+    with_global_registry_mut(|r| Ok(r.replace_aggregator(plugin)))
+}
+
+/// Replace (hot-swap) a validator plugin in the global registry, even if
+/// one is already registered under the same name.
+pub fn replace_validator(
+    plugin: Arc<dyn ValidatorPlugin>,
+) -> Result<Option<Arc<dyn ValidatorPlugin>>> {
+    with_global_registry_mut(|r| Ok(r.replace_validator(plugin)))
+}
+
+/// Remove every plugin from the global registry.
+///
+/// This mutates process-wide state: prefer a local [`PluginRegistry`] for
+/// test isolation over calling this from a test, since a test process that
+/// runs other tests in the same process (e.g. plain `cargo test`, unlike
+/// `cargo nextest`'s one-process-per-test model) would see those tests'
+/// global registrations disappear out from under them.
+pub fn clear_global_registry() -> Result<()> {
+    with_global_registry_mut(|r| {
+        r.clear();
+        Ok(())
+    })
 }

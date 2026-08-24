@@ -15,8 +15,8 @@ use crate::column::{Column, ColumnTrait, ColumnType};
 use crate::error::{Error, Result};
 use crate::optimized::dataframe::OptimizedDataFrame;
 use crate::optimized::jit::simd::{
-    simd_max_f64, simd_max_i64, simd_mean_f64, simd_mean_i64, simd_min_f64, simd_min_i64,
-    simd_sum_f64, simd_sum_i64,
+    simd_max_f64, simd_max_i64, simd_mean_f64, simd_min_f64, simd_min_i64, simd_sum_f64,
+    simd_sum_i64,
 };
 
 /// Direct aggregation methods for OptimizedDataFrame that eliminate conversion overhead
@@ -200,7 +200,18 @@ impl OptimizedDataFrame {
         match column {
             Column::Float64(col) => {
                 if col.null_mask.is_none() {
-                    if col.data.is_empty() {
+                    // `simd_mean_f64` returns `NaN` for an all-`NaN` input
+                    // (its documented "no non-NaN observations" case), so an
+                    // all-`NaN` column (no rows to skip via a null mask)
+                    // would otherwise silently return `Ok(NaN)` instead of
+                    // erroring like `mean_direct`. Detect that degenerate
+                    // case explicitly so this fast path matches
+                    // `Float64Column::mean`'s `None` (-> `Err`) exactly --
+                    // same class of divergence as the `min_simd`/`max_simd`
+                    // all-NaN fix below, found while covering the "all-NaN
+                    // f64" regression case for every `*_simd` method, not
+                    // just min/max.
+                    if col.data.is_empty() || col.data.iter().all(|v| v.is_nan()) {
                         Err(Error::EmptyDataFrame(format!(
                             "Column '{}' is empty",
                             column_name
@@ -223,7 +234,12 @@ impl OptimizedDataFrame {
                             column_name
                         )))
                     } else {
-                        Ok(simd_mean_i64(&col.data) as f64)
+                        // Floating-point division, NOT `simd_mean_i64` (which
+                        // truncates via integer division, e.g. `[1, 2]` ->
+                        // `1` instead of `1.5`). Sum in i64 (exact, matches
+                        // `Int64Column::sum`), then divide by the count in
+                        // f64, matching `mean_direct`'s `Int64Column::mean`.
+                        Ok(simd_sum_i64(&col.data) as f64 / col.data.len() as f64)
                     }
                 } else {
                     col.mean().ok_or(Error::EmptyDataFrame(format!(
@@ -253,7 +269,15 @@ impl OptimizedDataFrame {
         match column {
             Column::Float64(col) => {
                 if col.null_mask.is_none() {
-                    if col.data.is_empty() {
+                    // `simd_max_f64` folds over the `-INFINITY` identity, so
+                    // an all-`NaN` column (no rows to skip via a null mask)
+                    // would otherwise silently return `Ok(-INFINITY)` instead
+                    // of erroring like `max_direct`. Detect that degenerate
+                    // case explicitly so this fast path matches
+                    // `Float64Column::max`'s `None` (-> `Err`) exactly; a
+                    // real all-`-INFINITY` column (no `NaN`) is unaffected
+                    // and still takes the SIMD path below.
+                    if col.data.is_empty() || col.data.iter().all(|v| v.is_nan()) {
                         Err(Error::EmptyDataFrame(format!(
                             "Column '{}' is empty",
                             column_name
@@ -308,7 +332,15 @@ impl OptimizedDataFrame {
         match column {
             Column::Float64(col) => {
                 if col.null_mask.is_none() {
-                    if col.data.is_empty() {
+                    // `simd_min_f64` folds over the `+INFINITY` identity, so
+                    // an all-`NaN` column (no rows to skip via a null mask)
+                    // would otherwise silently return `Ok(+INFINITY)` instead
+                    // of erroring like `min_direct`. Detect that degenerate
+                    // case explicitly so this fast path matches
+                    // `Float64Column::min`'s `None` (-> `Err`) exactly; a
+                    // real all-`+INFINITY` column (no `NaN`) is unaffected
+                    // and still takes the SIMD path below.
+                    if col.data.is_empty() || col.data.iter().all(|v| v.is_nan()) {
                         Err(Error::EmptyDataFrame(format!(
                             "Column '{}' is empty",
                             column_name
@@ -360,7 +392,6 @@ impl OptimizedDataFrame {
 mod tests {
     use super::*;
     use crate::column::{Float64Column, Int64Column};
-    use crate::series::Series;
 
     fn create_test_dataframe() -> OptimizedDataFrame {
         let mut df = OptimizedDataFrame::new();

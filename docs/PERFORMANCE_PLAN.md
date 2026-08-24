@@ -32,7 +32,7 @@ let mut df = DataFrame::new();
 
 ```toml
 [dependencies]
-pandrs = { version = "0.3.0", features = ["cuda", "distributed", "jit"] }
+pandrs = { version = "0.4.1", features = ["cuda", "distributed", "jit"] }
 ```
 
 ### Batch Operations
@@ -81,16 +81,13 @@ cargo bench --bench profiling_benchmark
    - Data pattern analysis
    - Cache performance insights
 
-### Performance Monitoring
-
-```rust
-use pandrs::benchmark::*;
-
-// Benchmark database operations
-let benchmark = DatabaseBenchmark::new(&connector);
-let results = benchmark.run_suite().await;
-println!("Query latency p95: {}ms", results.query_latency_p95);
-```
+There is no `pandrs::benchmark` module and no built-in `DatabaseBenchmark`
+type — PandRS has no database connectivity at all (see
+[ECOSYSTEM_INTEGRATION_GUIDE.md](ECOSYSTEM_INTEGRATION_GUIDE.md)). To
+benchmark your own code, use `std::time::Instant` (see "Benchmarking Your
+Workload" near the end of this document) or write a Criterion bench under
+`benches/` alongside the existing suites (see
+[BENCHMARKING.md](../BENCHMARKING.md)).
 
 ## JIT Compilation
 
@@ -104,11 +101,20 @@ JIT compilation provides the most benefit for:
 
 ### JIT Usage Examples
 
-```rust
-use pandrs::optimized::jit::{jit, GroupByJitExt};
+`pandrs::optimized::jit::jit_core::jit(name, closure)` and
+`GroupByJitExt::aggregate_jit` use **different closure shapes**
+(`Fn(Vec<f64>) -> f64` vs. `Fn(&[f64]) -> f64`) and do not compose directly
+— use `jit_f64`, which is built for `aggregate_jit`:
 
-// Create custom JIT function
-let custom_metric = jit("custom_metric", |values: Vec<f64>| -> f64 {
+```rust
+use pandrs::optimized::jit::core::jit_f64;
+use pandrs::optimized::jit::groupby::GroupByJitExt;
+
+// Create a custom aggregation. Honest caveat: despite the module's name,
+// this does not compile the closure via Cranelift at call time today — it
+// wraps it as a named, ordinary Rust closure (see JIT_COMPILATION.md for
+// what "JIT" currently means in this crate).
+let cv = jit_f64("cv", |values: &[f64]| -> f64 {
     let mean = values.iter().sum::<f64>() / values.len() as f64;
     let variance = values.iter()
         .map(|x| (x - mean).powi(2))
@@ -116,22 +122,30 @@ let custom_metric = jit("custom_metric", |values: Vec<f64>| -> f64 {
     variance.sqrt() / mean  // Coefficient of variation
 });
 
-// Use with GroupBy
-let grouped = df.group_by(&["category"])?;
-let result = grouped.aggregate_jit("value", custom_metric, "cv")?;
+// GroupByJitExt::aggregate_jit is implemented on
+// optimized::split_dataframe::group::GroupBy — see
+// examples/jit_parallel_example.rs for a verified-working full chain from
+// DataFrame construction through to aggregate_jit, since the exact
+// group-by-construction call to reach that type is easy to get wrong from
+// a doc snippet alone.
 ```
 
-### Built-in JIT Operations
+### Direct SIMD Statistics (no JIT machinery needed)
+
+For common reductions you don't need `jit()` at all — call the SIMD-dispatched
+functions directly on a slice:
 
 ```rust
-use pandrs::optimized::jit::array_ops;
+use pandrs::optimized::jit::simd::simd_sum_f64;
+use pandrs::optimized::jit::simd_stats::{simd_variance_f64, simd_correlation_f64};
 
-// High-performance built-in operations
-let sum_fn = array_ops::sum();
-let mean_fn = array_ops::mean();
-let std_fn = array_ops::std(1);  // Sample standard deviation
-let quantile_fn = array_ops::quantile(0.95);
+let data = vec![1.0, 2.0, 3.0, 4.0, 5.0];
+let total = simd_sum_f64(&data);          // AVX2 on x86_64, scalar elsewhere
+let var = simd_variance_f64(&data, 1);    // ddof = 1 (sample variance)
 ```
+
+*(There is no `pandrs::optimized::jit::array_ops` module — it was deleted;
+don't `use` it.)*
 
 ## GPU Acceleration
 
@@ -139,66 +153,54 @@ let quantile_fn = array_ops::quantile(0.95);
 
 ```toml
 [dependencies]
-pandrs = { version = "0.3.0", features = ["cuda"] }
+pandrs = { version = "0.4.1", features = ["cuda"] }
 ```
 
-### GPU Window Operations
-
-GPU acceleration provides significant speedups for window operations on large datasets:
-
-```rust
-use pandrs::dataframe::gpu_window::GpuWindowContext;
-
-// Initialize GPU context
-let gpu_context = GpuWindowContext::new()?;
-
-// GPU-accelerated window operations
-let rolling_mean = df.gpu_rolling(50, &gpu_context).mean()?;
-let expanding_sum = df.gpu_expanding(&gpu_context).sum()?;
-let ewm_mean = df.gpu_ewm(0.1, &gpu_context).mean()?;
-```
-
-### GPU Performance Thresholds
-
-Default GPU activation thresholds:
-- **Standard operations** (mean, sum): 50,000 elements
-- **Complex operations** (std, var, EWM): 25,000 elements  
-- **Memory-bound operations** (min, max): 100,000 elements
+Building with `cuda` requires the CUDA toolkit to be installed; this can't
+be verified on every dev machine, so this guide points to verified example
+files rather than hand-written GPU snippets — see
+[GPU_ACCELERATION_GUIDE.md](GPU_ACCELERATION_GUIDE.md) and
+`examples/gpu_window_operations_example.rs`,
+`examples/gpu_dataframe_example.rs`, `examples/gpu_benchmark_example.rs`.
 
 ### Custom GPU Configuration
 
+`GpuConfig` (`pandrs::gpu::GpuConfig`) is a plain struct with public fields
+and a `Default` impl — there is no builder (`GpuConfig::new().with_*(...)`
+does not exist):
+
 ```rust
-let gpu_config = GpuConfig::new()
-    .with_memory_limit(1_000_000_000)  // 1GB limit
-    .with_threshold(25_000)           // Lower threshold
-    .with_device_id(0);               // Specific GPU device
+use pandrs::gpu::GpuConfig;
+
+let gpu_config = GpuConfig {
+    memory_limit: 1_000_000_000, // 1GB
+    min_size_threshold: 25_000,
+    device_id: 0,
+    ..Default::default()
+};
 ```
 
 ## Parallel Processing
 
 ### Automatic Parallelization
 
-PandRS automatically parallelizes operations when beneficial:
-
-```rust
-// Automatically parallelized for large datasets
-let sum = df.sum("large_column")?;
-let grouped = df.groupby("category")?.sum(&["value"])?;
-```
+PandRS uses Rayon internally for large-dataset operations in several
+modules (see `examples/parallel_example.rs`,
+`examples/optimized_parallel_groupby.rs`).
 
 ### Explicit Parallel Operations
 
-```rust
-use pandrs::optimized::jit::{ParallelConfig, parallel_sum_f64};
-
-// Configure parallel execution
-let config = ParallelConfig::new()
-    .with_min_chunk_size(10000)
-    .with_max_threads(8);
-
-let parallel_sum = parallel_sum_f64(Some(config));
-let result = grouped.aggregate_jit("value", parallel_sum, "sum")?;
-```
+`ParallelConfig` (`pandrs::optimized::jit::config::ParallelConfig`) is a
+plain struct — construct it with `ParallelConfig::new()` then its real
+builder methods (`with_min_chunk_size`, `with_max_threads`, etc. — check
+`src/optimized/jit/config.rs` for the current field/method list, it's a
+small file). `parallel_sum_f64` lives in
+`pandrs::optimized::jit::parallel`. See `examples/jit_parallel_example.rs`
+for a verified, complete, compiling example that wires
+`ParallelConfig` + the `parallel_*` functions + `aggregate_jit` together —
+that's a more reliable reference than a hand-copied snippet here, since
+this exact combination is easy to get subtly wrong (see the JIT Usage
+Examples note above about `jit()` vs `jit_f64`).
 
 ## Memory Optimization
 
@@ -214,11 +216,16 @@ df.add_string_column("category", categories)?;   // Memory efficient
 
 ### Memory Monitoring
 
+The public `pandrs::optimized::OptimizedDataFrame` (the type used throughout
+this guide) does not have a `memory_usage()` method. Two *different*
+internal types do, with two different return shapes — don't mix them up:
+
 ```rust
-// Monitor memory usage
-let usage = df.memory_usage()?;
-println!("Total memory: {} bytes", usage.total);
-println!("String pool savings: {}%", usage.string_pool_efficiency);
+// Traditional DataFrame: pandrs::dataframe::DataFrame::memory_usage(&self) -> usize
+let bytes = traditional_df.memory_usage();
+
+// An internal SplitDataFrame (not the public OptimizedDataFrame):
+// memory_usage(&self) -> std::collections::HashMap<String, usize>  (per-column bytes, no `?`)
 ```
 
 ## I/O Performance
@@ -245,16 +252,10 @@ write_parquet(&df, "data.parquet", Some(ParquetCompression::Zstd))?; // Higher c
 
 ### Batch I/O Operations
 
-```rust
-// Read large files in chunks
-let chunk_size = 100_000;
-let mut reader = df.read_csv_chunked("large_file.csv", chunk_size)?;
-
-while let Some(chunk) = reader.next()? {
-    process_chunk(&chunk)?;
-    // Process each chunk separately to manage memory
-}
-```
+There is no `read_csv_chunked` method. For chunked/streaming ingestion, use
+the `streaming` feature's `DataStream` (`pandrs::streaming::DataStream`,
+e.g. `DataStream::read_from_csv(...)` + `.process(...)`) — see
+`examples/streaming_example.rs` for a verified working example.
 
 ## Distributed Processing
 
@@ -268,14 +269,18 @@ let config = DistributedConfig::new()
     .with_executor("datafusion")
     .with_concurrency(8);
 
-let dist_df = df.to_distributed(config)?;
+let mut dist_df = df.to_distributed(config)?;
 
-// Distributed operations automatically parallelize
-let result = dist_df
+// DistributedDataFrame has no separate `.groupby()` — the group-by columns
+// are the *first* argument to `.aggregate()`, and each aggregate is a
+// (column, function, output_alias) triple:
+let mut result = dist_df
     .filter("amount > 1000")?
-    .groupby(&["region"])?
-    .aggregate(&["sales"], &["sum", "mean"])?
-    .execute()?;
+    .aggregate(
+        &["region"],
+        &[("sales", "sum", "sales_sum"), ("sales", "mean", "sales_mean")],
+    )?;
+let execution_result = result.execute()?;
 ```
 
 ## Performance Tuning Guidelines
@@ -302,90 +307,56 @@ Different optimizations activate at different data sizes:
 ```rust
 // SIMD operations benefit from:
 // - Aligned data access
-// - Contiguous memory layout  
+// - Contiguous memory layout
 // - Appropriate chunk sizes
 
-let simd_sum = simd_sum_f64();  // Automatically vectorized
-let result = grouped.aggregate_jit("values", simd_sum, "sum")?;
+use pandrs::optimized::jit::simd::simd_sum_f64;
+
+// `simd_sum_f64` takes the slice directly and returns the sum — it is not
+// a zero-arg factory you pass into `aggregate_jit`:
+let data = vec![1.0_f64, 2.0, 3.0, 4.0];
+let result = simd_sum_f64(&data);  // AVX2-dispatched on x86_64, scalar elsewhere
 ```
 
 ## Performance Monitoring
 
-### Built-in Metrics
-
-```rust
-use pandrs::metrics::*;
-
-// Enable performance monitoring
-let config = PandRSConfig::new()
-    .with_metrics(MetricsConfig::enabled());
-
-// Collect operation metrics
-let timer = metrics::start_timer("complex_operation");
-let result = df.complex_aggregation()?;
-let duration = timer.observe_duration();
-
-println!("Operation took: {}ms", duration.as_millis());
-```
+There is no `pandrs::metrics` module, no `PandRSConfig`/`MetricsConfig`, and
+no built-in timer/metrics-collection API. For ad-hoc timing, use
+`std::time::Instant` directly (see "Benchmarking Your Workload" below). For
+structured monitoring, `src/analytics` provides counters/gauges/histograms/timers
+as a standalone facility you wire up yourself — it is not automatically
+attached to DataFrame operations; see `examples/analytics_dashboard_example.rs`.
 
 ### Regression Detection
 
 ```bash
-# Establish performance baseline
-cargo test regression_benchmark::tests::test_baseline_creation
-
-# Run regression detection  
 cargo bench --bench regression_benchmark
 ```
 
-Performance regressions are automatically detected:
-```
-⚠️  REGRESSION DETECTED in aggregation_sum: 15.3% slower
-⚠️  REGRESSION DETECTED in parallel_groupby: 12.7% slower
-```
+This prints regression warnings *if* a `benchmark_baseline.json` is present
+and a tracked operation regresses >10%. See
+[BENCHMARKING.md](../BENCHMARKING.md#establishing-baselines-currently-not-wired-to-a-runnable-command)
+for the current, honest state of baseline creation — `cargo test
+regression_benchmark::tests::test_baseline_creation` (seen in older
+versions of this document) does not work.
 
 ## Real-World Performance Examples
 
-### Financial Data Processing
+Hand-written "realistic pipeline" snippets in this section previously
+chained several APIs together in ways that don't compile against the
+current crate (`array_ops` was deleted; `jit()`'s closure shape doesn't
+match `aggregate_jit`'s; `aggregate_multi_jit`/`parallel_groupby` don't
+exist), and one of the chains — GPU rolling windows piped into `.mean()` —
+currently hits a real correctness bug in `src/dataframe/gpu_window.rs`
+(the result comes back as string data, not the numeric aggregate you'd
+expect), so showing it here as a trustworthy pattern would be actively
+misleading rather than just wrong.
 
-```rust
-// Process large financial dataset efficiently
-let mut financial_df = OptimizedDataFrame::new();
-financial_df.add_float_column("price", prices)?;      // 1M+ prices
-financial_df.add_string_column("symbol", symbols)?;   // High duplication -> string pool
-
-// GPU-accelerated technical indicators
-let gpu_context = GpuWindowContext::new()?;
-let sma_20 = financial_df.gpu_rolling(20, &gpu_context).mean()?;
-let volatility = financial_df.gpu_rolling(252, &gpu_context).std()?;
-
-// JIT-compiled custom metrics
-let sharpe_ratio = jit("sharpe", |returns: Vec<f64>| -> f64 {
-    let mean_return = returns.iter().sum::<f64>() / returns.len() as f64;
-    let std_return = /* std calculation */;
-    mean_return / std_return * (252.0_f64).sqrt()  // Annualized Sharpe
-});
-
-let grouped = financial_df.group_by(&["symbol"])?;
-let metrics = grouped.aggregate_jit("returns", sharpe_ratio, "sharpe")?;
-```
-
-### Machine Learning Pipeline
-
-```rust
-// Efficient feature engineering pipeline
-let features = df
-    .gpu_rolling(50, &gpu_context).mean()?          // GPU window ops
-    .parallel_groupby(&["category"])?               // Parallel grouping
-    .aggregate_multi_jit(vec![                      // Multiple JIT aggregations
-        ("value", array_ops::mean(), "mean_value"),
-        ("value", array_ops::std(1), "std_value"),
-        ("value", custom_skewness, "skew_value"),
-    ])?;
-
-// Efficient model training data preparation
-features.to_parquet("training_features.parquet", Some(ParquetCompression::Snappy))?;
-```
+For working, verified full pipelines, use these example files directly —
+they're compiled and spot-checked as part of the example suite:
+- Financial-style windowed aggregation: `examples/gpu_window_operations_example.rs`, `examples/comprehensive_window_example.rs`
+- JIT custom aggregations end-to-end: `examples/jit_parallel_example.rs`, `examples/integrated_jit_performance_showcase.rs`
+- ML feature-engineering pipeline: `examples/optimized_ml_feature_engineering_example.rs`, `examples/optimized_ml_pipeline_example.rs`
 
 ## Troubleshooting Performance Issues
 
@@ -399,18 +370,9 @@ features.to_parquet("training_features.parquet", Some(ParquetCompression::Snappy
 
 ### Diagnostic Tools
 
-```rust
-use pandrs::diagnostics::*;
-
-// Analyze performance bottlenecks
-let analysis = PerformanceAnalysis::profile_operation(|| {
-    df.complex_operation()
-}).await;
-
-println!("Bottlenecks: {:?}", analysis.bottlenecks);
-println!("Memory usage: {} MB", analysis.peak_memory_mb);
-println!("Recommendations: {:?}", analysis.recommendations);
-```
+There is no `pandrs::diagnostics` module or `PerformanceAnalysis` type.
+Use system-level profiling tools instead (see "Performance Profiling" below),
+or time specific sections with `std::time::Instant`.
 
 ### Performance Profiling
 
@@ -431,7 +393,7 @@ valgrind --tool=massif ./target/release/examples/performance_demo
 3. **Choose optimal file formats** (Parquet for analytics, CSV for exports)
 4. **Leverage string pooling** for categorical data with high duplication
 5. **Use batch operations** instead of row-by-row processing
-6. **Monitor performance** with built-in metrics and regression detection
+6. **Monitor performance** with `cargo bench --bench regression_benchmark` (once you have a baseline — see caveat above) or your own `Instant`-based timing
 7. **Profile before optimizing** to identify actual bottlenecks
 8. **Test at scale** - performance characteristics change with data size
 

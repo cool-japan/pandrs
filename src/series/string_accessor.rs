@@ -260,18 +260,34 @@ impl StringAccessor {
         }
     }
 
-    /// Split strings by delimiter
+    /// Split strings by delimiter.
+    ///
+    /// `expand = true` in pandas returns a DataFrame (one column per split
+    /// segment); this method returns `Series<String>`, so true
+    /// multi-column expansion is structurally impossible here -- a real
+    /// implementation needs a DataFrame-shaped return living outside this
+    /// method (and this type, which has no dependency on `DataFrame`).
+    /// Rather than silently falling through to the same collapsed
+    /// representation `expand = false` produces (which looks identical to
+    /// a successful expansion but is not one), `expand = true` is an
+    /// honest `Err`. Callers that need DataFrame-shaped expansion should
+    /// use `DataFrame::str_split` (not yet implemented as a dedicated
+    /// method).
     pub fn split(
         &self,
         delimiter: &str,
         n: Option<usize>,
         expand: bool,
     ) -> Result<Series<String>, PandrsError> {
-        // NOTE: expand=true in pandas returns a DataFrame (one column per split segment).
-        // This function's return type is Series<String>, so true multi-column expansion is
-        // structurally impossible here. When expand=true, we fall through to the same
-        // collapsed representation as expand=false. Callers that need DataFrame-shaped
-        // expansion should use DataFrame::str_split (not yet implemented as a dedicated method).
+        if expand {
+            return Err(PandrsError::NotImplemented(
+                "StringAccessor::split(expand=true): multi-column expansion requires a \
+                 DataFrame-shaped return, which Series<String> cannot represent; use \
+                 expand=false for the collapsed \"[a, b, c]\" representation, or \
+                 DataFrame::str_split for real column expansion"
+                    .to_string(),
+            ));
+        }
 
         let split_values: Vec<Vec<String>> = self
             .series

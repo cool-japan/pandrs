@@ -4,7 +4,7 @@
 //! without using unwrap(), which can panic on poisoned locks or other errors.
 
 use crate::core::error::{Error, Result};
-use std::sync::{Mutex, MutexGuard, RwLock, RwLockReadGuard, RwLockWriteGuard};
+use std::sync::{Mutex, RwLock};
 
 /// Safely acquire a Mutex lock, converting poison errors to Result
 ///

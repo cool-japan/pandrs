@@ -1,6 +1,7 @@
 #[cfg(feature = "visualization")]
 use pandrs::error::Result;
 #[cfg(feature = "visualization")]
+#[allow(unused_imports)]
 use pandrs::vis::direct::{DataFramePlotExt, SeriesPlotExt};
 #[cfg(feature = "visualization")]
 use pandrs::vis::plotters_ext::PlotKind;

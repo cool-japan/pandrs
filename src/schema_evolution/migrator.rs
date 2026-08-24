@@ -105,12 +105,21 @@ pub struct BreakingChange {
 /// Report comparing compatibility of two schemas
 #[derive(Debug, Clone)]
 pub struct CompatibilityReport {
-    /// Whether data can flow from `from` schema to `to` schema without data loss
+    /// Whether `to`'s required data can be structurally satisfied by `from`
+    /// (required columns present, types castable). This is a *flow*
+    /// check, not a losslessness guarantee -- see `data_loss`.
     pub is_compatible: bool,
     /// List of breaking changes that prevent compatibility
     pub breaking_changes: Vec<BreakingChange>,
-    /// List of non-breaking changes (informational)
+    /// List of non-breaking changes (informational; no data-loss connotation)
     pub non_breaking_changes: Vec<String>,
+    /// Columns present in `from` but absent from `to`. A dropped column
+    /// never makes `is_compatible` false (the target schema doesn't need
+    /// that data), but the data in it is genuinely lost, which is a
+    /// different claim than "non-breaking" -- keeping this separate from
+    /// `non_breaking_changes` means "compatible" is never read as
+    /// "lossless".
+    pub data_loss: Vec<String>,
 }
 
 impl CompatibilityReport {
@@ -119,6 +128,7 @@ impl CompatibilityReport {
             is_compatible: true,
             breaking_changes: Vec::new(),
             non_breaking_changes: Vec::new(),
+            data_loss: Vec::new(),
         }
     }
 
@@ -135,70 +145,187 @@ impl CompatibilityReport {
     }
 }
 
-/// Detect whether a column contains numeric data by attempting to retrieve numeric values.
+/// Copy a single column from `df` into `result` under `dest_name`, preserving
+/// its concrete element type exactly.
 ///
-/// Since `is_numeric_column` is a stub that always returns false, we use this
-/// heuristic: try `get_column_numeric_values` and if it succeeds AND the column
-/// values don't look like string representations, treat as numeric.
-fn column_is_numeric(df: &DataFrame, col_name: &str) -> bool {
-    // First, check if the column stores string data (strings that happen to be
-    // parseable numbers should still be treated as strings in schema context).
-    // We use a best-effort approach: try numeric downcast, check string downcast.
-    // get_column_numeric_values succeeds for i64, f64, and parseable strings.
-    // We discriminate by checking get_column_string_values first.
-    if let Ok(str_vals) = df.get_column_string_values(col_name) {
-        // If all values look like numbers (including the column was added as numeric
-        // Series<i64> or Series<f64>), check numeric.
-        // The distinguishing factor: pure string Series will return the strings as-is;
-        // numeric Series will return their string representation via to_string().
-        // We check if numeric retrieval succeeds AND agrees with string retrieval.
-        if let Ok(num_vals) = df.get_column_numeric_values(col_name) {
-            // If numeric succeeds, check if this could be a numeric column.
-            // If the string values are all parseable as f64, it might be a string
-            // column with numeric content. We check if the numeric values match
-            // the string values when formatted as numbers.
-            if str_vals.is_empty() {
-                return false;
+/// `DataFrame::is_numeric_column` is a real, physical-type check (it is not
+/// a stub), and `DataFrame::get_column::<T>` lets us downcast to each of the
+/// concrete types this DataFrame model supports. Trying each in turn (rather
+/// than routing everything through `get_column_numeric_values` /
+/// `get_column_string_values`, which re-materialise the column as `f64` or
+/// `String`) means:
+/// - `i64` values above 2^53 keep their exact precision instead of being
+///   rounded through `f64`.
+/// - `bool` columns stay `bool` instead of becoming `"true"`/`"false"` strings.
+/// - A `String` column whose values merely *look* numeric (e.g. a zip code
+///   `"02134"`) is never misclassified as numeric and reinterpreted as a
+///   number, which would silently destroy the leading zero.
+///
+/// A column whose concrete element type isn't one of `i64`/`f64`/`i32`/`f32`/
+/// `bool`/`String` (e.g. a `chrono` date/time column) is genuinely
+/// unsupported by this migration engine today: this returns
+/// `Error::NotImplemented` naming the column rather than fabricating a
+/// placeholder value that would silently corrupt every downstream consumer.
+fn copy_one_column(
+    df: &DataFrame,
+    src_name: &str,
+    dest_name: &str,
+    result: &mut DataFrame,
+) -> Result<()> {
+    macro_rules! try_copy {
+        ($ty:ty) => {
+            if let Ok(s) = df.get_column::<$ty>(src_name) {
+                let series = Series::new(s.to_vec(), Some(dest_name.to_string()))
+                    .map_err(|e| Error::InvalidOperation(e.to_string()))?;
+                result.add_column(dest_name.to_string(), series)?;
+                return Ok(());
             }
-            // Heuristic: if the string representation doesn't look like a formatted
-            // float (no decimal points in original that wouldn't come from i64),
-            // it's numeric. The simplest check: verify that the number of
-            // decimal-formatted values matches.
-            let all_numeric_looking = str_vals
-                .iter()
-                .all(|s| s.parse::<f64>().is_ok() || s.is_empty());
-            all_numeric_looking && !num_vals.is_empty()
-        } else {
-            false
-        }
-    } else {
-        false
+        };
     }
+    try_copy!(i64);
+    try_copy!(f64);
+    try_copy!(i32);
+    try_copy!(f32);
+    try_copy!(bool);
+    try_copy!(String);
+
+    Err(Error::NotImplemented(format!(
+        "schema migration cannot copy column '{}': its element type is not one of \
+         i64, f64, i32, f32, bool, or String, which are the only concrete column \
+         types this migration engine supports",
+        src_name
+    )))
 }
 
-/// Helper: copy all columns from `df` into a new DataFrame, preserving types.
-///
-/// Numeric columns are preserved as f64, others as String.
-/// The order follows the provided `column_list`.
+/// Helper: copy all columns from `df` into a new DataFrame, preserving each
+/// column's concrete element type exactly (see [`copy_one_column`]). The
+/// order follows the provided `column_list`.
 fn copy_columns(df: &DataFrame, column_list: &[String]) -> Result<DataFrame> {
     let mut result = DataFrame::new();
     for col_name in column_list {
         if !df.contains_column(col_name) {
             return Err(Error::ColumnNotFound(col_name.clone()));
         }
-        if column_is_numeric(df, col_name) {
-            let values = df.get_column_numeric_values(col_name)?;
-            let series = Series::new(values, Some(col_name.clone()))
-                .map_err(|e| Error::InvalidOperation(e.to_string()))?;
-            result.add_column(col_name.clone(), series)?;
-        } else {
-            let values = df.get_column_string_values(col_name)?;
-            let series = Series::new(values, Some(col_name.clone()))
-                .map_err(|e| Error::InvalidOperation(e.to_string()))?;
-            result.add_column(col_name.clone(), series)?;
-        }
+        copy_one_column(df, col_name, col_name, &mut result)?;
     }
     Ok(result)
+}
+
+/// Convert a single column of `df` to `new_type`, writing the result into
+/// `result` under the same name.
+///
+/// Every branch produces the *real* Rust type it claims: `Int64` yields a
+/// genuine `Series<i64>` (never `f64` standing in for it), `Boolean` yields
+/// a genuine `Series<bool>`, etc. This matters because
+/// [`SchemaMigrator::check_column_type`] validates a `Boolean`-declared
+/// column by downcasting to `Series<bool>` -- a migration that produced
+/// `f64` 0.0/1.0 values instead would make "migrate, then validate" fail
+/// even on data the migration itself just wrote.
+///
+/// `DateTime`/`Categorical`/`List` targets have no dedicated physical
+/// column representation in this DataFrame model (see `copy_one_column`),
+/// so converting *to* one of them returns `Error::NotImplemented` rather
+/// than silently storing the column as a plain string and claiming the
+/// conversion happened.
+fn convert_column_type(
+    df: &DataFrame,
+    column: &str,
+    new_type: &SchemaDataType,
+    result: &mut DataFrame,
+) -> Result<()> {
+    match new_type {
+        SchemaDataType::Float64 => {
+            let values: Vec<f64> = if df.is_numeric_column(column) {
+                df.get_column_numeric_values(column)?
+            } else if df.get_column::<bool>(column).is_ok() {
+                df.get_column_numeric_values(column)? // bool -> 0.0/1.0
+            } else {
+                let string_values = df.get_column_string_values(column)?;
+                string_values
+                    .iter()
+                    .map(|s| {
+                        s.trim().parse::<f64>().map_err(|e| {
+                            Error::Cast(format!("Cannot cast '{}' to Float64: {}", s, e))
+                        })
+                    })
+                    .collect::<Result<Vec<f64>>>()?
+            };
+            let series = Series::new(values, Some(column.to_string()))
+                .map_err(|e| Error::InvalidOperation(e.to_string()))?;
+            result.add_column(column.to_string(), series)?;
+        }
+        SchemaDataType::Int64 => {
+            let values: Vec<i64> = if df.is_numeric_column(column) {
+                df.get_column_numeric_values(column)?
+                    .iter()
+                    .map(|v| v.trunc() as i64)
+                    .collect()
+            } else if df.get_column::<bool>(column).is_ok() {
+                df.get_column_numeric_values(column)?
+                    .iter()
+                    .map(|v| *v as i64)
+                    .collect()
+            } else {
+                let string_values = df.get_column_string_values(column)?;
+                string_values
+                    .iter()
+                    .map(|s| {
+                        s.trim()
+                            .parse::<i64>()
+                            .or_else(|_| s.trim().parse::<f64>().map(|f| f.trunc() as i64))
+                            .map_err(|e| {
+                                Error::Cast(format!("Cannot cast '{}' to Int64: {}", s, e))
+                            })
+                    })
+                    .collect::<Result<Vec<i64>>>()?
+            };
+            let series = Series::new(values, Some(column.to_string()))
+                .map_err(|e| Error::InvalidOperation(e.to_string()))?;
+            result.add_column(column.to_string(), series)?;
+        }
+        SchemaDataType::Boolean => {
+            let values: Vec<bool> = if let Ok(s) = df.get_column::<bool>(column) {
+                s.to_vec()
+            } else if df.is_numeric_column(column) {
+                df.get_column_numeric_values(column)?
+                    .iter()
+                    .map(|v| *v != 0.0)
+                    .collect()
+            } else {
+                let string_values = df.get_column_string_values(column)?;
+                string_values
+                    .iter()
+                    .map(|s| match s.trim().to_lowercase().as_str() {
+                        "true" | "1" | "yes" => Ok(true),
+                        "false" | "0" | "no" | "" => Ok(false),
+                        _ => Err(Error::Cast(format!("Cannot cast '{}' to Boolean", s))),
+                    })
+                    .collect::<Result<Vec<bool>>>()?
+            };
+            let series = Series::new(values, Some(column.to_string()))
+                .map_err(|e| Error::InvalidOperation(e.to_string()))?;
+            result.add_column(column.to_string(), series)?;
+        }
+        SchemaDataType::String => {
+            let values = df.get_column_string_values(column)?;
+            let series = Series::new(values, Some(column.to_string()))
+                .map_err(|e| Error::InvalidOperation(e.to_string()))?;
+            result.add_column(column.to_string(), series)?;
+        }
+        SchemaDataType::DateTime
+        | SchemaDataType::Categorical { .. }
+        | SchemaDataType::List { .. } => {
+            return Err(Error::NotImplemented(format!(
+                "ChangeType to {} is not implemented for column '{}': this DataFrame's \
+                 schema-migration engine only supports converting to Int64, Float64, \
+                 Boolean, or String columns (DateTime/Categorical/List have no dedicated \
+                 physical column representation here, so silently storing the raw \
+                 string and calling it converted would be dishonest)",
+                new_type, column
+            )));
+        }
+    }
+    Ok(())
 }
 
 /// Primary entry point for schema migration and validation
@@ -265,7 +392,7 @@ impl SchemaMigrator {
         let row_count = df.row_count();
 
         // Gather existing columns first
-        let existing_cols = df.column_names();
+        let existing_cols = df.column_names().to_vec();
 
         // If the column already exists, just return the df unchanged
         if existing_cols.iter().any(|c| c == &schema.name) {
@@ -280,42 +407,54 @@ impl SchemaMigrator {
         // Copy existing columns
         let mut result = copy_columns(df, &existing_cols)?;
 
-        // Add the new column with the appropriate default
+        // Add the new column with the appropriate default.
         match &schema.data_type {
-            SchemaDataType::Int64 => {
-                let default = match &schema.default_value {
+            SchemaDataType::Int64 | SchemaDataType::Float64 => {
+                // Resolve the fill value. When no default is given and the
+                // column is declared nullable, the fill is `f64::NAN` --
+                // `f64` is the only numeric column type in this DataFrame
+                // model that can hold a real NA marker (there is no bit for
+                // "missing" in `i64`), so a nullable numeric column with no
+                // default is backed by `Series<f64>` and filled with NaN.
+                // This mirrors the same int -> float NaN-upcast convention
+                // `DataFrame::concat_rows` already uses for the equivalent
+                // problem (a numeric column missing on one side of a
+                // concat). A non-nullable column with no default has no
+                // missing-value semantics to preserve, so it falls back to
+                // a real zero of the declared type instead.
+                let fill: f64 = match &schema.default_value {
                     Some(DefaultValue::Int(v)) => *v as f64,
                     Some(DefaultValue::Float(v)) => *v,
-                    _ => 0.0f64,
+                    Some(DefaultValue::Null) => f64::NAN,
+                    Some(_) => 0.0,
+                    None if schema.nullable => f64::NAN,
+                    None => 0.0,
                 };
-                let data: Vec<f64> = vec![default; row_count];
-                let series = Series::new(data, Some(schema.name.clone()))
-                    .map_err(|e| Error::InvalidOperation(e.to_string()))?;
-                result.add_column(schema.name.clone(), series)?;
-            }
-            SchemaDataType::Float64 => {
-                let default = match &schema.default_value {
-                    Some(DefaultValue::Float(v)) => *v,
-                    Some(DefaultValue::Int(v)) => *v as f64,
-                    _ => 0.0f64,
-                };
-                let data: Vec<f64> = vec![default; row_count];
-                let series = Series::new(data, Some(schema.name.clone()))
-                    .map_err(|e| Error::InvalidOperation(e.to_string()))?;
-                result.add_column(schema.name.clone(), series)?;
+
+                if matches!(schema.data_type, SchemaDataType::Int64) && !fill.is_nan() {
+                    let data: Vec<i64> = vec![fill as i64; row_count];
+                    let series = Series::new(data, Some(schema.name.clone()))
+                        .map_err(|e| Error::InvalidOperation(e.to_string()))?;
+                    result.add_column(schema.name.clone(), series)?;
+                } else {
+                    let data: Vec<f64> = vec![fill; row_count];
+                    let series = Series::new(data, Some(schema.name.clone()))
+                        .map_err(|e| Error::InvalidOperation(e.to_string()))?;
+                    result.add_column(schema.name.clone(), series)?;
+                }
             }
             SchemaDataType::Boolean => {
-                let default = match &schema.default_value {
-                    Some(DefaultValue::Bool(v)) => {
-                        if *v {
-                            1.0f64
-                        } else {
-                            0.0f64
-                        }
-                    }
-                    _ => 0.0f64,
-                };
-                let data: Vec<f64> = vec![default; row_count];
+                // Unlike Int64/Float64, `bool` has no NaN-equivalent in this
+                // DataFrame model at all, so there is no honest way to
+                // represent "missing" for a nullable Boolean column with no
+                // default. Rather than silently upcasting to a numeric NA
+                // representation (which would make the column fail the
+                // `Series<bool>` round-trip check in `check_column_type`),
+                // this falls back to a real `false` -- a genuine, typed
+                // value -- and documents the limitation instead of
+                // fabricating a null that can't exist here.
+                let default = matches!(&schema.default_value, Some(DefaultValue::Bool(true)));
+                let data: Vec<bool> = vec![default; row_count];
                 let series = Series::new(data, Some(schema.name.clone()))
                     .map_err(|e| Error::InvalidOperation(e.to_string()))?;
                 result.add_column(schema.name.clone(), series)?;
@@ -347,8 +486,9 @@ impl SchemaMigrator {
         // Build list of columns to keep
         let keep: Vec<String> = df
             .column_names()
-            .into_iter()
-            .filter(|c| c != name)
+            .iter()
+            .filter(|c| c.as_str() != name)
+            .cloned()
             .collect();
         copy_columns(df, &keep)
     }
@@ -357,26 +497,16 @@ impl SchemaMigrator {
         if !df.contains_column(from) {
             return Err(Error::ColumnNotFound(from.to_string()));
         }
-        // Build a new DataFrame with the column renamed
+        // Build a new DataFrame with the column renamed, preserving every
+        // column's concrete element type (see `copy_one_column`).
         let mut result = DataFrame::new();
         for col_name in df.column_names() {
-            let target_name = if col_name == from {
-                to.to_string()
+            let target_name = if col_name.as_str() == from {
+                to
             } else {
-                col_name.clone()
+                col_name
             };
-
-            if column_is_numeric(df, &col_name) {
-                let values = df.get_column_numeric_values(&col_name)?;
-                let series = Series::new(values, Some(target_name.clone()))
-                    .map_err(|e| Error::InvalidOperation(e.to_string()))?;
-                result.add_column(target_name, series)?;
-            } else {
-                let values = df.get_column_string_values(&col_name)?;
-                let series = Series::new(values, Some(target_name.clone()))
-                    .map_err(|e| Error::InvalidOperation(e.to_string()))?;
-                result.add_column(target_name, series)?;
-            }
+            copy_one_column(df, col_name.as_str(), target_name, &mut result)?;
         }
         Ok(result)
     }
@@ -394,115 +524,11 @@ impl SchemaMigrator {
         // Rebuild the DataFrame, replacing the target column with the converted version
         let mut result = DataFrame::new();
         for col_name in df.column_names() {
-            if col_name != column {
-                // Copy other columns as-is
-                if column_is_numeric(df, &col_name) {
-                    let values = df.get_column_numeric_values(&col_name)?;
-                    let series = Series::new(values, Some(col_name.clone()))
-                        .map_err(|e| Error::InvalidOperation(e.to_string()))?;
-                    result.add_column(col_name, series)?;
-                } else {
-                    let values = df.get_column_string_values(&col_name)?;
-                    let series = Series::new(values, Some(col_name.clone()))
-                        .map_err(|e| Error::InvalidOperation(e.to_string()))?;
-                    result.add_column(col_name, series)?;
-                }
+            if col_name.as_str() != column {
+                // Copy other columns as-is, preserving their concrete type.
+                copy_one_column(df, col_name.as_str(), col_name.as_str(), &mut result)?;
             } else {
-                // Convert this column to the new type
-                match new_type {
-                    SchemaDataType::Float64 => {
-                        // If already numeric, just copy
-                        if column_is_numeric(df, column) {
-                            let values = df.get_column_numeric_values(column)?;
-                            let series = Series::new(values, Some(col_name.clone()))
-                                .map_err(|e| Error::InvalidOperation(e.to_string()))?;
-                            result.add_column(col_name, series)?;
-                        } else {
-                            let string_values = df.get_column_string_values(column)?;
-                            let float_values: Result<Vec<f64>> = string_values
-                                .iter()
-                                .map(|s| {
-                                    s.parse::<f64>().map_err(|e| {
-                                        Error::Cast(format!(
-                                            "Cannot cast '{}' to Float64: {}",
-                                            s, e
-                                        ))
-                                    })
-                                })
-                                .collect();
-                            let series = Series::new(float_values?, Some(col_name.clone()))
-                                .map_err(|e| Error::InvalidOperation(e.to_string()))?;
-                            result.add_column(col_name, series)?;
-                        }
-                    }
-                    SchemaDataType::Int64 => {
-                        if column_is_numeric(df, column) {
-                            // Truncate floats to int (store as f64 since that's what we have)
-                            let values = df.get_column_numeric_values(column)?;
-                            let int_values: Vec<f64> = values.iter().map(|v| v.trunc()).collect();
-                            let series = Series::new(int_values, Some(col_name.clone()))
-                                .map_err(|e| Error::InvalidOperation(e.to_string()))?;
-                            result.add_column(col_name, series)?;
-                        } else {
-                            let string_values = df.get_column_string_values(column)?;
-                            let int_values: Result<Vec<f64>> = string_values
-                                .iter()
-                                .map(|s| {
-                                    s.parse::<i64>()
-                                        .map(|i| i as f64)
-                                        .or_else(|_| s.parse::<f64>().map(|f| f.trunc()))
-                                        .map_err(|e| {
-                                            Error::Cast(format!(
-                                                "Cannot cast '{}' to Int64: {}",
-                                                s, e
-                                            ))
-                                        })
-                                })
-                                .collect();
-                            let series = Series::new(int_values?, Some(col_name.clone()))
-                                .map_err(|e| Error::InvalidOperation(e.to_string()))?;
-                            result.add_column(col_name, series)?;
-                        }
-                    }
-                    SchemaDataType::Boolean => {
-                        if column_is_numeric(df, column) {
-                            // Non-zero = true (1.0), zero = false (0.0)
-                            let values = df.get_column_numeric_values(column)?;
-                            let bool_values: Vec<f64> = values
-                                .iter()
-                                .map(|v| if *v != 0.0 { 1.0 } else { 0.0 })
-                                .collect();
-                            let series = Series::new(bool_values, Some(col_name.clone()))
-                                .map_err(|e| Error::InvalidOperation(e.to_string()))?;
-                            result.add_column(col_name, series)?;
-                        } else {
-                            let string_values = df.get_column_string_values(column)?;
-                            let bool_values: Result<Vec<f64>> = string_values
-                                .iter()
-                                .map(|s| match s.to_lowercase().as_str() {
-                                    "true" | "1" | "yes" => Ok(1.0f64),
-                                    "false" | "0" | "no" | "" => Ok(0.0f64),
-                                    _ => {
-                                        Err(Error::Cast(format!("Cannot cast '{}' to Boolean", s)))
-                                    }
-                                })
-                                .collect();
-                            let series = Series::new(bool_values?, Some(col_name.clone()))
-                                .map_err(|e| Error::InvalidOperation(e.to_string()))?;
-                            result.add_column(col_name, series)?;
-                        }
-                    }
-                    // All other types: convert to string representation
-                    SchemaDataType::String
-                    | SchemaDataType::DateTime
-                    | SchemaDataType::Categorical { .. }
-                    | SchemaDataType::List { .. } => {
-                        let string_values = df.get_column_string_values(column)?;
-                        let series = Series::new(string_values, Some(col_name.clone()))
-                            .map_err(|e| Error::InvalidOperation(e.to_string()))?;
-                        result.add_column(col_name, series)?;
-                    }
-                }
+                convert_column_type(df, column, new_type, &mut result)?;
             }
         }
         Ok(result)
@@ -541,10 +567,16 @@ impl SchemaMigrator {
     /// Checks:
     /// - All schema columns exist in the DataFrame
     /// - Column types match the schema (heuristic)
-    /// - Constraints are satisfied (NotNull, Range, Enum, Regex, Unique)
+    /// - Every constraint in `schema.constraints` is satisfied (NotNull,
+    ///   Range, Enum, Regex, Unique, composite Unique) -- constraints are
+    ///   evaluated by iterating `schema.constraints` directly, not by
+    ///   looking them up per declared column, so a constraint referencing a
+    ///   column that isn't (yet) listed in `schema.columns` is still
+    ///   evaluated rather than silently skipped.
     pub fn validate(&self, df: &DataFrame, schema: &DataFrameSchema) -> Result<ValidationReport> {
         let mut report = ValidationReport::new();
-        let df_columns: std::collections::HashSet<String> = df.column_names().into_iter().collect();
+        let df_columns: std::collections::HashSet<String> =
+            df.column_names().iter().cloned().collect();
         let schema_columns: std::collections::HashSet<String> =
             schema.columns.iter().map(|c| c.name.clone()).collect();
 
@@ -572,19 +604,30 @@ impl SchemaMigrator {
             }
         }
 
-        // Check type compatibility and constraints for existing columns
+        // Check type compatibility for existing, declared columns.
         for col_schema in &schema.columns {
             if !df_columns.contains(&col_schema.name) {
                 continue; // Already reported as missing
             }
-
-            // Type checking (heuristic based on what we can determine)
             self.check_column_type(df, col_schema, &mut report);
+        }
 
-            // Check constraints for this column
-            for constraint in schema.constraints_for_column(&col_schema.name) {
-                self.check_constraint(df, constraint, &mut report);
+        // Evaluate every constraint, regardless of whether its column(s)
+        // are declared in `schema.columns`. Warn (rather than silently
+        // skip) when a referenced column doesn't exist in the DataFrame at
+        // all, since in that case the constraint genuinely cannot be
+        // evaluated one way or the other.
+        for constraint in &schema.constraints {
+            for col in constraint.affected_columns() {
+                if !df_columns.contains(col) {
+                    report.add_warning(format!(
+                        "Constraint {} references column '{}', which is not present in \
+                         the DataFrame; it cannot be evaluated",
+                        constraint, col
+                    ));
+                }
             }
+            self.check_constraint(df, constraint, &mut report);
         }
 
         Ok(report)
@@ -596,11 +639,19 @@ impl SchemaMigrator {
         col_schema: &ColumnSchema,
         report: &mut ValidationReport,
     ) {
-        let is_numeric = column_is_numeric(df, &col_schema.name);
+        // `is_numeric_column` only recognises i64/f64/i32/f32; a genuine
+        // `Series<bool>` column is checked separately so a `Boolean`-typed
+        // schema column can actually validate against real boolean data
+        // (previously, routing Boolean through the numeric check meant a
+        // `Series<bool>` column -- which `is_numeric_column` does not
+        // recognise -- could never pass validation).
+        let is_numeric = df.is_numeric_column(&col_schema.name);
+        let is_bool = df.get_column::<bool>(&col_schema.name).is_ok();
 
         let type_ok = match &col_schema.data_type {
-            SchemaDataType::Int64 | SchemaDataType::Float64 | SchemaDataType::Boolean => is_numeric,
-            SchemaDataType::String => !is_numeric,
+            SchemaDataType::Int64 | SchemaDataType::Float64 => is_numeric,
+            SchemaDataType::Boolean => is_bool,
+            SchemaDataType::String => !is_numeric && !is_bool,
             // DateTime, Categorical, List — stored as strings; can't distinguish further
             SchemaDataType::DateTime
             | SchemaDataType::Categorical { .. }
@@ -627,24 +678,50 @@ impl SchemaMigrator {
     ) {
         match constraint {
             SchemaConstraint::NotNull(col) => {
-                if df.contains_column(col) {
-                    if let Ok(values) = df.get_column_string_values(col) {
-                        let null_count = values.iter().filter(|v| v.is_empty()).count();
+                if !df.contains_column(col) {
+                    return;
+                }
+                if df.is_numeric_column(col) {
+                    // Numeric columns (i64/f64/i32/f32) represent a missing
+                    // value as `f64::NAN` -- there is no null bit in this
+                    // DataFrame's column model. `get_column_string_values`
+                    // renders NaN as the literal (non-empty!) string "NaN",
+                    // so an emptiness check on the stringified column can
+                    // never catch a numeric NA; inspect the numeric values
+                    // directly instead.
+                    if let Ok(values) = df.get_column_numeric_values(col) {
+                        let null_count = values.iter().filter(|v| v.is_nan()).count();
                         if null_count > 0 {
                             report.add_error(
                                 col,
                                 format!(
-                                    "Column '{}' has {} null/empty value(s), violating NOT NULL constraint",
+                                    "Column '{}' has {} NaN value(s), violating NOT NULL constraint",
                                     col, null_count
                                 ),
                                 ValidationErrorType::NullViolation,
                             );
                         }
                     }
+                } else if let Ok(values) = df.get_column_string_values(col) {
+                    // String (and other non-numeric) columns have no
+                    // dedicated null marker either; empty string is the
+                    // best-effort "no value" convention already used
+                    // elsewhere in this DataFrame model.
+                    let null_count = values.iter().filter(|v| v.is_empty()).count();
+                    if null_count > 0 {
+                        report.add_error(
+                            col,
+                            format!(
+                                "Column '{}' has {} null/empty value(s), violating NOT NULL constraint",
+                                col, null_count
+                            ),
+                            ValidationErrorType::NullViolation,
+                        );
+                    }
                 }
             }
             SchemaConstraint::Range { col, min, max } => {
-                if df.contains_column(col) && column_is_numeric(df, col) {
+                if df.contains_column(col) && df.is_numeric_column(col) {
                     if let Ok(values) = df.get_column_numeric_values(col) {
                         for &v in &values {
                             if let Some(min_val) = min {
@@ -678,23 +755,46 @@ impl SchemaMigrator {
                 }
             }
             SchemaConstraint::Unique(cols) => {
-                // Check single-column uniqueness
-                if cols.len() == 1 {
-                    let col = &cols[0];
-                    if df.contains_column(col) {
-                        if let Ok(values) = df.get_column_string_values(col) {
-                            let mut seen = std::collections::HashSet::new();
-                            for v in &values {
-                                if !seen.insert(v) {
-                                    report.add_error(
-                                        col,
-                                        format!("Column '{}' has duplicate value '{}'", col, v),
-                                        ValidationErrorType::UniqueViolation,
-                                    );
-                                    break;
-                                }
-                            }
-                        }
+                // Uniqueness over the combination of all listed columns
+                // (single-column is just the cols.len() == 1 case of this).
+                // Values are rendered to strings so columns of any
+                // supported concrete type can be combined into one
+                // composite key.
+                if cols.is_empty() {
+                    report.add_warning("Unique constraint has no columns specified".to_string());
+                    return;
+                }
+                if !cols.iter().all(|c| df.contains_column(c)) {
+                    return; // already reported by the top-level "unevaluatable" warning
+                }
+
+                let mut per_column_values: Vec<Vec<String>> = Vec::with_capacity(cols.len());
+                for col in cols {
+                    match df.get_column_string_values(col) {
+                        Ok(values) => per_column_values.push(values),
+                        Err(_) => return, // not evaluable for this column's type
+                    }
+                }
+                let row_count = per_column_values[0].len();
+                let mut seen: std::collections::HashSet<Vec<&str>> =
+                    std::collections::HashSet::new();
+                for row in 0..row_count {
+                    let key: Vec<&str> = per_column_values
+                        .iter()
+                        .map(|col_values| col_values[row].as_str())
+                        .collect();
+                    if !seen.insert(key.clone()) {
+                        report.add_error(
+                            cols.join(", "),
+                            format!(
+                                "Columns ({}) have duplicate combination at row {}: {:?}",
+                                cols.join(", "),
+                                row,
+                                key
+                            ),
+                            ValidationErrorType::UniqueViolation,
+                        );
+                        break;
                     }
                 }
             }
@@ -770,7 +870,9 @@ impl SchemaMigrator {
         let mut schema = DataFrameSchema::new(name, SchemaVersion::initial());
 
         for col_name in df.column_names() {
-            let data_type = if column_is_numeric(df, &col_name) {
+            let data_type = if df.get_column::<bool>(&col_name).is_ok() {
+                SchemaDataType::Boolean
+            } else if df.is_numeric_column(&col_name) {
                 // Try to determine if it's int or float
                 if let Ok(values) = df.get_column_numeric_values(&col_name) {
                     let all_int = values.iter().all(|v| v.fract() == 0.0 && v.is_finite());
@@ -861,15 +963,21 @@ impl SchemaMigrator {
             }
         }
 
-        // Columns in `from` but not in `to` - data loss (non-breaking for flow but worth noting)
+        // Columns in `from` but not in `to`: this never blocks the flow (the
+        // target doesn't need that data), so it's still noted among
+        // `non_breaking_changes` for a full change list -- but it *is* real
+        // data loss, so it's also recorded in `data_loss` rather than left
+        // indistinguishable from a zero-impact change like a widening cast.
         let to_column_names: std::collections::HashSet<&str> =
             to.columns.iter().map(|c| c.name.as_str()).collect();
         for from_col in &from.columns {
             if !to_column_names.contains(from_col.name.as_str()) {
-                report.add_non_breaking(format!(
+                let msg = format!(
                     "Column '{}' exists in source but not in target schema (data will be dropped)",
                     from_col.name
-                ));
+                );
+                report.add_non_breaking(msg.clone());
+                report.data_loss.push(msg);
             }
         }
 
@@ -1068,6 +1176,7 @@ mod tests {
         let df = make_test_df();
         let migration = MigrationBuilder::new(
             "m001",
+            "test",
             SchemaVersion::new(1, 0, 0),
             SchemaVersion::new(1, 1, 0),
         )
@@ -1146,5 +1255,221 @@ mod tests {
             .errors
             .iter()
             .any(|e| e.error_type == ValidationErrorType::EnumViolation));
+    }
+
+    #[test]
+    fn test_copy_columns_preserves_i64_and_bool_types() {
+        let mut df = DataFrame::new();
+        df.add_column(
+            "big_id".to_string(),
+            // Above 2^53: would lose precision if routed through f64.
+            Series::new(
+                vec![9_007_199_254_740_993i64, -1],
+                Some("big_id".to_string()),
+            )
+            .expect("series"),
+        )
+        .expect("add");
+        df.add_column(
+            "flag".to_string(),
+            Series::new(vec![true, false], Some("flag".to_string())).expect("series"),
+        )
+        .expect("add");
+
+        let migrator = SchemaMigrator::empty();
+        // Reordering exercises `copy_columns` directly.
+        let change = SchemaChange::ReorderColumns {
+            order: vec!["flag".to_string(), "big_id".to_string()],
+        };
+        let result = migrator.apply_change(&df, &change).expect("reorder");
+
+        let ids = result.get_column::<i64>("big_id").expect("still i64");
+        assert_eq!(ids.values(), &[9_007_199_254_740_993i64, -1]);
+
+        let flags = result.get_column::<bool>("flag").expect("still bool");
+        assert_eq!(flags.values(), &[true, false]);
+    }
+
+    #[test]
+    fn test_change_type_to_boolean_and_back_round_trips_real_bool() {
+        let mut df = DataFrame::new();
+        df.add_column(
+            "active".to_string(),
+            Series::new(
+                vec!["true".to_string(), "false".to_string(), "1".to_string()],
+                Some("active".to_string()),
+            )
+            .expect("series"),
+        )
+        .expect("add");
+
+        let migrator = SchemaMigrator::empty();
+        let change = SchemaChange::ChangeType {
+            column: "active".to_string(),
+            new_type: SchemaDataType::Boolean,
+            converter: None,
+        };
+        let result = migrator.apply_change(&df, &change).expect("apply");
+
+        // Must be a genuine Series<bool>, not f64 0.0/1.0.
+        let values = result
+            .get_column::<bool>("active")
+            .expect("real bool column");
+        assert_eq!(values.values(), &[true, false, true]);
+
+        // And it must validate as Boolean, closing the migrate-then-validate
+        // round trip that a fake f64-backed "boolean" column would fail.
+        let schema = DataFrameSchema::new("test", SchemaVersion::initial())
+            .with_column(ColumnSchema::new("active", SchemaDataType::Boolean));
+        let report = migrator.validate(&result, &schema).expect("validate");
+        assert!(report.is_valid, "errors: {:?}", report.errors);
+    }
+
+    #[test]
+    fn test_not_null_catches_numeric_nan() {
+        let mut df = DataFrame::new();
+        df.add_column(
+            "score".to_string(),
+            Series::new(vec![1.0f64, f64::NAN, 3.0], Some("score".to_string())).expect("series"),
+        )
+        .expect("add");
+
+        // Case 1: the constraint's column IS declared in schema.columns.
+        let schema = DataFrameSchema::new("test", SchemaVersion::initial())
+            .with_column(ColumnSchema::new("score", SchemaDataType::Float64))
+            .with_constraint(SchemaConstraint::NotNull("score".to_string()));
+
+        let migrator = SchemaMigrator::empty();
+        let report = migrator.validate(&df, &schema).expect("validate");
+        assert!(!report.is_valid);
+        assert!(report
+            .errors
+            .iter()
+            .any(|e| e.error_type == ValidationErrorType::NullViolation));
+
+        // Case 2: the constraint's column is present in the DataFrame but
+        // NOT declared in schema.columns at all -- only reachable because
+        // `validate()` now iterates `schema.constraints` directly instead
+        // of filtering through the declared-columns loop.
+        let undeclared_schema = DataFrameSchema::new("test", SchemaVersion::initial())
+            .with_constraint(SchemaConstraint::NotNull("score".to_string()));
+        let report2 = migrator
+            .validate(&df, &undeclared_schema)
+            .expect("validate");
+        assert!(!report2.is_valid);
+        assert!(report2
+            .errors
+            .iter()
+            .any(|e| e.error_type == ValidationErrorType::NullViolation));
+    }
+
+    #[test]
+    fn test_composite_unique_constraint() {
+        let mut df = DataFrame::new();
+        df.add_column(
+            "region".to_string(),
+            Series::new(
+                vec!["us".to_string(), "us".to_string(), "eu".to_string()],
+                Some("region".to_string()),
+            )
+            .expect("series"),
+        )
+        .expect("add");
+        df.add_column(
+            "code".to_string(),
+            Series::new(
+                vec!["A".to_string(), "A".to_string(), "A".to_string()],
+                Some("code".to_string()),
+            )
+            .expect("series"),
+        )
+        .expect("add");
+
+        // ("us","A") appears twice -> violation; ("eu","A") is unique.
+        let schema = DataFrameSchema::new("test", SchemaVersion::initial())
+            .with_column(ColumnSchema::new("region", SchemaDataType::String))
+            .with_column(ColumnSchema::new("code", SchemaDataType::String))
+            .with_constraint(SchemaConstraint::Unique(vec![
+                "region".to_string(),
+                "code".to_string(),
+            ]));
+
+        let migrator = SchemaMigrator::empty();
+        let report = migrator.validate(&df, &schema).expect("validate");
+        assert!(!report.is_valid);
+        assert!(report
+            .errors
+            .iter()
+            .any(|e| e.error_type == ValidationErrorType::UniqueViolation));
+    }
+
+    #[test]
+    fn test_nullable_add_column_uses_real_na_not_zero() {
+        let df = make_test_df();
+        let migrator = SchemaMigrator::empty();
+
+        // Float64, nullable, no default -> NaN (a real NA), not a fabricated 0.0.
+        let change = SchemaChange::AddColumn {
+            schema: ColumnSchema::new("score", SchemaDataType::Float64).with_nullable(true),
+            position: None,
+        };
+        let result = migrator.apply_change(&df, &change).expect("apply");
+        let values = result.get_column_numeric_values("score").expect("numeric");
+        assert!(
+            values.iter().all(|v| v.is_nan()),
+            "expected all-NaN, got {:?}",
+            values
+        );
+
+        // Non-nullable, no default -> a real (non-NA) zero of the declared type.
+        let change2 = SchemaChange::AddColumn {
+            schema: ColumnSchema::new("count", SchemaDataType::Int64).with_nullable(false),
+            position: None,
+        };
+        let result2 = migrator.apply_change(&df, &change2).expect("apply");
+        let ids = result2.get_column::<i64>("count").expect("real i64 column");
+        assert_eq!(ids.values(), &[0i64, 0, 0]);
+    }
+
+    #[test]
+    fn test_check_compatibility_reports_data_loss_separately() {
+        let from = DataFrameSchema::new("v1", SchemaVersion::new(1, 0, 0))
+            .with_column(ColumnSchema::new("id", SchemaDataType::Int64))
+            .with_column(ColumnSchema::new("legacy", SchemaDataType::String));
+
+        let to = DataFrameSchema::new("v2", SchemaVersion::new(2, 0, 0))
+            .with_column(ColumnSchema::new("id", SchemaDataType::Int64));
+
+        let migrator = SchemaMigrator::empty();
+        let report = migrator.check_compatibility(&from, &to);
+        // Still compatible: the flow doesn't need the dropped column.
+        assert!(report.is_compatible);
+        // But the drop is honestly recorded as data loss, not just folded
+        // into the generic non-breaking-changes list.
+        assert!(report.data_loss.iter().any(|c| c.contains("legacy")));
+    }
+
+    #[test]
+    fn test_unsupported_column_type_errors_instead_of_fabricating() {
+        let mut df = DataFrame::new();
+        df.add_column(
+            "when".to_string(),
+            Series::new(
+                vec![chrono::NaiveDate::from_ymd_opt(2024, 1, 1).expect("date")],
+                Some("when".to_string()),
+            )
+            .expect("series"),
+        )
+        .expect("add");
+
+        let migrator = SchemaMigrator::empty();
+        let change = SchemaChange::ReorderColumns {
+            order: vec!["when".to_string()],
+        };
+        let result = migrator.apply_change(&df, &change);
+        assert!(
+            result.is_err(),
+            "an unsupported column type must error, not silently fabricate a placeholder"
+        );
     }
 }

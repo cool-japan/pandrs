@@ -12,7 +12,11 @@ pub mod operations;
 pub mod types;
 
 // Re-export main types for convenience
-pub use types::{AggregateFn, AggregateOp, CustomAggregation, FilterFn, GroupBy, TransformFn};
+pub use grouping::NA_GROUP_KEY_MARKER;
+pub use types::{
+    AggregateFn, AggregateOp, CustomAggregation, FilterFn, GroupBy, GroupKey, GroupKeyValue,
+    TransformFn,
+};
 
 // The grouping methods are implemented directly on OptimizedDataFrame via the grouping module
 // The aggregation and operations methods are implemented on GroupBy via their respective modules

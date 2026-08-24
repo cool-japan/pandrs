@@ -4,13 +4,67 @@
 //! hierarchical aggregation results in a pandas-like format with proper
 //! column hierarchies and intuitive navigation.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt;
 
-use crate::core::error::{Error, OptionExt, Result};
+use crate::core::error::{Error, Result};
 use crate::dataframe::base::DataFrame;
-use crate::dataframe::hierarchical_groupby::{HierarchicalAgg, HierarchicalKey};
+use crate::dataframe::hierarchical_groupby::HierarchicalAgg;
 use crate::series::base::Series;
+
+/// Render a DataFrame column as owned strings, tolerating a `&'static
+/// str`-backed column (e.g. built from `Series::new(vec!["a", "b"], ..)`, as
+/// this crate's own examples and tests commonly do) that
+/// [`DataFrame::get_column_string_values`] does not special-case. Mirrors
+/// the identical helper in `crate::dataframe::transform`; kept local rather
+/// than shared so the two modules' fixes stay independently self-contained.
+fn column_as_strings(df: &DataFrame, col_name: &str) -> Result<Vec<String>> {
+    if let Ok(series) = df.get_column::<&'static str>(col_name) {
+        return Ok(series.values().iter().map(|s| s.to_string()).collect());
+    }
+    df.get_column_string_values(col_name)
+}
+
+/// Copy `source`'s `src_name` column into `target` under `dst_name`,
+/// preserving the column's exact element type when it is one of this
+/// crate's common scalar types, and otherwise bridging through
+/// [`column_as_strings`] rather than silently dropping the column. This
+/// replaces the fabrication it fixes: code that only ever tried
+/// `Series<String>` and silently omitted every column of another type
+/// (numeric group keys included) from its output.
+fn copy_column_as(
+    source: &DataFrame,
+    src_name: &str,
+    dst_name: &str,
+    target: &mut DataFrame,
+) -> Result<()> {
+    macro_rules! try_copy {
+        ($ty:ty) => {
+            if let Ok(series) = source.get_column::<$ty>(src_name) {
+                target.add_column(
+                    dst_name.to_string(),
+                    series.clone().with_name(dst_name.to_string()),
+                )?;
+                return Ok(());
+            }
+        };
+    }
+    try_copy!(String);
+    try_copy!(i64);
+    try_copy!(f64);
+    try_copy!(i32);
+    try_copy!(f32);
+    try_copy!(bool);
+    try_copy!(chrono::NaiveDate);
+    try_copy!(chrono::NaiveDateTime);
+
+    let values = column_as_strings(source, src_name)?;
+    target.add_column(
+        dst_name.to_string(),
+        Series::new(values, Some(dst_name.to_string()))?,
+    )?;
+    Ok(())
+}
 
 /// Multi-level column index for hierarchical results
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -94,6 +148,7 @@ pub struct MultiIndexDataFrame {
     /// Index hierarchy (row multi-index)
     index_hierarchy: Vec<String>,
     /// Column hierarchy level names
+    #[allow(dead_code)] // retained: hierarchical column-level metadata for navigation
     column_level_names: Vec<String>,
     /// Metadata about the hierarchical structure
     metadata: MultiIndexMetadata,
@@ -188,21 +243,19 @@ impl MultiIndexDataFrame {
         // Create new DataFrame with selected columns
         let mut new_data = DataFrame::new();
 
-        // Copy index columns
+        // Copy index columns, preserving whatever concrete type each one
+        // actually has (numeric grouping keys included) instead of only
+        // ever trying `Series<String>` and silently dropping the rest.
         for index_col in &self.index_hierarchy {
-            if let Ok(series) = self.data.get_column::<String>(index_col) {
-                new_data.add_column(index_col.clone(), series.clone())?;
-            }
+            copy_column_as(&self.data, index_col, index_col, &mut new_data)?;
         }
 
         // Copy selected data columns
         let mut new_column_index = Vec::new();
-        for (col_idx, multi_col) in selected_columns {
+        for (_col_idx, multi_col) in selected_columns {
             let flat_name = multi_col.display_name();
-            if let Ok(series) = self.data.get_column::<String>(&flat_name) {
-                new_data.add_column(flat_name.clone(), series.clone())?;
-                new_column_index.push(multi_col.clone());
-            }
+            copy_column_as(&self.data, &flat_name, &flat_name, &mut new_data)?;
+            new_column_index.push(multi_col.clone());
         }
 
         Ok(MultiIndexDataFrame::new(
@@ -282,7 +335,16 @@ impl MultiIndexDataFrame {
         summary
     }
 
-    /// Reshape to a different column hierarchy
+    /// Reshape to a different column hierarchy.
+    ///
+    /// Reordering a column's levels changes its flattened
+    /// [`MultiIndexColumn::display_name`], which is also the name of its
+    /// backing column in the underlying `DataFrame` -- so the data itself is
+    /// copied to the new flattened name here, not just the `column_index`
+    /// metadata. Two columns that the reorder maps onto the same flattened
+    /// name (e.g. because a dropped level was the only thing distinguishing
+    /// them) are rejected with an error instead of one silently overwriting
+    /// the other in the result.
     pub fn pivot_columns(&self, new_level_order: &[usize]) -> Result<MultiIndexDataFrame> {
         if new_level_order.len() != self.metadata.max_column_depth {
             return Err(Error::InvalidValue(
@@ -290,8 +352,17 @@ impl MultiIndexDataFrame {
             ));
         }
 
-        // Reorder column levels
+        let mut new_data = DataFrame::new();
+
+        // Index columns are untouched by a column-level reorder.
+        for index_col in &self.index_hierarchy {
+            copy_column_as(&self.data, index_col, index_col, &mut new_data)?;
+        }
+
+        // Reorder each column's levels and copy its underlying data to the
+        // resulting flattened name.
         let mut new_column_index = Vec::new();
+        let mut seen_targets: std::collections::HashSet<String> = std::collections::HashSet::new();
         for column in &self.column_index {
             let mut new_levels = Vec::new();
             let mut new_level_names = Vec::new();
@@ -305,15 +376,25 @@ impl MultiIndexDataFrame {
                 }
             }
 
-            new_column_index.push(MultiIndexColumn::new(
-                new_levels,
-                new_level_names,
-                column.dtype.clone(),
-            ));
+            let new_column =
+                MultiIndexColumn::new(new_levels, new_level_names, column.dtype.clone());
+            let old_name = column.display_name();
+            let new_name = new_column.display_name();
+
+            if !seen_targets.insert(new_name.clone()) {
+                return Err(Error::DuplicateColumnName(format!(
+                    "pivot_columns: level reorder maps two or more columns onto the same name \
+                     '{}'; choose a level order that keeps every column's flattened name unique",
+                    new_name
+                )));
+            }
+
+            copy_column_as(&self.data, &old_name, &new_name, &mut new_data)?;
+            new_column_index.push(new_column);
         }
 
         Ok(MultiIndexDataFrame::new(
-            self.data.clone(),
+            new_data,
             new_column_index,
             self.index_hierarchy.clone(),
         ))
@@ -446,6 +527,7 @@ pub struct LevelSummary {
 #[derive(Debug)]
 pub struct MultiIndexDataFrameBuilder {
     index_columns: Vec<String>,
+    index_values: Vec<Vec<String>>,
     data_columns: HashMap<String, Series<String>>,
     column_hierarchy: Vec<MultiIndexColumn>,
     aggregation_metadata: Vec<String>,
@@ -456,10 +538,34 @@ impl MultiIndexDataFrameBuilder {
     pub fn new(index_columns: Vec<String>) -> Self {
         Self {
             index_columns,
+            index_values: Vec::new(),
             data_columns: HashMap::new(),
             column_hierarchy: Vec::new(),
             aggregation_metadata: Vec::new(),
         }
+    }
+
+    /// Provide the concrete index (row-key) values for this multi-index
+    /// DataFrame: one `Vec<String>` per index column declared in [`Self::new`],
+    /// each of length equal to the eventual row count (the number of rows in
+    /// the data columns added via [`Self::add_column`]).
+    ///
+    /// Must be called before [`Self::build`] whenever `index_columns` is
+    /// non-empty: nothing about the columns added so far can tell the
+    /// builder what a row's real key actually is, so without this call
+    /// `build()` returns an error instead of fabricating placeholder text in
+    /// the index columns.
+    pub fn set_index_values(&mut self, index_values: Vec<Vec<String>>) -> Result<()> {
+        if index_values.len() != self.index_columns.len() {
+            return Err(Error::InvalidValue(format!(
+                "set_index_values: expected {} column(s) of index values (one per index column \
+                 declared in `new`), got {}",
+                self.index_columns.len(),
+                index_values.len()
+            )));
+        }
+        self.index_values = index_values;
+        Ok(())
     }
 
     /// Add a data column with multi-index specification
@@ -504,23 +610,45 @@ impl MultiIndexDataFrameBuilder {
         Ok(())
     }
 
-    /// Build the multi-index DataFrame
+    /// Build the multi-index DataFrame.
+    ///
+    /// Returns an error, rather than fabricating placeholder index values,
+    /// when `index_columns` is non-empty but [`Self::set_index_values`] was
+    /// never called (or supplied rows of the wrong length): there is no
+    /// honest value to put in the index columns without it.
     pub fn build(self) -> Result<MultiIndexDataFrame> {
         let mut data = DataFrame::new();
 
-        // Determine row count from data columns
+        // Determine row count from data columns, falling back to the index
+        // values when there are no data columns yet.
         let row_count = if let Some(first_series) = self.data_columns.values().next() {
             first_series.len()
+        } else if let Some(first_index) = self.index_values.first() {
+            first_index.len()
         } else {
             0
         };
 
-        // Add index columns with the correct row count
-        for index_col in &self.index_columns {
-            // Create placeholder series with correct row count for testing
-            let placeholder_data = vec!["placeholder".to_string(); row_count];
+        if !self.index_columns.is_empty() && self.index_values.len() != self.index_columns.len() {
+            return Err(Error::InvalidValue(format!(
+                "MultiIndexDataFrameBuilder::build: {} index column(s) declared but no \
+                 index values were supplied; call set_index_values(..) before build() instead \
+                 of relying on fabricated placeholder text",
+                self.index_columns.len()
+            )));
+        }
+
+        // Add index columns using the real values supplied via
+        // `set_index_values`.
+        for (index_col, values) in self.index_columns.iter().zip(self.index_values.iter()) {
+            if values.len() != row_count {
+                return Err(Error::InconsistentRowCount {
+                    expected: row_count,
+                    found: values.len(),
+                });
+            }
             let index_series: Series<String> =
-                Series::new(placeholder_data, Some(index_col.clone()))?;
+                Series::new(values.clone(), Some(index_col.clone()))?;
             data.add_column(index_col.clone(), index_series)?;
         }
 
@@ -552,19 +680,19 @@ impl ToMultiIndex for DataFrame {
         let column_names = self.column_names();
 
         // Find grouping columns (typically the first few columns)
-        for col_name in &column_names {
+        for col_name in column_names {
             if !agg_specs.iter().any(|spec| {
                 spec.level_functions
                     .iter()
                     .any(|(_, _, alias)| alias == col_name)
             }) {
-                index_columns.push(col_name.clone());
+                index_columns.push(col_name.to_string());
             }
         }
 
         // Create multi-index columns for aggregation results
         for agg_spec in agg_specs {
-            for (level, func, alias) in &agg_spec.level_functions {
+            for (level, func, _alias) in &agg_spec.level_functions {
                 let column_spec = MultiIndexColumn::new(
                     vec![
                         agg_spec.column.clone(),
@@ -622,7 +750,18 @@ pub mod utils {
         result
     }
 
-    /// Merge multiple multi-index DataFrames
+    /// Merge multiple multi-index DataFrames that share the same index
+    /// hierarchy into one, combining their data columns side by side.
+    ///
+    /// All input frames must declare the identical `index_hierarchy` (same
+    /// column names, in the same order) and must each have unique row keys
+    /// covering exactly the same set of keys as every other frame -- the
+    /// realistic case for merging aggregation results computed over the
+    /// same grouping with different metrics. Frames that disagree on their
+    /// index hierarchy or on the set of keys they cover are rejected
+    /// explicitly rather than silently NA-padding or dropping rows, and a
+    /// data column whose flattened name collides across frames is rejected
+    /// rather than one frame's values silently overwriting another's.
     pub fn merge_multi_index_dataframes(
         dataframes: Vec<MultiIndexDataFrame>,
     ) -> Result<MultiIndexDataFrame> {
@@ -638,12 +777,119 @@ pub mod utils {
             });
         }
 
-        // For now, return the first DataFrame
-        // In a full implementation, this would merge the DataFrames properly
-        dataframes
-            .into_iter()
-            .next()
-            .ok_or_else(|| Error::InsufficientData("dataframes should not be empty".to_string()))
+        let index_hierarchy: Vec<String> = dataframes[0].index_hierarchy().to_vec();
+        for (i, mdf) in dataframes.iter().enumerate().skip(1) {
+            if mdf.index_hierarchy().to_vec() != index_hierarchy {
+                return Err(Error::InvalidValue(format!(
+                    "merge_multi_index_dataframes: frame {} has index hierarchy {:?}, expected \
+                     {:?} (every frame being merged must share identical index columns, in the \
+                     same order)",
+                    i,
+                    mdf.index_hierarchy(),
+                    index_hierarchy
+                )));
+            }
+        }
+
+        if index_hierarchy.is_empty() && dataframes.iter().any(|mdf| mdf.data().row_count() > 1) {
+            return Err(Error::InvalidValue(
+                "merge_multi_index_dataframes: frames with no index columns can only be merged \
+                 when each has at most one row (with no index column, row identity is \
+                 ambiguous)"
+                    .to_string(),
+            ));
+        }
+
+        // Row key -> row position, per input frame.
+        let mut key_orders: Vec<Vec<Vec<String>>> = Vec::with_capacity(dataframes.len());
+        let mut key_lookup: Vec<HashMap<Vec<String>, usize>> = Vec::with_capacity(dataframes.len());
+
+        for (frame_idx, mdf) in dataframes.iter().enumerate() {
+            let n = mdf.data().row_count();
+            let mut per_level: Vec<Vec<String>> = Vec::with_capacity(index_hierarchy.len());
+            for level in &index_hierarchy {
+                per_level.push(column_as_strings(mdf.data(), level)?);
+            }
+            let mut keys: Vec<Vec<String>> = Vec::with_capacity(n);
+            let mut lookup: HashMap<Vec<String>, usize> = HashMap::with_capacity(n);
+            for row in 0..n {
+                let key: Vec<String> = per_level.iter().map(|col| col[row].clone()).collect();
+                lookup.insert(key.clone(), row);
+                keys.push(key);
+            }
+            if lookup.len() != n {
+                return Err(Error::InvalidValue(format!(
+                    "merge_multi_index_dataframes: frame {} has duplicate index keys; each \
+                     row's index values must be unique before merging",
+                    frame_idx
+                )));
+            }
+            key_orders.push(keys);
+            key_lookup.push(lookup);
+        }
+
+        let first_key_set: BTreeSet<Vec<String>> = key_orders[0].iter().cloned().collect();
+        for (i, keys) in key_orders.iter().enumerate().skip(1) {
+            let key_set: BTreeSet<Vec<String>> = keys.iter().cloned().collect();
+            if key_set != first_key_set {
+                return Err(Error::InvalidValue(format!(
+                    "merge_multi_index_dataframes: frame {} covers a different set of index \
+                     keys than frame 0; merging requires every frame to cover exactly the same \
+                     rows",
+                    i
+                )));
+            }
+        }
+
+        let sorted_keys: Vec<Vec<String>> = first_key_set.into_iter().collect();
+
+        let mut merged_data = DataFrame::new();
+        for (level_idx, level_name) in index_hierarchy.iter().enumerate() {
+            let values: Vec<String> = sorted_keys.iter().map(|k| k[level_idx].clone()).collect();
+            merged_data.add_column(
+                level_name.clone(),
+                Series::new(values, Some(level_name.clone()))?,
+            )?;
+        }
+
+        let mut merged_column_index: Vec<MultiIndexColumn> = Vec::new();
+        for (frame_idx, mdf) in dataframes.iter().enumerate() {
+            for column in mdf.column_index() {
+                let flat_name = column.display_name();
+                if merged_data.contains_column(&flat_name) {
+                    return Err(Error::DuplicateColumnName(format!(
+                        "merge_multi_index_dataframes: column '{}' appears in more than one \
+                         input frame (frame {} is the second occurrence); rename it in one of \
+                         the frames before merging",
+                        flat_name, frame_idx
+                    )));
+                }
+                let source_values = column_as_strings(mdf.data(), &flat_name)?;
+                let lookup = &key_lookup[frame_idx];
+                let mut values: Vec<String> = Vec::with_capacity(sorted_keys.len());
+                for key in &sorted_keys {
+                    let row = *lookup.get(key).ok_or_else(|| {
+                        Error::InvalidValue(format!(
+                            "merge_multi_index_dataframes: internal key lookup failure for \
+                             column '{}'",
+                            flat_name
+                        ))
+                    })?;
+                    values.push(source_values[row].clone());
+                }
+                merged_data.add_column(
+                    flat_name.clone(),
+                    Series::new(values, Some(flat_name.clone()))?,
+                )?;
+                merged_column_index.push(column.clone());
+            }
+        }
+
+        Ok(MultiIndexDataFrame::new(
+            merged_data,
+            merged_column_index,
+            index_hierarchy,
+        ))
     }
 }
 
@@ -685,9 +931,40 @@ mod tests {
             .add_column(column_spec, data)
             .expect("operation should succeed");
 
+        // Real per-row index key values must be supplied explicitly:
+        // nothing about the data columns alone tells the builder what a
+        // row's actual key is.
+        builder
+            .set_index_values(vec![vec!["east".to_string()]])
+            .expect("operation should succeed");
+
         let multi_df = builder.build().expect("operation should succeed");
         assert_eq!(multi_df.column_index().len(), 1);
         assert_eq!(multi_df.index_hierarchy(), &["region"]);
+
+        // The index column carries the real key that was supplied, not the
+        // old fabricated "placeholder" string.
+        let region_col = multi_df
+            .data()
+            .get_column::<String>("region")
+            .expect("operation should succeed");
+        assert_eq!(region_col.values(), &["east".to_string()]);
+    }
+
+    #[test]
+    fn test_multi_index_dataframe_builder_requires_index_values() {
+        let mut builder = MultiIndexDataFrameBuilder::new(vec!["region".to_string()]);
+
+        let column_spec = utils::simple_multi_index_column(vec!["sales", "mean"], "f64");
+        let data = Series::new(vec!["100.0".to_string()], Some("sales.mean".to_string()))
+            .expect("operation should succeed");
+        builder
+            .add_column(column_spec, data)
+            .expect("operation should succeed");
+
+        // No `set_index_values` call: building must fail loudly instead of
+        // fabricating a "placeholder" index column.
+        assert!(builder.build().is_err());
     }
 
     #[test]

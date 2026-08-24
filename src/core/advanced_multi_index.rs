@@ -14,7 +14,6 @@
 use crate::core::error::{Error, Result};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt;
-use std::sync::Arc;
 
 /// Value type for MultiIndex entries.
 ///
@@ -51,14 +50,30 @@ impl fmt::Display for IndexValue {
 }
 
 /// Wrapper for f64 to implement Ord and Eq
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct OrderedFloat(pub f64);
 
 impl Eq for OrderedFloat {}
 
 impl Ord for OrderedFloat {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.partial_cmp(other).unwrap_or(std::cmp::Ordering::Equal)
+        // Compare via the inner `f64` (not `self.partial_cmp`, which would
+        // recurse through the manual `PartialOrd` below), treating incomparable
+        // (NaN) operands as `Equal` to give a total order for map/sort keys.
+        self.0
+            .partial_cmp(&other.0)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    }
+}
+
+// `PartialOrd` is hand-implemented (not derived) so it stays consistent with the
+// manual total `Ord` above: `partial_cmp` must equal `Some(cmp)` for every pair,
+// NaN included. The derived `PartialOrd` returned `None` for NaN while `Ord`
+// returned `Equal`, which violated the `Ord`/`PartialOrd` agreement contract
+// (clippy::derive_ord_xor_partial_ord).
+impl PartialOrd for OrderedFloat {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
     }
 }
 
@@ -78,6 +93,7 @@ pub struct AdvancedMultiIndex {
     /// Index tuples for each row
     tuples: Vec<Vec<IndexValue>>,
     /// Fast lookup map: tuple -> row index
+    #[allow(dead_code)] // reserved for future use
     tuple_to_index: HashMap<Vec<IndexValue>, usize>,
     /// Level-wise lookup maps for cross-section operations
     level_maps: Vec<BTreeMap<IndexValue, Vec<usize>>>,
@@ -377,10 +393,7 @@ impl AdvancedMultiIndex {
         // Apply additional constraints by intersection
         for (level, value) in level_values.iter().skip(1) {
             if let Some(level_indices) = self.level_maps[*level].get(value) {
-                result_indices = result_indices
-                    .into_iter()
-                    .filter(|idx| level_indices.contains(idx))
-                    .collect();
+                result_indices.retain(|idx| level_indices.contains(idx));
             } else {
                 return Ok(Vec::new()); // No matches
             }
@@ -416,7 +429,7 @@ impl AdvancedMultiIndex {
         }
 
         let mut result_indices = Vec::new();
-        for (&ref value, indices) in self.level_maps[level].range(start..=end) {
+        for (_, indices) in self.level_maps[level].range(start..=end) {
             result_indices.extend(indices);
         }
 

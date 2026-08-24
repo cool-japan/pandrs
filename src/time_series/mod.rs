@@ -18,9 +18,14 @@ pub mod analysis;
 pub mod core;
 pub mod decomposition;
 pub mod features;
+pub(crate) mod filters;
 pub mod forecasting;
+pub(crate) mod loess;
 pub mod preprocessing;
+pub(crate) mod smoothing;
+pub(crate) mod spectral;
 pub mod stats;
+pub(crate) mod stl;
 
 pub use analysis::{
     AutocorrelationAnalysis, ChangePointDetection, SeasonalityAnalysis, StationarityTest,
@@ -34,7 +39,8 @@ pub use forecasting::{
     LinearTrendForecaster, SimpleMovingAverageForecaster,
 };
 pub use preprocessing::{
-    Differencing, MissingValueStrategy, Normalization, OutlierDetection, TimeSeriesPreprocessor,
+    Differencing, MissingValueStrategy, Normalization, OutlierDetection, SmoothingConfig,
+    SmoothingMethod, TimeSeriesPreprocessor,
 };
 pub use stats::{
     AugmentedDickeyFullerTest, KwiatkowskiPhillipsSchmidtShinTest, SeasonalTest, TimeSeriesStats,
@@ -45,6 +51,3 @@ pub use stats::{
 pub use advanced_forecasting::{
     AutoArima, ModelSelectionCriterion, ModelSelectionResult, SarimaForecaster,
 };
-
-use crate::core::error::{Error, Result};
-use serde::{Deserialize, Serialize};

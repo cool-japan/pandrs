@@ -1,10 +1,8 @@
 //! Core structure definition and basic functionality for OptimizedDataFrame
 
-use crate::column::{
-    BooleanColumn, Column, ColumnTrait, ColumnType, Float64Column, Int64Column, StringColumn,
-};
-use crate::error::{Error, Result};
-use crate::index::{DataFrameIndex, Index, IndexTrait};
+use crate::column::{Column, ColumnTrait};
+use crate::error::Result;
+use crate::index::{DataFrameIndex, Index};
 use std::collections::HashMap;
 use std::fmt::{self, Debug, Display};
 
@@ -210,7 +208,14 @@ impl OptimizedDataFrame {
 
                 // Add to global string pool
                 for s in &values {
-                    GLOBAL_STRING_POOL.get_or_insert(s);
+                    // `get_or_insert` now returns `Result` (propagates a
+                    // poisoned-lock error instead of silently aliasing
+                    // index 0 -- see `column::string_pool`); this loop
+                    // only wants the interning side effect and is
+                    // superseded by `StringColumn::new_with_global_pool`
+                    // just below anyway, so the outcome is intentionally
+                    // discarded here, same as before.
+                    let _ = GLOBAL_STRING_POOL.get_or_insert(s);
                 }
 
                 // Create optimized column with pooled strings

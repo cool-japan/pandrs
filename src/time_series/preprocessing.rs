@@ -6,7 +6,7 @@
 
 use crate::core::error::{Error, Result};
 use crate::series::Series;
-use crate::time_series::core::{DateTimeIndex, TimeSeries, TimeSeriesBuilder, TimeSeriesData};
+use crate::time_series::core::{DateTimeIndex, TimeSeries, TimeSeriesData};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -569,60 +569,84 @@ impl TimeSeriesPreprocessor {
         Ok((processed_series, transform_info))
     }
 
-    /// Apply smoothing
-    fn apply_smoothing(
-        &self,
-        ts: &TimeSeries,
-        config: &SmoothingConfig,
-    ) -> Result<(TimeSeries, TransformationInfo)> {
-        let smoothed_series = match &config.method {
-            SmoothingMethod::MovingAverage { window } => self.moving_average_smooth(ts, *window)?,
-            SmoothingMethod::ExponentialSmoothing { alpha } => {
-                self.exponential_smooth(ts, *alpha)?
-            }
-            SmoothingMethod::SavitzkyGolay { window, order } => {
-                self.savitzky_golay_smooth(ts, *window, *order)?
-            }
-            SmoothingMethod::Lowess { fraction } => self.lowess_smooth(ts, *fraction)?,
-            SmoothingMethod::KalmanFilter => self.kalman_smooth(ts)?,
-            SmoothingMethod::HodrickPrescott { lambda } => {
-                self.hodrick_prescott_smooth(ts, *lambda)?
-            }
-        };
-
-        let transform_info = TransformationInfo {
-            transformation_type: format!("smoothing_{:?}", config.method),
-            parameters: config.parameters.clone(),
-            affected_values: ts.len(),
-            order: 4,
-        };
-
-        Ok((smoothed_series, transform_info))
-    }
-
-    /// Resample time series
+    /// Resample the time series to a new frequency, aggregating each bucket
+    /// according to `config.aggregation`.
+    ///
+    /// The original points are grouped into the half-open intervals defined by
+    /// the target-frequency grid and each bucket is reduced with the requested
+    /// aggregation (Mean/Median/Sum/Min/Max/First/Last/Std/Count). The previous
+    /// implementation hardcoded `ResampleMethod::Mean` and ignored
+    /// `config.aggregation` entirely.
     fn resample_series(
         &self,
         ts: &TimeSeries,
         config: &ResamplingConfig,
     ) -> Result<(TimeSeries, TransformationInfo)> {
-        // For now, use the existing resample method from TimeSeries
-        let resampled = ts.resample(
-            config.frequency.clone(),
-            crate::time_series::core::ResampleMethod::Mean,
-        )?;
+        let resampled = self.aggregate_resample(ts, config)?;
 
         let mut parameters = HashMap::new();
-        parameters.insert("frequency".to_string(), 0.0); // Simplified
+        parameters.insert("buckets".to_string(), resampled.len() as f64);
 
         let transform_info = TransformationInfo {
-            transformation_type: "resampling".to_string(),
+            transformation_type: format!("resampling_{:?}", config.aggregation),
             parameters,
             affected_values: ts.len(),
             order: 2,
         };
 
         Ok((resampled, transform_info))
+    }
+
+    /// Bucket-aggregate `ts` onto the target-frequency grid.
+    fn aggregate_resample(&self, ts: &TimeSeries, config: &ResamplingConfig) -> Result<TimeSeries> {
+        if ts.is_empty() {
+            return Err(Error::InvalidInput(
+                "Cannot resample an empty time series".to_string(),
+            ));
+        }
+
+        let start = *ts.index.start().ok_or_else(|| {
+            Error::InvalidInput("Time series index has no start date".to_string())
+        })?;
+        let end = *ts
+            .index
+            .end()
+            .ok_or_else(|| Error::InvalidInput("Time series index has no end date".to_string()))?;
+
+        let grid = DateTimeIndex::date_range(start, end, config.frequency.clone())?;
+        let m = grid.len();
+
+        let mut new_values = Vec::with_capacity(m);
+        for i in 0..m {
+            let left = *grid.get(i).ok_or_else(|| {
+                Error::InvalidInput("Resampling grid index out of range".to_string())
+            })?;
+            // Half-open bucket [left, right); the final bucket is closed.
+            let right = if i + 1 < m {
+                grid.get(i + 1).copied()
+            } else {
+                None
+            };
+
+            let mut bucket = Vec::new();
+            for j in 0..ts.len() {
+                if let Some(t) = ts.index.get(j) {
+                    let in_bucket = *t >= left && right.map(|r| *t < r).unwrap_or(true);
+                    if in_bucket {
+                        if let Some(v) = ts.values.get_f64(j) {
+                            if v.is_finite() {
+                                bucket.push(v);
+                            }
+                        }
+                    }
+                }
+            }
+
+            new_values.push(aggregate_bucket(&bucket, &config.aggregation));
+        }
+
+        let series = TimeSeriesData::from_vec(new_values);
+        TimeSeries::new(grid, series)
     }
 
     // Helper methods for missing value handling
@@ -701,9 +725,48 @@ impl TimeSeriesPreprocessor {
         TimeSeries::new(ts.index.clone(), interpolated_series)
     }
 
+    /// Fill missing values by **natural cubic spline** interpolation.
+    ///
+    /// Builds a natural cubic spline (second derivative zero at both ends)
+    /// through the finite observations and evaluates it at the missing indices.
+    /// Falls back to linear interpolation when fewer than three knots are
+    /// available (a cubic spline is underdetermined there).
     fn spline_interpolation(&self, ts: &TimeSeries) -> Result<TimeSeries> {
-        // Simplified spline interpolation (cubic)
-        self.linear_interpolation(ts) // For now, fall back to linear
+        let n = ts.len();
+
+        // Knots = the finite observations (x = position index, y = value).
+        let mut knot_x = Vec::new();
+        let mut knot_y = Vec::new();
+        for i in 0..n {
+            if let Some(v) = ts.values.get_f64(i) {
+                if v.is_finite() {
+                    knot_x.push(i as f64);
+                    knot_y.push(v);
+                }
+            }
+        }
+
+        if knot_x.len() < 3 {
+            return self.linear_interpolation(ts);
+        }
+
+        let second_derivs = natural_cubic_spline_second_derivatives(&knot_x, &knot_y);
+
+        let mut out = Vec::with_capacity(n);
+        for i in 0..n {
+            match ts.values.get_f64(i) {
+                Some(v) if v.is_finite() => out.push(v),
+                _ => out.push(eval_cubic_spline(
+                    &knot_x,
+                    &knot_y,
+                    &second_derivs,
+                    i as f64,
+                )),
+            }
+        }
+
+        let series = TimeSeriesData::from_vec(out);
+        TimeSeries::new(ts.index.clone(), series)
     }
 
     fn fill_with_mean(&self, ts: &TimeSeries) -> Result<TimeSeries> {
@@ -734,7 +797,7 @@ impl TimeSeriesPreprocessor {
             ));
         }
 
-        valid_values.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        valid_values.sort_by(|a, b| a.total_cmp(b));
         let median = if valid_values.len() % 2 == 0 {
             (valid_values[valid_values.len() / 2 - 1] + valid_values[valid_values.len() / 2]) / 2.0
         } else {
@@ -763,9 +826,72 @@ impl TimeSeriesPreprocessor {
         TimeSeries::new(ts.index.clone(), filled_series)
     }
 
+    /// Fill missing values using the seasonal period.
+    ///
+    /// Each gap is imputed with the mean of the finite observations that share
+    /// its seasonal phase (`index mod period`); phases with no observed value
+    /// fall back to the global mean. The period is inferred from the series'
+    /// frequency. This actually uses the seasonal structure rather than
+    /// silently forward-filling.
     fn seasonal_fill(&self, ts: &TimeSeries) -> Result<TimeSeries> {
-        // Simplified seasonal fill - use forward fill for now
-        ts.fillna_forward()
+        let n = ts.len();
+        let period = self.infer_seasonal_period(ts).clamp(1, n.max(1));
+
+        let observed: Vec<Option<f64>> = (0..n)
+            .map(|i| ts.values.get_f64(i).filter(|v| v.is_finite()))
+            .collect();
+
+        // Per-phase sums/counts and the global mean fallback.
+        let mut phase_sum = vec![0.0_f64; period];
+        let mut phase_count = vec![0usize; period];
+        let mut total_sum = 0.0;
+        let mut total_count = 0usize;
+        for (i, v) in observed.iter().enumerate() {
+            if let Some(x) = v {
+                phase_sum[i % period] += x;
+                phase_count[i % period] += 1;
+                total_sum += x;
+                total_count += 1;
+            }
+        }
+        let global_mean = if total_count > 0 {
+            total_sum / total_count as f64
+        } else {
+            0.0
+        };
+
+        let mut out = Vec::with_capacity(n);
+        for (i, v) in observed.iter().enumerate() {
+            match v {
+                Some(x) => out.push(*x),
+                None => {
+                    let phase = i % period;
+                    let fill = if phase_count[phase] > 0 {
+                        phase_sum[phase] / phase_count[phase] as f64
+                    } else {
+                        global_mean
+                    };
+                    out.push(fill);
+                }
+            }
+        }
+
+        let series = TimeSeriesData::from_vec(out);
+        TimeSeries::new(ts.index.clone(), series)
+    }
+
+    /// Infer a seasonal period from the series frequency (defaults to 7).
+    fn infer_seasonal_period(&self, ts: &TimeSeries) -> usize {
+        use crate::time_series::core::Frequency;
+        match &ts.index.frequency {
+            Some(Frequency::Daily) => 7,
+            Some(Frequency::Weekly) => 52,
+            Some(Frequency::Monthly) => 12,
+            Some(Frequency::Quarterly) => 4,
+            Some(Frequency::Hour) => 24,
+            Some(Frequency::Minute) => 60,
+            _ => 7,
+        }
     }
 
     // Helper methods for outlier detection
@@ -812,7 +938,7 @@ impl TimeSeriesPreprocessor {
 
         // Calculate median
         let mut sorted = values.clone();
-        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        sorted.sort_by(|a, b| a.total_cmp(b));
         let median = if sorted.len() % 2 == 0 {
             (sorted[sorted.len() / 2 - 1] + sorted[sorted.len() / 2]) / 2.0
         } else {
@@ -822,7 +948,7 @@ impl TimeSeriesPreprocessor {
         // Calculate MAD
         let deviations: Vec<f64> = values.iter().map(|&x| (x - median).abs()).collect();
         let mut sorted_deviations = deviations;
-        sorted_deviations.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        sorted_deviations.sort_by(|a, b| a.total_cmp(b));
         let mad = if sorted_deviations.len() % 2 == 0 {
             (sorted_deviations[sorted_deviations.len() / 2 - 1]
                 + sorted_deviations[sorted_deviations.len() / 2])
@@ -858,7 +984,7 @@ impl TimeSeriesPreprocessor {
             .collect();
 
         let mut sorted = values;
-        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        sorted.sort_by(|a, b| a.total_cmp(b));
 
         let n = sorted.len();
         let q1 = sorted[n / 4];
@@ -881,13 +1007,69 @@ impl TimeSeriesPreprocessor {
         Ok(outliers)
     }
 
+    /// Detect outliers with a real Isolation Forest (`crate::ml::anomaly`).
+    ///
+    /// The finite values are fed into an `IsolationForest` (univariate feature);
+    /// indices whose anomaly label is `-1` are returned, mapped back to their
+    /// positions in the original series. This replaces the previous stub that
+    /// silently returned an empty vector (i.e. claimed "no outliers").
     fn detect_outliers_isolation_forest(
         &self,
-        _ts: &TimeSeries,
-        _contamination: f64,
+        ts: &TimeSeries,
+        contamination: f64,
     ) -> Result<Vec<usize>> {
-        // Simplified implementation - in practice would use proper isolation forest
-        Ok(Vec::new())
+        use crate::dataframe::DataFrame;
+        use crate::ml::{IsolationForest, UnsupervisedModel};
+
+        // Collect finite values along with their original indices.
+        let mut orig_indices = Vec::new();
+        let mut feature = Vec::new();
+        for i in 0..ts.len() {
+            if let Some(v) = ts.values.get_f64(i) {
+                if v.is_finite() {
+                    orig_indices.push(i);
+                    feature.push(v);
+                }
+            }
+        }
+
+        if feature.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let contamination =
+            if contamination.is_finite() && contamination > 0.0 && contamination < 0.5 {
+                contamination
+            } else {
+                0.1
+            };
+
+        let mut df = DataFrame::new();
+        df.add_column(
+            "value".to_string(),
+            Series::new(feature, Some("value".to_string()))?,
+        )?;
+
+        // Fixed seed for reproducible labelling.
+        let mut forest = IsolationForest::new()
+            .contamination(contamination)
+            .random_seed(42);
+        forest.fit(&df)?;
+
+        let outliers = forest
+            .labels()
+            .iter()
+            .enumerate()
+            .filter_map(|(k, &label)| {
+                if label == -1 {
+                    orig_indices.get(k).copied()
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        Ok(outliers)
     }
 
     fn detect_outliers_spc(
@@ -1009,7 +1191,7 @@ impl TimeSeriesPreprocessor {
 
     fn robust_normalize(&self, values: &[f64]) -> Result<Vec<f64>> {
         let mut sorted = values.to_vec();
-        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        sorted.sort_by(|a, b| a.total_cmp(b));
 
         let median = if sorted.len() % 2 == 0 {
             (sorted[sorted.len() / 2 - 1] + sorted[sorted.len() / 2]) / 2.0
@@ -1019,7 +1201,7 @@ impl TimeSeriesPreprocessor {
 
         let deviations: Vec<f64> = values.iter().map(|&x| (x - median).abs()).collect();
         let mut sorted_deviations = deviations;
-        sorted_deviations.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        sorted_deviations.sort_by(|a, b| a.total_cmp(b));
         let mad = if sorted_deviations.len() % 2 == 0 {
             (sorted_deviations[sorted_deviations.len() / 2 - 1]
                 + sorted_deviations[sorted_deviations.len() / 2])
@@ -1051,8 +1233,7 @@ impl TimeSeriesPreprocessor {
             .enumerate()
             .map(|(i, &val)| (val, i))
             .collect();
-        sorted_with_indices
-            .sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+        sorted_with_indices.sort_by(|a, b| a.0.total_cmp(&b.0));
 
         let n = values.len() as f64;
         let mut normalized = vec![0.0; values.len()];
@@ -1105,60 +1286,6 @@ impl TimeSeriesPreprocessor {
         Ok(values.iter().map(|&x| x.sqrt()).collect())
     }
 
-    // Helper methods for smoothing
-
-    fn moving_average_smooth(&self, ts: &TimeSeries, window: usize) -> Result<TimeSeries> {
-        ts.rolling_mean(window)
-    }
-
-    fn exponential_smooth(&self, ts: &TimeSeries, alpha: f64) -> Result<TimeSeries> {
-        let mut smoothed_values = Vec::with_capacity(ts.len());
-
-        if let Some(first_val) = ts.values.get_f64(0) {
-            smoothed_values.push(first_val);
-
-            for i in 1..ts.len() {
-                if let Some(current_val) = ts.values.get_f64(i) {
-                    let prev_smooth = smoothed_values[i - 1];
-                    let new_smooth = alpha * current_val + (1.0 - alpha) * prev_smooth;
-                    smoothed_values.push(new_smooth);
-                } else {
-                    smoothed_values.push(smoothed_values[i - 1]);
-                }
-            }
-        }
-
-        let smoothed_series = TimeSeriesData::from_vec(smoothed_values);
-        TimeSeries::new(ts.index.clone(), smoothed_series)
-    }
-
-    fn savitzky_golay_smooth(
-        &self,
-        ts: &TimeSeries,
-        _window: usize,
-        _order: usize,
-    ) -> Result<TimeSeries> {
-        // Simplified implementation - fall back to moving average
-        self.moving_average_smooth(ts, _window)
-    }
-
-    fn lowess_smooth(&self, ts: &TimeSeries, _fraction: f64) -> Result<TimeSeries> {
-        // Simplified implementation - fall back to moving average
-        self.moving_average_smooth(ts, 5)
-    }
-
-    fn kalman_smooth(&self, ts: &TimeSeries) -> Result<TimeSeries> {
-        // Simplified Kalman filter implementation
-        self.exponential_smooth(ts, 0.3)
-    }
-
-    fn hodrick_prescott_smooth(&self, ts: &TimeSeries, _lambda: f64) -> Result<TimeSeries> {
-        // Simplified HP filter - fall back to moving average
-        self.moving_average_smooth(ts, 10)
-    }
-
-    // Helper method for calculating basic statistics
-
     fn calculate_basic_stats(&self, ts: &TimeSeries) -> Result<(f64, f64, f64, f64)> {
         let values: Vec<f64> = (0..ts.len())
             .filter_map(|i| ts.values.get_f64(i))
@@ -1176,6 +1303,180 @@ impl TimeSeriesPreprocessor {
         let std = variance.sqrt();
 
         Ok((min, max, mean, std))
+    }
+}
+
+/// Solve the linear system `A·x = b` by Gauss-Jordan elimination with partial
+/// pivoting. Returns `None` if `A` is (numerically) singular. Used by the
+/// Savitzky-Golay local polynomial fits.
+pub(super) fn solve_linear_system(mut a: Vec<Vec<f64>>, mut b: Vec<f64>) -> Option<Vec<f64>> {
+    let n = b.len();
+    if a.len() != n {
+        return None;
+    }
+
+    for col in 0..n {
+        // Partial pivot.
+        let mut pivot = col;
+        let mut max_abs = a[col][col].abs();
+        for r in (col + 1)..n {
+            let v = a[r][col].abs();
+            if v > max_abs {
+                max_abs = v;
+                pivot = r;
+            }
+        }
+        if max_abs < 1e-12 {
+            return None;
+        }
+        a.swap(col, pivot);
+        b.swap(col, pivot);
+
+        let diag = a[col][col];
+        for j in col..n {
+            a[col][j] /= diag;
+        }
+        b[col] /= diag;
+
+        for r in 0..n {
+            if r != col {
+                let factor = a[r][col];
+                if factor != 0.0 {
+                    for j in col..n {
+                        a[r][j] -= factor * a[col][j];
+                    }
+                    b[r] -= factor * b[col];
+                }
+            }
+        }
+    }
+
+    Some(b)
+}
+
+/// Second derivatives of the natural cubic spline through `(x, y)` (knots must
+/// be strictly increasing in `x`), obtained by the Thomas algorithm with the
+/// natural boundary condition `M₀ = M_{n-1} = 0`.
+fn natural_cubic_spline_second_derivatives(x: &[f64], y: &[f64]) -> Vec<f64> {
+    let n = x.len();
+    let mut m = vec![0.0_f64; n];
+    if n < 3 {
+        return m;
+    }
+
+    // Tridiagonal system for the interior second derivatives.
+    let mut sub = vec![0.0_f64; n]; // lower diagonal
+    let mut diag = vec![0.0_f64; n];
+    let mut sup = vec![0.0_f64; n]; // upper diagonal
+    let mut rhs = vec![0.0_f64; n];
+
+    for i in 1..n - 1 {
+        let h_prev = x[i] - x[i - 1];
+        let h_curr = x[i + 1] - x[i];
+        sub[i] = h_prev;
+        diag[i] = 2.0 * (h_prev + h_curr);
+        sup[i] = h_curr;
+        rhs[i] = 6.0 * ((y[i + 1] - y[i]) / h_curr - (y[i] - y[i - 1]) / h_prev);
+    }
+
+    // Forward elimination (Thomas) over the interior rows 1..=n-2.
+    for i in 2..n - 1 {
+        if diag[i - 1].abs() < 1e-12 {
+            return vec![0.0_f64; n];
+        }
+        let w = sub[i] / diag[i - 1];
+        diag[i] -= w * sup[i - 1];
+        rhs[i] -= w * rhs[i - 1];
+    }
+
+    // Back substitution.
+    if n >= 3 && diag[n - 2].abs() > 1e-12 {
+        m[n - 2] = rhs[n - 2] / diag[n - 2];
+        for i in (1..n - 2).rev() {
+            if diag[i].abs() < 1e-12 {
+                return vec![0.0_f64; n];
+            }
+            m[i] = (rhs[i] - sup[i] * m[i + 1]) / diag[i];
+        }
+    }
+
+    m
+}
+
+/// Evaluate the natural cubic spline defined by knots `(x, y)` and second
+/// derivatives `m` at the query point `xq`. Queries outside `[x₀, x_{n-1}]` are
+/// clamped to the nearest knot value.
+fn eval_cubic_spline(x: &[f64], y: &[f64], m: &[f64], xq: f64) -> f64 {
+    let n = x.len();
+    if n == 0 {
+        return f64::NAN;
+    }
+    if xq <= x[0] {
+        return y[0];
+    }
+    if xq >= x[n - 1] {
+        return y[n - 1];
+    }
+
+    // Locate the segment [x[k], x[k+1]] containing xq (binary search).
+    let mut lo = 0usize;
+    let mut hi = n - 1;
+    while hi - lo > 1 {
+        let mid = (lo + hi) / 2;
+        if x[mid] <= xq {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
+    }
+
+    let h = x[hi] - x[lo];
+    if h.abs() < 1e-12 {
+        return y[lo];
+    }
+    let a = (x[hi] - xq) / h;
+    let b = (xq - x[lo]) / h;
+    a * y[lo] + b * y[hi] + ((a * a * a - a) * m[lo] + (b * b * b - b) * m[hi]) * h * h / 6.0
+}
+
+/// Reduce a resampling bucket to a single value per the aggregation method.
+/// Empty buckets yield `0` for Sum/Count and `NaN` otherwise.
+fn aggregate_bucket(values: &[f64], method: &AggregationMethod) -> f64 {
+    if values.is_empty() {
+        return match method {
+            AggregationMethod::Sum | AggregationMethod::Count => 0.0,
+            _ => f64::NAN,
+        };
+    }
+
+    match method {
+        AggregationMethod::Mean => values.iter().sum::<f64>() / values.len() as f64,
+        AggregationMethod::Median => {
+            let mut sorted = values.to_vec();
+            sorted.sort_by(|a, b| a.total_cmp(b));
+            let len = sorted.len();
+            if len % 2 == 0 {
+                (sorted[len / 2 - 1] + sorted[len / 2]) / 2.0
+            } else {
+                sorted[len / 2]
+            }
+        }
+        AggregationMethod::Sum => values.iter().sum(),
+        AggregationMethod::Min => values.iter().cloned().fold(f64::INFINITY, f64::min),
+        AggregationMethod::Max => values.iter().cloned().fold(f64::NEG_INFINITY, f64::max),
+        AggregationMethod::First => values[0],
+        AggregationMethod::Last => values[values.len() - 1],
+        AggregationMethod::Std => {
+            if values.len() < 2 {
+                0.0
+            } else {
+                let mean = values.iter().sum::<f64>() / values.len() as f64;
+                let var = values.iter().map(|v| (v - mean).powi(2)).sum::<f64>()
+                    / (values.len() - 1) as f64;
+                var.sqrt()
+            }
+        }
+        AggregationMethod::Count => values.len() as f64,
     }
 }
 
@@ -1380,5 +1681,85 @@ mod tests {
             .detect_outliers_iqr(&ts, 1.5)
             .expect("operation should succeed");
         assert!(!iqr_outliers.is_empty());
+    }
+
+    #[test]
+    fn test_savitzky_golay_preserves_linear() {
+        // A degree-2 Savitzky-Golay filter reproduces linear data exactly
+        // (interior and boundary), confirming it honours `order` rather than
+        // collapsing to a moving average.
+        let pre = TimeSeriesPreprocessor::new();
+        let mut builder = TimeSeriesBuilder::new();
+        for i in 0..10 {
+            let t = Utc
+                .timestamp_opt(1_640_995_200 + (i * 86_400) as i64, 0)
+                .single()
+                .expect("timestamp should be unambiguous");
+            builder = builder.add_point(t, 3.0 * i as f64 + 2.0);
+        }
+        let ts = builder
+            .frequency(Frequency::Daily)
+            .build()
+            .expect("operation should succeed");
+
+        let out = pre
+            .savitzky_golay_smooth(&ts, 5, 2)
+            .expect("operation should succeed");
+        for i in 0..ts.len() {
+            let expected = 3.0 * i as f64 + 2.0;
+            let got = out.values.get_f64(i).expect("value");
+            assert!(
+                (got - expected).abs() < 1e-6,
+                "SG should preserve a line at {i}: {got} vs {expected}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_spline_fills_linear_gap_exactly() {
+        // A natural cubic spline through collinear knots is the line itself, so
+        // a gap in linear data is recovered exactly.
+        let pre = TimeSeriesPreprocessor::new();
+        let mut builder = TimeSeriesBuilder::new();
+        for i in 0..7 {
+            let v = if i == 3 { f64::NAN } else { 2.0 * i as f64 };
+            let t = Utc
+                .timestamp_opt(1_640_995_200 + (i * 86_400) as i64, 0)
+                .single()
+                .expect("timestamp should be unambiguous");
+            builder = builder.add_point(t, v);
+        }
+        let ts = builder
+            .frequency(Frequency::Daily)
+            .build()
+            .expect("operation should succeed");
+
+        let filled = pre
+            .spline_interpolation(&ts)
+            .expect("operation should succeed");
+        let got = filled.values.get_f64(3).expect("value");
+        assert!(
+            (got - 6.0).abs() < 1e-6,
+            "spline of collinear knots should give 6.0, got {got}"
+        );
+    }
+
+    #[test]
+    fn test_aggregate_bucket_methods() {
+        let v = vec![1.0, 2.0, 3.0];
+        assert_eq!(aggregate_bucket(&v, &AggregationMethod::Sum), 6.0);
+        assert_eq!(aggregate_bucket(&v, &AggregationMethod::Min), 1.0);
+        assert_eq!(aggregate_bucket(&v, &AggregationMethod::Max), 3.0);
+        assert_eq!(aggregate_bucket(&v, &AggregationMethod::Mean), 2.0);
+        assert_eq!(aggregate_bucket(&v, &AggregationMethod::Median), 2.0);
+        assert_eq!(aggregate_bucket(&v, &AggregationMethod::First), 1.0);
+        assert_eq!(aggregate_bucket(&v, &AggregationMethod::Last), 3.0);
+        assert_eq!(aggregate_bucket(&v, &AggregationMethod::Count), 3.0);
+        assert!((aggregate_bucket(&v, &AggregationMethod::Std) - 1.0).abs() < 1e-9);
+
+        // Empty buckets: Sum/Count yield 0, the rest NaN.
+        assert_eq!(aggregate_bucket(&[], &AggregationMethod::Sum), 0.0);
+        assert_eq!(aggregate_bucket(&[], &AggregationMethod::Count), 0.0);
+        assert!(aggregate_bucket(&[], &AggregationMethod::Mean).is_nan());
     }
 }

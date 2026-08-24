@@ -3,14 +3,13 @@
 //! This module provides API key generation, validation, and management
 //! for service-to-service authentication and programmatic access.
 
-use crate::core::error::OptionExt;
 use crate::error::{Error, Result};
 use crate::multitenancy::{Permission, TenantId};
 use std::collections::HashMap;
 use std::time::{Duration, SystemTime};
 
 /// API Key information
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ApiKeyInfo {
     /// Unique key identifier
     pub key_id: String,
@@ -40,10 +39,34 @@ pub struct ApiKeyInfo {
     pub rate_limit_counter: u32,
     /// Rate limit window start
     pub rate_limit_window_start: Option<SystemTime>,
-    /// IP whitelist (empty = allow all)
+    /// IP whitelist. When non-empty it is *enforced* (only listed IPs allowed).
+    /// When empty, access is governed by [`ApiKeyInfo::allow_all_ips`].
     pub ip_whitelist: Vec<String>,
+    /// Whether an *empty* whitelist means "allow all IPs". Defaults to `true`
+    /// for backward compatibility (a key with no IP restriction works), but a
+    /// whitelist that is deliberately set and later emptied can be made
+    /// fail-closed by setting this to `false`.
+    pub allow_all_ips: bool,
     /// Additional metadata
     pub metadata: HashMap<String, String>,
+}
+
+impl std::fmt::Debug for ApiKeyInfo {
+    /// Redacting `Debug`: the key hash is sensitive (it is what a stolen log
+    /// would need to mount an offline attack), so it is never printed.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ApiKeyInfo")
+            .field("key_id", &self.key_id)
+            .field("name", &self.name)
+            .field("key_hash", &"<redacted>")
+            .field("user_id", &self.user_id)
+            .field("tenant_id", &self.tenant_id)
+            .field("permissions", &self.permissions)
+            .field("active", &self.active)
+            .field("expires_at", &self.expires_at)
+            .field("usage_count", &self.usage_count)
+            .finish_non_exhaustive()
+    }
 }
 
 impl ApiKeyInfo {
@@ -71,6 +94,7 @@ impl ApiKeyInfo {
             rate_limit_counter: 0,
             rate_limit_window_start: None,
             ip_whitelist: Vec::new(),
+            allow_all_ips: true,
             metadata: HashMap::new(),
         }
     }
@@ -99,9 +123,19 @@ impl ApiKeyInfo {
         self
     }
 
-    /// Add IP to whitelist
+    /// Set the IP whitelist. A non-empty whitelist is enforced, so this also
+    /// clears the "empty means allow-all" escape hatch.
     pub fn with_ip_whitelist(mut self, ips: Vec<String>) -> Self {
         self.ip_whitelist = ips;
+        self.allow_all_ips = false;
+        self
+    }
+
+    /// Explicitly permit all source IPs (opt back into allow-all after a
+    /// whitelist was configured).
+    pub fn allow_all_ips(mut self) -> Self {
+        self.allow_all_ips = true;
+        self.ip_whitelist.clear();
         self
     }
 
@@ -118,37 +152,49 @@ impl ApiKeyInfo {
             .unwrap_or(false)
     }
 
-    /// Check if IP is allowed
+    /// Check if IP is allowed. A non-empty whitelist is always enforced; an
+    /// empty whitelist allows all only when [`ApiKeyInfo::allow_all_ips`] is set.
     pub fn is_ip_allowed(&self, ip: &str) -> bool {
-        if self.ip_whitelist.is_empty() {
-            return true;
+        if !self.ip_whitelist.is_empty() {
+            return self.ip_whitelist.contains(&ip.to_string());
         }
-        self.ip_whitelist.contains(&ip.to_string())
+        self.allow_all_ips
     }
 
-    /// Check rate limit
+    /// Check rate limit (fixed 1-minute window).
+    ///
+    /// The window now actually rolls. Previously `window_start` was never
+    /// persisted on the first request (`unwrap_or(now)` re-derived "now" every
+    /// call), so `elapsed()` was always ~0, the window never advanced, and the
+    /// limit degenerated into a permanent lifetime quota (self-DoS after the
+    /// first `limit` requests).
     pub fn check_rate_limit(&mut self) -> bool {
         let Some(limit) = self.rate_limit else {
             return true;
         };
 
         let now = SystemTime::now();
-        let window_start = self.rate_limit_window_start.unwrap_or(now);
-
-        // Check if we're in a new window (1 minute)
-        if now.duration_since(window_start).unwrap_or(Duration::ZERO) > Duration::from_secs(60) {
-            self.rate_limit_counter = 1;
-            self.rate_limit_window_start = Some(now);
-            return true;
+        match self.rate_limit_window_start {
+            None => {
+                // First request in this key's life: open the window.
+                self.rate_limit_window_start = Some(now);
+                self.rate_limit_counter = 1;
+                true
+            }
+            Some(start) => {
+                if now.duration_since(start).unwrap_or(Duration::ZERO) > Duration::from_secs(60) {
+                    // Window elapsed: start a fresh one.
+                    self.rate_limit_window_start = Some(now);
+                    self.rate_limit_counter = 1;
+                    true
+                } else if self.rate_limit_counter < limit {
+                    self.rate_limit_counter += 1;
+                    true
+                } else {
+                    false
+                }
+            }
         }
-
-        // Check if under limit
-        if self.rate_limit_counter < limit {
-            self.rate_limit_counter += 1;
-            return true;
-        }
-
-        false
     }
 
     /// Record usage
@@ -255,7 +301,14 @@ impl ApiKeyManager {
         Ok(key)
     }
 
-    /// Validate an API key
+    /// Validate an API key's *existence, active flag, and expiry only*.
+    ///
+    /// This does NOT enforce the IP whitelist, rate limit, or record usage — it
+    /// has no source IP to check against and takes a shared borrow. Authentication
+    /// paths must use [`ApiKeyManager::validate_and_use`], which hashes the key,
+    /// enforces IP whitelist + rate limit, and records usage in one place. This
+    /// method is a lightweight lookup for callers that only need to know a key is
+    /// currently usable.
     pub fn validate_key(&mut self, key: &str) -> Result<&ApiKeyInfo> {
         let key_hash = hash_api_key(key);
 
@@ -346,6 +399,18 @@ impl ApiKeyManager {
             .get_key_mut(key_id)
             .ok_or_else(|| Error::InvalidInput("Key not found".to_string()))?;
 
+        key_info.active = false;
+        Ok(())
+    }
+
+    /// Revoke a key by its plaintext value. The key is hashed before lookup, so
+    /// no plaintext is retained. Idempotent-friendly: an unknown key errors.
+    pub fn revoke_by_key(&mut self, key: &str) -> Result<()> {
+        let key_hash = hash_api_key(key);
+        let key_info = self
+            .keys_by_hash
+            .get_mut(&key_hash)
+            .ok_or_else(|| Error::InvalidInput("API key not found".to_string()))?;
         key_info.active = false;
         Ok(())
     }
@@ -480,7 +545,11 @@ pub struct ApiKeyStats {
     pub total_usage: u64,
 }
 
-/// Scoped API key for limited access
+/// Scoped API key for limited access.
+///
+/// A scoped key is a *restriction* wrapper, so its allow-lists are fail-closed:
+/// an empty resource/operation list denies everything unless the corresponding
+/// `allow_all_*` escape hatch is explicitly set.
 #[derive(Debug, Clone)]
 pub struct ScopedApiKey {
     /// Key info
@@ -489,17 +558,23 @@ pub struct ScopedApiKey {
     pub allowed_resources: Vec<String>,
     /// Allowed operations
     pub allowed_operations: Vec<String>,
+    /// Whether all resources are allowed (opt-in; empty list otherwise denies).
+    pub allow_all_resources: bool,
+    /// Whether all operations are allowed (opt-in; empty list otherwise denies).
+    pub allow_all_operations: bool,
     /// Time-based restrictions (start, end)
     pub time_restrictions: Option<(SystemTime, SystemTime)>,
 }
 
 impl ScopedApiKey {
-    /// Create a new scoped API key
+    /// Create a new scoped API key (fail-closed: nothing allowed until granted).
     pub fn new(key_info: ApiKeyInfo) -> Self {
         ScopedApiKey {
             key_info,
             allowed_resources: Vec::new(),
             allowed_operations: Vec::new(),
+            allow_all_resources: false,
+            allow_all_operations: false,
             time_restrictions: None,
         }
     }
@@ -516,26 +591,32 @@ impl ScopedApiKey {
         self
     }
 
+    /// Explicitly allow every resource.
+    pub fn allow_all_resources(mut self) -> Self {
+        self.allow_all_resources = true;
+        self
+    }
+
+    /// Explicitly allow every operation.
+    pub fn allow_all_operations(mut self) -> Self {
+        self.allow_all_operations = true;
+        self
+    }
+
     /// Set time restrictions
     pub fn with_time_restrictions(mut self, start: SystemTime, end: SystemTime) -> Self {
         self.time_restrictions = Some((start, end));
         self
     }
 
-    /// Check if resource access is allowed
+    /// Check if resource access is allowed (fail-closed on empty list).
     pub fn can_access_resource(&self, resource: &str) -> bool {
-        if self.allowed_resources.is_empty() {
-            return true;
-        }
-        self.allowed_resources.contains(&resource.to_string())
+        self.allow_all_resources || self.allowed_resources.contains(&resource.to_string())
     }
 
-    /// Check if operation is allowed
+    /// Check if operation is allowed (fail-closed on empty list).
     pub fn can_perform_operation(&self, operation: &str) -> bool {
-        if self.allowed_operations.is_empty() {
-            return true;
-        }
-        self.allowed_operations.contains(&operation.to_string())
+        self.allow_all_operations || self.allowed_operations.contains(&operation.to_string())
     }
 
     /// Check if access is within time restrictions
@@ -547,6 +628,24 @@ impl ScopedApiKey {
                 now >= start && now <= end
             }
         }
+    }
+
+    /// Combined authorization check for a scoped key: resource, operation,
+    /// time-window, key validity, and (optionally) source IP must all pass.
+    /// This is the single entry point that actually consults the
+    /// time-restriction check (previously defined but never called).
+    pub fn is_access_allowed(&self, resource: &str, operation: &str, ip: Option<&str>) -> bool {
+        if self.key_info.is_expired() || !self.key_info.active {
+            return false;
+        }
+        if let Some(ip) = ip {
+            if !self.key_info.is_ip_allowed(ip) {
+                return false;
+            }
+        }
+        self.can_access_resource(resource)
+            && self.can_perform_operation(operation)
+            && self.is_within_time_restrictions()
     }
 }
 

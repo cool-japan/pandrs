@@ -1,8 +1,8 @@
-/// Series implementations module.
-///
-/// This module provides the core Series data structure, a one-dimensional labeled array
-/// capable of holding any data type with integer or string labels. Series is the building
-/// block for DataFrames and provides many operations for data manipulation.
+//! Series implementations module.
+//!
+//! This module provides the core Series data structure, a one-dimensional labeled array
+//! capable of holding any data type with integer or string labels. Series is the building
+//! block for DataFrames and provides many operations for data manipulation.
 
 /// Base Series implementation with core operations.
 ///

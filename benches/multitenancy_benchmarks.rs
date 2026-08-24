@@ -99,7 +99,7 @@ fn bench_data_retrieval(c: &mut Criterion) {
         manager.register_tenant(config).unwrap();
         manager.store_dataframe("test_tenant", "data", df).unwrap();
 
-        group.bench_with_input(BenchmarkId::new("get", n_rows), &manager, |b, manager| {
+        group.bench_with_input(BenchmarkId::new("get", n_rows), &manager, |b, _manager| {
             // Need mutable reference for get_dataframe
             let mut manager_clone = TenantManager::new();
             let config =

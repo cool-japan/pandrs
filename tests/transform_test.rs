@@ -19,12 +19,16 @@ mod tests {
 
     #[test]
     fn test_conditional_aggregate() {
-        // Create test DataFrame
+        // Create test DataFrame. These categories/values are deliberately
+        // different from pandrs' old hardcoded fabricated output
+        // (Food/Electronics/Clothing with totals 1000/1500/1200): a
+        // regression back to that stub would make the assertions below
+        // fail instead of accidentally passing.
         let mut df = DataFrame::new();
         df.add_column(
             "category".to_string(),
             Series::new(
-                vec!["Food", "Electronics", "Food", "Clothing"],
+                vec!["Books", "Toys", "Books", "Garden", "Toys"],
                 Some("category".to_string()),
             )
             .unwrap(),
@@ -33,7 +37,7 @@ mod tests {
         df.add_column(
             "sales".to_string(),
             Series::new(
-                vec!["1000", "1500", "800", "1200"],
+                vec!["300", "1200", "900", "1600", "400"],
                 Some("sales".to_string()),
             )
             .unwrap(),
@@ -60,9 +64,10 @@ mod tests {
             )
             .unwrap();
 
-        // Verification
+        // "Books" (300, 900) never clears the >=1000 filter, so it must not
+        // appear at all: only "Toys" (1200) and "Garden" (1600) survive.
         assert_eq!(result.column_count(), 2);
-        assert_eq!(result.row_count(), 3); // Food, Electronics, Clothing
+        assert_eq!(result.row_count(), 2);
 
         // Check aggregate results
         let cat_col = result.get_column::<String>("category").unwrap();
@@ -74,30 +79,31 @@ mod tests {
             let category = clean_databox_value(&cat_col.values()[i].to_string());
             let agg_value = clean_databox_value(&agg_col.values()[i].to_string());
 
-            if category == "Food" {
-                assert_eq!(agg_value, "1000"); // Only one Food item is >= 1000
-            } else if category == "Electronics" {
-                assert_eq!(agg_value, "1500");
-            } else if category == "Clothing" {
-                assert_eq!(agg_value, "1200");
+            if category == "Toys" {
+                assert_eq!(agg_value, "1200"); // Only the 1200 Toys row is >= 1000
+            } else if category == "Garden" {
+                assert_eq!(agg_value, "1600");
             } else {
-                panic!("Unexpected category: {category}");
+                panic!("Unexpected category (should have been filtered out): {category}");
             }
         }
     }
 
     #[test]
     fn test_concat() {
-        // First dataframe
+        // Ids/values deliberately different from pandrs' old hardcoded
+        // fabricated concat output ("1".."4" / "a".."d"): a regression back
+        // to that stub would fail these assertions instead of accidentally
+        // passing.
         let mut df1 = DataFrame::new();
         df1.add_column(
             "id".to_string(),
-            Series::new(vec!["1", "2"], Some("id".to_string())).unwrap(),
+            Series::new(vec!["10", "20"], Some("id".to_string())).unwrap(),
         )
         .unwrap();
         df1.add_column(
             "value".to_string(),
-            Series::new(vec!["a", "b"], Some("value".to_string())).unwrap(),
+            Series::new(vec!["p", "q"], Some("value".to_string())).unwrap(),
         )
         .unwrap();
 
@@ -105,33 +111,36 @@ mod tests {
         let mut df2 = DataFrame::new();
         df2.add_column(
             "id".to_string(),
-            Series::new(vec!["3", "4"], Some("id".to_string())).unwrap(),
+            Series::new(vec!["30", "40", "50"], Some("id".to_string())).unwrap(),
         )
         .unwrap();
         df2.add_column(
             "value".to_string(),
-            Series::new(vec!["c", "d"], Some("value".to_string())).unwrap(),
+            Series::new(vec!["r", "s", "t"], Some("value".to_string())).unwrap(),
         )
         .unwrap();
 
         // Concatenation operation
         let concat_df = DataFrame::concat(&[&df1, &df2], true).unwrap();
 
-        // Validation
+        // Validation: 2 + 3 = 5 rows (the old stub always emitted exactly 4
+        // regardless of input).
         assert_eq!(concat_df.column_count(), 2);
-        assert_eq!(concat_df.row_count(), 4);
+        assert_eq!(concat_df.row_count(), 5);
 
         // Check columns
         let id_col = concat_df.get_column::<String>("id").unwrap();
         let value_col = concat_df.get_column::<String>("value").unwrap();
 
-        assert_eq!(clean_databox_value(&id_col.values()[0].to_string()), "1");
-        assert_eq!(clean_databox_value(&value_col.values()[0].to_string()), "a");
-        assert_eq!(clean_databox_value(&id_col.values()[1].to_string()), "2");
-        assert_eq!(clean_databox_value(&value_col.values()[1].to_string()), "b");
-        assert_eq!(clean_databox_value(&id_col.values()[2].to_string()), "3");
-        assert_eq!(clean_databox_value(&value_col.values()[2].to_string()), "c");
-        assert_eq!(clean_databox_value(&id_col.values()[3].to_string()), "4");
-        assert_eq!(clean_databox_value(&value_col.values()[3].to_string()), "d");
+        assert_eq!(clean_databox_value(&id_col.values()[0].to_string()), "10");
+        assert_eq!(clean_databox_value(&value_col.values()[0].to_string()), "p");
+        assert_eq!(clean_databox_value(&id_col.values()[1].to_string()), "20");
+        assert_eq!(clean_databox_value(&value_col.values()[1].to_string()), "q");
+        assert_eq!(clean_databox_value(&id_col.values()[2].to_string()), "30");
+        assert_eq!(clean_databox_value(&value_col.values()[2].to_string()), "r");
+        assert_eq!(clean_databox_value(&id_col.values()[3].to_string()), "40");
+        assert_eq!(clean_databox_value(&value_col.values()[3].to_string()), "s");
+        assert_eq!(clean_databox_value(&id_col.values()[4].to_string()), "50");
+        assert_eq!(clean_databox_value(&value_col.values()[4].to_string()), "t");
     }
 }

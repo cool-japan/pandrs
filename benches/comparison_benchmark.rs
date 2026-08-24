@@ -4,10 +4,10 @@ use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use pandrs::dataframe::base::DataFrame;
 use pandrs::dataframe::join::JoinExt;
 use pandrs::dataframe::pandas_compat::PandasCompatExt;
+// Only the Parquet helpers come from the extension trait; CSV has inherent methods.
+#[cfg(feature = "parquet")]
 use pandrs::dataframe::serialize::SerializeExt;
-use pandrs::error::Result;
 use pandrs::series::Series;
-use std::fs;
 use std::hint::black_box as bb;
 use std::time::Duration;
 
@@ -261,7 +261,7 @@ fn benchmark_groupby(c: &mut Criterion) {
 
         group.bench_with_input(BenchmarkId::new("single_key", size), size, |b, _| {
             b.iter(|| {
-                let grouped = df.groupby("category").unwrap();
+                let grouped = df.groupby_pivot("category").unwrap();
                 bb(grouped)
             });
         });

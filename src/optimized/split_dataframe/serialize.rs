@@ -5,7 +5,7 @@ use std::path::Path;
 
 use serde_json::{Map, Value};
 
-use crate::column::{Column, ColumnTrait, ColumnType};
+use crate::column::Column;
 use crate::error::{Error, Result};
 use crate::optimized::split_dataframe::core::OptimizedDataFrame;
 

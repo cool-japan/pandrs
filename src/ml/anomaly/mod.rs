@@ -24,7 +24,7 @@ fn extract_features(
 ) -> Result<(Vec<Vec<f64>>, Vec<String>)> {
     let col_names: Vec<String> = match feature_columns {
         Some(cols) => cols.clone(),
-        None => data.column_names(),
+        None => data.column_names().to_vec(),
     };
 
     let n_samples = data.nrows();
@@ -69,13 +69,51 @@ const EULER_MASCHERONI: f64 = 0.577_215_664_9;
 
 /// Expected average path length for n samples (isolation forest normalisation).
 /// c(n) = 2 * H(n-1) - 2*(n-1)/n  where H(k) = ln(k) + γ
+///
+/// `n == 2` is special-cased to `1.0` (matching scikit-learn's
+/// `_average_path_length`): the general asymptotic formula below is a good
+/// approximation for larger n but gives `0.1544` at n=2, whereas the exact
+/// expected number of splits to isolate one of exactly two points is 1.
 fn c_factor(n: usize) -> f64 {
     if n <= 1 {
         return 0.0;
     }
+    if n == 2 {
+        return 1.0;
+    }
     let n = n as f64;
     let h = (n - 1.0).ln() + EULER_MASCHERONI;
     2.0 * h - 2.0 * (n - 1.0) / n
+}
+
+/// Compute a threshold such that scores `>= threshold` select approximately
+/// the top `fraction` of `scores` by count.
+///
+/// Shared by every detector in this module (IsolationForest,
+/// LocalOutlierFactor, KernelDensityOutlierDetector) so that `contamination`
+/// / `nu` are interpreted identically everywhere, using the standard
+/// "top-k order statistic" index `ceil(fraction * n) - 1` into a
+/// descending sort (index 0 of a descending sort is the single highest
+/// score, so requesting the top `ceil(fraction * n)` scores means indexing
+/// at `ceil(fraction * n) - 1`) paired with a `>=` comparison at the call
+/// site. Previously each detector computed its own threshold index and mixed
+/// `>=`/`>` comparisons, so nominally-identical `contamination`/`nu` values
+/// selected different counts of anomalies in each detector.
+fn quantile_threshold_high(scores: &[f64], fraction: f64) -> f64 {
+    if scores.is_empty() {
+        return 0.0;
+    }
+    let mut sorted = scores.to_vec();
+    // Sort descending: highest (most anomalous) scores first.
+    sorted.sort_by(|a, b| b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));
+
+    let raw_idx = (fraction * scores.len() as f64).ceil();
+    let idx = if raw_idx <= 0.0 {
+        0
+    } else {
+        (raw_idx as usize).saturating_sub(1).min(sorted.len() - 1)
+    };
+    sorted[idx]
 }
 
 // ─── IsolationTree (private) ─────────────────────────────────────────────────
@@ -96,7 +134,6 @@ enum IsolationNode {
 #[derive(Debug, Clone)]
 struct IsolationTree {
     root: Option<Box<IsolationNode>>,
-    max_depth: usize,
 }
 
 impl IsolationTree {
@@ -198,7 +235,11 @@ pub struct IsolationForest {
     pub contamination: f64,
     /// Random seed for reproducibility
     pub random_seed: Option<u64>,
-    /// Raw anomaly scores after fit (lower = more anomalous, range 0..1)
+    /// Raw anomaly scores after fit (higher = more anomalous; range
+    /// approximately `(0, 1]` — a score near 1 means the point was isolated
+    /// in very few splits on average across the forest, i.e. it looks
+    /// anomalous; a score near 0 means it took many splits to isolate, i.e.
+    /// it looks like a normal point deep inside the data distribution)
     pub scores: Option<Vec<f64>>,
     /// Anomaly labels after fit (-1 anomaly, 1 normal)
     pub labels: Option<Vec<i64>>,
@@ -208,6 +249,14 @@ pub struct IsolationForest {
     trees: Vec<IsolationTree>,
     // Private: max_samples actually used during fit (for score normalisation)
     fitted_max_samples: usize,
+    // Private: the anomaly-score threshold computed from the TRAINING data at
+    // fit time. `predict` reuses this fixed threshold rather than
+    // recomputing one from whatever batch is passed to `predict`, which
+    // would make the anomaly/normal split depend on the composition of the
+    // prediction batch itself (e.g. a single-row batch would always be
+    // "the most anomalous row in its own batch" and therefore always
+    // flagged, regardless of how normal it actually is).
+    fitted_threshold: Option<f64>,
 }
 
 impl IsolationForest {
@@ -224,10 +273,11 @@ impl IsolationForest {
             feature_columns: None,
             trees: Vec::new(),
             fitted_max_samples: 256,
+            fitted_threshold: None,
         }
     }
 
-    /// Get raw anomaly scores (lower means more anomalous).
+    /// Get raw anomaly scores (higher means more anomalous).
     pub fn anomaly_scores(&self) -> &[f64] {
         match &self.scores {
             Some(s) => s,
@@ -302,11 +352,17 @@ impl IsolationForest {
     }
 
     /// Predict anomaly labels (-1.0 for anomaly, 1.0 for normal) for new data.
-    /// Higher raw IF score = more anomalous; threshold is at the (1-contamination) quantile.
+    ///
+    /// Uses the threshold computed from the TRAINING data at `fit` time
+    /// (higher raw IF score = more anomalous), so the result for a given row
+    /// does not depend on which other rows happen to be in the same
+    /// `predict` batch.
     pub fn predict(&self, data: &DataFrame) -> Result<Vec<f64>> {
+        let threshold = self.fitted_threshold.ok_or_else(|| {
+            Error::InvalidOperation("IsolationForest has not been fitted. Call fit() first.".into())
+        })?;
         let (matrix, _) = extract_features(data, &self.feature_columns)?;
         let raw = self.scores_for_matrix(&matrix);
-        let threshold = self.anomaly_threshold(&raw);
         let labels: Vec<f64> = raw
             .iter()
             .map(|&s| if s >= threshold { -1.0 } else { 1.0 })
@@ -319,21 +375,6 @@ impl IsolationForest {
     pub fn decision_function(&self, data: &DataFrame) -> Result<Vec<f64>> {
         let (matrix, _) = extract_features(data, &self.feature_columns)?;
         Ok(self.scores_for_matrix(&matrix))
-    }
-
-    /// Compute the contamination-th highest score as anomaly threshold.
-    /// Points scoring at or above this threshold are flagged as anomalies.
-    fn anomaly_threshold(&self, scores: &[f64]) -> f64 {
-        if scores.is_empty() {
-            return 0.5;
-        }
-        let mut sorted = scores.to_vec();
-        // Sort descending: highest scores first (most anomalous first)
-        sorted.sort_by(|a, b| b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));
-        let idx = ((self.contamination * scores.len() as f64).ceil() as usize)
-            .min(sorted.len() - 1)
-            .max(0);
-        sorted[idx]
     }
 }
 
@@ -381,15 +422,16 @@ impl UnsupervisedModel for IsolationForest {
                 .collect();
 
             let root = IsolationTree::build(&subsample, &mut rng, tree_depth, 0);
-            self.trees.push(IsolationTree {
-                root: Some(root),
-                max_depth: tree_depth,
-            });
+            self.trees.push(IsolationTree { root: Some(root) });
         }
 
         let scores = self.scores_for_matrix(&feature_data);
-        // Higher IF score = more anomalous; threshold at (1-contamination) quantile
-        let threshold = self.anomaly_threshold(&scores);
+        // Higher IF score = more anomalous; threshold at the
+        // (1-contamination) quantile of the TRAINING scores. This threshold
+        // is stored (not recomputed) so that `predict` behaves consistently
+        // regardless of the composition of future prediction batches.
+        let threshold = quantile_threshold_high(&scores, self.contamination);
+        self.fitted_threshold = Some(threshold);
 
         let labels: Vec<i64> = scores
             .iter()
@@ -416,8 +458,17 @@ impl UnsupervisedModel for IsolationForest {
 
 impl ModelEvaluator for IsolationForest {
     fn evaluate(&self, _test_data: &DataFrame, _test_target: &str) -> Result<ModelMetrics> {
+        let labels = self.labels.as_ref().ok_or_else(|| {
+            Error::InvalidOperation("IsolationForest has not been fitted. Call fit() first.".into())
+        })?;
+
         let mut metrics = ModelMetrics::new();
-        metrics.add_metric("anomaly_ratio", self.contamination);
+        // Report the OBSERVED fraction of training points labeled anomalous,
+        // not the `contamination` hyperparameter that drove the threshold
+        // (those can differ slightly because of ties/rounding in the
+        // top-k order-statistic threshold).
+        let anomaly_count = labels.iter().filter(|&&l| l == -1).count();
+        metrics.add_metric("anomaly_ratio", anomaly_count as f64 / labels.len() as f64);
         Ok(metrics)
     }
 
@@ -446,7 +497,12 @@ pub struct LocalOutlierFactor {
     pub n_neighbors: usize,
     /// Contamination: expected proportion of outliers in the data
     pub contamination: f64,
-    /// Algorithm hint (kept for API compatibility)
+    /// Nearest-neighbour search algorithm hint: one of `"auto"`, `"brute"`,
+    /// `"kd_tree"`, or `"ball_tree"` (validated in `fit`; kept for
+    /// scikit-learn API compatibility). This implementation always performs
+    /// brute-force neighbour search — exactly as in scikit-learn, the
+    /// algorithm choice only ever changes indexing performance, never the
+    /// computed LOF scores, so all four accepted values are equivalent here.
     pub algorithm: String,
     /// LOF scores for training points (higher = more anomalous)
     pub scores: Option<Vec<f64>>,
@@ -454,8 +510,6 @@ pub struct LocalOutlierFactor {
     pub labels: Option<Vec<i64>>,
     /// Feature columns used for anomaly detection
     pub feature_columns: Option<Vec<String>>,
-    // Private: stored training data
-    train_data: Option<Vec<Vec<f64>>>,
 }
 
 impl LocalOutlierFactor {
@@ -468,7 +522,6 @@ impl LocalOutlierFactor {
             scores: None,
             labels: None,
             feature_columns: None,
-            train_data: None,
         }
     }
 
@@ -494,7 +547,8 @@ impl LocalOutlierFactor {
         self
     }
 
-    /// Set algorithm hint.
+    /// Set algorithm hint. Must be one of "auto", "brute", "kd_tree", or
+    /// "ball_tree" (validated at `fit` time); see the `algorithm` field docs.
     pub fn algorithm(mut self, algorithm: &str) -> Self {
         self.algorithm = algorithm.to_string();
         self
@@ -523,6 +577,17 @@ impl LocalOutlierFactor {
 
 impl UnsupervisedModel for LocalOutlierFactor {
     fn fit(&mut self, data: &DataFrame) -> Result<()> {
+        match self.algorithm.as_str() {
+            "auto" | "brute" | "kd_tree" | "ball_tree" => {}
+            other => {
+                return Err(Error::InvalidValue(format!(
+                    "Unknown LOF algorithm '{}': expected one of \"auto\", \"brute\", \
+                     \"kd_tree\", or \"ball_tree\"",
+                    other
+                )));
+            }
+        }
+
         let (feature_data, col_names) = extract_features(data, &self.feature_columns)?;
         let n_samples = feature_data.len();
 
@@ -550,6 +615,13 @@ impl UnsupervisedModel for LocalOutlierFactor {
         // Step 3: Local reachability density
         //   reach_dist(A,B) = max(k_dist(B), dist(A,B))
         //   lrd(A) = k / sum( reach_dist(A, B_i) for B_i in kNN(A) )
+        //
+        // The denominator is clamped away from exact zero so that
+        // duplicate/coincident points produce a very large but FINITE
+        // density instead of infinity. An unclamped infinity would
+        // propagate through the lrd(neighbour)/lrd(point) ratio in Step 4
+        // whenever a NEIGHBOUR (not necessarily the point itself) was a
+        // duplicate, silently corrupting otherwise-unrelated LOF scores.
         let mut lrd: Vec<f64> = Vec::with_capacity(n_samples);
         for i in 0..n_samples {
             let reach_sum: f64 = all_nn_indices[i]
@@ -558,11 +630,7 @@ impl UnsupervisedModel for LocalOutlierFactor {
                 .map(|(&j, &dist_ij)| k_dist[j].max(dist_ij))
                 .sum();
             let k_actual = all_nn_indices[i].len() as f64;
-            let density = if reach_sum < f64::EPSILON {
-                f64::INFINITY
-            } else {
-                k_actual / reach_sum
-            };
+            let density = k_actual / reach_sum.max(f64::EPSILON);
             lrd.push(density);
         }
 
@@ -570,7 +638,7 @@ impl UnsupervisedModel for LocalOutlierFactor {
         let mut lof_scores: Vec<f64> = Vec::with_capacity(n_samples);
         for i in 0..n_samples {
             let k_actual = all_nn_indices[i].len();
-            let lof_i = if k_actual == 0 || lrd[i].is_infinite() {
+            let lof_i = if k_actual == 0 {
                 1.0
             } else {
                 let sum_ratio: f64 = all_nn_indices[i].iter().map(|&j| lrd[j] / lrd[i]).sum();
@@ -579,23 +647,19 @@ impl UnsupervisedModel for LocalOutlierFactor {
             lof_scores.push(lof_i);
         }
 
-        // Step 5: threshold at contamination-th percentile (LOF: higher = anomalous)
-        let mut sorted = lof_scores.clone();
-        sorted.sort_by(|a, b| b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));
-        let threshold_idx = ((self.contamination * n_samples as f64).ceil() as usize)
-            .min(sorted.len() - 1)
-            .max(0);
-        let threshold = sorted[threshold_idx];
+        // Step 5: threshold at the contamination-th quantile (LOF: higher =
+        // more anomalous), using the same top-k order-statistic formula and
+        // `>=` comparison as every other detector in this module.
+        let threshold = quantile_threshold_high(&lof_scores, self.contamination);
 
         let labels: Vec<i64> = lof_scores
             .iter()
-            .map(|&s| if s > threshold { -1 } else { 1 })
+            .map(|&s| if s >= threshold { -1 } else { 1 })
             .collect();
 
         self.scores = Some(lof_scores);
         self.labels = Some(labels);
         self.feature_columns = Some(col_names);
-        self.train_data = Some(feature_data);
 
         Ok(())
     }
@@ -610,8 +674,15 @@ impl UnsupervisedModel for LocalOutlierFactor {
 
 impl ModelEvaluator for LocalOutlierFactor {
     fn evaluate(&self, _test_data: &DataFrame, _test_target: &str) -> Result<ModelMetrics> {
+        let labels = self.labels.as_ref().ok_or_else(|| {
+            Error::InvalidOperation(
+                "LocalOutlierFactor has not been fitted. Call fit() first.".into(),
+            )
+        })?;
+
         let mut metrics = ModelMetrics::new();
-        metrics.add_metric("anomaly_ratio", self.contamination);
+        let anomaly_count = labels.iter().filter(|&&l| l == -1).count();
+        metrics.add_metric("anomaly_ratio", anomaly_count as f64 / labels.len() as f64);
         Ok(metrics)
     }
 
@@ -627,16 +698,31 @@ impl ModelEvaluator for LocalOutlierFactor {
     }
 }
 
-// ─── OneClassSVM (SVDD / kernel-distance approach) ───────────────────────────
+// ─── KernelDensityOutlierDetector (RBF Parzen-window scorer) ────────────────
 
-/// One-Class SVM for anomaly detection using an RBF kernel distance approach.
+/// Kernel-density-based outlier detector using an RBF kernel similarity score.
 ///
-/// Implements a simplified Support Vector Data Description (SVDD): the anomaly
+/// Implements a Parzen-window (kernel density) style scorer: the anomaly
 /// score for each point is 1 minus its mean RBF kernel similarity to the
 /// training set. Higher score means farther from the training data distribution.
+///
+/// # Naming history
+/// This type was previously named `OneClassSVM`. That name overstated what
+/// the implementation does — there is no quadratic-programming solve, no
+/// support vectors, and no margin/rho parameter here. It is a simple
+/// non-parametric kernel-similarity anomaly score, not a Support Vector
+/// Machine. [`OneClassSVM`] is retained as a type alias for backward
+/// compatibility; prefer `KernelDensityOutlierDetector` in new code. (The
+/// alias is intentionally not marked `#[deprecated]`: several existing call
+/// sites elsewhere in the crate and in examples construct/re-export it by
+/// name, and a `#[deprecated]` attribute here would turn every one of those
+/// into a new compiler warning that this module cannot silence on their
+/// behalf. The honesty fix is the rename plus this doc comment; migrating
+/// those call sites can happen independently.)
 #[derive(Debug, Clone)]
-pub struct OneClassSVM {
-    /// Kernel type (only "rbf" is currently supported)
+pub struct KernelDensityOutlierDetector {
+    /// Kernel type. Only `"rbf"` is currently implemented and is validated
+    /// in `fit`.
     pub kernel: String,
     /// Regularisation parameter (fraction of outliers upper bound)
     pub nu: f64,
@@ -654,10 +740,10 @@ pub struct OneClassSVM {
     fitted_gamma: f64,
 }
 
-impl OneClassSVM {
-    /// Create a new OneClassSVM with sensible defaults.
+impl KernelDensityOutlierDetector {
+    /// Create a new KernelDensityOutlierDetector with sensible defaults.
     pub fn new() -> Self {
-        OneClassSVM {
+        KernelDensityOutlierDetector {
             kernel: "rbf".to_string(),
             nu: 0.1,
             gamma: None,
@@ -685,7 +771,8 @@ impl OneClassSVM {
         }
     }
 
-    /// Set kernel type.
+    /// Set kernel type. Only `"rbf"` is currently implemented; any other
+    /// value causes `fit` to return an error.
     pub fn kernel(mut self, kernel: &str) -> Self {
         self.kernel = kernel.to_string();
         self
@@ -735,14 +822,21 @@ impl OneClassSVM {
     }
 }
 
-impl Default for OneClassSVM {
+impl Default for KernelDensityOutlierDetector {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl UnsupervisedModel for OneClassSVM {
+impl UnsupervisedModel for KernelDensityOutlierDetector {
     fn fit(&mut self, data: &DataFrame) -> Result<()> {
+        if self.kernel != "rbf" {
+            return Err(Error::InvalidValue(format!(
+                "Unsupported kernel '{}': only \"rbf\" is currently implemented",
+                self.kernel
+            )));
+        }
+
         let (feature_data, col_names) = extract_features(data, &self.feature_columns)?;
         let n_samples = feature_data.len();
 
@@ -763,17 +857,14 @@ impl UnsupervisedModel for OneClassSVM {
 
         let scores: Vec<f64> = feature_data.iter().map(|x| self.score_point(x)).collect();
 
-        // Threshold at nu-th percentile from the top (higher = anomalous)
-        let mut sorted = scores.clone();
-        sorted.sort_by(|a, b| b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));
-        let threshold_idx = ((self.nu * n_samples as f64).ceil() as usize)
-            .min(sorted.len() - 1)
-            .max(0);
-        let threshold = sorted[threshold_idx];
+        // Threshold at the nu-th quantile from the top (higher = anomalous),
+        // using the same top-k order-statistic formula and `>=` comparison
+        // as every other detector in this module.
+        let threshold = quantile_threshold_high(&scores, self.nu);
 
         let labels: Vec<i64> = scores
             .iter()
-            .map(|&s| if s > threshold { -1 } else { 1 })
+            .map(|&s| if s >= threshold { -1 } else { 1 })
             .collect();
 
         self.scores = Some(scores);
@@ -786,7 +877,7 @@ impl UnsupervisedModel for OneClassSVM {
     fn transform(&self, data: &DataFrame) -> Result<DataFrame> {
         if self.train_data.is_none() {
             return Err(Error::InvalidOperation(
-                "OneClassSVM has not been fitted yet. Call fit() first.".into(),
+                "KernelDensityOutlierDetector has not been fitted yet. Call fit() first.".into(),
             ));
         }
 
@@ -802,10 +893,17 @@ impl UnsupervisedModel for OneClassSVM {
     }
 }
 
-impl ModelEvaluator for OneClassSVM {
+impl ModelEvaluator for KernelDensityOutlierDetector {
     fn evaluate(&self, _test_data: &DataFrame, _test_target: &str) -> Result<ModelMetrics> {
+        let labels = self.labels.as_ref().ok_or_else(|| {
+            Error::InvalidOperation(
+                "KernelDensityOutlierDetector has not been fitted. Call fit() first.".into(),
+            )
+        })?;
+
         let mut metrics = ModelMetrics::new();
-        metrics.add_metric("anomaly_ratio", self.nu);
+        let anomaly_count = labels.iter().filter(|&&l| l == -1).count();
+        metrics.add_metric("anomaly_ratio", anomaly_count as f64 / labels.len() as f64);
         Ok(metrics)
     }
 
@@ -820,6 +918,12 @@ impl ModelEvaluator for OneClassSVM {
         ))
     }
 }
+
+/// Backward-compatible alias for [`KernelDensityOutlierDetector`].
+///
+/// See that type's doc comment ("Naming history") for why it was renamed and
+/// why this alias is not marked `#[deprecated]`.
+pub type OneClassSVM = KernelDensityOutlierDetector;
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
 
@@ -867,6 +971,17 @@ mod tests {
         let ifo = IsolationForest::new();
         assert_eq!(ifo.anomaly_scores().len(), 0);
         assert_eq!(ifo.labels().len(), 0);
+    }
+
+    #[test]
+    fn test_unfitted_isolation_forest_predict_errors() {
+        let ifo = IsolationForest::new();
+        let df = make_test_df();
+        let result = ifo.predict(&df);
+        assert!(
+            result.is_err(),
+            "predict() on an unfitted IsolationForest must error, not silently fabricate a threshold"
+        );
     }
 
     #[test]
@@ -968,8 +1083,50 @@ mod tests {
     }
 
     #[test]
+    fn test_lof_rejects_unknown_algorithm() {
+        let df = make_test_df();
+        let mut lof = LocalOutlierFactor::new(3).algorithm("not_a_real_algorithm");
+        assert!(
+            lof.fit(&df).is_err(),
+            "An unrecognised `algorithm` value must be rejected instead of silently ignored"
+        );
+    }
+
+    #[test]
+    fn test_lof_duplicate_points_do_not_produce_infinite_or_nan_scores() {
+        // Several exact duplicate points plus a couple of distinct points:
+        // duplicates drive k-distance and reachability distance to zero,
+        // which previously produced an infinite lrd.
+        let xs = [0.0_f64, 0.0, 0.0, 0.0, 5.0, -5.0];
+        let ys = [0.0_f64, 0.0, 0.0, 0.0, 5.0, -5.0];
+        let mut df = DataFrame::new();
+        df.add_column(
+            "x".to_string(),
+            Series::new(xs.to_vec(), Some("x".to_string())).unwrap(),
+        )
+        .unwrap();
+        df.add_column(
+            "y".to_string(),
+            Series::new(ys.to_vec(), Some("y".to_string())).unwrap(),
+        )
+        .unwrap();
+
+        let mut lof = LocalOutlierFactor::new(2).contamination(0.2);
+        lof.fit(&df).unwrap();
+
+        for &s in lof.anomaly_scores() {
+            assert!(
+                s.is_finite(),
+                "LOF score must be finite even with duplicate points, got {}",
+                s
+            );
+        }
+    }
+
+    #[test]
     fn test_one_class_svm_detects_outliers() {
         let df = make_test_df();
+        // Exercise the backward-compatible `OneClassSVM` alias directly.
         let mut svm = OneClassSVM::new().nu(0.15);
 
         svm.fit(&df).unwrap();
@@ -988,6 +1145,37 @@ mod tests {
         assert!(
             result.column_names().contains(&"anomaly_score".to_string()),
             "transform() must produce anomaly_score column"
+        );
+    }
+
+    #[test]
+    fn test_kernel_density_outlier_detector_rejects_unsupported_kernel() {
+        let df = make_test_df();
+        let mut detector = KernelDensityOutlierDetector::new().kernel("poly");
+        assert!(
+            detector.fit(&df).is_err(),
+            "An unsupported kernel must be rejected instead of silently scored as RBF"
+        );
+    }
+
+    #[test]
+    fn test_anomaly_evaluate_reports_observed_fraction_not_hyperparameter() {
+        let df = make_test_df(); // 23 rows: 20 inliers + 3 outliers
+        let mut ifo = IsolationForest::new()
+            .n_estimators(100)
+            .contamination(0.5) // deliberately "wrong" hyperparameter
+            .random_seed(42);
+        ifo.fit(&df).unwrap();
+
+        let metrics = ifo.evaluate(&df, "").unwrap();
+        let ratio = metrics.get_metric("anomaly_ratio").copied().unwrap();
+
+        // The observed fraction must reflect the ACTUAL label split, not the
+        // 0.5 contamination hyperparameter fed in.
+        assert!(
+            (ratio - 0.5).abs() > 1e-9,
+            "anomaly_ratio ({}) must be the observed fraction, not echo the contamination hyperparameter (0.5)",
+            ratio
         );
     }
 }

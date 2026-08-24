@@ -3,10 +3,7 @@
 //! This module provides cross-section selection capabilities for DataFrames with MultiIndex,
 //! including partial indexing, level slicing, boolean indexing, and hierarchical navigation.
 
-use crate::column::{Column, ColumnTrait};
-use crate::core::advanced_multi_index::{
-    AdvancedMultiIndex, CrossSectionResult, IndexValue, SelectionCriteria,
-};
+use crate::core::advanced_multi_index::{AdvancedMultiIndex, IndexValue, SelectionCriteria};
 use crate::core::error::{Error, Result};
 use crate::dataframe::DataFrame;
 use std::collections::HashMap;
@@ -297,9 +294,9 @@ impl MultiIndexDataFrame {
     // Helper methods
 
     fn select_rows(&self, indices: &[usize]) -> Result<DataFrame> {
-        // This is a simplified implementation - would need actual DataFrame row selection
-        // For now, return a clone as placeholder
-        Ok(self.dataframe.clone())
+        // Real positional row selection, reusing the `.iloc[]` machinery.
+        use crate::dataframe::indexing::AdvancedIndexingExt;
+        self.dataframe.iloc().get_positions(indices)
     }
 
     fn select_index_rows(&self, indices: &[usize]) -> Result<AdvancedMultiIndex> {
@@ -389,8 +386,14 @@ impl MultiIndexGroupBy {
 
         let result_index = AdvancedMultiIndex::new(result_index_tuples, Some(group_level_names))?;
 
-        // Create result DataFrame (simplified - would need actual DataFrame construction)
-        let result_dataframe = self.dataframe.dataframe.clone(); // Placeholder
+        // Build the result DataFrame from the aggregated values (one row per
+        // group, in the same iteration order used to build `result_index`).
+        let mut result_dataframe = DataFrame::new();
+        for col_name in &self.dataframe.column_names {
+            let column_values = result_data.remove(col_name).unwrap_or_default();
+            let series = crate::series::Series::new(column_values, Some(col_name.clone()))?;
+            result_dataframe.add_column(col_name.clone(), series)?;
+        }
 
         Ok(MultiIndexDataFrame {
             dataframe: result_dataframe,
@@ -399,27 +402,62 @@ impl MultiIndexGroupBy {
         })
     }
 
-    /// Apply custom function to each group
+    /// Apply a custom function to each group and concatenate the results.
     pub fn apply<F>(&self, func: F) -> Result<MultiIndexDataFrame>
     where
         F: Fn(&MultiIndexDataFrame) -> Result<MultiIndexDataFrame>,
     {
-        let mut result_parts = Vec::new();
-
-        for (group_key, indices) in &self.groups {
+        let mut results: Vec<MultiIndexDataFrame> = Vec::new();
+        for (group_key, _indices) in &self.groups {
             let group_dataframe = self.get_group(group_key)?;
-            let group_result = func(&group_dataframe)?;
-            result_parts.push((group_key.clone(), group_result));
+            results.push(func(&group_dataframe)?);
         }
 
-        // Combine results (simplified implementation)
-        if let Some((_, first_result)) = result_parts.first() {
-            Ok(first_result.clone()) // Placeholder
-        } else {
-            Err(Error::InvalidOperation(
-                "No groups to apply function to".to_string(),
-            ))
+        let first = results
+            .first()
+            .ok_or_else(|| Error::InvalidOperation("No groups to apply function to".to_string()))?;
+
+        // Use the first result's schema as the canonical column layout.
+        let column_names = first.column_names.clone();
+        let level_names = first.index.level_names().to_vec();
+
+        let mut combined_columns: HashMap<String, Vec<String>> = HashMap::new();
+        for col_name in &column_names {
+            combined_columns.insert(col_name.clone(), Vec::new());
         }
+        let mut combined_tuples: Vec<Vec<IndexValue>> = Vec::new();
+
+        for result in &results {
+            let part_rows = result.dataframe.row_count();
+            for col_name in &column_names {
+                let values = match result.dataframe.get_column_string_values(col_name) {
+                    Ok(values) => values,
+                    // Missing column in this part: pad to keep columns aligned.
+                    Err(_) => vec![String::new(); part_rows],
+                };
+                if let Some(slot) = combined_columns.get_mut(col_name) {
+                    slot.extend(values);
+                }
+            }
+            for i in 0..result.index.len() {
+                combined_tuples.push(result.index.get_tuple(i)?.to_vec());
+            }
+        }
+
+        let mut combined_dataframe = DataFrame::new();
+        for col_name in &column_names {
+            let values = combined_columns.remove(col_name).unwrap_or_default();
+            let series = crate::series::Series::new(values, Some(col_name.clone()))?;
+            combined_dataframe.add_column(col_name.clone(), series)?;
+        }
+
+        let combined_index = AdvancedMultiIndex::new(combined_tuples, Some(level_names))?;
+
+        Ok(MultiIndexDataFrame {
+            dataframe: combined_dataframe,
+            index: combined_index,
+            column_names,
+        })
     }
 
     /// Get group keys
@@ -428,9 +466,25 @@ impl MultiIndexGroupBy {
     }
 
     fn extract_column_values(&self, column_name: &str, indices: &[usize]) -> Result<Vec<f64>> {
-        // This would extract numeric values from the specified column at given indices
-        // For now, return placeholder values
-        Ok(vec![0.0; indices.len()])
+        // Extract the real numeric values of `column_name` at the given row
+        // positions from the underlying DataFrame.
+        let all_values = self
+            .dataframe
+            .dataframe
+            .get_column_numeric_values(column_name)?;
+
+        let mut result = Vec::with_capacity(indices.len());
+        for &idx in indices {
+            let value = all_values
+                .get(idx)
+                .copied()
+                .ok_or_else(|| Error::IndexOutOfBounds {
+                    index: idx,
+                    size: all_values.len(),
+                })?;
+            result.push(value);
+        }
+        Ok(result)
     }
 }
 
@@ -602,5 +656,52 @@ mod tests {
             level_2_values,
             vec![IndexValue::from(1), IndexValue::from(2)]
         );
+    }
+
+    fn build_multi_index_dataframe() -> MultiIndexDataFrame {
+        let mut df = DataFrame::new();
+        df.add_column(
+            "value".to_string(),
+            crate::series::Series::new(vec![10.0_f64, 20.0, 30.0, 40.0], Some("value".to_string()))
+                .expect("series"),
+        )
+        .expect("add value column");
+
+        let tuples = vec![
+            vec![IndexValue::from("A"), IndexValue::from(1)],
+            vec![IndexValue::from("A"), IndexValue::from(2)],
+            vec![IndexValue::from("B"), IndexValue::from(1)],
+            vec![IndexValue::from("B"), IndexValue::from(2)],
+        ];
+        let index = AdvancedMultiIndex::new(tuples, None).expect("index");
+        MultiIndexDataFrame::new(df, index).expect("multi-index dataframe")
+    }
+
+    #[test]
+    fn test_sort_index_selects_real_rows() {
+        let midf = build_multi_index_dataframe();
+        // Descending sort should reorder the *actual* rows, not return a clone.
+        let sorted = midf.sort_index(None, false).expect("sort_index");
+        let values = sorted
+            .dataframe
+            .get_column_string_values("value")
+            .expect("values");
+        assert_eq!(values, vec!["40", "30", "20", "10"]);
+    }
+
+    #[test]
+    fn test_groupby_agg_real_values() {
+        let midf = build_multi_index_dataframe();
+        let grouped = midf.groupby_level(&[0]).expect("groupby_level");
+        let result = grouped.agg(AggregationFunction::Sum).expect("agg");
+
+        assert_eq!(result.dataframe.row_count(), 2);
+        let mut sums = result
+            .dataframe
+            .get_column_string_values("value")
+            .expect("values");
+        sums.sort();
+        // Group A: 10 + 20 = 30, Group B: 30 + 40 = 70.
+        assert_eq!(sums, vec!["30", "70"]);
     }
 }

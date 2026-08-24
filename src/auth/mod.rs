@@ -52,7 +52,6 @@ pub use oauth::*;
 pub use rebac::*;
 pub use session::*;
 
-use crate::core::error::OptionExt;
 use crate::error::{Error, Result};
 use crate::multitenancy::{Permission, TenantId};
 use std::collections::HashMap;
@@ -77,7 +76,7 @@ pub struct AuthResult {
 }
 
 /// User registration information
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct UserInfo {
     /// Unique user identifier
     pub user_id: String,
@@ -99,8 +98,28 @@ pub struct UserInfo {
     pub last_login: Option<SystemTime>,
     /// Password hash (if using password auth)
     password_hash: Option<String>,
-    /// API keys associated with this user
+    /// Hashes of API keys associated with this user (never plaintext).
     pub api_keys: Vec<String>,
+}
+
+impl std::fmt::Debug for UserInfo {
+    /// Redacting `Debug`: never print the password hash or API-key hashes.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("UserInfo")
+            .field("user_id", &self.user_id)
+            .field("tenant_id", &self.tenant_id)
+            .field("email", &self.email)
+            .field("display_name", &self.display_name)
+            .field("roles", &self.roles)
+            .field("permissions", &self.permissions)
+            .field("active", &self.active)
+            .field(
+                "password_hash",
+                &self.password_hash.as_ref().map(|_| "<redacted>"),
+            )
+            .field("api_keys", &self.api_keys.len())
+            .finish_non_exhaustive()
+    }
 }
 
 impl UserInfo {
@@ -227,8 +246,13 @@ pub enum AuthEventType {
     SessionExpired,
 }
 
+/// Maximum consecutive failed password attempts (per email) before a temporary
+/// lockout kicks in.
+const MAX_FAILED_ATTEMPTS: u32 = 5;
+/// Duration of the lockout / sliding failure window.
+const LOCKOUT_WINDOW: Duration = Duration::from_secs(900); // 15 minutes
+
 /// Central authentication manager
-#[derive(Debug)]
 pub struct AuthManager {
     /// JWT configuration
     jwt_config: JwtConfig,
@@ -238,12 +262,21 @@ pub struct AuthManager {
     users: HashMap<String, UserInfo>,
     /// Active sessions
     sessions: HashMap<String, Session>,
-    /// API keys
-    api_keys: HashMap<String, ApiKeyInfo>,
+    /// API keys — delegated to the single hash-keyed [`ApiKeyManager`] so keys
+    /// are never stored in plaintext and there is one source of truth.
+    api_key_manager: ApiKeyManager,
     /// Refresh tokens
     refresh_tokens: HashMap<String, RefreshToken>,
+    /// Per-user access-token validity floor (unix seconds). Tokens issued at or
+    /// before this instant are rejected — this is how a password change kills
+    /// already-issued access tokens.
+    tokens_valid_after: HashMap<String, u64>,
+    /// Failed password attempts per email: (count, window start).
+    failed_attempts: HashMap<String, (u32, std::time::Instant)>,
     /// Authentication event log
     auth_events: Vec<AuthEvent>,
+    /// Optional shared security audit sink.
+    audit: Option<crate::audit::SharedAuditLogger>,
     /// Maximum events to keep
     max_events: usize,
     /// Token expiration duration
@@ -254,6 +287,23 @@ pub struct AuthManager {
     session_timeout: Duration,
 }
 
+impl std::fmt::Debug for AuthManager {
+    /// Redacting `Debug`: never print the JWT signing key, password hashes,
+    /// API-key material, or refresh-token secrets — only shapes/counts.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AuthManager")
+            .field("issuer", &self.jwt_config.issuer)
+            .field("oauth_configured", &self.oauth_config.is_some())
+            .field("users", &self.users.len())
+            .field("sessions", &self.sessions.len())
+            .field("api_keys", &self.api_key_manager.key_count())
+            .field("refresh_tokens", &self.refresh_tokens.len())
+            .field("auth_events", &self.auth_events.len())
+            .field("secret_key", &"<redacted>")
+            .finish()
+    }
+}
+
 impl AuthManager {
     /// Create a new authentication manager
     pub fn new(jwt_config: JwtConfig) -> Self {
@@ -262,9 +312,12 @@ impl AuthManager {
             oauth_config: None,
             users: HashMap::new(),
             sessions: HashMap::new(),
-            api_keys: HashMap::new(),
+            api_key_manager: ApiKeyManager::new(),
             refresh_tokens: HashMap::new(),
+            tokens_valid_after: HashMap::new(),
+            failed_attempts: HashMap::new(),
             auth_events: Vec::new(),
+            audit: None,
             max_events: 10000,
             token_expiry: Duration::from_secs(3600), // 1 hour
             refresh_token_expiry: Duration::from_secs(86400 * 7), // 7 days
@@ -276,6 +329,38 @@ impl AuthManager {
     pub fn with_oauth(mut self, config: OAuthConfig) -> Self {
         self.oauth_config = Some(config);
         self
+    }
+
+    /// Attach a shared security audit logger. Authentication failures and
+    /// permission denials will be emitted as `Security` audit entries.
+    pub fn with_audit_logger(mut self, logger: crate::audit::SharedAuditLogger) -> Self {
+        self.audit = Some(logger);
+        self
+    }
+
+    /// Emit a `Security` audit entry (best-effort; never blocks auth).
+    fn audit_security(&self, operation: &str, user: Option<&str>, success: bool, message: &str) {
+        if let Some(ref logger) = self.audit {
+            let level = if success {
+                crate::audit::LogLevel::Info
+            } else {
+                crate::audit::LogLevel::Warn
+            };
+            let mut entry = crate::audit::AuditEntry::new(
+                level,
+                crate::audit::EventCategory::Security,
+                operation,
+                "auth",
+                message,
+            );
+            if let Some(u) = user {
+                entry = entry.with_user(u);
+            }
+            if !success {
+                entry = entry.with_error(message);
+            }
+            logger.log(entry);
+        }
     }
 
     /// Set token expiration duration
@@ -357,46 +442,95 @@ impl AuthManager {
         Ok(())
     }
 
-    /// Authenticate with password and get JWT token
+    /// Whether an email is currently locked out from password authentication.
+    fn is_locked_out(&self, email: &str) -> bool {
+        matches!(
+            self.failed_attempts.get(email),
+            Some((count, start)) if *count >= MAX_FAILED_ATTEMPTS && start.elapsed() < LOCKOUT_WINDOW
+        )
+    }
+
+    /// Record a failed password attempt for an email, rolling the window.
+    fn record_failure(&mut self, email: &str) {
+        let now = std::time::Instant::now();
+        let entry = self
+            .failed_attempts
+            .entry(email.to_string())
+            .or_insert((0, now));
+        if entry.1.elapsed() >= LOCKOUT_WINDOW {
+            *entry = (1, now);
+        } else {
+            entry.0 = entry.0.saturating_add(1);
+        }
+    }
+
+    /// Clear failed-attempt state for an email after a success.
+    fn clear_failures(&mut self, email: &str) {
+        self.failed_attempts.remove(email);
+    }
+
+    /// Authenticate with password and get JWT token.
+    ///
+    /// Hardened against user enumeration: an unknown email performs the same
+    /// PBKDF2 work as a real verification (via `dummy_verify`) and returns
+    /// the identical generic error. Repeated failures trip a per-email lockout,
+    /// and every failure is logged (and audited when a logger is attached).
     pub fn authenticate_password(&mut self, email: &str, password: &str) -> Result<AuthResult> {
-        // Find user by email
-        let user = self
-            .users
-            .values()
-            .find(|u| u.email == email)
-            .ok_or_else(|| Error::InvalidInput("Invalid credentials".to_string()))?;
+        if self.is_locked_out(email) {
+            self.audit_security("auth.login", None, false, "account temporarily locked");
+            self.log_login_failure(None, None, "Account temporarily locked");
+            return Err(Error::InvalidOperation(
+                "Too many failed attempts; try again later".to_string(),
+            ));
+        }
+
+        // Clone the matched user so the immutable borrow of `self.users` ends
+        // before we take mutable borrows (failure counters, logging).
+        let user = self.users.values().find(|u| u.email == email).cloned();
+
+        let user = match user {
+            Some(u) => u,
+            None => {
+                // Equalize timing with the real path, then fail generically.
+                dummy_verify(password);
+                self.record_failure(email);
+                self.audit_security("auth.login", None, false, "unknown email");
+                self.log_login_failure(None, None, "Invalid credentials");
+                return Err(Error::InvalidInput("Invalid credentials".to_string()));
+            }
+        };
 
         if !user.active {
-            self.log_event(AuthEvent {
-                timestamp: SystemTime::now(),
-                event_type: AuthEventType::Login,
-                user_id: Some(user.user_id.clone()),
-                tenant_id: Some(user.tenant_id.clone()),
-                auth_method: AuthMethod::Password,
-                success: false,
-                ip_address: None,
-                user_agent: None,
-                error_message: Some("User account is deactivated".to_string()),
-            });
+            self.record_failure(email);
+            self.audit_security(
+                "auth.login",
+                Some(&user.user_id),
+                false,
+                "account deactivated",
+            );
+            self.log_login_failure(
+                Some(user.user_id.clone()),
+                Some(user.tenant_id.clone()),
+                "User account is deactivated",
+            );
             return Err(Error::InvalidOperation(
                 "User account is deactivated".to_string(),
             ));
         }
 
         if !user.verify_password(password) {
-            self.log_event(AuthEvent {
-                timestamp: SystemTime::now(),
-                event_type: AuthEventType::Login,
-                user_id: Some(user.user_id.clone()),
-                tenant_id: Some(user.tenant_id.clone()),
-                auth_method: AuthMethod::Password,
-                success: false,
-                ip_address: None,
-                user_agent: None,
-                error_message: Some("Invalid password".to_string()),
-            });
+            self.record_failure(email);
+            self.audit_security("auth.login", Some(&user.user_id), false, "invalid password");
+            self.log_login_failure(
+                Some(user.user_id.clone()),
+                Some(user.tenant_id.clone()),
+                "Invalid password",
+            );
             return Err(Error::InvalidInput("Invalid credentials".to_string()));
         }
+
+        // Success: clear failure state.
+        self.clear_failures(email);
 
         // Update last login
         let user_id = user.user_id.clone();
@@ -454,6 +588,10 @@ impl AuthManager {
             ));
         }
 
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
         let claims = TokenClaims {
             sub: user_id.to_string(),
             tenant_id: user.tenant_id.clone(),
@@ -463,15 +601,9 @@ impl AuthManager {
                 .iter()
                 .map(|p| format!("{:?}", p))
                 .collect(),
-            iat: SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_secs(),
-            exp: SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_secs()
-                + self.token_expiry.as_secs(),
+            iat: now,
+            nbf: Some(now),
+            exp: now.saturating_add(self.token_expiry.as_secs()),
             iss: self.jwt_config.issuer.clone(),
             aud: self.jwt_config.audience.clone(),
             jti: generate_token_id(),
@@ -548,16 +680,45 @@ impl AuthManager {
     pub fn validate_token(&mut self, token: &str) -> Result<AuthResult> {
         let claims = decode_jwt(token, &self.jwt_config)?;
 
-        // Check if user still exists and is active, clone needed data
-        let (user_permissions, user_active) = {
+        // Reject tokens issued before the user's validity floor (set on
+        // password change / explicit revocation) — this is how a password
+        // change kills already-issued access tokens.
+        if let Some(&valid_after) = self.tokens_valid_after.get(&claims.sub) {
+            if claims.iat < valid_after {
+                self.audit_security(
+                    "auth.token",
+                    Some(&claims.sub),
+                    false,
+                    "token issued before validity floor",
+                );
+                return Err(Error::InvalidOperation(
+                    "Token has been invalidated".to_string(),
+                ));
+            }
+        }
+
+        // Check if user still exists and is active; take tenant_id from the
+        // authoritative user record rather than trusting the (attacker-mintable
+        // if the key ever leaked) token claim.
+        let (user_permissions, user_active, user_tenant_id) = {
             let user = self
                 .users
                 .get(&claims.sub)
                 .ok_or_else(|| Error::InvalidInput("User not found".to_string()))?;
-            (user.permissions.clone(), user.active)
+            (
+                user.permissions.clone(),
+                user.active,
+                user.tenant_id.clone(),
+            )
         };
 
         if !user_active {
+            self.audit_security(
+                "auth.token",
+                Some(&claims.sub),
+                false,
+                "account deactivated",
+            );
             return Err(Error::InvalidOperation(
                 "User account is deactivated".to_string(),
             ));
@@ -567,7 +728,7 @@ impl AuthManager {
             timestamp: SystemTime::now(),
             event_type: AuthEventType::TokenValidation,
             user_id: Some(claims.sub.clone()),
-            tenant_id: Some(claims.tenant_id.clone()),
+            tenant_id: Some(user_tenant_id.clone()),
             auth_method: AuthMethod::Jwt,
             success: true,
             ip_address: None,
@@ -577,7 +738,7 @@ impl AuthManager {
 
         Ok(AuthResult {
             user_id: claims.sub,
-            tenant_id: claims.tenant_id,
+            tenant_id: user_tenant_id,
             permissions: user_permissions,
             expires_at: claims.exp,
             session_id: None,
@@ -585,34 +746,28 @@ impl AuthManager {
         })
     }
 
-    /// Authenticate with API key
+    /// Authenticate with API key.
+    ///
+    /// Delegates storage/validation to the hash-keyed [`ApiKeyManager`]: the
+    /// presented key is hashed before lookup, so plaintext keys are never held
+    /// in memory or used as map keys. `validate_and_use` enforces
+    /// active/expiry/IP/rate-limit and records usage in one place.
     pub fn authenticate_api_key(&mut self, key: &str) -> Result<AuthResult> {
-        // Clone all needed data from api_key_info first
-        let (key_active, key_expires_at, key_user_id, key_tenant_id, key_permissions) = {
-            let api_key_info = self
-                .api_keys
-                .get(key)
-                .ok_or_else(|| Error::InvalidInput("Invalid API key".to_string()))?;
+        let (key_expires_at, key_user_id, key_tenant_id, key_permissions) = {
+            let api_key_info = match self.api_key_manager.validate_and_use(key, None) {
+                Ok(info) => info,
+                Err(e) => {
+                    self.audit_security("auth.api_key", None, false, "invalid API key");
+                    return Err(e);
+                }
+            };
             (
-                api_key_info.active,
                 api_key_info.expires_at,
                 api_key_info.user_id.clone(),
                 api_key_info.tenant_id.clone(),
                 api_key_info.permissions.clone(),
             )
         };
-
-        if !key_active {
-            return Err(Error::InvalidOperation(
-                "API key is deactivated".to_string(),
-            ));
-        }
-
-        if let Some(expires_at) = key_expires_at {
-            if expires_at < SystemTime::now() {
-                return Err(Error::InvalidOperation("API key has expired".to_string()));
-            }
-        }
 
         // Check user is active
         let user_active = {
@@ -624,15 +779,15 @@ impl AuthManager {
         };
 
         if !user_active {
+            self.audit_security(
+                "auth.api_key",
+                Some(&key_user_id),
+                false,
+                "account deactivated",
+            );
             return Err(Error::InvalidOperation(
                 "User account is deactivated".to_string(),
             ));
-        }
-
-        // Update usage count
-        if let Some(key_info) = self.api_keys.get_mut(key) {
-            key_info.usage_count += 1;
-            key_info.last_used = Some(SystemTime::now());
         }
 
         self.log_event(AuthEvent {
@@ -687,49 +842,29 @@ impl AuthManager {
             ));
         }
 
-        let api_key = generate_api_key();
-        let api_key_info = ApiKeyInfo {
-            key_id: generate_token_id(),
-            name: name.to_string(),
-            key_hash: hash_api_key(&api_key),
-            user_id: user_id.to_string(),
-            tenant_id: user_tenant_id,
-            permissions: permissions.unwrap_or(user_permissions),
-            created_at: SystemTime::now(),
-            expires_at: None,
-            last_used: None,
-            usage_count: 0,
-            active: true,
-            rate_limit: None,
-            rate_limit_counter: 0,
-            rate_limit_window_start: None,
-            ip_whitelist: Vec::new(),
-            metadata: HashMap::new(),
-        };
+        let perms = permissions.unwrap_or(user_permissions);
+        // The manager generates the key, hashes it, and stores only the hash.
+        // The plaintext is returned here and nowhere retained.
+        let api_key = self
+            .api_key_manager
+            .generate_key(name, user_id, &user_tenant_id, perms)?;
 
-        // Store API key info (using hash as lookup key for security)
-        self.api_keys.insert(api_key.clone(), api_key_info);
-
-        // Add key reference to user
+        // Track the key on the user by its HASH, never the plaintext.
         if let Some(user_mut) = self.users.get_mut(user_id) {
-            user_mut.api_keys.push(api_key.clone());
+            user_mut.api_keys.push(hash_api_key(&api_key));
         }
 
         Ok(api_key)
     }
 
-    /// Revoke an API key
+    /// Revoke an API key (by its plaintext value; hashed before lookup).
     pub fn revoke_api_key(&mut self, key: &str) -> Result<()> {
-        let api_key_info = self
-            .api_keys
-            .get_mut(key)
-            .ok_or_else(|| Error::InvalidInput("API key not found".to_string()))?;
+        self.api_key_manager.revoke_by_key(key)?;
 
-        api_key_info.active = false;
-
-        // Remove from user's key list
-        if let Some(user) = self.users.get_mut(&api_key_info.user_id) {
-            user.api_keys.retain(|k| k != key);
+        // Remove the hash reference from whichever user holds it.
+        let key_hash = hash_api_key(key);
+        for user in self.users.values_mut() {
+            user.api_keys.retain(|k| k != &key_hash);
         }
 
         Ok(())
@@ -832,9 +967,8 @@ impl AuthManager {
         self.refresh_tokens
             .retain(|_, token| token.expires_at > now && !token.revoked);
 
-        // Remove expired API keys
-        self.api_keys
-            .retain(|_, key| key.active && key.expires_at.map(|t| t > now).unwrap_or(true));
+        // Remove expired API keys via the manager.
+        self.api_key_manager.cleanup_expired();
     }
 
     /// Get authentication events for a user
@@ -887,6 +1021,22 @@ impl AuthManager {
         // Revoke all existing refresh tokens
         self.revoke_all_refresh_tokens(user_id);
 
+        // Raise the access-token validity floor so tokens minted before this
+        // password change are rejected on their next validation. `+1` ensures
+        // tokens issued in the same second are also invalidated.
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        self.tokens_valid_after
+            .insert(user_id.to_string(), now.saturating_add(1));
+        self.audit_security(
+            "auth.password_change",
+            Some(user_id),
+            true,
+            "password changed",
+        );
+
         self.log_event(AuthEvent {
             timestamp: SystemTime::now(),
             event_type: AuthEventType::PasswordChange,
@@ -900,6 +1050,26 @@ impl AuthManager {
         });
 
         Ok(())
+    }
+
+    /// Convenience: record a failed `Login` authentication event.
+    fn log_login_failure(
+        &mut self,
+        user_id: Option<String>,
+        tenant_id: Option<TenantId>,
+        message: &str,
+    ) {
+        self.log_event(AuthEvent {
+            timestamp: SystemTime::now(),
+            event_type: AuthEventType::Login,
+            user_id,
+            tenant_id,
+            auth_method: AuthMethod::Password,
+            success: false,
+            ip_address: None,
+            user_agent: None,
+            error_message: Some(message.to_string()),
+        });
     }
 
     /// Log an authentication event
@@ -955,21 +1125,38 @@ fn generate_token_id() -> String {
     bytes.iter().map(|b| format!("{:02x}", b)).collect()
 }
 
-/// Generate an API key
-fn generate_api_key() -> String {
-    use scirs2_core::random::Rng;
-    let mut bytes = [0u8; 32];
-    scirs2_core::random::rng().fill_bytes(&mut bytes);
-    format!(
-        "pk_{}",
-        bytes
-            .iter()
-            .map(|b| format!("{:02x}", b))
-            .collect::<String>()
-    )
+/// Password-hashing parameters. The iteration count is tagged into the stored
+/// hash so it can evolve, but is clamped on verification (see below).
+const PWHASH_ALGORITHM: &str = "pbkdf2-sha256";
+const PWHASH_VERSION: &str = "v1";
+const PWHASH_ITERATIONS: u32 = 100_000;
+/// Accepted iteration bounds when verifying a stored hash. An attacker who can
+/// influence the stored artifact must not be able to downgrade the work factor
+/// to 1 (instant crack) or inflate it to `u32::MAX` (verification DoS).
+const PWHASH_MIN_ITERATIONS: u32 = 100_000;
+const PWHASH_MAX_ITERATIONS: u32 = 1_000_000;
+
+/// Constant-time byte-slice equality.
+///
+/// Pure-Rust manual implementation (the `subtle` crate would be the idiomatic
+/// choice, but adding a dependency is outside this change's file ownership; a
+/// volatile xor-fold is the sanctioned fallback and is itself pure Rust). The
+/// `black_box` on the accumulator prevents the optimizer from introducing an
+/// early-out. Length is compared up front — that only leaks the length, which
+/// for fixed-size MACs/hashes is not secret.
+pub(crate) fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut diff: u8 = 0;
+    for (x, y) in a.iter().zip(b.iter()) {
+        diff |= *x ^ *y;
+    }
+    std::hint::black_box(diff) == 0
 }
 
-/// Hash password using PBKDF2
+/// Hash password using PBKDF2-HMAC-SHA256, tagging the algorithm, version, and
+/// iteration count into the stored string.
 fn hash_password(password: &str) -> String {
     use pbkdf2::pbkdf2_hmac;
     use scirs2_core::random::Rng;
@@ -979,11 +1166,14 @@ fn hash_password(password: &str) -> String {
     scirs2_core::random::rng().fill_bytes(&mut salt);
 
     let mut hash = [0u8; 32];
-    pbkdf2_hmac::<Sha256>(password.as_bytes(), &salt, 100_000, &mut hash);
+    pbkdf2_hmac::<Sha256>(password.as_bytes(), &salt, PWHASH_ITERATIONS, &mut hash);
 
-    // Format: iterations$salt_hex$hash_hex
+    // Format: algorithm$version$iterations$salt_hex$hash_hex
     format!(
-        "100000${}${}",
+        "{}${}${}${}${}",
+        PWHASH_ALGORITHM,
+        PWHASH_VERSION,
+        PWHASH_ITERATIONS,
         salt.iter()
             .map(|b| format!("{:02x}", b))
             .collect::<String>(),
@@ -993,27 +1183,42 @@ fn hash_password(password: &str) -> String {
     )
 }
 
-/// Verify password against hash
+/// Verify password against a stored hash.
+///
+/// Rejects any hash whose tagged iteration count falls outside
+/// `[PWHASH_MIN_ITERATIONS, PWHASH_MAX_ITERATIONS]` rather than clamping and
+/// recomputing (which would silently derive a different key and muddy the
+/// failure). Comparison of the derived digest is constant-time.
 fn verify_password(password: &str, stored_hash: &str) -> bool {
     use pbkdf2::pbkdf2_hmac;
     use sha2::Sha256;
 
     let parts: Vec<&str> = stored_hash.split('$').collect();
-    if parts.len() != 3 {
+    if parts.len() != 5 {
+        return false;
+    }
+    if parts[0] != PWHASH_ALGORITHM {
+        return false;
+    }
+    // parts[1] is the version tag; only v1 is defined today.
+    if parts[1] != PWHASH_VERSION {
         return false;
     }
 
-    let iterations: u32 = match parts[0].parse() {
+    let iterations: u32 = match parts[2].parse() {
         Ok(i) => i,
         Err(_) => return false,
     };
+    if !(PWHASH_MIN_ITERATIONS..=PWHASH_MAX_ITERATIONS).contains(&iterations) {
+        return false;
+    }
 
-    let salt: Vec<u8> = match hex_decode(parts[1]) {
+    let salt: Vec<u8> = match hex_decode(parts[3]) {
         Some(s) => s,
         None => return false,
     };
 
-    let stored_hash_bytes: Vec<u8> = match hex_decode(parts[2]) {
+    let stored_hash_bytes: Vec<u8> = match hex_decode(parts[4]) {
         Some(h) => h,
         None => return false,
     };
@@ -1021,8 +1226,20 @@ fn verify_password(password: &str, stored_hash: &str) -> bool {
     let mut computed_hash = vec![0u8; stored_hash_bytes.len()];
     pbkdf2_hmac::<Sha256>(password.as_bytes(), &salt, iterations, &mut computed_hash);
 
-    // Constant-time comparison
-    computed_hash == stored_hash_bytes
+    constant_time_eq(&computed_hash, &stored_hash_bytes)
+}
+
+/// Run a PBKDF2 derivation against a fixed dummy hash to consume time
+/// comparable to a real verification. Used to close the user-enumeration timing
+/// oracle: authenticating an unknown email must take roughly as long as
+/// authenticating a known one with a wrong password.
+fn dummy_verify(password: &str) {
+    use pbkdf2::pbkdf2_hmac;
+    use sha2::Sha256;
+    let salt = [0u8; 16];
+    let mut out = [0u8; 32];
+    pbkdf2_hmac::<Sha256>(password.as_bytes(), &salt, PWHASH_ITERATIONS, &mut out);
+    let _ = std::hint::black_box(out);
 }
 
 /// Hash API key for storage
@@ -1231,9 +1448,10 @@ mod tests {
         let password = "test_password_123";
         let hash = hash_password(password);
 
-        // Hash should contain iterations, salt, and hash
+        // Hash should be algorithm$version$iterations$salt$hash
         let parts: Vec<&str> = hash.split('$').collect();
-        assert_eq!(parts.len(), 3);
+        assert_eq!(parts.len(), 5);
+        assert_eq!(parts[0], "pbkdf2-sha256");
 
         // Verify should work
         assert!(verify_password(password, &hash));

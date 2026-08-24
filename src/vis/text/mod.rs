@@ -32,6 +32,14 @@ pub fn plot_xy<P: AsRef<Path>>(x: &[f32], y: &[f32], path: P, config: PlotConfig
     // Create points
     let points: Vec<(f32, f32)> = x.iter().zip(y.iter()).map(|(&x, &y)| (x, y)).collect();
 
+    // Domain from the actual min/max of x, not the first/last elements:
+    // callers are not required to pass x in sorted order (e.g. a scatter
+    // plot), and using x[0]/x[x.len()-1] as the axis bounds in that case
+    // silently gives a reversed or truncated domain that omits part of
+    // the data.
+    let x_min = x.iter().cloned().fold(f32::INFINITY, f32::min);
+    let x_max = x.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+
     // Create chart
     let mut chart_string = String::new();
     chart_string.push_str(&format!("=== {} ===\n", config.title));
@@ -42,39 +50,30 @@ pub fn plot_xy<P: AsRef<Path>>(x: &[f32], y: &[f32], path: P, config: PlotConfig
 
     // Draw plot
     let chart_result = match config.plot_type {
-        PlotType::Line => Chart::new(
-            config.width as u32,
-            config.height as u32,
-            x[0],
-            x[x.len() - 1],
-        )
-        .lineplot(&Shape::Lines(&points))
-        .to_string(),
-        PlotType::Scatter | PlotType::Points => Chart::new(
-            config.width as u32,
-            config.height as u32,
-            x[0],
-            x[x.len() - 1],
-        )
-        .lineplot(&Shape::Points(&points))
-        .to_string(),
+        PlotType::Line => Chart::new(config.width as u32, config.height as u32, x_min, x_max)
+            .lineplot(&Shape::Lines(&points))
+            .to_string(),
+        PlotType::Scatter | PlotType::Points => {
+            Chart::new(config.width as u32, config.height as u32, x_min, x_max)
+                .lineplot(&Shape::Points(&points))
+                .to_string()
+        }
     };
 
     chart_string.push_str(&chart_result);
 
-    // Output
-    match config.format {
-        OutputFormat::Terminal => {
-            println!("{}", chart_string);
-            Ok(())
-        }
-        OutputFormat::TextFile => {
-            let mut file = File::create(path).map_err(PandRSError::Io)?;
-            file.write_all(chart_string.as_bytes())
-                .map_err(PandRSError::Io)?;
-            Ok(())
-        }
+    // Output. `path` is honored regardless of `format`: `Terminal` is the
+    // default `OutputFormat`, and silently ignoring a caller-supplied
+    // path just because that default was in effect meant `plot_xy(x, y,
+    // "chart.txt", PlotConfig::default())` printed to stdout and never
+    // touched "chart.txt", contradicting the function's own signature.
+    let mut file = File::create(path).map_err(PandRSError::Io)?;
+    file.write_all(chart_string.as_bytes())
+        .map_err(PandRSError::Io)?;
+    if let OutputFormat::Terminal = config.format {
+        println!("{}", chart_string);
     }
+    Ok(())
 }
 
 /// Fallback implementation when visualization is not available

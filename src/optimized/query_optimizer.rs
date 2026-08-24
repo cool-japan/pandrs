@@ -7,7 +7,7 @@
 //! - Cost-based optimization: Reorder operations based on selectivity
 //! - Common subexpression elimination
 
-use crate::error::{Error, Result};
+use crate::error::Result;
 use std::collections::{HashMap, HashSet};
 
 /// Optimization level for query execution

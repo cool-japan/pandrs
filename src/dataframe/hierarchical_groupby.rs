@@ -1,11 +1,9 @@
-//! Hierarchical GroupBy functionality for DataFrames with multi-level grouping and nested operations
+//! Hierarchical GroupBy for DataFrames with multi-level grouping and nested operations.
 //!
-//! This module provides advanced hierarchical grouping capabilities, allowing for:
-//! - Multi-level group hierarchies with nested structure
-//! - Hierarchical aggregation results with multi-index columns
-//! - Group navigation and metadata management
-//! - Nested group operations across different hierarchy levels
-//! - Performance-optimized tree-based group storage
+//! Provides multi-level group hierarchies, hierarchical/multi-index aggregation,
+//! group navigation, and cross-level operations over tree-based group storage.
+//! Numeric aggregations follow pandas `skipna=True`: missing (`NaN`) cells are
+//! excluded, genuine non-numeric cells error loudly (matching the base path).
 
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::Debug;
@@ -13,8 +11,8 @@ use std::sync::Arc;
 
 use crate::core::error::{Error, Result};
 use crate::dataframe::base::DataFrame;
-use crate::dataframe::groupby::{AggFunc, CustomAggFn, NamedAgg};
-use crate::dataframe::multi_index_results::{MultiIndexColumn, MultiIndexDataFrame, ToMultiIndex};
+use crate::dataframe::groupby::{AggFunc, CustomAggFn};
+use crate::dataframe::multi_index_results::{MultiIndexDataFrame, ToMultiIndex};
 use crate::series::base::Series;
 
 /// Represents a hierarchical key structure for multi-level grouping
@@ -266,17 +264,26 @@ impl GroupHierarchy {
         let num_rows = df.row_count();
         self.max_depth = self.level_columns.len();
 
+        // Materialize each level column once instead of re-fetching (and
+        // re-downcasting) it on every row of the loop below -- the
+        // previous version called `get_column_string_values` inside the
+        // row loop, making this O(rows^2 * levels) rather than O(rows *
+        // levels).
+        let level_column_values: Vec<Vec<String>> = self
+            .level_columns
+            .iter()
+            .map(|col_name| df.get_column_string_values(col_name))
+            .collect::<Result<Vec<_>>>()?;
+
         // Collect all data first to avoid borrowing issues
-        let mut all_row_data = Vec::new();
+        let mut all_row_data = Vec::with_capacity(num_rows);
         for row_idx in 0..num_rows {
-            let mut row_path = Vec::new();
-            for col_name in &self.level_columns {
-                let col_values = df.get_column_string_values(col_name)?;
-                let value = if row_idx < col_values.len() {
-                    col_values[row_idx].clone()
-                } else {
-                    "NULL".to_string()
-                };
+            let mut row_path = Vec::with_capacity(self.level_columns.len());
+            for col_values in &level_column_values {
+                let value = col_values
+                    .get(row_idx)
+                    .cloned()
+                    .unwrap_or_else(|| "NULL".to_string());
                 row_path.push(value);
             }
             all_row_data.push((row_idx, row_path));
@@ -301,7 +308,7 @@ impl GroupHierarchy {
 
     /// Add a row to the hierarchy
     fn add_row_to_hierarchy(&mut self, row_idx: usize, row_path: &[String]) -> Result<()> {
-        for (level, value) in row_path.iter().enumerate() {
+        for (level, _value) in row_path.iter().enumerate() {
             let current_path = row_path[..=level].to_vec();
             let hierarchical_key =
                 HierarchicalKey::new(current_path.clone(), self.level_columns[..=level].to_vec());
@@ -386,6 +393,7 @@ impl GroupHierarchy {
     }
 
     /// Find a mutable node by path
+    #[allow(dead_code)] // reserved for future use: tree-node mutation by path
     fn find_node_mut(&mut self, path: &[String]) -> Option<&mut GroupNode> {
         if path.is_empty() {
             return None;
@@ -585,6 +593,47 @@ impl Default for GroupNavigationContext {
     }
 }
 
+/// Parse selected rows of a materialized string column into numeric
+/// observations, applying the SAME contract as the base
+/// `DataFrameGroupBy::calculate_aggregation`: an out-of-bounds index errors; a
+/// non-`f64` cell is genuine non-numeric data and fails LOUDLY (never silently
+/// dropped via `.parse().ok()`, which used to shrink the group unseen and skew
+/// every aggregate); a *missing* cell -- the literal "NaN" marker -- is EXCLUDED
+/// (pandas `skipna=True`, as the typed path filters `!is_nan()`), while `+-inf`
+/// is kept. Each survivor is returned as `(row_index, value)` so a transform
+/// maps back to the right row; an all-missing group yields an EMPTY vec and
+/// callers apply the per-function all-NA convention.
+fn parse_hierarchical_numeric_pairs(
+    column: &str,
+    indices: &[usize],
+    column_values: &[String],
+    context: &str,
+) -> Result<Vec<(usize, f64)>> {
+    let mut out = Vec::with_capacity(indices.len());
+    for &idx in indices {
+        let raw = column_values.get(idx).ok_or_else(|| {
+            Error::InvalidValue(format!(
+                "Row index {} out of bounds for column '{}' ({} rows) during hierarchical {}",
+                idx,
+                column,
+                column_values.len(),
+                context
+            ))
+        })?;
+        let value = raw.trim().parse::<f64>().map_err(|_| {
+            Error::InvalidValue(format!(
+                "Value '{}' in column '{}' cannot be converted to numeric for hierarchical {}",
+                raw, column, context
+            ))
+        })?;
+        if value.is_nan() {
+            continue;
+        }
+        out.push((idx, value));
+    }
+    Ok(out)
+}
+
 impl HierarchicalDataFrameGroupBy {
     /// Create a new hierarchical DataFrame GroupBy
     pub fn new(df: DataFrame, group_columns: Vec<String>) -> Result<Self> {
@@ -733,7 +782,7 @@ impl HierarchicalDataFrameGroupBy {
 
         // Apply aggregations
         for agg in &hierarchical_aggs {
-            for (level, func, alias) in &agg.level_functions {
+            for (_level, func, alias) in &agg.level_functions {
                 let mut agg_values = Vec::new();
 
                 for key in &group_keys {
@@ -777,35 +826,52 @@ impl HierarchicalDataFrameGroupBy {
             node.indices.clone()
         };
 
-        // Extract column values
-        let column_values = self.df.get_column_string_values(column)?;
-        let group_values: Vec<f64> = indices
-            .iter()
-            .filter_map(|&idx| {
-                if idx < column_values.len() {
-                    column_values[idx].parse::<f64>().ok()
-                } else {
-                    None
-                }
-            })
-            .collect();
-
-        if group_values.is_empty() {
-            return Ok(f64::NAN);
+        // `Count` = the group's ROW count, returned before any parse (base
+        // `Count` parity; works on non-numeric columns). Deliberately differs
+        // from the typed path's null-aware `count_valid`: a string-materialized
+        // column has no null mask to reproduce it here.
+        if let AggFunc::Count = func {
+            return Ok(indices.len() as f64);
         }
 
-        // Apply aggregation function (reuse logic from basic GroupBy)
+        // Numeric observations only: skips `NaN`, errors on non-numeric data.
+        let column_values = self.df.get_column_string_values(column)?;
+        let group_values: Vec<f64> =
+            parse_hierarchical_numeric_pairs(column, &indices, &column_values, "aggregation")?
+                .into_iter()
+                .map(|(_, v)| v)
+                .collect();
+
+        if group_values.is_empty() {
+            // All-missing group (nodes always have >=1 row, so empty == all
+            // `NaN`). Base convention: `Sum` -> 0.0, `Custom` runs on the empty
+            // slice, else the `NaN` marker (never a fabricated finite value).
+            return match func {
+                AggFunc::Sum => Ok(0.0),
+                AggFunc::Custom => {
+                    if let Some(custom_fn) = custom_fn {
+                        Ok(custom_fn(&group_values))
+                    } else {
+                        Err(Error::InvalidValue(
+                            "Custom function not provided".to_string(),
+                        ))
+                    }
+                }
+                _ => Ok(f64::NAN),
+            };
+        }
+
         match func {
             AggFunc::Sum => Ok(group_values.iter().sum()),
             AggFunc::Mean => Ok(group_values.iter().sum::<f64>() / group_values.len() as f64),
-            AggFunc::Count => Ok(group_values.len() as f64),
             AggFunc::Min => Ok(group_values.iter().fold(f64::INFINITY, |a, &b| a.min(b))),
             AggFunc::Max => Ok(group_values
                 .iter()
                 .fold(f64::NEG_INFINITY, |a, &b| a.max(b))),
             AggFunc::Std => {
                 if group_values.len() <= 1 {
-                    Ok(0.0)
+                    // ddof=1 std is undefined for one observation (pandas: NaN).
+                    Ok(f64::NAN)
                 } else {
                     let mean = group_values.iter().sum::<f64>() / group_values.len() as f64;
                     let variance = group_values
@@ -943,6 +1009,10 @@ impl HierarchicalDataFrameGroupBy {
             result.add_column(level_name, level_series)?;
         }
 
+        // Materialize the aggregated column once (hoisted out of the per-node
+        // loop); a bogus column now errors here rather than being skipped.
+        let column_values = self.df.get_column_string_values(column)?;
+
         // Calculate cross-level aggregations
         let mut agg_values = Vec::new();
         for target_node in &target_groups {
@@ -961,41 +1031,53 @@ impl HierarchicalDataFrameGroupBy {
                 }
             };
 
-            // Collect all values from source nodes
-            let mut all_values = Vec::new();
-            for source_node in &source_nodes {
-                let column_values = self.df.get_column_string_values(column)?;
-                for &idx in &source_node.indices {
-                    if idx < column_values.len() {
-                        if let Ok(val) = column_values[idx].parse::<f64>() {
-                            all_values.push(val);
-                        }
-                    }
-                }
-            }
-
-            // Apply aggregation
-            let agg_result = if all_values.is_empty() {
+            // `Count` totals source groups' ROW counts before any parse (base
+            // `Count` parity; no source group => 0 rows).
+            let agg_result = if let AggFunc::Count = func {
+                source_nodes.iter().map(|n| n.indices.len() as f64).sum()
+            } else if source_nodes.is_empty() {
+                // No source group under this target: structurally absent, NOT an
+                // all-missing group -- keep `NaN`, do not assert a `Sum` of 0.0.
                 f64::NAN
             } else {
-                match func {
-                    AggFunc::Sum => all_values.iter().sum(),
-                    AggFunc::Mean => all_values.iter().sum::<f64>() / all_values.len() as f64,
-                    AggFunc::Count => all_values.len() as f64,
-                    AggFunc::Min => all_values.iter().fold(f64::INFINITY, |a, &b| a.min(b)),
-                    AggFunc::Max => all_values.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b)),
-                    AggFunc::Std => {
-                        if all_values.len() <= 1 {
-                            0.0
-                        } else {
-                            let mean = all_values.iter().sum::<f64>() / all_values.len() as f64;
-                            let variance =
-                                all_values.iter().map(|&x| (x - mean).powi(2)).sum::<f64>()
-                                    / (all_values.len() - 1) as f64;
-                            variance.sqrt()
-                        }
+                // Numeric observations across source groups (skipna, loud on non-numeric).
+                let mut all_values = Vec::new();
+                for source_node in &source_nodes {
+                    let pairs = parse_hierarchical_numeric_pairs(
+                        column,
+                        &source_node.indices,
+                        &column_values,
+                        "cross-level aggregation",
+                    )?;
+                    all_values.extend(pairs.into_iter().map(|(_, v)| v));
+                }
+
+                if all_values.is_empty() {
+                    // Source groups exist but all-missing: `Sum` -> 0.0, else `NaN`.
+                    match func {
+                        AggFunc::Sum => 0.0,
+                        _ => f64::NAN,
                     }
-                    _ => f64::NAN,
+                } else {
+                    match func {
+                        AggFunc::Sum => all_values.iter().sum(),
+                        AggFunc::Mean => all_values.iter().sum::<f64>() / all_values.len() as f64,
+                        AggFunc::Min => all_values.iter().fold(f64::INFINITY, |a, &b| a.min(b)),
+                        AggFunc::Max => all_values.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b)),
+                        AggFunc::Std => {
+                            if all_values.len() <= 1 {
+                                // ddof=1 std is undefined for one observation.
+                                f64::NAN
+                            } else {
+                                let mean = all_values.iter().sum::<f64>() / all_values.len() as f64;
+                                let variance =
+                                    all_values.iter().map(|&x| (x - mean).powi(2)).sum::<f64>()
+                                        / (all_values.len() - 1) as f64;
+                                variance.sqrt()
+                            }
+                        }
+                        _ => f64::NAN, // Var/Median/First/Last/Custom: NaN (as before)
+                    }
                 }
             };
 
@@ -1038,24 +1120,24 @@ impl HierarchicalDataFrameGroupBy {
                 self.collect_all_indices(node)
             };
 
-            // Extract values for this group
-            let group_values: Vec<f64> = group_indices
-                .iter()
-                .filter_map(|&idx| {
-                    if idx < column_values.len() {
-                        column_values[idx].parse::<f64>().ok()
-                    } else {
-                        None
-                    }
-                })
-                .collect();
+            // Non-missing observations with their row indices: `NaN` cells are
+            // excluded from `transform_fn` (skipna; output rows stay `NaN`),
+            // non-numeric data errors. Tracking valid indices also fixes a
+            // latent off-by-position bug in the old `group_indices[i]` mapping.
+            let (valid_indices, group_values): (Vec<usize>, Vec<f64>) =
+                parse_hierarchical_numeric_pairs(
+                    column,
+                    &group_indices,
+                    &column_values,
+                    "transform",
+                )?
+                .into_iter()
+                .unzip();
 
             if !group_values.is_empty() {
-                // Apply transformation
+                // Transform the non-missing values, map each result back.
                 let transformed = transform_fn(&group_values);
-
-                // Map back to original indices
-                for (i, &original_idx) in group_indices.iter().enumerate() {
+                for (i, &original_idx) in valid_indices.iter().enumerate() {
                     if i < transformed.len() && original_idx < result_values.len() {
                         result_values[original_idx] = transformed[i];
                     }
@@ -1188,7 +1270,7 @@ impl HierarchicalDataFrameGroupBy {
         let mut filtered_data = std::collections::HashMap::new();
         let column_names = self.df.column_names();
 
-        for col_name in &column_names {
+        for col_name in column_names {
             let column_values = self.df.get_column_string_values(col_name)?;
             let filtered_values: Vec<String> = selected_indices
                 .iter()
@@ -1200,7 +1282,7 @@ impl HierarchicalDataFrameGroupBy {
                     }
                 })
                 .collect();
-            filtered_data.insert(col_name.clone(), filtered_values);
+            filtered_data.insert(col_name.to_string(), filtered_values);
         }
 
         let filtered_df = DataFrame::from_map(filtered_data, None)?;
@@ -1260,9 +1342,14 @@ impl HierarchicalDataFrameGroupBy {
 
             for base_node in &base_nodes {
                 let compare_value = if compare_level > base_level {
-                    // Comparing to child level - aggregate children
+                    // Comparing to child level - aggregate children. If any
+                    // child's own aggregation fails, report the whole
+                    // comparison as NaN rather than silently treating the
+                    // failed child as if it contributed zero (which would
+                    // understate the sum without any indication that a
+                    // child was actually missing/unaggregatable).
                     let child_nodes = base_node.get_nodes_at_level(compare_level);
-                    let child_sum: f64 = child_nodes
+                    let child_results: Result<Vec<f64>> = child_nodes
                         .iter()
                         .map(|child| {
                             self.calculate_hierarchical_aggregation(
@@ -1272,10 +1359,12 @@ impl HierarchicalDataFrameGroupBy {
                                 &None,
                                 false,
                             )
-                            .unwrap_or(0.0)
                         })
-                        .sum();
-                    child_sum
+                        .collect();
+                    match child_results {
+                        Ok(values) => values.iter().sum(),
+                        Err(_) => f64::NAN,
+                    }
                 } else if compare_level < base_level {
                     // Comparing to parent level
                     let parent_key = base_node.full_key.partial_key(compare_level);

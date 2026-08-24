@@ -92,21 +92,33 @@ fn test_value_counts() {
 
     df.add_column("region".to_string(), series).unwrap();
 
-    // Count values
+    // Count values.
+    //
+    // `value_counts` returns a labeled, deterministically-ordered
+    // DataFrame (`"value"`, `"count"` columns; sorted by count descending
+    // then value ascending), not an unlabeled `Series<usize>` whose row
+    // order used to depend on HashMap iteration -- previously this test
+    // only checked `is_empty()`/`name()`, which couldn't tell whether the
+    // counts were even attached to the right value.
     let counts = df.value_counts("region").unwrap();
-
-    // Check results
-    assert!(!counts.is_empty()); // Should have some values
-    assert!(counts.name().is_some());
+    assert_eq!(counts.row_count(), 3);
+    assert_eq!(
+        counts.get_column_string_values("value").unwrap(),
+        vec!["Osaka", "Tokyo", "Nagoya"]
+    );
+    assert_eq!(
+        counts.get_column_string_values("count").unwrap(),
+        vec!["2", "2", "1"]
+    );
 
     // For categorical conversion
     let df_cat = df.astype_categorical("region", None, None).unwrap();
     let cat_counts = df_cat.value_counts("region").unwrap();
 
-    // Check results (counting works with categorical too)
-    assert!(!cat_counts.is_empty());
-    // Name might be different in different implementations
-    assert!(cat_counts.name().is_some());
+    // Check results (counting works with categorical too, same labeled shape).
+    assert_eq!(cat_counts.row_count(), 3);
+    assert!(cat_counts.contains_column("value"));
+    assert!(cat_counts.contains_column("count"));
 
     // Try to count values in a non-existent column
     let result = df.value_counts("invalid");

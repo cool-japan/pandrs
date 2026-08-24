@@ -42,22 +42,47 @@ impl<'a> DataFrameGroupBy<'a> {
 
         let row_count = df.row_count();
 
+        // Materialize each group-by column once up front instead of
+        // re-fetching (and re-downcasting) it inside the row loop below --
+        // the previous version called `get_column_string_values`/
+        // `get_column_numeric_values` for every (row, group column) pair,
+        // making `GroupBy::new` (the entry point of every pandas_compat
+        // groupby operation) O(rows^2 * group_columns) instead of
+        // O(rows * group_columns).
+        enum KeyColumn {
+            Str(Vec<String>),
+            Num(Vec<f64>),
+            Missing,
+        }
+        let key_columns: Vec<KeyColumn> = group_columns
+            .iter()
+            .map(|col| {
+                if let Ok(values) = df.get_column_string_values(col) {
+                    KeyColumn::Str(values)
+                } else if let Ok(values) = df.get_column_numeric_values(col) {
+                    KeyColumn::Num(values)
+                } else {
+                    KeyColumn::Missing
+                }
+            })
+            .collect();
+
         // Build group indices
         for row_idx in 0..row_count {
-            let mut key_parts: Vec<String> = Vec::new();
+            let mut key_parts: Vec<String> = Vec::with_capacity(key_columns.len());
 
-            for col in &group_columns {
-                let value = if let Ok(values) = df.get_column_string_values(col) {
-                    values.get(row_idx).cloned().unwrap_or_default()
-                } else if let Ok(values) = df.get_column_numeric_values(col) {
-                    let v = values.get(row_idx).copied().unwrap_or(f64::NAN);
-                    if v.is_nan() {
-                        "NaN".to_string()
-                    } else {
-                        v.to_string()
+            for col in &key_columns {
+                let value = match col {
+                    KeyColumn::Str(values) => values.get(row_idx).cloned().unwrap_or_default(),
+                    KeyColumn::Num(values) => {
+                        let v = values.get(row_idx).copied().unwrap_or(f64::NAN);
+                        if v.is_nan() {
+                            "NaN".to_string()
+                        } else {
+                            v.to_string()
+                        }
                     }
-                } else {
-                    "".to_string()
+                    KeyColumn::Missing => "".to_string(),
                 };
                 key_parts.push(value);
             }
@@ -83,6 +108,18 @@ impl<'a> DataFrameGroupBy<'a> {
         self.groups.len()
     }
 
+    /// Return this GroupBy's group keys in a stable, deterministic order.
+    ///
+    /// `self.groups`/`self.group_keys` are `HashMap`s, whose iteration
+    /// order is not guaranteed to be the same from one run to the next;
+    /// every method that walks all groups sorts through this helper first
+    /// so the resulting DataFrame's row order is reproducible.
+    fn sorted_group_keys(&self) -> Vec<&String> {
+        let mut keys: Vec<&String> = self.groups.keys().collect();
+        keys.sort();
+        keys
+    }
+
     /// Get group sizes
     pub fn size(&self) -> Result<DataFrame> {
         let mut result = DataFrame::new();
@@ -90,11 +127,15 @@ impl<'a> DataFrameGroupBy<'a> {
         let mut group_col_values: Vec<Vec<String>> = vec![Vec::new(); self.group_columns.len()];
         let mut sizes: Vec<f64> = Vec::new();
 
-        for (key, indices) in &self.groups {
-            if let Some(key_values) = self.group_keys.get(key) {
-                for (i, val) in key_values.iter().enumerate() {
-                    group_col_values[i].push(val.clone());
-                }
+        for key in self.sorted_group_keys() {
+            let indices = self.groups.get(key).ok_or_else(|| {
+                Error::InvalidValue(format!("group '{}' missing its row indices", key))
+            })?;
+            let key_values = self.group_keys.get(key).ok_or_else(|| {
+                Error::InvalidValue(format!("group '{}' missing its key values", key))
+            })?;
+            for (i, val) in key_values.iter().enumerate() {
+                group_col_values[i].push(val.clone());
             }
             sizes.push(indices.len() as f64);
         }
@@ -116,9 +157,94 @@ impl<'a> DataFrameGroupBy<'a> {
         Ok(result)
     }
 
-    /// Count rows per group
+    /// Count non-null values per group, for every non-group column.
+    ///
+    /// Unlike [`size`](Self::size) (which just counts *rows*), pandas'
+    /// `GroupBy.count()` reports, per group and per column, how many of
+    /// that group's values in that column are non-null -- a group with a
+    /// missing value in one column but not another gets different counts
+    /// for the two. Object (string) columns follow this crate's existing
+    /// convention (see `count_valid` / `PandasCompatExt`) of treating an
+    /// empty string as the missing marker.
     pub fn count(&self) -> Result<DataFrame> {
-        self.size()
+        let mut result = DataFrame::new();
+
+        let other_cols: Vec<String> = self
+            .df
+            .column_names()
+            .iter()
+            .filter(|col| !self.group_columns.contains(*col))
+            .cloned()
+            .collect();
+
+        // Materialize each non-group column once (dispatched by concrete
+        // dtype) instead of re-fetching it once per group.
+        enum ColData {
+            Num(Vec<f64>),
+            Str(Vec<String>),
+        }
+        let mut col_data: HashMap<String, ColData> = HashMap::new();
+        for col in &other_cols {
+            if self.df.is_numeric_column(col) {
+                if let Ok(v) = self.df.get_column_numeric_values(col) {
+                    col_data.insert(col.clone(), ColData::Num(v));
+                }
+            } else if let Ok(v) = self.df.get_column_string_values(col) {
+                col_data.insert(col.clone(), ColData::Str(v));
+            }
+        }
+
+        let mut group_col_values: Vec<Vec<String>> = vec![Vec::new(); self.group_columns.len()];
+        let mut counts: HashMap<String, Vec<f64>> = other_cols
+            .iter()
+            .filter(|c| col_data.contains_key(c.as_str()))
+            .map(|c| (c.clone(), Vec::new()))
+            .collect();
+
+        for key in self.sorted_group_keys() {
+            let indices = self.groups.get(key).ok_or_else(|| {
+                Error::InvalidValue(format!("group '{}' missing its row indices", key))
+            })?;
+            let key_values = self.group_keys.get(key).ok_or_else(|| {
+                Error::InvalidValue(format!("group '{}' missing its key values", key))
+            })?;
+            for (i, val) in key_values.iter().enumerate() {
+                group_col_values[i].push(val.clone());
+            }
+
+            for col in &other_cols {
+                let Some(data) = col_data.get(col) else {
+                    continue;
+                };
+                let non_null = match data {
+                    ColData::Num(vals) => indices
+                        .iter()
+                        .filter(|&&i| vals.get(i).map(|v| !v.is_nan()).unwrap_or(false))
+                        .count(),
+                    ColData::Str(vals) => indices
+                        .iter()
+                        .filter(|&&i| vals.get(i).map(|v| !v.is_empty()).unwrap_or(false))
+                        .count(),
+                };
+                if let Some(bucket) = counts.get_mut(col) {
+                    bucket.push(non_null as f64);
+                }
+            }
+        }
+
+        for (i, col_name) in self.group_columns.iter().enumerate() {
+            result.add_column(
+                col_name.clone(),
+                Series::new(group_col_values[i].clone(), Some(col_name.clone()))?,
+            )?;
+        }
+        for col in &other_cols {
+            if let Some(values) = counts.get(col) {
+                result.add_column(col.clone(), Series::new(values.clone(), Some(col.clone()))?)?;
+            }
+        }
+
+        Ok(result)
     }
 
     /// Sum numeric columns per group
@@ -209,11 +335,18 @@ impl<'a> DataFrameGroupBy<'a> {
         let numeric_cols: Vec<String> = self
             .df
             .column_names()
-            .into_iter()
-            .filter(|col| {
-                !self.group_columns.contains(col) && self.df.get_column_numeric_values(col).is_ok()
-            })
+            .iter()
+            .filter(|col| !self.group_columns.contains(*col) && self.df.is_numeric_column(col))
+            .cloned()
             .collect();
+
+        // Materialize each numeric column once instead of re-fetching (and
+        // re-downcasting) it once per group -- O(groups * cols) column
+        // materializations instead of O(cols).
+        let mut col_values: HashMap<&str, Vec<f64>> = HashMap::with_capacity(numeric_cols.len());
+        for col in &numeric_cols {
+            col_values.insert(col.as_str(), self.df.get_column_numeric_values(col)?);
+        }
 
         // Prepare group column values
         let mut group_col_values: Vec<Vec<String>> = vec![Vec::new(); self.group_columns.len()];
@@ -224,28 +357,47 @@ impl<'a> DataFrameGroupBy<'a> {
             agg_values.insert(col.clone(), Vec::new());
         }
 
-        // Process each group
-        for (key, indices) in &self.groups {
-            // Add group key values
-            if let Some(key_values) = self.group_keys.get(key) {
-                for (i, val) in key_values.iter().enumerate() {
-                    group_col_values[i].push(val.clone());
-                }
+        // Process each group, in a deterministic (sorted-key) order rather
+        // than raw `HashMap` iteration order.
+        for key in self.sorted_group_keys() {
+            let indices = self.groups.get(key).ok_or_else(|| {
+                Error::InvalidValue(format!("group '{}' missing its row indices", key))
+            })?;
+            let key_values = self.group_keys.get(key).ok_or_else(|| {
+                Error::InvalidValue(format!("group '{}' missing its key values", key))
+            })?;
+            for (i, val) in key_values.iter().enumerate() {
+                group_col_values[i].push(val.clone());
             }
 
-            // Aggregate each numeric column
+            // Aggregate each numeric column. Always push exactly one value
+            // per group per column (NaN if the column's data were somehow
+            // unavailable) so the group-key columns and every aggregated
+            // column stay row-aligned; the previous version pushed a group
+            // key unconditionally but the aggregated value only inside an
+            // `if let Ok(..)`, which -- on any future divergence between
+            // that check and `numeric_cols`'s upfront filter -- would shift
+            // every later group's value into the wrong row.
             for col in &numeric_cols {
-                if let Ok(all_values) = self.df.get_column_numeric_values(col) {
-                    let group_values: Vec<f64> = indices
-                        .iter()
-                        .filter_map(|&i| all_values.get(i).copied())
-                        .collect();
-                    let aggregated = agg_fn(&group_values);
-                    agg_values
-                        .get_mut(col)
-                        .expect("test should succeed")
-                        .push(aggregated);
-                }
+                let aggregated = match col_values.get(col.as_str()) {
+                    Some(all_values) => {
+                        let group_values: Vec<f64> = indices
+                            .iter()
+                            .filter_map(|&i| all_values.get(i).copied())
+                            .collect();
+                        agg_fn(&group_values)
+                    }
+                    None => f64::NAN,
+                };
+                agg_values
+                    .get_mut(col)
+                    .ok_or_else(|| {
+                        Error::InvalidValue(format!(
+                            "column '{}' missing from aggregation buffer",
+                            col
+                        ))
+                    })?
+                    .push(aggregated);
             }
         }
 
@@ -276,9 +428,30 @@ impl<'a> DataFrameGroupBy<'a> {
         let other_cols: Vec<String> = self
             .df
             .column_names()
-            .into_iter()
-            .filter(|col| !self.group_columns.contains(col))
+            .iter()
+            .filter(|col| !self.group_columns.contains(*col))
+            .cloned()
             .collect();
+
+        // Materialize each column once (dispatched by concrete dtype, not
+        // by whether numeric *or* string conversion happens to succeed --
+        // every numeric column also renders through
+        // `get_column_string_values`) instead of re-fetching it once per
+        // group.
+        enum ColData {
+            Num(Vec<f64>),
+            Str(Vec<String>),
+        }
+        let mut col_data: HashMap<String, ColData> = HashMap::new();
+        for col in &other_cols {
+            if self.df.is_numeric_column(col) {
+                if let Ok(v) = self.df.get_column_numeric_values(col) {
+                    col_data.insert(col.clone(), ColData::Num(v));
+                }
+            } else if let Ok(v) = self.df.get_column_string_values(col) {
+                col_data.insert(col.clone(), ColData::Str(v));
+            }
+        }
 
         // Prepare group column values
         let mut group_col_values: Vec<Vec<String>> = vec![Vec::new(); self.group_columns.len()];
@@ -286,44 +459,67 @@ impl<'a> DataFrameGroupBy<'a> {
         // Prepare values for each column
         let mut numeric_values: HashMap<String, Vec<f64>> = HashMap::new();
         let mut string_values: HashMap<String, Vec<String>> = HashMap::new();
-
-        for col in &other_cols {
-            if self.df.get_column_numeric_values(col).is_ok() {
-                numeric_values.insert(col.clone(), Vec::new());
-            } else if self.df.get_column_string_values(col).is_ok() {
-                string_values.insert(col.clone(), Vec::new());
+        for (col, data) in &col_data {
+            match data {
+                ColData::Num(_) => {
+                    numeric_values.insert(col.clone(), Vec::new());
+                }
+                ColData::Str(_) => {
+                    string_values.insert(col.clone(), Vec::new());
+                }
             }
         }
 
-        // Process each group
-        for (key, indices) in &self.groups {
-            // Add group key values
-            if let Some(key_values) = self.group_keys.get(key) {
-                for (i, val) in key_values.iter().enumerate() {
-                    group_col_values[i].push(val.clone());
-                }
+        // Process each group, in a deterministic (sorted-key) order.
+        for key in self.sorted_group_keys() {
+            let indices = self.groups.get(key).ok_or_else(|| {
+                Error::InvalidValue(format!("group '{}' missing its row indices", key))
+            })?;
+            let key_values = self.group_keys.get(key).ok_or_else(|| {
+                Error::InvalidValue(format!("group '{}' missing its key values", key))
+            })?;
+            for (i, val) in key_values.iter().enumerate() {
+                group_col_values[i].push(val.clone());
             }
 
             let target_idx = if first {
-                *indices.first().expect("test should succeed")
+                *indices
+                    .first()
+                    .ok_or_else(|| Error::InvalidValue(format!("group '{}' has no rows", key)))?
             } else {
-                *indices.last().expect("test should succeed")
+                *indices
+                    .last()
+                    .ok_or_else(|| Error::InvalidValue(format!("group '{}' has no rows", key)))?
             };
 
             // Get first/last value for each column
             for col in &other_cols {
-                if let Ok(all_values) = self.df.get_column_numeric_values(col) {
-                    let value = all_values.get(target_idx).copied().unwrap_or(f64::NAN);
-                    numeric_values
-                        .get_mut(col)
-                        .expect("test should succeed")
-                        .push(value);
-                } else if let Ok(all_values) = self.df.get_column_string_values(col) {
-                    let value = all_values.get(target_idx).cloned().unwrap_or_default();
-                    string_values
-                        .get_mut(col)
-                        .expect("test should succeed")
-                        .push(value);
+                match col_data.get(col) {
+                    Some(ColData::Num(all_values)) => {
+                        let value = all_values.get(target_idx).copied().unwrap_or(f64::NAN);
+                        numeric_values
+                            .get_mut(col)
+                            .ok_or_else(|| {
+                                Error::InvalidValue(format!(
+                                    "column '{}' missing from first/last buffer",
+                                    col
+                                ))
+                            })?
+                            .push(value);
+                    }
+                    Some(ColData::Str(all_values)) => {
+                        let value = all_values.get(target_idx).cloned().unwrap_or_default();
+                        string_values
+                            .get_mut(col)
+                            .ok_or_else(|| {
+                                Error::InvalidValue(format!(
+                                    "column '{}' missing from first/last buffer",
+                                    col
+                                ))
+                            })?
+                            .push(value);
+                    }
+                    None => {}
                 }
             }
         }
@@ -353,15 +549,23 @@ impl<'a> DataFrameGroupBy<'a> {
     pub fn agg(&self, aggs: &[(&str, &str)]) -> Result<DataFrame> {
         let mut result = DataFrame::new();
 
+        // Process every group in the same deterministic order for both the
+        // group-key columns and every aggregated column below. The
+        // previous version built `group_col_values` from one
+        // `self.groups.iter()` pass and each aggregated column from
+        // *another* -- internally consistent within a single run (nothing
+        // mutates `self.groups` in between), but the row order itself
+        // still varied from run to run with `HashMap`'s iteration order.
+        let keys = self.sorted_group_keys();
+
         // Prepare group column values
         let mut group_col_values: Vec<Vec<String>> = vec![Vec::new(); self.group_columns.len()];
-
-        // First pass: collect group keys
-        for (key, _) in &self.groups {
-            if let Some(key_values) = self.group_keys.get(key) {
-                for (i, val) in key_values.iter().enumerate() {
-                    group_col_values[i].push(val.clone());
-                }
+        for key in &keys {
+            let key_values = self.group_keys.get(*key).ok_or_else(|| {
+                Error::InvalidValue(format!("group '{}' missing its key values", key))
+            })?;
+            for (i, val) in key_values.iter().enumerate() {
+                group_col_values[i].push(val.clone());
             }
         }
 
@@ -380,9 +584,12 @@ impl<'a> DataFrameGroupBy<'a> {
             }
 
             if let Ok(all_values) = self.df.get_column_numeric_values(col) {
-                let mut agg_values: Vec<f64> = Vec::new();
+                let mut agg_values: Vec<f64> = Vec::with_capacity(keys.len());
 
-                for (_, indices) in &self.groups {
+                for key in &keys {
+                    let indices = self.groups.get(*key).ok_or_else(|| {
+                        Error::InvalidValue(format!("group '{}' missing its row indices", key))
+                    })?;
                     let group_values: Vec<f64> = indices
                         .iter()
                         .filter_map(|&i| all_values.get(i).copied())
@@ -650,6 +857,15 @@ mod tests {
 
     #[test]
     fn test_groupby_count() {
+        // `count()` reports non-null counts *per column*, not row counts
+        // (that's `size()`) -- previously `count()` literally called
+        // `size()`, so it returned one "size" column instead of a
+        // per-column non-null tally. With no actual nulls in this fixture
+        // the numbers happen to match `size()`'s, but the *shape* of the
+        // result (one count column per original non-group column, not a
+        // single "size" column) is what this test now asserts; see
+        // `test_groupby_count_skips_nulls` for the behavior that actually
+        // distinguishes `count()` from `size()`.
         let df = create_test_df();
         let result = df
             .groupby_multi(&["category"])
@@ -657,11 +873,15 @@ mod tests {
             .count()
             .expect("test should succeed");
 
+        assert!(!result.contains_column("size"));
+        assert!(result.contains_column("value"));
+        assert!(result.contains_column("score"));
+
         let cats = result
             .get_column_string_values("category")
             .expect("test should succeed");
         let sizes = result
-            .get_column_numeric_values("size")
+            .get_column_numeric_values("value")
             .expect("test should succeed");
 
         let a_idx = cats
@@ -673,9 +893,9 @@ mod tests {
             .position(|c| c == "B")
             .expect("test should succeed");
 
-        // A: 3 rows
+        // A: 3 rows, all non-null
         assert_eq!(sizes[a_idx], 3.0);
-        // B: 2 rows
+        // B: 2 rows, all non-null
         assert_eq!(sizes[b_idx], 2.0);
     }
 

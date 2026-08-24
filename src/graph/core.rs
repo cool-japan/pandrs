@@ -17,7 +17,7 @@
 //! graph.add_edge(a, b, Some(1.0));
 //! ```
 
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, HashSet};
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
 

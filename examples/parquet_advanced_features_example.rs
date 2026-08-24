@@ -98,7 +98,7 @@ fn schema_evolution_example(original_data: &DataFrame, evolved_data: &DataFrame)
             _ => "string",
         };
 
-        let is_new = !original_data.column_names().contains(&col_name);
+        let is_new = !original_data.column_names().contains(col_name);
         let status = if is_new { " (NEW)" } else { "" };
         println!("    • {col_name}: {col_type}{status}");
     }
@@ -305,12 +305,12 @@ fn streaming_operations_example(large_df: &DataFrame) -> Result<()> {
     println!("    • Chunk size: {} rows", chunk_size);
     println!(
         "    • Estimated chunks: {}",
-        (large_df.row_count() + chunk_size - 1) / chunk_size
+        large_df.row_count().div_ceil(chunk_size)
     );
 
     // Streaming write simulation
     println!("  Streaming write process:");
-    let num_chunks = (large_df.row_count() + chunk_size - 1) / chunk_size;
+    let num_chunks = large_df.row_count().div_ceil(chunk_size);
 
     for i in 0..num_chunks.min(5) {
         let start_row = i * chunk_size;
@@ -386,7 +386,7 @@ fn chunked_processing_example(large_df: &DataFrame) -> Result<()> {
 
     println!("  Chunking strategies:");
     for (strategy, chunk_size, description) in chunking_strategies {
-        let num_chunks = (large_df.row_count() + chunk_size - 1) / chunk_size;
+        let num_chunks = large_df.row_count().div_ceil(chunk_size);
         let memory_per_chunk = (chunk_size * 8) / 1024 / 1024; // MB estimate
 
         println!("    • {strategy}: {chunk_size} rows/chunk");
@@ -413,7 +413,7 @@ fn chunked_processing_example(large_df: &DataFrame) -> Result<()> {
 
     // Chunked processing simulation
     let recommended_chunk_size = (optimal_chunk_size as f64 * 0.8) as usize;
-    let num_chunks = (large_df.row_count() + recommended_chunk_size - 1) / recommended_chunk_size;
+    let num_chunks = large_df.row_count().div_ceil(recommended_chunk_size);
 
     println!(
         "  Processing {} rows in {} chunks:",

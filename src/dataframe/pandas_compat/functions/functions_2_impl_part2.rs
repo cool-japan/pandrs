@@ -1,19 +1,17 @@
 //! Implementation functions for PandasCompatExt - reshape and analysis (melt, rolling, expanding, pivot, astype)
 
-use super::super::helpers::{aggregations, comparison_ops, math_ops, string_ops, window_ops};
+use super::super::helpers::window_ops;
 use super::super::trait_def::PandasCompatExt;
-use super::super::types::{Axis, CorrelationMatrix, DescribeStats, RankMethod, SeriesValue};
 use super::functions::select_rows_by_indices;
-use super::functions_3::{covariance, pearson_correlation};
 use crate::core::error::{Error, Result};
 use crate::dataframe::base::DataFrame;
 use crate::series::Series;
 use std::cmp::Ordering;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 pub(super) fn explode(df: &DataFrame, column: &str, separator: &str) -> Result<DataFrame> {
     let string_values = df.get_column_string_values(column)?;
-    let n_rows = df.row_count();
+    let _n_rows = df.row_count();
     let split_values: Vec<Vec<&str>> = string_values
         .iter()
         .map(|v| v.split(separator).map(|s| s.trim()).collect())
@@ -31,7 +29,7 @@ pub(super) fn explode(df: &DataFrame, column: &str, separator: &str) -> Result<D
     }
     let mut result = DataFrame::new();
     for col_name in df.column_names() {
-        if &col_name == column {
+        if col_name == column {
             let new_values: Vec<String> =
                 row_mapping.iter().map(|(_, val)| val.to_string()).collect();
             result.add_column(
@@ -58,10 +56,17 @@ pub(super) fn explode(df: &DataFrame, column: &str, separator: &str) -> Result<D
     Ok(result)
 }
 
+/// One `duplicated`/`duplicated_rows` key column, hoisted out of the
+/// DataFrame once instead of re-fetched on every row.
+enum DupColumn {
+    Numeric(Vec<f64>),
+    Text(Vec<String>),
+}
+
 pub(super) fn duplicated(df: &DataFrame, subset: Option<&[&str]>, keep: &str) -> Result<Vec<bool>> {
     let columns_to_check: Vec<String> = match subset {
         Some(cols) => cols.iter().map(|s| s.to_string()).collect(),
-        None => df.column_names(),
+        None => df.column_names().to_vec(),
     };
     for col in &columns_to_check {
         if !df.contains_column(col) {
@@ -72,15 +77,36 @@ pub(super) fn duplicated(df: &DataFrame, subset: Option<&[&str]>, keep: &str) ->
         }
     }
     let n_rows = df.row_count();
+    // Materialize each key column once (dispatching by the column's actual
+    // stored dtype via `is_numeric_column`, not "does string conversion
+    // succeed" -- every numeric column also renders through
+    // `get_column_string_values`, so checking that first, as the previous
+    // version did, made the numeric branch below unreachable and compared
+    // e.g. `1_i64` and `1.0_f64` by their *formatted text* instead of value)
+    // rather than re-fetching (and re-downcasting) it once per row per
+    // column, which was O(rows^2 * cols).
+    let columns: Vec<DupColumn> = columns_to_check
+        .iter()
+        .map(|col| {
+            if df.is_numeric_column(col) {
+                DupColumn::Numeric(df.get_column_numeric_values(col).unwrap_or_default())
+            } else {
+                DupColumn::Text(df.get_column_string_values(col).unwrap_or_default())
+            }
+        })
+        .collect();
     let mut row_keys: Vec<String> = Vec::with_capacity(n_rows);
     for row_idx in 0..n_rows {
-        let mut key_parts: Vec<String> = Vec::new();
-        for col in &columns_to_check {
-            if let Ok(values) = df.get_column_string_values(col) {
-                key_parts.push(values.get(row_idx).cloned().unwrap_or_default());
-            } else if let Ok(values) = df.get_column_numeric_values(col) {
-                let v = values.get(row_idx).copied().unwrap_or(f64::NAN);
-                key_parts.push(v.to_bits().to_string());
+        let mut key_parts: Vec<String> = Vec::with_capacity(columns.len());
+        for col in &columns {
+            match col {
+                DupColumn::Text(values) => {
+                    key_parts.push(values.get(row_idx).cloned().unwrap_or_default());
+                }
+                DupColumn::Numeric(values) => {
+                    let v = values.get(row_idx).copied().unwrap_or(f64::NAN);
+                    key_parts.push(v.to_bits().to_string());
+                }
             }
         }
         row_keys.push(key_parts.join("|||"));
@@ -134,9 +160,12 @@ pub(super) fn to_dict(df: &DataFrame) -> Result<HashMap<String, Vec<String>>> {
     let mut result = HashMap::new();
     for col_name in df.column_names() {
         if let Ok(values) = df.get_column_string_values(&col_name) {
-            result.insert(col_name, values);
+            result.insert(col_name.clone(), values);
         } else if let Ok(values) = df.get_column_numeric_values(&col_name) {
-            result.insert(col_name, values.iter().map(|v| v.to_string()).collect());
+            result.insert(
+                col_name.clone(),
+                values.iter().map(|v| v.to_string()).collect(),
+            );
         }
     }
     Ok(result)
@@ -169,7 +198,7 @@ pub(super) fn product_all(df: &DataFrame) -> Result<Vec<(String, f64)>> {
             let valid: Vec<f64> = values.iter().filter(|v| !v.is_nan()).copied().collect();
             if !valid.is_empty() {
                 let product = valid.iter().fold(1.0, |acc, &x| acc * x);
-                results.push((col_name, product));
+                results.push((col_name.clone(), product));
             }
         }
     }
@@ -189,7 +218,7 @@ pub(super) fn median_all(df: &DataFrame) -> Result<Vec<(String, f64)>> {
                 } else {
                     valid[mid]
                 };
-                results.push((col_name, median));
+                results.push((col_name.clone(), median));
             }
         }
     }
@@ -332,11 +361,12 @@ pub(super) fn ewma(df: &DataFrame, column: &str, span: usize) -> Result<Vec<f64>
         if v.is_nan() {
             result.push(f64::NAN);
         } else {
-            ewma_value = Some(match ewma_value {
+            let new_value = match ewma_value {
                 Some(prev) => alpha * v + (1.0 - alpha) * prev,
                 None => v,
-            });
-            result.push(ewma_value.expect("EWMA value just set"));
+            };
+            ewma_value = Some(new_value);
+            result.push(new_value);
         }
     }
     Ok(result)
@@ -353,9 +383,9 @@ pub(super) fn iloc(df: &DataFrame, index: usize) -> Result<HashMap<String, Strin
     let mut result = HashMap::new();
     for col_name in df.column_names() {
         if let Ok(values) = df.get_column_string_values(&col_name) {
-            result.insert(col_name, values[index].clone());
+            result.insert(col_name.clone(), values[index].clone());
         } else if let Ok(values) = df.get_column_numeric_values(&col_name) {
-            result.insert(col_name, values[index].to_string());
+            result.insert(col_name.clone(), values[index].to_string());
         }
     }
     Ok(result)
@@ -428,7 +458,7 @@ pub(super) fn equals(df: &DataFrame, other: &DataFrame) -> bool {
     if cols1 != cols2 {
         return false;
     }
-    for col in &cols1 {
+    for col in cols1 {
         if let (Ok(v1), Ok(v2)) = (
             df.get_column_numeric_values(col),
             other.get_column_numeric_values(col),
@@ -462,10 +492,9 @@ pub(super) fn compare(df: &DataFrame, other: &DataFrame) -> Result<DataFrame> {
         ));
     }
     let mut result = DataFrame::new();
-    let n_rows = df.row_count();
-    let cols1: std::collections::HashSet<_> = df.column_names().into_iter().collect();
-    let cols2: std::collections::HashSet<_> = other.column_names().into_iter().collect();
-    let common_cols: Vec<_> = cols1.intersection(&cols2).cloned().collect();
+    let cols1: std::collections::HashSet<String> = df.column_names().iter().cloned().collect();
+    let cols2: std::collections::HashSet<String> = other.column_names().iter().cloned().collect();
+    let common_cols: Vec<String> = cols1.intersection(&cols2).cloned().collect();
     for col in &common_cols {
         if let (Ok(v1), Ok(v2)) = (
             df.get_column_numeric_values(col),
@@ -494,7 +523,7 @@ pub(super) fn compare(df: &DataFrame, other: &DataFrame) -> Result<DataFrame> {
 }
 
 pub(super) fn keys(df: &DataFrame) -> Vec<String> {
-    df.column_names()
+    df.column_names().to_vec()
 }
 
 pub(super) fn pop_column(df: &DataFrame, column: &str) -> Result<(DataFrame, Vec<f64>)> {
@@ -656,7 +685,7 @@ where
     let transformed: Vec<f64> = values.iter().map(|&v| func(v)).collect();
     let mut result = DataFrame::new();
     for col_name in df.column_names() {
-        if &col_name == column {
+        if col_name == column {
             result.add_column(
                 col_name.clone(),
                 Series::new(transformed.clone(), Some(col_name.clone()))?,
@@ -743,9 +772,9 @@ where
 }
 
 pub(super) fn align(df: &DataFrame, other: &DataFrame) -> Result<(DataFrame, DataFrame)> {
-    let cols1: std::collections::HashSet<_> = df.column_names().into_iter().collect();
-    let cols2: std::collections::HashSet<_> = other.column_names().into_iter().collect();
-    let all_cols: Vec<_> = cols1.union(&cols2).cloned().collect();
+    let cols1: std::collections::HashSet<String> = df.column_names().iter().cloned().collect();
+    let cols2: std::collections::HashSet<String> = other.column_names().iter().cloned().collect();
+    let all_cols: Vec<String> = cols1.union(&cols2).cloned().collect();
     let mut result1 = DataFrame::new();
     let mut result2 = DataFrame::new();
     for col in &all_cols {
@@ -855,21 +884,47 @@ pub(super) fn cut(df: &DataFrame, column: &str, bins: usize) -> Result<Vec<Strin
     }
     let values = df.get_column_numeric_values(column)?;
     let (min, max) = df.value_range(column)?;
-    let bin_width = (max - min) / bins as f64;
+    // A constant column has zero range, which would otherwise collapse
+    // every bin edge onto the same point and leave every row unmatched;
+    // pad it symmetrically so `bins` distinct intervals can still be built.
+    let (min, max) = if max > min {
+        (min, max)
+    } else {
+        (min - 0.001, max + 0.001)
+    };
+    let range = max - min;
+    let bin_width = range / bins as f64;
     let mut edges: Vec<f64> = (0..=bins).map(|i| min + i as f64 * bin_width).collect();
-    edges[bins] = max + 0.001;
+    // pandas' `cut()` bins are left-open/right-closed ("(lo, hi]"), which is
+    // what the label text below says -- but the true minimum sits exactly
+    // on `edges[0]`, so a strict `>` there would exclude it. Nudge the
+    // first edge down slightly (rather than comparing with `>=`, which
+    // would make the label lie about its own lower bound) and pin the last
+    // edge to the exact maximum instead of an arbitrary `+ 0.001` fudge.
+    edges[0] -= range * 0.001;
+    edges[bins] = max;
+    let labels: Vec<String> = (0..bins)
+        .map(|i| format!("({:.2}, {:.2}]", edges[i], edges[i + 1]))
+        .collect();
     let mut result = Vec::with_capacity(values.len());
     for v in &values {
         if v.is_nan() {
             result.push("NaN".to_string());
-        } else {
-            for i in 0..bins {
-                if *v >= edges[i] && *v < edges[i + 1] {
-                    result.push(format!("({:.2}, {:.2}]", edges[i], edges[i + 1]));
-                    break;
-                }
+            continue;
+        }
+        let mut label: Option<&String> = None;
+        for i in 0..bins {
+            if *v > edges[i] && *v <= edges[i + 1] {
+                label = Some(&labels[i]);
+                break;
             }
         }
+        // Every finite value within `value_range`'s [min, max] matches a
+        // bin by construction; anything that somehow still doesn't (e.g.
+        // +-inf, defensively) reports NaN instead of being silently
+        // dropped, which previously shortened the result vector and
+        // desynced it from the source rows.
+        result.push(label.cloned().unwrap_or_else(|| "NaN".to_string()));
     }
     Ok(result)
 }
@@ -881,40 +936,62 @@ pub(super) fn qcut(df: &DataFrame, column: &str, q: usize) -> Result<Vec<String>
         ));
     }
     let values = df.get_column_numeric_values(column)?;
-    let mut valid: Vec<(usize, f64)> = values
-        .iter()
-        .enumerate()
-        .filter(|(_, v)| !v.is_nan())
-        .map(|(i, &v)| (i, v))
-        .collect();
+    let mut valid: Vec<f64> = values.iter().copied().filter(|v| !v.is_nan()).collect();
     if valid.is_empty() {
         return Err(Error::InvalidValue("No valid values".to_string()));
     }
-    valid.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(Ordering::Equal));
-    let mut edges: Vec<f64> = Vec::with_capacity(q + 1);
-    for i in 0..=q {
-        let idx = (valid.len() as f64 * i as f64 / q as f64) as usize;
-        let idx = idx.min(valid.len() - 1);
-        edges.push(valid[idx].1);
+    valid.sort_by(|a, b| a.total_cmp(b));
+
+    // Quantile edges via linear interpolation (same method `describe`'s
+    // percentiles use).
+    let mut edges: Vec<f64> = (0..=q)
+        .map(|i| {
+            let pos = (valid.len() - 1) as f64 * i as f64 / q as f64;
+            let lower = pos.floor() as usize;
+            let upper = pos.ceil() as usize;
+            if lower == upper {
+                valid[lower]
+            } else {
+                let weight = pos - lower as f64;
+                valid[lower] * (1.0 - weight) + valid[upper] * weight
+            }
+        })
+        .collect();
+
+    // Repeated values (or `q` too large for the distinct-value count) can
+    // make consecutive quantile edges collapse onto the same point, which
+    // would leave that bin permanently empty and, under the old `>=`/`<`
+    // scheme, its member rows unmatched. Drop degenerate edges instead
+    // (mirrors pandas' `qcut(duplicates="drop")`; this method has no
+    // `duplicates` parameter to pick "raise" vs "drop" explicitly).
+    edges.dedup();
+    if edges.len() < 2 {
+        let v0 = edges[0];
+        edges = vec![v0 - 0.001, v0 + 0.001];
     }
-    let mut result = vec!["".to_string(); values.len()];
-    for (orig_idx, v) in values.iter().enumerate() {
+    let range = edges[edges.len() - 1] - edges[0];
+    edges[0] -= (range * 1e-9).max(1e-12);
+
+    let effective_bins = edges.len() - 1;
+    let labels: Vec<String> = (0..effective_bins).map(|i| format!("Q{}", i + 1)).collect();
+
+    let mut result = Vec::with_capacity(values.len());
+    for v in &values {
         if v.is_nan() {
-            result[orig_idx] = "NaN".to_string();
-        } else {
-            for i in 0..q {
-                let lower = edges[i];
-                let upper = if i == q - 1 {
-                    edges[i + 1] + 0.001
-                } else {
-                    edges[i + 1]
-                };
-                if *v >= lower && *v < upper {
-                    result[orig_idx] = format!("Q{}", i + 1);
-                    break;
-                }
+            result.push("NaN".to_string());
+            continue;
+        }
+        let mut label: Option<&String> = None;
+        for i in 0..effective_bins {
+            if *v > edges[i] && *v <= edges[i + 1] {
+                label = Some(&labels[i]);
+                break;
             }
         }
+        // As in `cut`: always push exactly one entry per source value so
+        // the result never shortens (or leaves a stray "") relative to
+        // `values`, even for a value this defensively doesn't match.
+        result.push(label.cloned().unwrap_or_else(|| "NaN".to_string()));
     }
     Ok(result)
 }
@@ -924,25 +1001,32 @@ pub(super) fn stack(df: &DataFrame, columns: Option<&[&str]>) -> Result<DataFram
         cols.iter().map(|s| s.to_string()).collect()
     } else {
         df.column_names()
-            .into_iter()
+            .iter()
             .filter(|c| df.get_column_numeric_values(c).is_ok())
+            .cloned()
             .collect()
     };
     if cols_to_stack.is_empty() {
         return Err(Error::InvalidValue("No columns to stack".to_string()));
     }
     let n_rows = df.row_count();
+    // Materialize each column once instead of re-fetching (and
+    // re-downcasting) it on every row of the row/column double loop below,
+    // which made this O(rows^2 * cols) rather than O(rows * cols).
+    let stacked_columns: Vec<Option<Vec<f64>>> = cols_to_stack
+        .iter()
+        .map(|col_name| df.get_column_numeric_values(col_name).ok())
+        .collect();
     let mut row_indices: Vec<f64> = Vec::with_capacity(n_rows * cols_to_stack.len());
     let mut variables: Vec<String> = Vec::with_capacity(n_rows * cols_to_stack.len());
     let mut values: Vec<f64> = Vec::with_capacity(n_rows * cols_to_stack.len());
     for row_idx in 0..n_rows {
-        for col_name in &cols_to_stack {
+        for (col_name, col_values) in cols_to_stack.iter().zip(stacked_columns.iter()) {
             row_indices.push(row_idx as f64);
             variables.push(col_name.clone());
-            if let Ok(col_values) = df.get_column_numeric_values(col_name) {
-                values.push(col_values[row_idx]);
-            } else {
-                values.push(f64::NAN);
+            match col_values {
+                Some(vals) => values.push(vals[row_idx]),
+                None => values.push(f64::NAN),
             }
         }
     }
@@ -1016,10 +1100,20 @@ pub(super) fn pivot(df: &DataFrame, index: &str, columns: &str, values: &str) ->
     df.unstack(index, columns, values)
 }
 
-pub(super) fn astype(df: &DataFrame, column: &str, dtype: &str) -> Result<DataFrame> {
+/// Shared `astype` implementation. `raise_on_error` selects pandas'
+/// `errors="raise"` (fail the whole conversion on the first unparsable /
+/// non-finite value) vs `errors="coerce"` (turn it into a null placeholder
+/// and keep going). [`astype`] always uses `raise` (pandas' own default);
+/// [`astype_with_errors`] exposes both.
+fn astype_column(
+    df: &DataFrame,
+    column: &str,
+    dtype: &str,
+    raise_on_error: bool,
+) -> Result<DataFrame> {
     let mut result = DataFrame::new();
     for col_name in df.column_names() {
-        if &col_name == column {
+        if col_name == column {
             match dtype.to_lowercase().as_str() {
                 "float64" | "float" | "f64" => {
                     if let Ok(values) = df.get_column_numeric_values(&col_name) {
@@ -1027,11 +1121,21 @@ pub(super) fn astype(df: &DataFrame, column: &str, dtype: &str) -> Result<DataFr
                             col_name.clone(),
                             Series::new(values, Some(col_name.clone()))?,
                         )?;
-                    } else if let Ok(values) = df.get_column_string_values(&col_name) {
-                        let converted: Vec<f64> = values
-                            .iter()
-                            .map(|s| s.parse::<f64>().unwrap_or(f64::NAN))
-                            .collect();
+                    } else {
+                        let values = df.get_column_string_values(&col_name)?;
+                        let mut converted: Vec<f64> = Vec::with_capacity(values.len());
+                        for s in &values {
+                            match s.trim().parse::<f64>() {
+                                Ok(f) => converted.push(f),
+                                Err(_) if raise_on_error => {
+                                    return Err(Error::InvalidValue(format!(
+                                        "Cannot convert value '{}' in column '{}' to float64 (errors='raise')",
+                                        s, col_name
+                                    )));
+                                }
+                                Err(_) => converted.push(f64::NAN),
+                            }
+                        }
                         result.add_column(
                             col_name.clone(),
                             Series::new(converted, Some(col_name.clone()))?,
@@ -1039,52 +1143,165 @@ pub(super) fn astype(df: &DataFrame, column: &str, dtype: &str) -> Result<DataFr
                     }
                 }
                 "int64" | "int" | "i64" => {
+                    // Produce a real `Series<i64>` when every value converts
+                    // cleanly (previously this stored `Vec<f64>` under an
+                    // "int64" label, so the column never actually became
+                    // integer-typed). Under `errors="coerce"`, a value that
+                    // can't become an `i64` can't be represented as a
+                    // "missing" `i64` either -- this crate has no
+                    // null-carrying integer column. Substituting a
+                    // fabricated `0` would be indistinguishable from a real
+                    // zero and is exactly the "0 for missing" substitution
+                    // the NA-semantics rule forbids, so a failure instead
+                    // promotes the *whole* column to `Series<f64>` with
+                    // `NaN` at the failed positions -- mirroring pandas'
+                    // own `pd.to_numeric(errors="coerce")` promotion (which
+                    // is where pandas' `coerce` vocabulary actually comes
+                    // from; plain `astype` only has `errors={"raise","ignore"}`).
                     if let Ok(values) = df.get_column_numeric_values(&col_name) {
-                        let converted: Vec<f64> = values.iter().map(|v| v.floor()).collect();
-                        result.add_column(
-                            col_name.clone(),
-                            Series::new(converted, Some(col_name.clone()))?,
-                        )?;
-                    } else if let Ok(values) = df.get_column_string_values(&col_name) {
-                        let converted: Vec<f64> = values
-                            .iter()
-                            .map(|s| s.parse::<i64>().map(|i| i as f64).unwrap_or(f64::NAN))
-                            .collect();
-                        result.add_column(
-                            col_name.clone(),
-                            Series::new(converted, Some(col_name.clone()))?,
-                        )?;
+                        if raise_on_error {
+                            let mut converted: Vec<i64> = Vec::with_capacity(values.len());
+                            for v in &values {
+                                if v.is_finite() {
+                                    converted.push(v.trunc() as i64);
+                                } else {
+                                    return Err(Error::InvalidValue(format!(
+                                        "Cannot convert non-finite value '{}' in column '{}' to int64 (errors='raise')",
+                                        v, col_name
+                                    )));
+                                }
+                            }
+                            result.add_column(
+                                col_name.clone(),
+                                Series::new(converted, Some(col_name.clone()))?,
+                            )?;
+                        } else if values.iter().all(|v| v.is_finite()) {
+                            let converted: Vec<i64> =
+                                values.iter().map(|v| v.trunc() as i64).collect();
+                            result.add_column(
+                                col_name.clone(),
+                                Series::new(converted, Some(col_name.clone()))?,
+                            )?;
+                        } else {
+                            // At least one non-finite value under coerce:
+                            // promote to f64 (already carries NaN at the
+                            // right positions) rather than lying with a
+                            // fabricated integer 0.
+                            result.add_column(
+                                col_name.clone(),
+                                Series::new(values, Some(col_name.clone()))?,
+                            )?;
+                        }
+                    } else {
+                        let values = df.get_column_string_values(&col_name)?;
+                        if raise_on_error {
+                            let mut converted: Vec<i64> = Vec::with_capacity(values.len());
+                            for s in &values {
+                                let parsed = s
+                                    .trim()
+                                    .parse::<i64>()
+                                    .or_else(|_| s.trim().parse::<f64>().map(|f| f.trunc() as i64));
+                                match parsed {
+                                    Ok(i) => converted.push(i),
+                                    Err(_) => {
+                                        return Err(Error::InvalidValue(format!(
+                                            "Cannot convert value '{}' in column '{}' to int64 (errors='raise')",
+                                            s, col_name
+                                        )));
+                                    }
+                                }
+                            }
+                            result.add_column(
+                                col_name.clone(),
+                                Series::new(converted, Some(col_name.clone()))?,
+                            )?;
+                        } else {
+                            // Parse into f64 up front (NaN marks a value
+                            // that failed to parse); only fall back to the
+                            // wider f64 representation if that actually
+                            // happened, so a fully-clean column still
+                            // becomes a real `Series<i64>`.
+                            let mut as_f64: Vec<f64> = Vec::with_capacity(values.len());
+                            let mut any_failed = false;
+                            for s in &values {
+                                match s
+                                    .trim()
+                                    .parse::<i64>()
+                                    .map(|i| i as f64)
+                                    .or_else(|_| s.trim().parse::<f64>())
+                                {
+                                    Ok(v) => as_f64.push(v),
+                                    Err(_) => {
+                                        any_failed = true;
+                                        as_f64.push(f64::NAN);
+                                    }
+                                }
+                            }
+                            if any_failed {
+                                result.add_column(
+                                    col_name.clone(),
+                                    Series::new(as_f64, Some(col_name.clone()))?,
+                                )?;
+                            } else {
+                                let converted: Vec<i64> =
+                                    as_f64.iter().map(|v| v.trunc() as i64).collect();
+                                result.add_column(
+                                    col_name.clone(),
+                                    Series::new(converted, Some(col_name.clone()))?,
+                                )?;
+                            }
+                        }
                     }
                 }
                 "string" | "str" | "object" => {
+                    // `get_column_string_values` already renders any
+                    // supported element type (numeric or text) through its
+                    // `Display` impl -- including NaN as the literal
+                    // string "NaN" -- so there's nothing conversion-specific
+                    // left to special-case here.
+                    let values = df.get_column_string_values(&col_name)?;
+                    result.add_column(
+                        col_name.clone(),
+                        Series::new(values, Some(col_name.clone()))?,
+                    )?;
+                }
+                "bool" | "boolean" => {
                     if let Ok(values) = df.get_column_numeric_values(&col_name) {
-                        let converted: Vec<String> = values
-                            .iter()
-                            .map(|v| {
-                                if v.is_nan() {
-                                    "NaN".to_string()
-                                } else {
-                                    v.to_string()
-                                }
-                            })
-                            .collect();
+                        let converted: Vec<bool> =
+                            values.iter().map(|v| *v != 0.0 && !v.is_nan()).collect();
                         result.add_column(
                             col_name.clone(),
                             Series::new(converted, Some(col_name.clone()))?,
                         )?;
-                    } else if let Ok(values) = df.get_column_string_values(&col_name) {
-                        result.add_column(
-                            col_name.clone(),
-                            Series::new(values, Some(col_name.clone()))?,
-                        )?;
-                    }
-                }
-                "bool" | "boolean" => {
-                    if let Ok(values) = df.get_column_numeric_values(&col_name) {
-                        let converted: Vec<f64> = values
-                            .iter()
-                            .map(|v| if *v != 0.0 && !v.is_nan() { 1.0 } else { 0.0 })
-                            .collect();
+                    } else {
+                        // Previously: this arm matched a string-typed
+                        // source column but had no string branch, so
+                        // nothing was ever added to `result` -- the column
+                        // (and its data) silently vanished from the output.
+                        let values = df.get_column_string_values(&col_name)?;
+                        let mut converted: Vec<bool> = Vec::with_capacity(values.len());
+                        for s in &values {
+                            match s.trim().to_lowercase().as_str() {
+                                "true" | "1" | "yes" | "t" | "y" => converted.push(true),
+                                "false" | "0" | "no" | "f" | "n" | "" => converted.push(false),
+                                _ => {
+                                    // Unlike float64/int64, this crate has
+                                    // no nullable/NaN-carrying `bool`
+                                    // column -- there is no honest value to
+                                    // substitute for an unparsable entry,
+                                    // so `errors="coerce"` cannot silently
+                                    // downgrade to `false` (that is exactly
+                                    // the "false for missing" substitution
+                                    // the NA-semantics rule forbids) and
+                                    // instead raises unconditionally, same
+                                    // as `errors="raise"`.
+                                    return Err(Error::InvalidValue(format!(
+                                        "Cannot convert value '{}' in column '{}' to bool: not representable even under errors='coerce' (no null-carrying bool dtype)",
+                                        s, col_name
+                                    )));
+                                }
+                            }
+                        }
                         result.add_column(
                             col_name.clone(),
                             Series::new(converted, Some(col_name.clone()))?,
@@ -1095,15 +1312,39 @@ pub(super) fn astype(df: &DataFrame, column: &str, dtype: &str) -> Result<DataFr
                     return Err(Error::InvalidValue(format!("Unknown dtype: {}", dtype)));
                 }
             }
+        } else if df.is_numeric_column(&col_name) {
+            let vals = df.get_column_numeric_values(&col_name)?;
+            result.add_column(col_name.clone(), Series::new(vals, Some(col_name.clone()))?)?;
         } else {
-            if let Ok(vals) = df.get_column_numeric_values(&col_name) {
-                result.add_column(col_name.clone(), Series::new(vals, Some(col_name.clone()))?)?;
-            } else if let Ok(vals) = df.get_column_string_values(&col_name) {
-                result.add_column(col_name.clone(), Series::new(vals, Some(col_name.clone()))?)?;
-            }
+            let vals = df.get_column_string_values(&col_name)?;
+            result.add_column(col_name.clone(), Series::new(vals, Some(col_name.clone()))?)?;
         }
     }
     Ok(result)
+}
+
+pub(super) fn astype(df: &DataFrame, column: &str, dtype: &str) -> Result<DataFrame> {
+    // pandas' `DataFrame.astype()` defaults to `errors="raise"`.
+    astype_column(df, column, dtype, true)
+}
+
+/// `astype` with an explicit `errors` policy ("raise" or "coerce"),
+/// matching pandas' `DataFrame.astype(dtype, errors=...)`. [`astype`]
+/// always behaves as `errors="raise"`.
+pub(super) fn astype_with_errors(
+    df: &DataFrame,
+    column: &str,
+    dtype: &str,
+    errors: &str,
+) -> Result<DataFrame> {
+    match errors {
+        "raise" => astype_column(df, column, dtype, true),
+        "coerce" => astype_column(df, column, dtype, false),
+        other => Err(Error::InvalidValue(format!(
+            "errors must be 'raise' or 'coerce', got '{}'",
+            other
+        ))),
+    }
 }
 
 pub(super) fn applymap<F>(df: &DataFrame, func: F) -> Result<DataFrame>
@@ -1207,16 +1448,16 @@ pub(super) fn agg(df: &DataFrame, column: &str, funcs: &[&str]) -> Result<HashMa
 
 pub(super) fn dtypes(df: &DataFrame) -> Vec<(String, String)> {
     df.column_names()
-        .into_iter()
+        .iter()
         .map(|col| {
-            let dtype = if df.get_column_numeric_values(&col).is_ok() {
+            let dtype = if df.get_column_numeric_values(col).is_ok() {
                 "float64".to_string()
-            } else if df.get_column_string_values(&col).is_ok() {
+            } else if df.get_column_string_values(col).is_ok() {
                 "object".to_string()
             } else {
                 "unknown".to_string()
             };
-            (col, dtype)
+            (col.clone(), dtype)
         })
         .collect()
 }
@@ -1241,7 +1482,7 @@ pub(super) fn set_values(
     }
     let mut result = DataFrame::new();
     for col_name in df.column_names() {
-        if &col_name == column {
+        if col_name == column {
             result.add_column(
                 col_name.clone(),
                 Series::new(col_values.clone(), Some(col_name.clone()))?,

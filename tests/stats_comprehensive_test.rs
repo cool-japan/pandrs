@@ -433,7 +433,7 @@ fn test_statistical_analyzer() {
 
     // Test hypothesis testing
     let test_result = analyzer
-        .test_columns(
+        .columns_ttest(
             &df,
             "x1",
             "x2",

@@ -16,12 +16,11 @@
 use pandrs::dataframe::DataFrame;
 use pandrs::error::Result;
 use pandrs::ml::models::ensemble::{
-    RandomForestClassifier, RandomForestConfig, RandomForestConfigBuilder, RandomForestRegressor,
+    RandomForestClassifier, RandomForestConfigBuilder, RandomForestRegressor,
 };
 use pandrs::ml::models::tree::{DecisionTreeClassifier, DecisionTreeConfig};
 use pandrs::ml::models::{train_test_split, SupervisedModel};
 use pandrs::series::Series;
-use std::collections::HashMap;
 
 fn main() -> Result<()> {
     println!("=== Random Forest Examples ===\n");

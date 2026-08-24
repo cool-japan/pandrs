@@ -65,6 +65,7 @@ fn create_test_serializable_model() -> SerializableModel {
     parameters.insert("intercept".to_string(), serde_json::json!(2.3));
 
     SerializableModel {
+        schema_version: pandrs::ml::serving::serialization::CURRENT_SCHEMA_VERSION,
         metadata,
         parameters,
         model_data: serde_json::json!({"type": "linear_regression"}),
@@ -393,14 +394,17 @@ fn test_model_monitoring() {
     let deployment_metrics = DeploymentMetrics {
         status: DeploymentStatus::Running,
         active_instances: 1,
-        cpu_utilization: 0.5,
-        memory_utilization: 0.6,
+        cpu_utilization: None,
+        memory_utilization: None,
         request_rate: 10.0,
         avg_response_time_ms: 100.0,
         error_rate: 0.01,
         total_requests: 1000,
         successful_requests: 990,
         failed_requests: 10,
+        in_flight_requests: 0,
+        response_times_ms: vec![80, 90, 100, 110, 120],
+        recent_errors: Vec::new(),
         last_health_check: chrono::Utc::now(),
         started_at: chrono::Utc::now(),
         updated_at: chrono::Utc::now(),
@@ -449,18 +453,13 @@ fn test_model_monitoring() {
 
 #[test]
 fn test_metrics_collector() {
+    // DefaultMetricsCollector previously returned hardcoded "simulated" constants dressed up as
+    // real system/model metrics. It now honestly reports NotImplemented: this build has no
+    // OS-level telemetry dependency (e.g. sysinfo) to back these with real measurements.
     let collector = DefaultMetricsCollector;
 
-    // Test system metrics collection
-    let system_metrics = collector.collect_system_metrics().unwrap();
-    assert!(system_metrics.cpu_usage >= 0.0 && system_metrics.cpu_usage <= 1.0);
-    assert!(system_metrics.memory_usage > 0);
-    assert!(system_metrics.memory_available > 0);
-
-    // Test model metrics collection
-    let model_metrics = collector.collect_model_metrics("test_model").unwrap();
-    assert!(model_metrics.model_memory_usage > 0);
-    assert!(model_metrics.cache_hit_rate >= 0.0 && model_metrics.cache_hit_rate <= 1.0);
+    assert!(collector.collect_system_metrics().is_err());
+    assert!(collector.collect_model_metrics("test_model").is_err());
 }
 
 #[test]

@@ -4,10 +4,7 @@
 //! and the new DataFrame trait hierarchy, enabling automatic optimization of DataFrame operations.
 
 use crate::core::data_value::DataValue;
-use crate::core::dataframe_traits::{
-    AggFunc, Axis, BooleanMask, DataFrameAdvancedOps, DataFrameOps, GroupByOps, GroupKey,
-    IndexingOps, JoinType, StatisticalOps,
-};
+use crate::core::dataframe_traits::{Axis, DataFrameOps};
 use crate::core::error::{Error, Result};
 use crate::optimized::jit::{
     adaptive_optimizer::{AdaptiveOptimizer, OptimizationReport},
@@ -16,9 +13,8 @@ use crate::optimized::jit::{
     expression_tree::{
         BinaryOperator, ExpressionNode, ExpressionTree, ReductionOperation, UnaryOperator,
     },
-    performance_monitor::{FunctionPerformanceMetrics, JitPerformanceMonitor},
-    types::{NumericValue, TypedVector},
-    JitError, JitResult,
+    performance_monitor::JitPerformanceMonitor,
+    types::NumericValue,
 };
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
@@ -630,7 +626,10 @@ fn eval_node(node: &ExpressionNode, inputs: &HashMap<String, Vec<f64>>) -> Resul
                 )));
             }
 
-            let arg = evaled.into_iter().next().unwrap();
+            let arg = evaled
+                .into_iter()
+                .next()
+                .expect("invariant: evaled.len() == 1 checked above");
 
             let result = match function.as_str() {
                 "abs" => apply_unary(arg, |x| x.abs()),
@@ -808,7 +807,7 @@ where
     fn warm_jit_cache(&self, operations: &[&str]) -> Result<()> {
         // Pre-compile commonly used operations
         for operation in operations {
-            let function_id = self.create_function_id(operation, &["warm_up"]);
+            let _function_id = self.create_function_id(operation, &["warm_up"]);
 
             // Create a dummy expression tree for the operation
             let expr = ExpressionNode::FunctionCall {

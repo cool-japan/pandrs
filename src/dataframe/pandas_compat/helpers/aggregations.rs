@@ -51,6 +51,14 @@ pub fn prod(df: &DataFrame, column: &str) -> Result<f64> {
 }
 
 /// Get statistics for a single numeric column
+///
+/// Kept numerically consistent with [`PandasCompatExt::describe`]
+/// (`super::super::functions::functions_2_impl_part1::describe`): both use
+/// ddof=1 sample variance (undefined -- NaN, not 0 -- for a single
+/// observation) and the same linear-interpolation quantile method, so the
+/// two don't disagree on the same column.
+///
+/// [`PandasCompatExt::describe`]: crate::dataframe::pandas_compat::trait_def::PandasCompatExt::describe
 pub fn describe_column(df: &DataFrame, column: &str) -> Result<HashMap<String, f64>> {
     let values = df.get_column_numeric_values(column)?;
     let valid: Vec<f64> = values.iter().filter(|v| !v.is_nan()).copied().collect();
@@ -63,14 +71,25 @@ pub fn describe_column(df: &DataFrame, column: &str) -> Result<HashMap<String, f
         result.insert("std".to_string(), f64::NAN);
         result.insert("min".to_string(), f64::NAN);
         result.insert("max".to_string(), f64::NAN);
+        result.insert("25%".to_string(), f64::NAN);
+        result.insert("50%".to_string(), f64::NAN);
+        result.insert("75%".to_string(), f64::NAN);
         return Ok(result);
     }
 
     let n = valid.len() as f64;
     let sum: f64 = valid.iter().sum();
     let mean = sum / n;
-    let variance: f64 = valid.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / (n - 1.0).max(1.0);
-    let std = variance.sqrt();
+    // Sample standard deviation (ddof=1, pandas' default): undefined for a
+    // single observation. The previous `(n - 1.0).max(1.0)` divisor clamp
+    // avoided a division by zero by silently treating n=1 as n=2, which
+    // reports a spurious 0 instead of NaN.
+    let std = if valid.len() < 2 {
+        f64::NAN
+    } else {
+        let variance: f64 = valid.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / (n - 1.0);
+        variance.sqrt()
+    };
     let min = valid.iter().cloned().fold(f64::INFINITY, f64::min);
     let max = valid.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
 
@@ -80,26 +99,29 @@ pub fn describe_column(df: &DataFrame, column: &str) -> Result<HashMap<String, f
     result.insert("min".to_string(), min);
     result.insert("max".to_string(), max);
 
-    // Quartiles
+    // Quartiles via linear interpolation (matches `describe()`'s
+    // percentiles, and pandas' default `interpolation="linear"`) instead of
+    // naive truncated indexing.
     let mut sorted = valid.clone();
-    sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    sorted.sort_by(|a, b| a.total_cmp(b));
+    let percentile = |p: f64| -> f64 {
+        if sorted.len() == 1 {
+            return sorted[0];
+        }
+        let idx = p * (sorted.len() - 1) as f64;
+        let lower = idx.floor() as usize;
+        let upper = idx.ceil() as usize;
+        if lower == upper {
+            sorted[lower]
+        } else {
+            let weight = idx - lower as f64;
+            sorted[lower] * (1.0 - weight) + sorted[upper] * weight
+        }
+    };
 
-    let q25_idx = (sorted.len() as f64 * 0.25) as usize;
-    let q50_idx = sorted.len() / 2;
-    let q75_idx = (sorted.len() as f64 * 0.75) as usize;
-
-    result.insert(
-        "25%".to_string(),
-        sorted.get(q25_idx).copied().unwrap_or(f64::NAN),
-    );
-    result.insert(
-        "50%".to_string(),
-        sorted.get(q50_idx).copied().unwrap_or(f64::NAN),
-    );
-    result.insert(
-        "75%".to_string(),
-        sorted.get(q75_idx).copied().unwrap_or(f64::NAN),
-    );
+    result.insert("25%".to_string(), percentile(0.25));
+    result.insert("50%".to_string(), percentile(0.50));
+    result.insert("75%".to_string(), percentile(0.75));
 
     Ok(result)
 }

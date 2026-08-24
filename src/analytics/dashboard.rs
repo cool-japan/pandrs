@@ -37,6 +37,7 @@ pub struct Dashboard {
     /// Active alerts
     active_alerts: RwLock<Vec<String>>,
     /// Last snapshot time
+    #[allow(dead_code)] // reserved for future use
     last_snapshot: RwLock<Instant>,
 }
 
@@ -134,7 +135,7 @@ impl Dashboard {
         }
 
         // Update category counter
-        if let Ok(counters) = self.category_counters.write() {
+        if let Ok(_counters) = self.category_counters.write() {
             // Note: We need interior mutability here
             // In practice, you'd use dashmap or similar
         }
@@ -324,17 +325,22 @@ impl Dashboard {
         result
     }
 
-    /// Get current resource snapshot
+    /// Get current resource snapshot.
+    ///
+    /// `memory_used`, `memory_available`, and `open_files` are queried for
+    /// real on Linux (via `/proc`) and are `None` on every other platform,
+    /// where doing so would need a libc/syscall dependency this crate
+    /// avoids by default (see the module docs on [`ResourceSnapshot`]).
+    /// `cpu_usage` is always `None`; see its field doc for why.
     pub fn resource_snapshot(&self) -> ResourceSnapshot {
-        // In a real implementation, this would query system resources
         ResourceSnapshot {
-            memory_used: 0,
-            memory_available: 0,
-            cpu_usage: 0.0,
+            memory_used: query_memory_used_bytes(),
+            memory_available: query_memory_available_bytes(),
+            cpu_usage: None,
             thread_count: std::thread::available_parallelism()
                 .map(|p| p.get())
                 .unwrap_or(1),
-            open_files: 0,
+            open_files: query_open_files_count(),
             timestamp: SystemTime::now(),
         }
     }
@@ -439,6 +445,69 @@ impl Default for Dashboard {
     fn default() -> Self {
         Self::default_config()
     }
+}
+
+// ---------------------------------------------------------------------------
+// Platform-specific resource queries for `Dashboard::resource_snapshot`.
+//
+// Only Linux gets a real, dependency-free answer here (via `/proc`, which is
+// plain `std::fs`). Other platforms (macOS's `mach_task_basic_info`,
+// Windows's `GetProcessMemoryInfo`, ...) need a libc/syscall binding pandrs
+// does not pull in by default, so they report `None` rather than a
+// fabricated `0`.
+// ---------------------------------------------------------------------------
+
+/// Parse the first whitespace-separated token after `prefix` on whichever
+/// line of `path` starts with it, as a kB value converted to bytes.
+/// Used for both `/proc/self/status` (`VmRSS:`) and `/proc/meminfo`
+/// (`MemAvailable:`), which share this "`Label:` \s* NNN kB" line shape.
+#[cfg(target_os = "linux")]
+fn linux_proc_kb_value(path: &str, prefix: &str) -> Option<usize> {
+    let content = std::fs::read_to_string(path).ok()?;
+    for line in content.lines() {
+        if let Some(rest) = line.strip_prefix(prefix) {
+            let value_kb: usize = rest.split_whitespace().next()?.parse().ok()?;
+            return Some(value_kb.saturating_mul(1024));
+        }
+    }
+    None
+}
+
+#[cfg(target_os = "linux")]
+fn linux_open_files_count() -> Option<usize> {
+    let entries = std::fs::read_dir("/proc/self/fd").ok()?;
+    let count = entries.count();
+    // `read_dir` itself holds one fd for the directory stream for the
+    // duration of this call, which would otherwise inflate the count by
+    // exactly one.
+    Some(count.saturating_sub(1))
+}
+
+#[cfg(target_os = "linux")]
+fn query_memory_used_bytes() -> Option<usize> {
+    linux_proc_kb_value("/proc/self/status", "VmRSS:")
+}
+#[cfg(not(target_os = "linux"))]
+fn query_memory_used_bytes() -> Option<usize> {
+    None
+}
+
+#[cfg(target_os = "linux")]
+fn query_memory_available_bytes() -> Option<usize> {
+    linux_proc_kb_value("/proc/meminfo", "MemAvailable:")
+}
+#[cfg(not(target_os = "linux"))]
+fn query_memory_available_bytes() -> Option<usize> {
+    None
+}
+
+#[cfg(target_os = "linux")]
+fn query_open_files_count() -> Option<usize> {
+    linux_open_files_count()
+}
+#[cfg(not(target_os = "linux"))]
+fn query_open_files_count() -> Option<usize> {
+    None
 }
 
 /// Global dashboard instance
@@ -611,5 +680,54 @@ mod tests {
         record_global("global_op", OperationCategory::Query, 100);
 
         assert!(dashboard.snapshot().total_operations >= 1);
+    }
+
+    // -- Regression test (wave 3) ---------------------------------------
+    //
+    // `resource_snapshot` previously returned hardcoded 0/0.0 for
+    // memory_used/memory_available/cpu_usage/open_files -- values
+    // indistinguishable from a genuine "nothing in use" reading. The fix
+    // queries real values on Linux and reports `None` elsewhere; this
+    // exercises both branches as far as a single test machine can (whatever
+    // platform actually runs the test), and checks the values that must
+    // hold true regardless of platform.
+    #[test]
+    fn test_resource_snapshot_reports_real_values_or_honest_none() {
+        let dashboard = Dashboard::default();
+        let snapshot = dashboard.resource_snapshot();
+
+        // `cpu_usage` is unconditionally `None`: no platform gets a
+        // fabricated number here.
+        assert_eq!(snapshot.cpu_usage, None);
+
+        // `thread_count` is a genuine `available_parallelism()` reading on
+        // every platform, so it must be positive (never the old hardcoded
+        // 0, and never fabricated either -- `available_parallelism()`
+        // itself falls back to 1 rather than lying about failure).
+        assert!(snapshot.thread_count >= 1);
+
+        if cfg!(target_os = "linux") {
+            // On Linux these are real `/proc` reads: a live process always
+            // has nonzero RSS, nonzero available memory, and at least one
+            // open fd (stdio).
+            assert!(
+                snapshot.memory_used.is_some_and(|v| v > 0),
+                "memory_used must be a real, nonzero RSS reading on Linux"
+            );
+            assert!(
+                snapshot.memory_available.is_some_and(|v| v > 0),
+                "memory_available must be a real, nonzero reading on Linux"
+            );
+            assert!(
+                snapshot.open_files.is_some_and(|v| v >= 1),
+                "open_files must count at least stdio on Linux"
+            );
+        } else {
+            // No platform-specific query is implemented here: `None` is
+            // the honest answer, not a fabricated 0.
+            assert_eq!(snapshot.memory_used, None);
+            assert_eq!(snapshot.memory_available, None);
+            assert_eq!(snapshot.open_files, None);
+        }
     }
 }

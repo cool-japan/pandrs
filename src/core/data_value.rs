@@ -1,8 +1,6 @@
 use std::fmt::{Debug, Display};
 use std::sync::Arc;
 
-use crate::core::error::{Error, Result};
-
 /// Trait for data values that can be stored in a column
 pub trait DataValue: Debug + Send + Sync {
     /// Returns the type name of the data value

@@ -8,7 +8,7 @@ use crate::{read_lock_safe, write_lock_safe};
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::sync::{Arc, RwLock};
-use std::time::{Duration, Instant, SystemTime};
+use std::time::{Instant, SystemTime};
 
 /// Unique identifier for cached functions
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

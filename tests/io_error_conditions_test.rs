@@ -40,7 +40,12 @@ mod csv_error_tests {
 
     #[test]
     fn test_csv_write_read_only_file() {
-        let temp_path = std::env::temp_dir().join("readonly_test.csv");
+        // Use a unique filename to avoid collisions with concurrent test runs.
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.subsec_nanos())
+            .unwrap_or(0);
+        let temp_path = std::env::temp_dir().join(format!("readonly_test_{}.csv", unique));
 
         // Create a file and make it read-only
         {
@@ -406,7 +411,11 @@ mod general_io_tests {
 
         df.add_string_column("large_data", large_strings).unwrap();
 
-        let temp_path = std::env::temp_dir().join("large_test.csv");
+        let unique2 = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.subsec_nanos())
+            .unwrap_or(1);
+        let temp_path = std::env::temp_dir().join(format!("large_test_{}.csv", unique2));
 
         // This should normally succeed unless disk is actually full
         let result = df.to_csv(&temp_path, true);

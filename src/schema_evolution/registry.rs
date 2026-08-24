@@ -80,13 +80,16 @@ impl SchemaRegistry {
             .unwrap_or_default()
     }
 
-    /// Add a migration to the registry.
+    /// Add a migration to the registry, indexed under its own
+    /// [`Migration::schema_name`].
     ///
-    /// The migration ID must be unique. Returns an error if there is already a
-    /// migration registered for the same (schema, from_version, to_version) triple.
+    /// The migration ID must be unique, and `schema_name` must be non-empty
+    /// (`Migration::validate` enforces this). Returns an error if there is
+    /// already a migration registered for the same
+    /// (schema_name, from_version, to_version) triple.
     pub fn add_migration(&mut self, migration: Migration) -> Result<()> {
-        // Validate the migration itself
-        migration.validate().map_err(|e| Error::InvalidInput(e))?;
+        // Validate the migration itself (also rejects an empty schema_name).
+        migration.validate().map_err(Error::InvalidInput)?;
 
         // Check for duplicate ID
         if self.migrations.contains_key(&migration.id) {
@@ -96,39 +99,9 @@ impl SchemaRegistry {
             )));
         }
 
-        // We store the migration indexed by ID
-        // We also build an index keyed by (schema_name, from, to) for path finding.
-        // Note: the migration does not carry a schema_name directly, but we can
-        // infer it when building paths by looking at registered schemas.
-        // For the index we use the migration id as the target schema name key.
-        // Actually, migrations can apply to any schema with matching versions, so we
-        // store them separately and let find_migration_path do the graph search.
-        self.migrations.insert(migration.id.clone(), migration);
-        Ok(())
-    }
-
-    /// Add a migration with an explicit schema name association
-    pub fn add_migration_for_schema(
-        &mut self,
-        schema_name: impl Into<String>,
-        migration: Migration,
-    ) -> Result<()> {
-        // Validate the migration itself
-        migration.validate().map_err(|e| Error::InvalidInput(e))?;
-
-        let schema_name = schema_name.into();
-
-        // Check for duplicate ID
-        if self.migrations.contains_key(&migration.id) {
-            return Err(Error::InvalidInput(format!(
-                "Migration with ID '{}' is already registered",
-                migration.id
-            )));
-        }
-
-        // Build the index key
+        // Index by (schema_name, from, to) for find_migration_path's BFS.
         let key = (
-            schema_name,
+            migration.schema_name.clone(),
             migration.from_version.to_string(),
             migration.to_version.to_string(),
         );
@@ -143,6 +116,23 @@ impl SchemaRegistry {
         self.migration_index.insert(key, migration.id.clone());
         self.migrations.insert(migration.id.clone(), migration);
         Ok(())
+    }
+
+    /// Add a migration, overriding its [`Migration::schema_name`] with the
+    /// one given here.
+    ///
+    /// This is a thin convenience wrapper around [`Self::add_migration`] for
+    /// callers that want to associate a migration with a schema at
+    /// registration time rather than at construction time; it stamps
+    /// `schema_name` onto the migration (so the stored migration and the
+    /// index always agree) and then delegates.
+    pub fn add_migration_for_schema(
+        &mut self,
+        schema_name: impl Into<String>,
+        mut migration: Migration,
+    ) -> Result<()> {
+        migration.schema_name = schema_name.into();
+        self.add_migration(migration)
     }
 
     /// Get a migration by its ID
@@ -244,7 +234,7 @@ impl Default for SchemaRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::schema_evolution::evolution::{MigrationBuilder, SchemaChange};
+    use crate::schema_evolution::evolution::MigrationBuilder;
     use crate::schema_evolution::schema::{
         ColumnSchema, DataFrameSchema, SchemaDataType, SchemaVersion,
     };
@@ -257,6 +247,7 @@ mod tests {
     fn make_migration(id: &str, from: (u32, u32), to: (u32, u32)) -> Migration {
         MigrationBuilder::new(
             id,
+            "users",
             SchemaVersion::new(from.0, from.1, 0),
             SchemaVersion::new(to.0, to.1, 0),
         )
@@ -356,6 +347,44 @@ mod tests {
             &SchemaVersion::new(2, 0, 0),
         );
         assert!(err.is_err());
+    }
+
+    #[test]
+    fn test_add_migration_indexes_directly() {
+        // `add_migration` (not `add_migration_for_schema`) must index the
+        // migration under its own `schema_name` so `find_migration_path`
+        // can locate it.
+        let mut registry = SchemaRegistry::new();
+        registry
+            .register(make_schema("users", 1, 0))
+            .expect("register");
+        registry
+            .register(make_schema("users", 1, 1))
+            .expect("register");
+
+        registry
+            .add_migration(make_migration("m001", (1, 0), (1, 1)))
+            .expect("add_migration should index the migration");
+
+        let path = registry
+            .find_migration_path(
+                "users",
+                &SchemaVersion::new(1, 0, 0),
+                &SchemaVersion::new(1, 1, 0),
+            )
+            .expect("path should be found via add_migration alone");
+        assert_eq!(path.len(), 1);
+        assert_eq!(path[0].id, "m001");
+    }
+
+    #[test]
+    fn test_add_migration_rejects_empty_schema_name() {
+        let mut registry = SchemaRegistry::new();
+        let migration = Migration {
+            schema_name: String::new(),
+            ..make_migration("m001", (1, 0), (1, 1))
+        };
+        assert!(registry.add_migration(migration).is_err());
     }
 
     #[test]

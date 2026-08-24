@@ -3,12 +3,10 @@
 //! This module provides comprehensive plotting capabilities with pandas-like API,
 //! statistical plotting functions, and interactive visualization features.
 
-use std::collections::HashMap;
 use std::path::Path;
 
 use crate::core::error::{Error, Result};
 use crate::dataframe::base::DataFrame;
-use crate::series::base::Series;
 
 /// Enhanced plotting configuration
 #[derive(Debug, Clone)]
@@ -400,7 +398,7 @@ impl<'a> StatPlotBuilder<'a> {
         let mut numeric_cols = Vec::new();
 
         for col_name in self.df.column_names() {
-            let values = self.df.get_column_string_values(&col_name)?;
+            let values = self.df.get_column_string_values(col_name)?;
 
             // Check if column contains numeric values
             let is_numeric = values
@@ -408,7 +406,7 @@ impl<'a> StatPlotBuilder<'a> {
                 .all(|v| v.trim().parse::<f64>().is_ok() || v.trim().is_empty());
 
             if is_numeric {
-                numeric_cols.push(col_name);
+                numeric_cols.push(col_name.clone());
             }
         }
 

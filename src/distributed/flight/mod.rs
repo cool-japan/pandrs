@@ -11,7 +11,7 @@
 //! | Feature      | What it enables                                              |
 //! |-------------|--------------------------------------------------------------|
 //! | `distributed` | [`conversion`] module (DataFrame ↔ RecordBatch utilities)  |
-//! | `flight`      | [`server`] and [`client`] modules (full gRPC transport)     |
+//! | `flight`      | `server` and `client` modules (full gRPC transport)         |
 //!
 //! ## Quick start (server side)
 //!

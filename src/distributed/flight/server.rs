@@ -179,7 +179,7 @@ impl FlightService for PandRsFlightServiceImpl {
     // ------------------------------------------------------------------
     async fn handshake(
         &self,
-        request: Request<Streaming<HandshakeRequest>>,
+        _request: Request<Streaming<HandshakeRequest>>,
     ) -> std::result::Result<Response<Self::HandshakeStream>, Status> {
         let response = HandshakeResponse {
             protocol_version: 0,
@@ -527,7 +527,6 @@ fn schema_to_ipc_bytes(schema: &arrow::datatypes::Schema) -> Result<bytes::Bytes
 /// Encode a [`RecordBatch`] as a `Vec<FlightData>` (schema msg + data msg).
 fn record_batch_to_flight_data(batch: &RecordBatch) -> Result<Vec<FlightData>> {
     use arrow::ipc::writer::{IpcWriteOptions, StreamWriter};
-    use std::io::Cursor;
 
     let mut buf = Vec::new();
     let options = IpcWriteOptions::default();

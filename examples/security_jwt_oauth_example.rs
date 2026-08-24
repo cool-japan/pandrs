@@ -22,14 +22,11 @@
 //! - Per-tenant data isolation and access control
 
 use pandrs::auth::{
-    ApiKeyInfo, AuthEvent, AuthEventType, AuthManager, AuthMethod, JwtConfig, OAuthClient,
-    OAuthClientInfo, OAuthConfig, OAuthGrantType, RefreshToken, Session, TokenClaims, TokenRequest,
-    UserInfo,
+    AuthManager, JwtConfig, OAuthClient, OAuthClientInfo, OAuthConfig, OAuthGrantType, UserInfo,
 };
 use pandrs::error::Result;
 use pandrs::multitenancy::Permission;
-use std::collections::HashMap;
-use std::time::{Duration, SystemTime};
+use std::time::Duration;
 
 fn main() -> Result<()> {
     println!("🔐 PandRS Security: JWT & OAuth2 Authentication Example");

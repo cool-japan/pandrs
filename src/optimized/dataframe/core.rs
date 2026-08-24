@@ -3,8 +3,7 @@
 use std::collections::HashMap;
 use std::fmt::{self, Debug};
 
-use crate::column::{Column, ColumnTrait, ColumnType};
-use crate::error::{Error, Result};
+use crate::column::{Column, ColumnType};
 use crate::index::DataFrameIndex;
 
 /// JSON output format

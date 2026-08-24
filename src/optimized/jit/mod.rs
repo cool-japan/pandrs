@@ -11,7 +11,6 @@ pub mod groupby;
 pub mod parallel;
 pub mod simd;
 pub mod simd_column_ops;
-pub mod simd_parallel;
 pub mod simd_stats;
 pub mod simd_string;
 

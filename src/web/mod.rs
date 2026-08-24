@@ -3,18 +3,16 @@
 //! This module provides WebAssembly (wasm) integration for PandRS, allowing for
 //! interactive data visualization in web browsers.
 
-use js_sys::{Array, Function, Object, Reflect};
 use plotters::drawing::IntoDrawingArea;
 use plotters_canvas::CanvasBackend;
 use std::cell::RefCell;
 use std::rc::Rc;
 use wasm_bindgen::prelude::*;
-use web_sys::{CanvasRenderingContext2d, Document, HtmlCanvasElement, Window};
+use web_sys::{CanvasRenderingContext2d, HtmlCanvasElement};
 
-use crate::error::{Error, PandRSError, Result};
+use crate::error::{Error, Result};
 use crate::vis::plotters_ext::{PlotKind, PlotSettings};
 use crate::DataFrame;
-use crate::Series;
 
 // Type alias for web-compatible results
 type WebResult<T> = std::result::Result<T, JsValue>;
@@ -148,6 +146,16 @@ pub struct WebVisualization {
     config: WebVisualizationConfig,
     canvas: HtmlCanvasElement,
     context: CanvasRenderingContext2d,
+    /// A sibling canvas stacked exactly on top of `canvas`, used only for
+    /// drawing the tooltip. Tooltip drawing must never touch `context`
+    /// (the chart canvas): the previous implementation called
+    /// `context.clear_rect` on every `mousemove`, which erased the whole
+    /// chart and left only a floating "Tooltip" box behind. Since the
+    /// overlay starts fully transparent and pointer-events are disabled
+    /// on it, clearing *it* on each move just removes the previous
+    /// tooltip without ever touching the chart underneath.
+    overlay_canvas: HtmlCanvasElement,
+    overlay_context: CanvasRenderingContext2d,
     data: Option<Rc<RefCell<DataFrame>>>,
     event_listeners: Vec<(String, Closure<dyn FnMut(web_sys::MouseEvent)>)>,
 }
@@ -189,10 +197,41 @@ impl WebVisualization {
             .dyn_into::<CanvasRenderingContext2d>()
             .map_err(|_| to_js_error("Failed to convert to CanvasRenderingContext2d"))?;
 
+        // A same-sized sibling canvas, absolutely positioned directly on
+        // top of the chart canvas, used only for tooltip drawing (see
+        // the `overlay_canvas`/`overlay_context` doc comment on
+        // `WebVisualization`). `pointer-events: none` keeps it from
+        // intercepting the mouse events the chart canvas needs.
+        let overlay_canvas = document
+            .create_element("canvas")
+            .map_err(|_| to_js_error("Failed to create tooltip overlay canvas"))?
+            .dyn_into::<HtmlCanvasElement>()
+            .map_err(|_| to_js_error("Failed to cast overlay element to canvas"))?;
+        overlay_canvas.set_width(config.width);
+        overlay_canvas.set_height(config.height);
+        {
+            let style = overlay_canvas.style();
+            let _ = style.set_property("position", "absolute");
+            let _ = style.set_property("pointer-events", "none");
+            let _ = style.set_property("left", &format!("{}px", canvas.offset_left()));
+            let _ = style.set_property("top", &format!("{}px", canvas.offset_top()));
+        }
+        if let Some(parent) = canvas.parent_node() {
+            let _ = parent.append_child(&overlay_canvas);
+        }
+        let overlay_context = overlay_canvas
+            .get_context("2d")
+            .map_err(|_| to_js_error("Failed to get overlay canvas context"))?
+            .ok_or_else(|| to_js_error("Overlay canvas context is null"))?
+            .dyn_into::<CanvasRenderingContext2d>()
+            .map_err(|_| to_js_error("Failed to convert overlay context"))?;
+
         Ok(WebVisualization {
             config,
             canvas,
             context,
+            overlay_canvas,
+            overlay_context,
             data: None,
             event_listeners: Vec::new(),
         })
@@ -207,9 +246,25 @@ impl WebVisualization {
         Ok(())
     }
 
+    /// Re-align the tooltip overlay canvas with the chart canvas.
+    ///
+    /// The overlay is positioned with `left`/`top` computed once in
+    /// [`WebVisualization::new`]; if the page reflows the chart canvas
+    /// afterward (a resize, a layout change elsewhere on the page, ...)
+    /// the overlay would drift out of alignment and tooltips would be
+    /// drawn in the wrong place relative to the chart. Called at the
+    /// start of every [`WebVisualization::render`] so the overlay tracks
+    /// the chart canvas's current position.
+    fn sync_overlay_position(&self) {
+        let style = self.overlay_canvas.style();
+        let _ = style.set_property("left", &format!("{}px", self.canvas.offset_left()));
+        let _ = style.set_property("top", &format!("{}px", self.canvas.offset_top()));
+    }
+
     /// Render the visualization
     #[wasm_bindgen]
     pub fn render(&mut self) -> WebResult<()> {
+        self.sync_overlay_position();
         {
             let df = match &self.data {
                 Some(df) => df.borrow(),
@@ -329,11 +384,11 @@ impl WebVisualization {
         settings: &PlotSettings,
     ) -> Result<()> {
         // Get numeric columns
-        let mut numeric_columns = Vec::new();
+        let mut numeric_columns: Vec<String> = Vec::new();
 
         for col_name in df.column_names() {
-            if df.is_numeric_column(&col_name) {
-                numeric_columns.push(col_name);
+            if df.is_numeric_column(col_name.as_str()) {
+                numeric_columns.push(col_name.to_string());
             }
         }
 
@@ -381,11 +436,11 @@ impl WebVisualization {
         settings: &PlotSettings,
     ) -> Result<()> {
         // Similar to line chart but with bar plot
-        let mut numeric_columns = Vec::new();
+        let mut numeric_columns: Vec<String> = Vec::new();
 
         for col_name in df.column_names() {
-            if df.is_numeric_column(&col_name) {
-                numeric_columns.push(col_name);
+            if df.is_numeric_column(col_name.as_str()) {
+                numeric_columns.push(col_name.to_string());
             }
         }
 
@@ -421,11 +476,11 @@ impl WebVisualization {
         settings: &PlotSettings,
     ) -> Result<()> {
         // Need at least two numeric columns for scatter plot
-        let mut numeric_columns = Vec::new();
+        let mut numeric_columns: Vec<String> = Vec::new();
 
         for col_name in df.column_names() {
-            if df.is_numeric_column(&col_name) {
-                numeric_columns.push(col_name);
+            if df.is_numeric_column(col_name.as_str()) {
+                numeric_columns.push(col_name.to_string());
             }
         }
 
@@ -467,11 +522,11 @@ impl WebVisualization {
         settings: &PlotSettings,
     ) -> Result<()> {
         // Similar to line chart but with area plot
-        let mut numeric_columns = Vec::new();
+        let mut numeric_columns: Vec<String> = Vec::new();
 
         for col_name in df.column_names() {
-            if df.is_numeric_column(&col_name) {
-                numeric_columns.push(col_name);
+            if df.is_numeric_column(col_name.as_str()) {
+                numeric_columns.push(col_name.to_string());
             }
         }
 
@@ -644,11 +699,11 @@ impl WebVisualization {
         settings: &PlotSettings,
     ) -> Result<()> {
         // Need at least two numeric columns for heatmap
-        let mut numeric_columns = Vec::new();
+        let mut numeric_columns: Vec<String> = Vec::new();
 
         for col_name in df.column_names() {
-            if df.is_numeric_column(&col_name) {
-                numeric_columns.push(col_name);
+            if df.is_numeric_column(col_name.as_str()) {
+                numeric_columns.push(col_name.to_string());
             }
         }
 
@@ -699,41 +754,58 @@ impl WebVisualization {
 
         // Calculate total
         let total: f64 = category_values.values().sum();
+        if total <= 0.0 {
+            // A zero/negative total makes `value / total` NaN or
+            // sign-flipped for every slice (all category_values.sum()
+            // to <= 0, e.g. every value is 0), which cannot be drawn as
+            // a meaningful pie; fail honestly instead of feeding NaN
+            // angles into the canvas arc calls. Mirrors the equivalent
+            // guard in `vis::svg::charts::PieChart::render`.
+            return Err(Error::InvalidInput(
+                "PieChart: total must be positive".to_string(),
+            ));
+        }
 
         // Draw pie chart
         let cx = (self.config.width as f64) / 2.0;
         let cy = (self.config.height as f64) / 2.0;
         let radius = (self.config.width.min(self.config.height) as f64) * 0.4;
 
-        // Draw title
+        // Draw title. A failed text draw is not worth aborting the whole
+        // visualization over, so failures are ignored rather than
+        // `.expect()`-ed (which would panic and abort the WASM module).
         self.context.set_font("16px sans-serif");
         self.context.set_text_align("center");
         self.context.set_fill_style_str("black");
-        self.context
-            .fill_text(&settings.title, cx, 30.0)
-            .map_err(|_| to_js_error("Failed to render text"))
-            .expect("operation should succeed");
+        let _ = self.context.fill_text(&settings.title, cx, 30.0);
 
         // Draw pie slices
         let mut start_angle = 0.0;
         let mut i = 0;
         let colors = settings.color_palette.clone();
+        // An empty `color_palette` would otherwise make `i % colors.len()`
+        // a division-by-zero panic; fall back to a single reasonable
+        // default color in that case instead.
+        let palette_len = colors.len().max(1);
+        let color_at = |idx: usize| -> (u8, u8, u8) {
+            colors
+                .get(idx % palette_len)
+                .copied()
+                .unwrap_or((70, 130, 180))
+        };
 
-        for (category, value) in &category_values {
+        for (_category, value) in &category_values {
             let slice_angle = 2.0 * std::f64::consts::PI * (value / total);
 
-            // Choose color from palette
-            let color_idx = i % colors.len();
-            let (r, g, b) = colors[color_idx];
+            let (r, g, b) = color_at(i);
             let color = format!("rgb({}, {}, {})", r, g, b);
 
             // Draw slice
             self.context.begin_path();
             self.context.move_to(cx, cy);
-            self.context
-                .arc(cx, cy, radius, start_angle, start_angle + slice_angle)
-                .map_err(|_| to_js_error("Failed to draw arc"))
-                .expect("operation should succeed");
+            let _ = self
+                .context
+                .arc(cx, cy, radius, start_angle, start_angle + slice_angle);
             self.context.close_path();
 
             self.context.set_fill_style_str(&color);
@@ -757,10 +829,9 @@ impl WebVisualization {
 
             if percentage >= 5.0 {
                 // Only show label if slice is big enough
-                self.context
-                    .fill_text(&format!("{}%", percentage), label_x, label_y)
-                    .map_err(|_| to_js_error("Failed to render text"))
-                    .expect("operation should succeed");
+                let _ = self
+                    .context
+                    .fill_text(&format!("{}%", percentage), label_x, label_y);
             }
 
             start_angle += slice_angle;
@@ -775,9 +846,7 @@ impl WebVisualization {
 
             i = 0;
             for (category, _) in &category_values {
-                // Choose color from palette
-                let color_idx = i % colors.len();
-                let (r, g, b) = colors[color_idx];
+                let (r, g, b) = color_at(i);
                 let color = format!("rgb({}, {}, {})", r, g, b);
 
                 // Draw color square
@@ -790,17 +859,23 @@ impl WebVisualization {
                 self.context.set_fill_style_str("black");
                 self.context.set_text_align("left");
 
-                // Truncate long category names
-                let display_cat = if category.len() > 15 {
-                    format!("{}...", &category[0..12])
+                // Truncate long category names. Byte-slicing
+                // (`&category[0..12]`) panics as soon as a category name
+                // contains any multi-byte UTF-8 character (e.g. Japanese
+                // text) whose encoding straddles byte offset 12; slicing
+                // by `char` instead is always a valid boundary.
+                let display_cat = if category.chars().count() > 15 {
+                    let truncated: String = category.chars().take(12).collect();
+                    format!("{}...", truncated)
                 } else {
                     category.clone()
                 };
 
-                self.context
-                    .fill_text(&display_cat, legend_x + 20.0, legend_y + y_offset + 12.0)
-                    .map_err(|_| to_js_error("Failed to render text"))
-                    .expect("operation should succeed");
+                let _ = self.context.fill_text(
+                    &display_cat,
+                    legend_x + 20.0,
+                    legend_y + y_offset + 12.0,
+                );
 
                 y_offset += 20.0;
                 i += 1;
@@ -830,7 +905,15 @@ impl WebVisualization {
             return Err(Error::InvalidInput("No data for heatmap".to_string()));
         }
 
-        let cols = data_matrix[0].len();
+        // The shortest column's length, not just the first column's: if
+        // columns are ragged (one shorter than the rest — e.g. from
+        // upstream NA-dropping that only touched some columns),
+        // indexing every row up to `data_matrix[0].len()` would run past
+        // the end of any shorter column and panic. Bounding by the
+        // minimum keeps every `data_matrix[i][j]` access below in
+        // bounds for every row `i`; any extra trailing values in longer
+        // columns are simply not drawn.
+        let cols = data_matrix.iter().map(|c| c.len()).min().unwrap_or(0);
         if cols == 0 {
             return Err(Error::InvalidInput("Empty columns for heatmap".to_string()));
         }
@@ -851,14 +934,15 @@ impl WebVisualization {
             }
         }
 
-        // Draw title
+        // Draw title. Text-draw failures are ignored (not `.expect()`-ed
+        // into a panic that would abort the whole WASM module) since a
+        // missing label is not worth losing the rest of the chart over.
         self.context.set_font("16px sans-serif");
         self.context.set_text_align("center");
         self.context.set_fill_style_str("black");
-        self.context
-            .fill_text(&settings.title, (self.config.width as f64) / 2.0, 30.0)
-            .map_err(|_| to_js_error("Failed to render text"))
-            .expect("operation should succeed");
+        let _ = self
+            .context
+            .fill_text(&settings.title, (self.config.width as f64) / 2.0, 30.0);
 
         // Calculate dimensions
         let margin = 70.0;
@@ -903,14 +987,11 @@ impl WebVisualization {
                     self.context.set_fill_style_str("white");
                     self.context.set_text_align("center");
 
-                    self.context
-                        .fill_text(
-                            &format!("{:.1}", val),
-                            x + cell_width / 2.0,
-                            y + cell_height / 2.0 + 3.0,
-                        )
-                        .map_err(|_| to_js_error("Failed to render text"))
-                        .expect("operation should succeed");
+                    let _ = self.context.fill_text(
+                        &format!("{:.1}", val),
+                        x + cell_width / 2.0,
+                        y + cell_height / 2.0 + 3.0,
+                    );
                 }
             }
         }
@@ -924,17 +1005,18 @@ impl WebVisualization {
             let x = margin + j as f64 * cell_width + cell_width / 2.0;
             let y = margin - 10.0;
 
-            // Truncate long column names
-            let display_name = if col.len() > 10 {
-                format!("{}...", &col[0..7])
+            // Truncate long column names. Byte-slicing (`&col[0..7]`)
+            // panics as soon as a name contains a multi-byte UTF-8
+            // character whose encoding straddles byte offset 7 (e.g. a
+            // Japanese column name); slicing by `char` is always valid.
+            let display_name = if col.chars().count() > 10 {
+                let truncated: String = col.chars().take(7).collect();
+                format!("{}...", truncated)
             } else {
                 col.clone()
             };
 
-            self.context
-                .fill_text(&display_name, x, y)
-                .map_err(|_| to_js_error("Failed to render text"))
-                .expect("operation should succeed");
+            let _ = self.context.fill_text(&display_name, x, y);
         }
 
         // Draw row labels (use row indices)
@@ -944,10 +1026,7 @@ impl WebVisualization {
             let x = margin - 10.0;
             let y = margin + i as f64 * cell_height + cell_height / 2.0 + 5.0;
 
-            self.context
-                .fill_text(&format!("Row {}", i + 1), x, y)
-                .map_err(|_| to_js_error("Failed to render text"))
-                .expect("operation should succeed");
+            let _ = self.context.fill_text(&format!("Row {}", i + 1), x, y);
         }
 
         // Draw color scale
@@ -976,19 +1055,15 @@ impl WebVisualization {
         self.context.set_fill_style_str("black");
         self.context.set_text_align("center");
 
-        self.context
-            .fill_text(&format!("{:.1}", max_val), scale_x, scale_y - 5.0)
-            .map_err(|_| to_js_error("Failed to render text"))
-            .expect("operation should succeed");
+        let _ = self
+            .context
+            .fill_text(&format!("{:.1}", max_val), scale_x, scale_y - 5.0);
 
-        self.context
-            .fill_text(
-                &format!("{:.1}", min_val),
-                scale_x,
-                scale_y + scale_height + 15.0,
-            )
-            .map_err(|_| to_js_error("Failed to render text"))
-            .expect("operation should succeed");
+        let _ = self.context.fill_text(
+            &format!("{:.1}", min_val),
+            scale_x,
+            scale_y + scale_height + 15.0,
+        );
 
         Ok(())
     }
@@ -1002,56 +1077,113 @@ impl WebVisualization {
                 .map_err(|_| Error::InvalidInput("Failed to remove event listener".to_string()))?;
         }
 
-        // Add mousemove listener for tooltips
+        // Add mousemove listener for tooltips. All drawing happens on
+        // `overlay_context` — a separate canvas stacked on top of the
+        // chart (see the field doc comment on `WebVisualization`) — so
+        // hovering the mouse never clears or otherwise touches the
+        // chart canvas itself, unlike the previous implementation which
+        // called `clear_rect` on the chart's own context every move.
         let canvas_clone = self.canvas.clone();
-        let context_clone = self.context.clone();
+        let overlay_context_clone = self.overlay_context.clone();
         let config_clone = self.config.clone();
         let data_clone = self.data.clone();
 
         let mousemove_callback = Closure::wrap(Box::new(move |event: web_sys::MouseEvent| {
-            // Get mouse position relative to canvas
             let rect = canvas_clone.get_bounding_client_rect();
             let x = event.client_x() as f64 - rect.left();
             let y = event.client_y() as f64 - rect.top();
+            let width = config_clone.width as f64;
+            let height = config_clone.height as f64;
 
-            // Handle tooltip logic based on visualization type
-            if let Some(data) = &data_clone {
-                let df = data.borrow();
+            overlay_context_clone.clear_rect(0.0, 0.0, width, height);
 
-                // Tooltip logic would go here based on chart type
-                // This is a simplified placeholder
+            if x < 0.0 || y < 0.0 || x > width || y > height {
+                return;
+            }
+            let Some(data) = &data_clone else {
+                return;
+            };
+            let df = data.borrow();
+            let row_count = df.row_count();
+            if row_count == 0 {
+                return;
+            }
 
-                // Clear previous tooltip
-                context_clone.clear_rect(
-                    0.0,
-                    0.0,
-                    config_clone.width as f64,
-                    config_clone.height as f64,
+            // Map the cursor's horizontal position proportionally across
+            // the canvas to a row index and read that row's real values
+            // out of the DataFrame. This does not reproduce plotters'
+            // exact per-chart margin/label-area pixel geometry — that
+            // transform is internal to each `render_*_chart` call and
+            // is not retained afterward — but it is a real, monotonic
+            // lookup into the actual plotted data, not a fixed string.
+            let frac = (x / width.max(1.0)).clamp(0.0, 1.0);
+            let row = ((frac * row_count as f64) as usize).min(row_count - 1);
+
+            let mut lines: Vec<String> = vec![format!("row {}", row)];
+            for col in df.column_names() {
+                if lines.len() > 5 {
+                    lines.push("...".to_string());
+                    break;
+                }
+                if let Ok(values) = df.get_column_string_values(col) {
+                    if let Some(v) = values.get(row) {
+                        lines.push(format!("{}: {}", col, v));
+                    }
+                }
+            }
+
+            let line_height = 14.0;
+            let box_h = line_height * lines.len() as f64 + 10.0;
+            let box_w =
+                lines.iter().map(|l| l.chars().count()).max().unwrap_or(4) as f64 * 6.5 + 16.0;
+            let box_x = (x + 12.0).min((width - box_w).max(0.0));
+            let box_y = (y - box_h - 8.0).max(0.0);
+
+            overlay_context_clone.set_fill_style_str("rgba(0,0,0,0.75)");
+            overlay_context_clone.fill_rect(box_x, box_y, box_w, box_h);
+
+            overlay_context_clone.set_font("11px sans-serif");
+            overlay_context_clone.set_fill_style_str("white");
+            overlay_context_clone.set_text_align("left");
+            for (i, line) in lines.iter().enumerate() {
+                // A failed tooltip draw is not worth aborting the whole
+                // WASM module over: ignore it and move on.
+                let _ = overlay_context_clone.fill_text(
+                    line,
+                    box_x + 8.0,
+                    box_y + 14.0 + i as f64 * line_height,
                 );
-
-                // Draw tooltip
-                context_clone.set_fill_style_str("rgba(0,0,0,0.7)");
-                context_clone.fill_rect(x + 10.0, y - 20.0, 100.0, 40.0);
-
-                context_clone.set_font("12px sans-serif");
-                context_clone.set_fill_style_str("white");
-                context_clone
-                    .fill_text("Tooltip", x + 15.0, y)
-                    .expect("operation should succeed");
             }
         }) as Box<dyn FnMut(_)>);
 
-        // Add the event listener
         self.canvas
             .add_event_listener_with_callback(
                 "mousemove",
                 mousemove_callback.as_ref().unchecked_ref(),
             )
             .map_err(|_| Error::InvalidInput("Failed to add event listener".to_string()))?;
-
-        // Store the listener to avoid it being dropped
         self.event_listeners
             .push(("mousemove".to_string(), mousemove_callback));
+
+        // Clear any lingering tooltip once the cursor leaves the chart.
+        let overlay_context_leave = self.overlay_context.clone();
+        let config_leave = self.config.clone();
+        let mouseleave_callback = Closure::wrap(Box::new(move |_event: web_sys::MouseEvent| {
+            overlay_context_leave.clear_rect(
+                0.0,
+                0.0,
+                config_leave.width as f64,
+                config_leave.height as f64,
+            );
+        }) as Box<dyn FnMut(_)>);
+        self.canvas
+            .add_event_listener_with_callback(
+                "mouseleave",
+                mouseleave_callback.as_ref().unchecked_ref(),
+            )
+            .map_err(|_| Error::InvalidInput("Failed to add event listener".to_string()))?;
+        self.event_listeners
+            .push(("mouseleave".to_string(), mouseleave_callback));
 
         Ok(())
     }
@@ -1086,72 +1218,442 @@ impl WebVisualization {
     }
 }
 
-// Add the extension methods to the plotters_ext module
+// Real chart rendering for the web canvas backend.
+//
+// Every drawing routine here is generic over `DB: DrawingBackend`
+// instead of being written directly against `CanvasBackend`. This is
+// what makes these renderers testable at all under `cargo nextest`:
+// `CanvasBackend` can only be constructed from a real
+// `web_sys::HtmlCanvasElement`, which requires an actual browser/DOM and
+// does not exist when running natively, so a native test exercises the
+// exact same drawing code against `SVGBackend`/`BitMapBackend` instead.
+// The public `plot_*_for_web` entry points stay concrete over
+// `CanvasBackend` because that is what `WebVisualization::render` calls
+// them with.
 mod plotters_ext_web {
     use super::*;
-    use crate::vis::plotters_ext::PlotSettings;
+    use crate::vis::plotters_ext::{PlotKind, PlotSettings};
+    use plotters::coord::Shift;
     use plotters::prelude::*;
 
-    /// Implementation of multi-series plotting for web
-    pub fn plot_multi_series_for_web(
+    /// Draw one or more (name, x, y, color) series as a line, scatter,
+    /// bar, or area chart onto an already-created drawing area.
+    fn draw_xy_chart<DB: DrawingBackend>(
+        drawing_area: &DrawingArea<DB, Shift>,
+        settings: &PlotSettings,
+        series: &[(String, Vec<f64>, Vec<f64>, (u8, u8, u8))],
+    ) -> Result<()>
+    where
+        DB::ErrorType: std::error::Error + Send + Sync + 'static,
+    {
+        if series.is_empty() || series.iter().all(|(_, x, _, _)| x.is_empty()) {
+            return Err(Error::EmptyData("No data to plot".to_string()));
+        }
+
+        let mut x_min = f64::INFINITY;
+        let mut x_max = f64::NEG_INFINITY;
+        let mut y_min = f64::INFINITY;
+        let mut y_max = f64::NEG_INFINITY;
+        for (_, xs, ys, _) in series {
+            for &v in xs.iter().filter(|v| v.is_finite()) {
+                x_min = x_min.min(v);
+                x_max = x_max.max(v);
+            }
+            for &v in ys.iter().filter(|v| v.is_finite()) {
+                y_min = y_min.min(v);
+                y_max = y_max.max(v);
+            }
+        }
+        if !x_min.is_finite() || !y_min.is_finite() {
+            return Err(Error::EmptyData("No finite data to plot".to_string()));
+        }
+        // Keep the zero baseline visible for bar/area charts, the same
+        // way the SVG bar chart does, instead of letting an all-positive
+        // or all-negative series push it off the drawn range.
+        if matches!(settings.plot_kind, PlotKind::Bar | PlotKind::Area) {
+            y_min = y_min.min(0.0);
+            y_max = y_max.max(0.0);
+        }
+
+        let x_range = if (x_max - x_min).abs() < f64::EPSILON {
+            1.0
+        } else {
+            x_max - x_min
+        };
+        let y_range = if (y_max - y_min).abs() < f64::EPSILON {
+            1.0
+        } else {
+            y_max - y_min
+        };
+        let x_margin = x_range * 0.05;
+        let y_margin = y_range * 0.05;
+
+        let mut chart = ChartBuilder::on(drawing_area)
+            .caption(&settings.title, ("sans-serif", 24).into_font())
+            .margin(10)
+            .x_label_area_size(30)
+            .y_label_area_size(40)
+            .build_cartesian_2d(
+                (x_min - x_margin)..(x_max + x_margin),
+                (y_min - y_margin)..(y_max + y_margin),
+            )?;
+
+        let mut mesh = chart.configure_mesh();
+        mesh.x_desc(&settings.x_label).y_desc(&settings.y_label);
+        if !settings.show_grid {
+            mesh.disable_mesh();
+        }
+        mesh.draw()?;
+
+        for (name, xs, ys, rgb) in series {
+            let color = RGBColor(rgb.0, rgb.1, rgb.2);
+            let points: Vec<(f64, f64)> = xs
+                .iter()
+                .zip(ys.iter())
+                .map(|(&x, &y)| (x, y))
+                .filter(|(x, y)| x.is_finite() && y.is_finite())
+                .collect();
+            if points.is_empty() {
+                continue;
+            }
+
+            match settings.plot_kind {
+                PlotKind::Line => {
+                    let handle =
+                        chart.draw_series(LineSeries::new(points.iter().copied(), color))?;
+                    if settings.show_legend {
+                        handle.label(name.clone()).legend(move |(x, y)| {
+                            PathElement::new(vec![(x, y), (x + 20, y)], color)
+                        });
+                    }
+                }
+                PlotKind::Scatter => {
+                    let handle = chart.draw_series(
+                        points
+                            .iter()
+                            .map(|&(x, y)| Circle::new((x, y), 3, color.filled())),
+                    )?;
+                    if settings.show_legend {
+                        handle
+                            .label(name.clone())
+                            .legend(move |(x, y)| Circle::new((x + 10, y), 3, color.filled()));
+                    }
+                }
+                PlotKind::Bar => {
+                    let mut xs_sorted: Vec<f64> = points.iter().map(|&(x, _)| x).collect();
+                    xs_sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+                    let bar_width = if xs_sorted.len() <= 1 {
+                        0.5
+                    } else {
+                        let mut min_diff = f64::INFINITY;
+                        for w in xs_sorted.windows(2) {
+                            let diff = (w[1] - w[0]).abs();
+                            if diff > 0.0 && diff < min_diff {
+                                min_diff = diff;
+                            }
+                        }
+                        if min_diff.is_finite() {
+                            min_diff * 0.8
+                        } else {
+                            0.5
+                        }
+                    };
+                    let handle = chart.draw_series(points.iter().map(|&(x, y)| {
+                        Rectangle::new(
+                            [(x - bar_width / 2.0, 0.0), (x + bar_width / 2.0, y)],
+                            color.filled(),
+                        )
+                    }))?;
+                    if settings.show_legend {
+                        handle.label(name.clone()).legend(move |(x, y)| {
+                            Rectangle::new([(x, y - 5), (x + 20, y + 5)], color.filled())
+                        });
+                    }
+                }
+                PlotKind::Area => {
+                    let handle = chart.draw_series(AreaSeries::new(
+                        points.iter().copied(),
+                        0.0,
+                        color.mix(0.2),
+                    ))?;
+                    if settings.show_legend {
+                        handle.label(name.clone()).legend(move |(x, y)| {
+                            PathElement::new(vec![(x, y), (x + 20, y)], color)
+                        });
+                    }
+                }
+                PlotKind::Histogram | PlotKind::BoxPlot => {
+                    return Err(Error::NotImplemented(
+                        "use plot_histogram_for_web/plot_boxplot_for_web for this plot kind"
+                            .to_string(),
+                    ));
+                }
+            }
+        }
+
+        if settings.show_legend {
+            chart
+                .configure_series_labels()
+                .background_style(WHITE.mix(0.8))
+                .border_style(BLACK)
+                .draw()?;
+        }
+
+        Ok(())
+    }
+
+    fn numeric_series_for_columns(
         df: &DataFrame,
         columns: &[&str],
-        drawing_area: DrawingArea<plotters_canvas::CanvasBackend, plotters::coord::Shift>,
         settings: &PlotSettings,
-    ) -> Result<()> {
-        // This is a placeholder that would be implemented similar to the
-        // PNG/SVG versions in plotters_ext.rs
-        Ok(())
+    ) -> Result<Vec<(String, Vec<f64>, Vec<f64>, (u8, u8, u8))>> {
+        let mut out = Vec::with_capacity(columns.len());
+        for (i, &col) in columns.iter().enumerate() {
+            let values = df.get_column_numeric_values(col)?;
+            let indices: Vec<f64> = (0..values.len()).map(|i| i as f64).collect();
+            let palette_len = settings.color_palette.len().max(1);
+            let color = settings
+                .color_palette
+                .get(i % palette_len)
+                .copied()
+                .unwrap_or((70, 130, 180));
+            out.push((col.to_string(), indices, values, color));
+        }
+        Ok(out)
     }
 
-    /// Implementation of column plotting for web
-    pub fn plot_column_for_web(
+    /// Multi-series line chart (one line per column, sharing a row-index
+    /// x-axis) — used for [`VisualizationType::Line`].
+    pub fn plot_multi_series_for_web<DB: DrawingBackend>(
+        df: &DataFrame,
+        columns: &[&str],
+        drawing_area: DrawingArea<DB, Shift>,
+        settings: &PlotSettings,
+    ) -> Result<()>
+    where
+        DB::ErrorType: std::error::Error + Send + Sync + 'static,
+    {
+        let series = numeric_series_for_columns(df, columns, settings)?;
+        draw_xy_chart(&drawing_area, settings, &series)
+    }
+
+    /// Single-column chart (bar or area, per `settings.plot_kind`)
+    /// plotted against a row-index x-axis — used for
+    /// [`VisualizationType::Bar`] and [`VisualizationType::Area`].
+    pub fn plot_column_for_web<DB: DrawingBackend>(
         df: &DataFrame,
         column: &str,
-        drawing_area: DrawingArea<plotters_canvas::CanvasBackend, plotters::coord::Shift>,
+        drawing_area: DrawingArea<DB, Shift>,
         settings: &PlotSettings,
-    ) -> Result<()> {
-        // This is a placeholder that would be implemented similar to the
-        // PNG/SVG versions in plotters_ext.rs
-        Ok(())
+    ) -> Result<()>
+    where
+        DB::ErrorType: std::error::Error + Send + Sync + 'static,
+    {
+        let series = numeric_series_for_columns(df, &[column], settings)?;
+        draw_xy_chart(&drawing_area, settings, &series)
     }
 
-    /// Implementation of scatter plotting for web
-    pub fn plot_scatter_for_web(
+    /// Scatter plot of two numeric columns — used for
+    /// [`VisualizationType::Scatter`].
+    pub fn plot_scatter_for_web<DB: DrawingBackend>(
         df: &DataFrame,
         x_column: &str,
         y_column: &str,
-        drawing_area: DrawingArea<plotters_canvas::CanvasBackend, plotters::coord::Shift>,
+        drawing_area: DrawingArea<DB, Shift>,
         settings: &PlotSettings,
-    ) -> Result<()> {
-        // This is a placeholder that would be implemented similar to the
-        // PNG/SVG versions in plotters_ext.rs
-        Ok(())
+    ) -> Result<()>
+    where
+        DB::ErrorType: std::error::Error + Send + Sync + 'static,
+    {
+        let x_values = df.get_column_numeric_values(x_column)?;
+        let y_values = df.get_column_numeric_values(y_column)?;
+        if x_values.len() != y_values.len() {
+            return Err(Error::DimensionMismatch(
+                "x and y columns must have the same length".to_string(),
+            ));
+        }
+        let color = settings
+            .color_palette
+            .first()
+            .copied()
+            .unwrap_or((70, 130, 180));
+        let series = vec![(
+            format!("{} vs {}", y_column, x_column),
+            x_values,
+            y_values,
+            color,
+        )];
+        draw_xy_chart(&drawing_area, settings, &series)
     }
 
-    /// Implementation of histogram plotting for web
-    pub fn plot_histogram_for_web(
+    /// Histogram of one numeric column — used for
+    /// [`VisualizationType::Histogram`].
+    pub fn plot_histogram_for_web<DB: DrawingBackend>(
         df: &DataFrame,
         column: &str,
         bins: usize,
-        drawing_area: DrawingArea<plotters_canvas::CanvasBackend, plotters::coord::Shift>,
+        drawing_area: DrawingArea<DB, Shift>,
         settings: &PlotSettings,
-    ) -> Result<()> {
-        // This is a placeholder that would be implemented similar to the
-        // PNG/SVG versions in plotters_ext.rs
+    ) -> Result<()>
+    where
+        DB::ErrorType: std::error::Error + Send + Sync + 'static,
+    {
+        let values = df.get_column_numeric_values(column)?;
+        let finite: Vec<f64> = values.into_iter().filter(|v| v.is_finite()).collect();
+        if finite.is_empty() {
+            return Err(Error::EmptyData("No data to plot".to_string()));
+        }
+        if bins == 0 {
+            return Err(Error::InvalidInput(
+                "Histogram: bins must be greater than 0".to_string(),
+            ));
+        }
+
+        let min_val = finite.iter().cloned().fold(f64::INFINITY, f64::min);
+        let max_val = finite.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        // A constant column has max_val == min_val; fall back to a
+        // single unit-width bin instead of dividing by zero.
+        let bin_width = if (max_val - min_val).abs() < f64::EPSILON {
+            1.0
+        } else {
+            (max_val - min_val) / bins as f64
+        };
+        let mut counts = vec![0usize; bins];
+        for &v in &finite {
+            let idx = ((v - min_val) / bin_width).floor() as usize;
+            counts[idx.min(bins - 1)] += 1;
+        }
+        let max_freq = *counts.iter().max().unwrap_or(&1) as f64;
+
+        let mut chart = ChartBuilder::on(&drawing_area)
+            .caption(&settings.title, ("sans-serif", 24).into_font())
+            .margin(10)
+            .x_label_area_size(30)
+            .y_label_area_size(40)
+            .build_cartesian_2d(
+                min_val..(max_val + bin_width * 0.1).max(min_val + f64::EPSILON),
+                0.0..(max_freq * 1.1).max(1.0),
+            )?;
+
+        let mut mesh = chart.configure_mesh();
+        mesh.x_desc(&settings.x_label).y_desc("Frequency");
+        if !settings.show_grid {
+            mesh.disable_mesh();
+        }
+        mesh.draw()?;
+
+        let color_rgb = settings
+            .color_palette
+            .first()
+            .copied()
+            .unwrap_or((70, 130, 180));
+        let color = RGBColor(color_rgb.0, color_rgb.1, color_rgb.2);
+        chart.draw_series(counts.iter().enumerate().map(|(i, &count)| {
+            let x0 = min_val + i as f64 * bin_width;
+            let x1 = x0 + bin_width;
+            Rectangle::new([(x0, 0.0), (x1, count as f64)], color.mix(0.7).filled())
+        }))?;
+
         Ok(())
     }
 
-    /// Implementation of box plotting for web
-    pub fn plot_boxplot_for_web(
+    /// Box plot of a numeric column grouped by a category column — used
+    /// for [`VisualizationType::BoxPlot`].
+    ///
+    /// Delegates the statistics and box/whisker/median/outlier drawing
+    /// to [`crate::vis::plotters::boxplot_stats`] and
+    /// [`crate::vis::plotters::draw_boxplot_series`], the same shared
+    /// implementation the PNG/SVG box plot backends use, so a real box
+    /// width and real median line are not yet another divergent copy.
+    pub fn plot_boxplot_for_web<DB: DrawingBackend>(
         df: &DataFrame,
         category_column: &str,
         value_column: &str,
-        drawing_area: DrawingArea<plotters_canvas::CanvasBackend, plotters::coord::Shift>,
+        drawing_area: DrawingArea<DB, Shift>,
         settings: &PlotSettings,
-    ) -> Result<()> {
-        // This is a placeholder that would be implemented similar to the
-        // PNG/SVG versions in plotters_ext.rs
-        Ok(())
+    ) -> Result<()>
+    where
+        DB::ErrorType: std::error::Error + Send + Sync + 'static,
+    {
+        let categories_raw = df.get_column_string_values(category_column)?;
+        let values = df.get_column_numeric_values(value_column)?;
+        if categories_raw.len() != values.len() {
+            return Err(Error::DimensionMismatch(
+                "category and value columns must have the same length".to_string(),
+            ));
+        }
+
+        let mut category_map: std::collections::HashMap<String, Vec<f64>> =
+            std::collections::HashMap::new();
+        for (cat, val) in categories_raw.into_iter().zip(values.into_iter()) {
+            category_map.entry(cat).or_default().push(val);
+        }
+        let mut categories: Vec<String> = category_map
+            .iter()
+            .filter(|(_, v)| !v.is_empty())
+            .map(|(k, _)| k.clone())
+            .collect();
+        categories.sort();
+        if categories.is_empty() {
+            return Err(Error::EmptyData("No data to plot".to_string()));
+        }
+
+        let all_stats: Vec<crate::vis::plotters::BoxPlotStats> = categories
+            .iter()
+            .filter_map(|c| category_map.get(c))
+            .filter_map(|v| crate::vis::plotters::boxplot_stats(v))
+            .collect();
+        if all_stats.is_empty() {
+            return Err(Error::EmptyData("No finite data to plot".to_string()));
+        }
+        let y_min = all_stats
+            .iter()
+            .map(|s| s.min.min(s.whisker_low))
+            .fold(f64::INFINITY, f64::min);
+        let y_max = all_stats
+            .iter()
+            .map(|s| s.max.max(s.whisker_high))
+            .fold(f64::NEG_INFINITY, f64::max);
+        let y_range = if (y_max - y_min).abs() < f64::EPSILON {
+            1.0
+        } else {
+            y_max - y_min
+        };
+        let y_margin = y_range * 0.1;
+
+        let mut chart = ChartBuilder::on(&drawing_area)
+            .caption(&settings.title, ("sans-serif", 24).into_font())
+            .margin(10)
+            .x_label_area_size(30)
+            .y_label_area_size(40)
+            .build_cartesian_2d(
+                -0.5f64..(categories.len() as f64 - 0.5),
+                (y_min - y_margin)..(y_max + y_margin),
+            )?;
+
+        let label_formatter = |x: &f64| {
+            let i = x.round() as isize;
+            if i >= 0 && (i as usize) < categories.len() {
+                categories[i as usize].clone()
+            } else {
+                String::new()
+            }
+        };
+        let mut mesh = chart.configure_mesh();
+        mesh.x_labels(categories.len())
+            .x_label_formatter(&label_formatter)
+            .x_desc(&settings.x_label)
+            .y_desc(&settings.y_label);
+        if !settings.show_grid {
+            mesh.disable_mesh();
+        }
+        mesh.draw()?;
+
+        crate::vis::plotters::draw_boxplot_series(
+            &mut chart,
+            &categories,
+            &category_map,
+            &settings.color_palette,
+        )
     }
 }

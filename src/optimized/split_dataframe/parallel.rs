@@ -1,11 +1,22 @@
 //! Parallel processing functionality for OptimizedDataFrame
 
 use rayon::prelude::*;
-use std::collections::HashMap;
 
 use super::core::OptimizedDataFrame;
+use super::select::take_rows;
 use crate::column::{BooleanColumn, Column, ColumnTrait, Float64Column, Int64Column, StringColumn};
 use crate::error::{Error, Result};
+use crate::index::DataFrameIndex;
+
+/// Number of *selected rows* above which a single column's gather is spread
+/// over the rayon thread pool via a real `par_iter` (as opposed to the
+/// `chunks()` loop this file used to run serially and call "parallel").
+/// Column-count-independent by design: a 1-column frame with this many rows
+/// selected must still parallelize, since there is no second column for
+/// column-level parallelism to fall back on. Kept at the same order of
+/// magnitude as `select::PARALLEL_TAKE_THRESHOLD` (8192 *cells*), which
+/// tunes the equivalent all-columns gather in [`take_rows`].
+const ROW_GATHER_PARALLEL_THRESHOLD: usize = 8192;
 
 impl OptimizedDataFrame {
     /// Parallel row filtering
@@ -70,198 +81,77 @@ impl OptimizedDataFrame {
                     .collect()
             };
 
-            if indices.is_empty() {
-                // Return empty DataFrame
-                let mut result = Self::new();
-                for name in &self.column_names {
-                    let col_idx = self.column_indices[name];
-                    let empty_col = match &self.columns[col_idx] {
-                        Column::Int64(_) => Column::Int64(Int64Column::new(Vec::new())),
-                        Column::Float64(_) => Column::Float64(Float64Column::new(Vec::new())),
-                        Column::String(_) => Column::String(StringColumn::new(Vec::new())),
-                        Column::Boolean(_) => Column::Boolean(BooleanColumn::new(Vec::new())),
-                    };
-                    result.add_column(name.clone(), empty_col)?;
-                }
-                return Ok(result);
+            // `indices` are always < row_count in this crate today (every
+            // column reaches `self.columns` through `add_column`, which
+            // rejects a length other than `self.row_count` outright, and the
+            // one direct in-place column replacement -- `apply.rs`'s
+            // `result.columns[*col_idx] = new_column` -- always rebuilds the
+            // replacement at the same length as the column it replaces) but
+            // filtering defensively costs one cheap linear pass and matches
+            // `take_rows`, which guards the same way for the same reason.
+            let indices: Vec<usize> = indices
+                .into_iter()
+                .filter(|&i| i < self.row_count)
+                .collect();
+
+            // Decide, once, whether materializing the selected rows is worth
+            // spreading over the thread pool at all. Below the threshold,
+            // delegate straight to the canonical row-materialization routine
+            // ([`take_rows`]): it is already correct (typed, NULL-preserving,
+            // re-selects the index) and small selections aren't worth a
+            // second, hand-rolled code path.
+            let row_parallel = indices.len() >= ROW_GATHER_PARALLEL_THRESHOLD;
+            let workload = indices.len().saturating_mul(self.column_names.len());
+            // Mutually exclusive by design, not merely by the `!row_parallel`
+            // guard being convenient: once the per-column gather is already
+            // spread across rows (`row_parallel`), doing so once per column
+            // already saturates the thread pool for that column, so *also*
+            // running `column_names.par_iter()` outside it would only add
+            // nested-task scheduling overhead for no extra throughput.
+            // `col_parallel` exists purely to cover the complementary case --
+            // many columns, each individually below the row threshold, where
+            // row-level parallelism cannot fire at all but the aggregate
+            // per-column work still adds up.
+            let col_parallel = !row_parallel
+                && self.column_names.len() > 1
+                && workload >= ROW_GATHER_PARALLEL_THRESHOLD;
+
+            if !row_parallel && !col_parallel {
+                return take_rows(self, &indices);
             }
 
-            // Create new DataFrame
+            // Large selection: gather every column ourselves so the row-level
+            // work (the dominant cost here) actually runs in parallel, which
+            // `take_rows` alone cannot guarantee -- its own parallelism is
+            // column-level (`column_names.par_iter()`), which is a no-op for
+            // a frame with only one or two columns. Falling back to
+            // `take_rows` afterwards just to re-derive the index would pay
+            // for this frame's dominant cost (the per-column gather) twice,
+            // so the index is re-selected locally instead (mirrors
+            // `select::take_rows`'s Simple/Multi handling exactly; see
+            // `resubset_index` below).
             let mut result = Self::new();
 
-            // Pre-allocate vector for result columns
-            let mut result_columns = Vec::with_capacity(self.column_names.len());
+            let gather = |name: &String| {
+                let i = self.column_indices[name];
+                let column = take_column_row_aware(&self.columns[i], &indices, row_parallel);
+                (name.clone(), column)
+            };
 
-            // Choose column processing method based on data size
-            if indices.len() < PARALLEL_THRESHOLD || self.column_names.len() < 4 {
-                // Serial processing (small data or few columns)
-                for name in &self.column_names {
-                    let i = self.column_indices[name];
-                    let column = &self.columns[i];
-
-                    let filtered_column = match column {
-                        Column::Int64(col) => {
-                            let filtered_data: Vec<i64> = indices
-                                .iter()
-                                .map(|&idx| {
-                                    if let Ok(Some(val)) = col.get(idx) {
-                                        val
-                                    } else {
-                                        0 // Default value
-                                    }
-                                })
-                                .collect();
-                            Column::Int64(Int64Column::new(filtered_data))
-                        }
-                        Column::Float64(col) => {
-                            let filtered_data: Vec<f64> = indices
-                                .iter()
-                                .map(|&idx| {
-                                    if let Ok(Some(val)) = col.get(idx) {
-                                        val
-                                    } else {
-                                        0.0 // Default value
-                                    }
-                                })
-                                .collect();
-                            Column::Float64(Float64Column::new(filtered_data))
-                        }
-                        Column::String(col) => {
-                            let filtered_data: Vec<String> = indices
-                                .iter()
-                                .map(|&idx| {
-                                    if let Ok(Some(val)) = col.get(idx) {
-                                        val.to_string()
-                                    } else {
-                                        String::new() // Default value
-                                    }
-                                })
-                                .collect();
-                            Column::String(StringColumn::new(filtered_data))
-                        }
-                        Column::Boolean(col) => {
-                            let filtered_data: Vec<bool> = indices
-                                .iter()
-                                .map(|&idx| {
-                                    if let Ok(Some(val)) = col.get(idx) {
-                                        val
-                                    } else {
-                                        false // Default value
-                                    }
-                                })
-                                .collect();
-                            Column::Boolean(BooleanColumn::new(filtered_data))
-                        }
-                    };
-
-                    result_columns.push((name.clone(), filtered_column));
-                }
+            let result_columns: Vec<(String, Column)> = if col_parallel {
+                self.column_names.par_iter().map(gather).collect()
             } else {
-                // Parallel processing for large data
-                // Process each column in parallel (coarse-grained parallelism at column level)
-                result_columns = self
-                    .column_names
-                    .par_iter()
-                    .map(|name| {
-                        let i = self.column_indices[name];
-                        let column = &self.columns[i];
+                self.column_names.iter().map(gather).collect()
+            };
 
-                        let indices_len = indices.len();
-                        let filtered_column = match column {
-                            Column::Int64(col) => {
-                                // Split large index list for processing
-                                let chunk_size = (indices_len / 8).max(1000);
-                                let mut filtered_data = Vec::with_capacity(indices_len);
-
-                                // Use chunks to ensure all elements are processed
-                                for chunk in indices.chunks(chunk_size) {
-                                    let chunk_data: Vec<i64> = chunk
-                                        .iter()
-                                        .map(|&idx| {
-                                            if let Ok(Some(val)) = col.get(idx) {
-                                                val
-                                            } else {
-                                                0 // Default value
-                                            }
-                                        })
-                                        .collect();
-                                    filtered_data.extend(chunk_data);
-                                }
-
-                                Column::Int64(Int64Column::new(filtered_data))
-                            }
-                            Column::Float64(col) => {
-                                // Split large index list for processing
-                                let chunk_size = (indices_len / 8).max(1000);
-                                let mut filtered_data = Vec::with_capacity(indices_len);
-
-                                // Use chunks to ensure all elements are processed
-                                for chunk in indices.chunks(chunk_size) {
-                                    let chunk_data: Vec<f64> = chunk
-                                        .iter()
-                                        .map(|&idx| {
-                                            if let Ok(Some(val)) = col.get(idx) {
-                                                val
-                                            } else {
-                                                0.0 // Default value
-                                            }
-                                        })
-                                        .collect();
-                                    filtered_data.extend(chunk_data);
-                                }
-
-                                Column::Float64(Float64Column::new(filtered_data))
-                            }
-                            Column::String(col) => {
-                                // String processing is especially heavy, use finer chunks
-                                let chunk_size = (indices_len / 16).max(500);
-                                let mut filtered_data = Vec::with_capacity(indices_len);
-
-                                // Use chunks to ensure all elements are processed
-                                for chunk in indices.chunks(chunk_size) {
-                                    let chunk_data: Vec<String> = chunk
-                                        .iter()
-                                        .map(|&idx| {
-                                            if let Ok(Some(val)) = col.get(idx) {
-                                                val.to_string()
-                                            } else {
-                                                String::new() // Default value
-                                            }
-                                        })
-                                        .collect();
-                                    filtered_data.extend(chunk_data);
-                                }
-
-                                Column::String(StringColumn::new(filtered_data))
-                            }
-                            Column::Boolean(col) => {
-                                let filtered_data: Vec<bool> = indices
-                                    .iter()
-                                    .map(|&idx| {
-                                        if let Ok(Some(val)) = col.get(idx) {
-                                            val
-                                        } else {
-                                            false // Default value
-                                        }
-                                    })
-                                    .collect();
-                                Column::Boolean(BooleanColumn::new(filtered_data))
-                            }
-                        };
-
-                        (name.clone(), filtered_column)
-                    })
-                    .collect();
-            }
-
-            // Add results to DataFrame
             for (name, column) in result_columns {
                 result.add_column(name, column)?;
             }
 
-            // Copy index
-            if let Some(ref idx) = self.index {
-                result.index = Some(idx.clone());
+            if !self.column_names.is_empty() {
+                if let Some(ref index) = self.index {
+                    resubset_index(index, &indices, &mut result)?;
+                }
             }
 
             Ok(result)
@@ -272,4 +162,168 @@ impl OptimizedDataFrame {
             )))
         }
     }
+}
+
+/// Materialize one column for `indices`, preserving NULLs the same way
+/// [`super::select::take_column`] does: a NULL slot still needs *some*
+/// placeholder value to keep the data vector the same length as the null
+/// mask, so it gets the type's zero value, but the null bitmap marks that
+/// slot NULL, so no reader ever observes the placeholder as real data.
+/// Nothing is substituted for an existing value -- only genuinely-missing
+/// slots get the (masked-out) placeholder.
+///
+/// Gathers via a real `par_iter().unzip()` (not a `chunks()` loop that
+/// nobody parallelized) when `parallel` is true, so a 1-column frame
+/// benefits exactly like a many-column one.
+fn take_column_row_aware(column: &Column, indices: &[usize], parallel: bool) -> Column {
+    match column {
+        Column::Int64(col) => {
+            let (values, nulls): (Vec<i64>, Vec<bool>) = if parallel {
+                indices
+                    .par_iter()
+                    .map(|&idx| match col.get(idx) {
+                        Ok(Some(v)) => (v, false),
+                        _ => (0, true),
+                    })
+                    .unzip()
+            } else {
+                indices
+                    .iter()
+                    .map(|&idx| match col.get(idx) {
+                        Ok(Some(v)) => (v, false),
+                        _ => (0, true),
+                    })
+                    .unzip()
+            };
+            let mut new_col = Int64Column::with_nulls(values, nulls);
+            if let Some(name) = col.get_name() {
+                new_col.set_name(name.to_string());
+            }
+            Column::Int64(new_col)
+        }
+        Column::Float64(col) => {
+            let (values, nulls): (Vec<f64>, Vec<bool>) = if parallel {
+                indices
+                    .par_iter()
+                    .map(|&idx| match col.get(idx) {
+                        Ok(Some(v)) => (v, false),
+                        _ => (0.0, true),
+                    })
+                    .unzip()
+            } else {
+                indices
+                    .iter()
+                    .map(|&idx| match col.get(idx) {
+                        Ok(Some(v)) => (v, false),
+                        _ => (0.0, true),
+                    })
+                    .unzip()
+            };
+            let mut new_col = Float64Column::with_nulls(values, nulls);
+            if let Some(name) = col.get_name() {
+                new_col.set_name(name.to_string());
+            }
+            Column::Float64(new_col)
+        }
+        Column::String(col) => {
+            let (values, nulls): (Vec<String>, Vec<bool>) = if parallel {
+                indices
+                    .par_iter()
+                    .map(|&idx| match col.get(idx) {
+                        Ok(Some(v)) => (v.to_string(), false),
+                        _ => (String::new(), true),
+                    })
+                    .unzip()
+            } else {
+                indices
+                    .iter()
+                    .map(|&idx| match col.get(idx) {
+                        Ok(Some(v)) => (v.to_string(), false),
+                        _ => (String::new(), true),
+                    })
+                    .unzip()
+            };
+            let mut new_col = StringColumn::with_nulls(values, nulls);
+            if let Some(name) = col.get_name() {
+                new_col.set_name(name.to_string());
+            }
+            Column::String(new_col)
+        }
+        Column::Boolean(col) => {
+            let (values, nulls): (Vec<bool>, Vec<bool>) = if parallel {
+                indices
+                    .par_iter()
+                    .map(|&idx| match col.get(idx) {
+                        Ok(Some(v)) => (v, false),
+                        _ => (false, true),
+                    })
+                    .unzip()
+            } else {
+                indices
+                    .iter()
+                    .map(|&idx| match col.get(idx) {
+                        Ok(Some(v)) => (v, false),
+                        _ => (false, true),
+                    })
+                    .unzip()
+            };
+            let mut new_col = BooleanColumn::with_nulls(values, nulls);
+            if let Some(name) = col.get_name() {
+                new_col.set_name(name.to_string());
+            }
+            Column::Boolean(new_col)
+        }
+    }
+}
+
+/// Re-select `source_index`'s labels onto `result` for `positions`.
+///
+/// Mirrors [`super::select::take_rows`]'s index handling exactly (duplicated
+/// rather than shared because the row-parallel fast path above only exists
+/// to avoid the redundant full serial gather that calling `take_rows` a
+/// second time would cost; see the comment at its call site). Keep this in
+/// sync with `take_rows` if index-resubsetting behaviour ever changes.
+fn resubset_index(
+    source_index: &DataFrameIndex<String>,
+    positions: &[usize],
+    result: &mut OptimizedDataFrame,
+) -> Result<()> {
+    match source_index {
+        DataFrameIndex::Simple(simple_idx) => {
+            let values: Vec<String> = positions
+                .iter()
+                .map(|&pos| {
+                    simple_idx
+                        .get_value(pos)
+                        .cloned()
+                        .unwrap_or_else(|| pos.to_string())
+                })
+                .collect();
+
+            match crate::index::Index::with_name(values, simple_idx.name().cloned()) {
+                Ok(new_index) => result.set_index_from_simple_index(new_index)?,
+                // Duplicate labels (repeated positions) cannot be stored in
+                // an Index<String>; fall back to positional labels.
+                Err(_) => result.set_default_index()?,
+            }
+        }
+        DataFrameIndex::Multi(multi_idx) => {
+            let tuples: Option<Vec<Vec<String>>> = positions
+                .iter()
+                .map(|&pos| multi_idx.get_tuple(pos))
+                .collect();
+
+            match tuples {
+                Some(tuples) if !tuples.is_empty() => {
+                    let level_names: Vec<Option<String>> = multi_idx.names().to_vec();
+                    match crate::index::MultiIndex::from_tuples(tuples, Some(level_names)) {
+                        Ok(new_index) => result.set_index_from_multi_index(new_index)?,
+                        Err(_) => result.set_default_index()?,
+                    }
+                }
+                _ => result.set_default_index()?,
+            }
+        }
+    }
+    Ok(())
 }

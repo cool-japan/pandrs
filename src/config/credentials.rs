@@ -10,8 +10,19 @@ use std::env;
 use std::fs;
 use std::path::Path;
 
+/// PBKDF2 iteration count for credential key derivation (OWASP 2023 guidance
+/// for PBKDF2-HMAC-SHA256).
+const CREDENTIAL_KDF_ITERATIONS: u32 = 600_000;
+/// Accepted bounds when a config is loaded from an untrusted file: reject a
+/// work factor low enough to be trivial or high enough to be a verification
+/// DoS (e.g. `u32::MAX`).
+const CREDENTIAL_KDF_MIN_ITERATIONS: u32 = 100_000;
+const CREDENTIAL_KDF_MAX_ITERATIONS: u32 = 10_000_000;
+/// AAD version tag bound into every credential's authenticated encryption.
+const CREDENTIAL_AAD_VERSION: &str = "pandrs-cred-v1";
+
 /// Credential store for managing sensitive data
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct CredentialStore {
     /// Encrypted credential storage
     credentials: HashMap<String, EncryptedCredential>,
@@ -19,6 +30,33 @@ pub struct CredentialStore {
     encryption_key: Option<Vec<u8>>,
     /// Store configuration
     config: CredentialStoreConfig,
+}
+
+impl std::fmt::Debug for CredentialStore {
+    /// Redacting `Debug`: never print the derived encryption key.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CredentialStore")
+            .field("credentials", &self.credentials.len())
+            .field(
+                "encryption_key",
+                &self.encryption_key.as_ref().map(|_| "<redacted>"),
+            )
+            .field("config", &self.config)
+            .finish()
+    }
+}
+
+impl Drop for CredentialStore {
+    /// Best-effort zeroization of the derived key on drop (pure-Rust equivalent
+    /// of `zeroize`, which is outside this change's dependency ownership).
+    fn drop(&mut self) {
+        if let Some(ref mut key) = self.encryption_key {
+            for b in key.iter_mut() {
+                *b = 0;
+            }
+            std::hint::black_box(key.as_ptr());
+        }
+    }
 }
 
 /// Configuration for credential store
@@ -71,7 +109,7 @@ pub struct CredentialMetadata {
 }
 
 /// Credential types supported by the system
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub enum CredentialType {
     /// Database connection credentials
     Database {
@@ -105,6 +143,21 @@ pub enum CredentialType {
     Generic { fields: HashMap<String, String> },
 }
 
+impl std::fmt::Debug for CredentialType {
+    /// Redacting `Debug`: print only the credential category, never the
+    /// secret material (passwords, keys, tokens).
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let kind = match self {
+            CredentialType::Database { .. } => "Database",
+            CredentialType::Cloud { .. } => "Cloud",
+            CredentialType::ApiKey { .. } => "ApiKey",
+            CredentialType::SshKey { .. } => "SshKey",
+            CredentialType::Generic { .. } => "Generic",
+        };
+        write!(f, "CredentialType::{} {{ <redacted> }}", kind)
+    }
+}
+
 impl Default for CredentialStoreConfig {
     fn default() -> Self {
         Self {
@@ -112,7 +165,7 @@ impl Default for CredentialStoreConfig {
             encryption_algorithm: "AES-256-GCM".to_string(),
             key_derivation: "PBKDF2".to_string(),
             salt: generate_random_bytes(32),
-            iterations: 100_000,
+            iterations: CREDENTIAL_KDF_ITERATIONS,
             file_path: None,
             auto_save: false,
         }
@@ -155,7 +208,7 @@ impl CredentialStore {
 
     /// Store a credential
     pub fn store_credential(&mut self, name: &str, credential: CredentialType) -> Result<()> {
-        let encrypted = self.encrypt_credential(&credential)?;
+        let encrypted = self.encrypt_credential(name, &credential)?;
         self.credentials.insert(name.to_string(), encrypted);
 
         if self.config.auto_save {
@@ -172,7 +225,7 @@ impl CredentialStore {
             .get(name)
             .ok_or_else(|| Error::ConfigurationError(format!("Credential '{}' not found", name)))?;
 
-        let credential = self.decrypt_credential(encrypted)?;
+        let credential = self.decrypt_credential(name, encrypted)?;
 
         // Update last accessed time
         if let Some(encrypted_mut) = self.credentials.get_mut(name) {
@@ -233,24 +286,41 @@ impl CredentialStore {
         Ok(())
     }
 
-    /// Rotate encryption key
+    /// Rotate the encryption key.
+    ///
+    /// Rebuilt to be all-or-nothing: the complete re-encrypted map is
+    /// constructed under a freshly-derived key held in a local before any store
+    /// state is mutated. The previous implementation cleared `self.credentials`
+    /// and swapped in the new key *before* re-encrypting, so a failure midway
+    /// (or a single credential that failed to re-encrypt) permanently destroyed
+    /// every remaining credential.
     pub fn rotate_encryption_key(&mut self, new_password: &str) -> Result<()> {
-        // Decrypt all credentials with old key
-        let mut decrypted_credentials = HashMap::new();
+        // 1. Decrypt everything with the CURRENT key.
+        let mut decrypted: Vec<(String, CredentialType)> = Vec::new();
         for (name, encrypted) in &self.credentials {
-            let credential = self.decrypt_credential(encrypted)?;
-            decrypted_credentials.insert(name.clone(), credential);
+            decrypted.push((name.clone(), self.decrypt_credential(name, encrypted)?));
         }
 
-        // Generate new key and salt
-        self.config.salt = generate_random_bytes(32);
-        self.init_encryption(new_password)?;
+        // 2. Derive the NEW key locally without touching `self` yet.
+        let new_salt = generate_random_bytes(32);
+        let new_key = derive_key(new_password.as_bytes(), &new_salt, self.config.iterations)?;
 
-        // Re-encrypt all credentials with new key
-        self.credentials.clear();
-        for (name, credential) in decrypted_credentials {
-            self.store_credential(&name, credential)?;
+        // 3. Re-encrypt everything into a LOCAL map under the new key.
+        let mut new_credentials = HashMap::new();
+        for (name, credential) in &decrypted {
+            let encrypted = encrypt_credential_with(
+                name,
+                credential,
+                Some(&new_key),
+                self.config.encrypt_at_rest,
+            )?;
+            new_credentials.insert(name.clone(), encrypted);
         }
+
+        // 4. Only now, after every step has succeeded, commit atomically.
+        self.config.salt = new_salt;
+        self.encryption_key = Some(new_key);
+        self.credentials = new_credentials;
 
         if self.config.auto_save {
             self.save_to_file()?;
@@ -271,10 +341,17 @@ impl CredentialStore {
                 Error::ConfigurationError(format!("Failed to serialize credentials: {}", e))
             })?;
 
-            // Create parent directory if needed
+            // Create parent directory if needed, owner-only (0700) on unix.
             if let Some(parent) = Path::new(file_path).parent() {
-                if !parent.exists() {
-                    fs::create_dir_all(parent).map_err(|e| {
+                if !parent.as_os_str().is_empty() && !parent.exists() {
+                    let mut builder = fs::DirBuilder::new();
+                    builder.recursive(true);
+                    #[cfg(unix)]
+                    {
+                        use std::os::unix::fs::DirBuilderExt;
+                        builder.mode(0o700);
+                    }
+                    builder.create(parent).map_err(|e| {
                         Error::ConfigurationError(format!(
                             "Failed to create credential directory: {}",
                             e
@@ -283,9 +360,7 @@ impl CredentialStore {
                 }
             }
 
-            fs::write(file_path, json).map_err(|e| {
-                Error::ConfigurationError(format!("Failed to write credential file: {}", e))
-            })?;
+            write_secret_file(file_path, json.as_bytes())?;
         }
 
         Ok(())
@@ -308,6 +383,9 @@ impl CredentialStore {
             Error::ConfigurationError(format!("Failed to parse credential file: {}", e))
         })?;
 
+        // Do not trust security parameters from the file blindly.
+        validate_loaded_config(&data.config)?;
+
         Ok(Self {
             credentials: data.credentials,
             encryption_key: None,
@@ -326,13 +404,15 @@ impl CredentialStore {
 
         // Re-encrypt all credentials with export key
         for (name, encrypted) in &self.credentials {
-            let credential = self.decrypt_credential(encrypted)?;
+            let credential = self.decrypt_credential(name, encrypted)?;
             export_store.store_credential(name, credential)?;
         }
 
+        // Clone rather than move: `CredentialStore` implements `Drop` (to
+        // zeroize its key), which forbids moving fields out by value.
         let export_data = CredentialFileData {
-            config: export_store.config,
-            credentials: export_store.credentials,
+            config: export_store.config.clone(),
+            credentials: export_store.credentials.clone(),
         };
 
         serde_json::to_string_pretty(&export_data)
@@ -344,6 +424,9 @@ impl CredentialStore {
         let data: CredentialFileData = serde_json::from_str(export_data).map_err(|e| {
             Error::ConfigurationError(format!("Failed to parse import data: {}", e))
         })?;
+
+        // Do not trust security parameters from imported data blindly.
+        validate_loaded_config(&data.config)?;
 
         // Create temporary store to decrypt import data
         let mut import_store = Self {
@@ -362,56 +445,28 @@ impl CredentialStore {
         Ok(())
     }
 
-    /// Encrypt a credential
-    fn encrypt_credential(&self, credential: &CredentialType) -> Result<EncryptedCredential> {
-        if !self.config.encrypt_at_rest {
-            // Store unencrypted (for development/testing only)
-            let data = serde_json::to_vec(credential).map_err(|e| {
-                Error::ConfigurationError(format!("Failed to serialize credential: {}", e))
-            })?;
-
-            return Ok(EncryptedCredential {
-                data,
-                iv: Vec::new(),
-                tag: Vec::new(),
-                metadata: CredentialMetadata {
-                    credential_type: get_credential_type_name(credential),
-                    created_at: current_timestamp(),
-                    last_accessed: None,
-                    expires_at: None,
-                    tags: Vec::new(),
-                    active: true,
-                },
-            });
-        }
-
-        let key = self.encryption_key.as_ref().ok_or_else(|| {
-            Error::ConfigurationError("Encryption key not initialized".to_string())
-        })?;
-
-        let plaintext = serde_json::to_vec(credential).map_err(|e| {
-            Error::ConfigurationError(format!("Failed to serialize credential: {}", e))
-        })?;
-
-        let (ciphertext, iv, tag) = encrypt_data(&plaintext, key)?;
-
-        Ok(EncryptedCredential {
-            data: ciphertext,
-            iv,
-            tag,
-            metadata: CredentialMetadata {
-                credential_type: get_credential_type_name(credential),
-                created_at: current_timestamp(),
-                last_accessed: None,
-                expires_at: None,
-                tags: Vec::new(),
-                active: true,
-            },
-        })
+    /// Encrypt a credential, binding the credential `name` as AAD.
+    fn encrypt_credential(
+        &self,
+        name: &str,
+        credential: &CredentialType,
+    ) -> Result<EncryptedCredential> {
+        encrypt_credential_with(
+            name,
+            credential,
+            self.encryption_key.as_deref(),
+            self.config.encrypt_at_rest,
+        )
     }
 
-    /// Decrypt a credential
-    fn decrypt_credential(&self, encrypted: &EncryptedCredential) -> Result<CredentialType> {
+    /// Decrypt a credential, verifying the credential `name` bound as AAD. A
+    /// blob whose stored name does not match `name` fails authentication, so
+    /// ciphertexts cannot be swapped between credential entries.
+    fn decrypt_credential(
+        &self,
+        name: &str,
+        encrypted: &EncryptedCredential,
+    ) -> Result<CredentialType> {
         if !self.config.encrypt_at_rest {
             // Data is stored unencrypted
             let credential: CredentialType =
@@ -425,7 +480,8 @@ impl CredentialStore {
             Error::ConfigurationError("Encryption key not initialized".to_string())
         })?;
 
-        let plaintext = decrypt_data(&encrypted.data, &encrypted.iv, &encrypted.tag, key)?;
+        let aad = credential_aad(name);
+        let plaintext = decrypt_data(&encrypted.data, &encrypted.iv, &encrypted.tag, key, &aad)?;
 
         let credential: CredentialType = serde_json::from_slice(&plaintext).map_err(|e| {
             Error::ConfigurationError(format!("Failed to deserialize credential: {}", e))
@@ -435,6 +491,52 @@ impl CredentialStore {
     }
 }
 
+/// Encrypt a credential with an explicit key (used by rotation, which must
+/// encrypt under a freshly-derived key without mutating the store first).
+fn encrypt_credential_with(
+    name: &str,
+    credential: &CredentialType,
+    key: Option<&[u8]>,
+    encrypt_at_rest: bool,
+) -> Result<EncryptedCredential> {
+    let metadata = CredentialMetadata {
+        credential_type: get_credential_type_name(credential),
+        created_at: current_timestamp(),
+        last_accessed: None,
+        expires_at: None,
+        tags: Vec::new(),
+        active: true,
+    };
+
+    if !encrypt_at_rest {
+        let data = serde_json::to_vec(credential).map_err(|e| {
+            Error::ConfigurationError(format!("Failed to serialize credential: {}", e))
+        })?;
+        return Ok(EncryptedCredential {
+            data,
+            iv: Vec::new(),
+            tag: Vec::new(),
+            metadata,
+        });
+    }
+
+    let key =
+        key.ok_or_else(|| Error::ConfigurationError("Encryption key not initialized".to_string()))?;
+
+    let plaintext = serde_json::to_vec(credential)
+        .map_err(|e| Error::ConfigurationError(format!("Failed to serialize credential: {}", e)))?;
+
+    let aad = credential_aad(name);
+    let (ciphertext, iv, tag) = encrypt_data(&plaintext, key, &aad)?;
+
+    Ok(EncryptedCredential {
+        data: ciphertext,
+        iv,
+        tag,
+        metadata,
+    })
+}
+
 /// Data structure for credential file storage
 #[derive(Debug, Serialize, Deserialize)]
 struct CredentialFileData {
@@ -442,7 +544,7 @@ struct CredentialFileData {
     credentials: HashMap<String, EncryptedCredential>,
 }
 
-/// Helper functions for credential management
+// Helper functions for credential management
 
 /// Generate random bytes for salt/IV generation
 fn generate_random_bytes(len: usize) -> Vec<u8> {
@@ -450,6 +552,55 @@ fn generate_random_bytes(len: usize) -> Vec<u8> {
     let mut bytes = vec![0u8; len];
     scirs2_core::random::rng().fill_bytes(&mut bytes);
     bytes
+}
+
+/// Validate a config loaded from an untrusted file. Security parameters must
+/// not be taken on faith from the artifact: the PBKDF2 iteration count is
+/// bounded so a crafted file cannot trigger a verification DoS (`u32::MAX`) or
+/// a downgrade to a trivial work factor.
+fn validate_loaded_config(config: &CredentialStoreConfig) -> Result<()> {
+    if !(CREDENTIAL_KDF_MIN_ITERATIONS..=CREDENTIAL_KDF_MAX_ITERATIONS).contains(&config.iterations)
+    {
+        return Err(Error::ConfigurationError(format!(
+            "Credential file specifies an unsafe PBKDF2 iteration count ({}); refusing to load",
+            config.iterations
+        )));
+    }
+    Ok(())
+}
+
+/// Write secret file contents with owner-only permissions.
+///
+/// On unix the file is created `0600` and, for a pre-existing file, its
+/// permissions are tightened *while it is still empty* (before any secret bytes
+/// are written), so there is no window in which the secret content is readable
+/// under a looser umask.
+fn write_secret_file(path: &str, contents: &[u8]) -> Result<()> {
+    use std::io::Write;
+
+    let mut options = fs::OpenOptions::new();
+    options.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+
+    let mut file = options
+        .open(path)
+        .map_err(|e| Error::ConfigurationError(format!("Failed to open credential file: {}", e)))?;
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = file.set_permissions(fs::Permissions::from_mode(0o600));
+    }
+
+    file.write_all(contents).map_err(|e| {
+        Error::ConfigurationError(format!("Failed to write credential file: {}", e))
+    })?;
+
+    Ok(())
 }
 
 /// Derive encryption key from password using PBKDF2
@@ -462,33 +613,57 @@ fn derive_key(password: &[u8], salt: &[u8], iterations: u32) -> Result<Vec<u8>> 
     Ok(key.to_vec())
 }
 
-/// Encrypt data using AES-256-GCM
-fn encrypt_data(plaintext: &[u8], key: &[u8]) -> Result<(Vec<u8>, Vec<u8>, Vec<u8>)> {
-    use aes_gcm::{AeadInPlace, Aes256Gcm, Key, KeyInit, Nonce};
+/// Additional authenticated data binding a ciphertext to its credential name
+/// and a format version. Without this, AES-GCM ciphertext blobs are
+/// interchangeable between credential names — an attacker with write access to
+/// the store file could swap the ciphertext of "readonly-db" for "admin-db" and
+/// the tag would still verify.
+fn credential_aad(name: &str) -> Vec<u8> {
+    format!("{}:{}", CREDENTIAL_AAD_VERSION, name).into_bytes()
+}
 
-    let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(key));
+/// Encrypt data using AES-256-GCM with the given additional authenticated data.
+fn encrypt_data(plaintext: &[u8], key: &[u8], aad: &[u8]) -> Result<(Vec<u8>, Vec<u8>, Vec<u8>)> {
+    use aes_gcm::aead::inout::InOutBuf;
+    use aes_gcm::{AeadInOut, Aes256Gcm, Key, KeyInit, Nonce};
+
+    let key_arr = Key::<Aes256Gcm>::try_from(key)
+        .map_err(|e| Error::ConfigurationError(format!("Invalid key length: {}", e)))?;
+    let cipher = Aes256Gcm::new(&key_arr);
     let nonce_bytes = generate_random_bytes(12); // 96-bit nonce for GCM
-    let nonce = Nonce::from_slice(&nonce_bytes);
+    let nonce = Nonce::try_from(nonce_bytes.as_slice())
+        .map_err(|e| Error::ConfigurationError(format!("Invalid nonce length: {}", e)))?;
 
     let mut buffer = plaintext.to_vec();
     let tag = cipher
-        .encrypt_in_place_detached(nonce, b"", &mut buffer)
+        .encrypt_inout_detached(&nonce, aad, InOutBuf::from(buffer.as_mut_slice()))
         .map_err(|e| Error::ConfigurationError(format!("Encryption failed: {}", e)))?;
 
     Ok((buffer, nonce_bytes, tag.to_vec()))
 }
 
-/// Decrypt data using AES-256-GCM
-fn decrypt_data(ciphertext: &[u8], iv: &[u8], tag: &[u8], key: &[u8]) -> Result<Vec<u8>> {
-    use aes_gcm::{AeadInPlace, Aes256Gcm, Key, KeyInit, Nonce, Tag};
+/// Decrypt data using AES-256-GCM, verifying the additional authenticated data.
+fn decrypt_data(
+    ciphertext: &[u8],
+    iv: &[u8],
+    tag: &[u8],
+    key: &[u8],
+    aad: &[u8],
+) -> Result<Vec<u8>> {
+    use aes_gcm::aead::inout::InOutBuf;
+    use aes_gcm::{AeadInOut, Aes256Gcm, Key, KeyInit, Nonce, Tag};
 
-    let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(key));
-    let nonce = Nonce::from_slice(iv);
-    let tag = Tag::from_slice(tag);
+    let key_arr = Key::<Aes256Gcm>::try_from(key)
+        .map_err(|e| Error::ConfigurationError(format!("Invalid key length: {}", e)))?;
+    let cipher = Aes256Gcm::new(&key_arr);
+    let nonce = Nonce::try_from(iv)
+        .map_err(|e| Error::ConfigurationError(format!("Invalid nonce length: {}", e)))?;
+    let tag = Tag::try_from(tag)
+        .map_err(|e| Error::ConfigurationError(format!("Invalid tag length: {}", e)))?;
 
     let mut buffer = ciphertext.to_vec();
     cipher
-        .decrypt_in_place_detached(nonce, b"", &mut buffer, tag)
+        .decrypt_inout_detached(&nonce, aad, InOutBuf::from(buffer.as_mut_slice()), &tag)
         .map_err(|e| Error::ConfigurationError(format!("Decryption failed: {}", e)))?;
 
     Ok(buffer)

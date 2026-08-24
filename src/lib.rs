@@ -43,7 +43,6 @@
 //! - **Data formats:**
 //!   - `parquet`: Apache Parquet file support
 //!   - `excel`: Excel file support (read/write)
-//!   - `sql`: Database connectivity (PostgreSQL, MySQL, SQLite)
 //!
 //! - **Advanced features:**
 //!   - `distributed`: Distributed computing with DataFusion
@@ -78,16 +77,29 @@
 //!
 //! Current version: 0.4.1
 
-// Disable specific warnings
-#![allow(clippy::all)]
-#![allow(dead_code)]
-#![allow(unused_variables)]
-#![allow(unused_imports)]
+// Clippy policy (mirrored in CONTRIBUTING.md):
+// The high-volume, purely-stylistic `style` and `complexity` lint groups are
+// allowed crate-wide. The `correctness`, `suspicious`, and `perf` groups are
+// deliberately left at their default (deny/warn) levels so they ARE enforced.
+// Do NOT re-add `#![allow(clippy::all)]` — it would silence those three groups
+// too and make "zero clippy warnings" unfalsifiable.
+#![allow(clippy::style)]
+#![allow(clippy::complexity)]
+// Retained explicitly even though `clippy::style` already subsumes them, so a
+// future narrowing of the group allow above does not silently reintroduce these
+// known-noisy hits.
 #![allow(clippy::needless_return)]
 #![allow(clippy::redundant_closure)]
 #![allow(clippy::let_and_return)]
-#![allow(clippy::too_many_arguments)]
-#![allow(clippy::needless_lifetimes)]
+// `result_large_err`: the crate's public `Error` enum is 232 bytes on 64-bit
+// (well over clippy's 128-byte threshold), dominated by the
+// `Enhanced { context: ErrorContext, .. }` variant which inlines a 208-byte
+// `ErrorContext` (three `Vec<String>`, a `HashMap`, `Option<String>`,
+// `SystemTime`, ...). Shrinking it (boxing the payload or splitting the enum)
+// changes the public `Error`/`Result` API, so it is deferred to 0.5.0 and
+// allowed crate-wide until then rather than threading `Box` through every
+// `Result` return in the crate.
+#![allow(clippy::result_large_err)]
 
 // Crates that use macros
 // NOTE: `simple_excel_writer` has been removed (Pure Rust policy). xlsx is
@@ -119,11 +131,11 @@ pub mod compute;
 #[cfg(feature = "distributed")]
 pub mod arrow_integration;
 
-/// Data connectors for databases and cloud storage.
+/// Data connectors for cloud and local storage.
 ///
 /// Connect to external data sources:
-/// - Relational databases (PostgreSQL, MySQL, SQLite)
 /// - Cloud storage (AWS S3, Azure Blob, Google Cloud Storage)
+/// - Local filesystem
 pub mod connectors;
 
 /// Configuration management for secure settings and credentials.
@@ -187,7 +199,6 @@ pub mod index;
 /// - JSON (JavaScript Object Notation)
 /// - Parquet (columnar storage format)
 /// - Excel (Microsoft Excel files)
-/// - SQL databases (PostgreSQL, MySQL, SQLite)
 ///
 /// # Examples
 ///
@@ -890,4 +901,17 @@ pub mod prelude {
 
     // Series extension (categorical, NA series, etc.)
     pub use crate::series::{Categorical, CategoricalOrder, NASeries, StringCategorical};
+
+    // I/O free functions (JsonOrient is required to call `write_json`).
+    pub use crate::io::json::JsonOrient;
+    pub use crate::io::{read_csv, write_json};
+
+    // Reshaping option structs (from the non-deprecated `transform` path).
+    pub use crate::dataframe::transform::{MeltOptions, StackOptions, UnstackOptions};
+
+    // Join type. This is the same type re-exported at the crate root as
+    // `pandrs::JoinType`, so `use pandrs::*` and `use pandrs::prelude::*`
+    // never collide. DataFrame-level joins (`df.join(..)`) additionally need
+    // the `JoinExt` trait and its `JoinType` from `pandrs::dataframe::join`.
+    pub use crate::optimized::JoinType;
 }

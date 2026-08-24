@@ -55,7 +55,7 @@ fn main() -> Result<()> {
 
     // Grouping and aggregation
     println!("\n=== Grouping by Category ===");
-    let category_group = df.groupby("category")?;
+    let category_group = df.groupby_pivot("category")?;
 
     println!("Sum by category (in progress):");
     let _category_sum = category_group.sum(&["sales"])?;

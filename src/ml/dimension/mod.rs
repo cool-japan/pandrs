@@ -16,12 +16,31 @@ use crate::ml::models::UnsupervisedModel;
 /// Returns `(eigenvalues, eigenvectors)` where `eigenvectors[k]` is the k-th
 /// eigenvector (column) corresponding to `eigenvalues[k]`.
 ///
-/// The classic Jacobi iteration is applied until the maximum off-diagonal
-/// element drops below 1e-10 or 1 000 sweeps are exhausted.
-fn jacobi_eigen_symmetric(matrix: &[Vec<f64>]) -> (Vec<f64>, Vec<Vec<f64>>) {
+/// Each iteration performs a single rotation that zeroes the CURRENT largest
+/// off-diagonal element ("classical"/maximum-pivot Jacobi), which converges
+/// in fewer total rotations than a fixed cyclic sweep order. The rotation
+/// budget is `10 * n * (n-1) / 2` — ten full "sweeps" worth of pairwise
+/// rotations — which scales with the matrix size, unlike a fixed rotation
+/// count. A fixed budget (e.g. 1000 rotations regardless of `n`) silently
+/// produced wrong eigenvalues for `n gtrsim 30`, since fully diagonalizing a
+/// dense 50x50 or 80x80 matrix genuinely requires thousands of individual
+/// rotations. Convergence is judged against a RELATIVE threshold (scaled by
+/// the matrix's Frobenius norm, which every Jacobi rotation preserves
+/// exactly) rather than a fixed absolute epsilon, so differently-scaled
+/// inputs (e.g. an unstandardized covariance matrix with large entries)
+/// converge to comparable relative precision instead of either stopping too
+/// early or never satisfying an absolute threshold at all. If the budget is
+/// exhausted without reaching the threshold, an error is returned rather
+/// than silently returning a partially-diagonalized (wrong) result.
+fn jacobi_eigen_symmetric(matrix: &[Vec<f64>]) -> Result<(Vec<f64>, Vec<Vec<f64>>)> {
     let n = matrix.len();
     if n == 0 {
-        return (vec![], vec![]);
+        return Ok((vec![], vec![]));
+    }
+    if n == 1 {
+        // A 1x1 matrix has no off-diagonal entries to rotate away; its
+        // single eigenvalue is the element itself.
+        return Ok((vec![matrix[0][0]], vec![vec![1.0]]));
     }
 
     // Working copy of the matrix.
@@ -36,7 +55,29 @@ fn jacobi_eigen_symmetric(matrix: &[Vec<f64>]) -> (Vec<f64>, Vec<Vec<f64>>) {
         })
         .collect();
 
-    for _sweep in 0..1_000 {
+    // Jacobi rotations are orthogonal similarity transforms, so the
+    // Frobenius norm of `a` is invariant across the whole iteration.
+    // Compute it once from the input and floor the scale at 1.0 so a
+    // near-zero matrix (e.g. a zero-variance covariance matrix) still gets a
+    // sane absolute convergence threshold, rather than a threshold of ~0
+    // that a legitimately-already-diagonal matrix could technically fail to
+    // beat due to floating-point noise.
+    let frob_norm: f64 = {
+        let mut sum_sq = 0.0_f64;
+        for row in &a {
+            for &val in row {
+                sum_sq += val * val;
+            }
+        }
+        sum_sq.sqrt()
+    };
+    const REL_TOL: f64 = 1e-12;
+    let convergence_threshold = REL_TOL * frob_norm.max(1.0);
+
+    let max_rotations = 10 * n * (n - 1) / 2;
+    let mut converged = false;
+
+    for _rotation in 0..max_rotations {
         // Find (p, q) with maximum |a[p][q]|, p < q.
         let mut max_val = 0.0_f64;
         let mut p_idx = 0usize;
@@ -53,7 +94,8 @@ fn jacobi_eigen_symmetric(matrix: &[Vec<f64>]) -> (Vec<f64>, Vec<Vec<f64>>) {
             }
         }
 
-        if max_val < 1e-10 {
+        if max_val < convergence_threshold {
+            converged = true;
             break;
         }
 
@@ -102,11 +144,19 @@ fn jacobi_eigen_symmetric(matrix: &[Vec<f64>]) -> (Vec<f64>, Vec<Vec<f64>>) {
         }
     }
 
+    if !converged {
+        return Err(Error::InvalidOperation(format!(
+            "Jacobi eigendecomposition did not converge within {} rotations for a {}x{} matrix \
+             (relative off-diagonal threshold {:.3e})",
+            max_rotations, n, n, convergence_threshold
+        )));
+    }
+
     // Diagonal of A holds the eigenvalues; columns of V are the eigenvectors.
     let eigenvalues: Vec<f64> = (0..n).map(|i| a[i][i]).collect();
     let eigenvectors: Vec<Vec<f64>> = (0..n).map(|k| (0..n).map(|r| v[r][k]).collect()).collect();
 
-    (eigenvalues, eigenvectors)
+    Ok((eigenvalues, eigenvectors))
 }
 
 /// Extract all f64-typed columns from `data`.
@@ -122,7 +172,7 @@ fn extract_float_columns(data: &DataFrame) -> (Vec<Vec<f64>>, Vec<String>) {
     // Temporary column-major storage before transposing.
     let mut col_major: Vec<Vec<f64>> = Vec::new();
 
-    for col_name in &col_names {
+    for col_name in col_names {
         if let Ok(col) = data.get_column::<f64>(col_name) {
             let col_vals: Vec<f64> = col.values().to_vec();
             if col_vals.len() == n_rows {
@@ -157,6 +207,9 @@ fn extract_float_columns(data: &DataFrame) -> (Vec<Vec<f64>>, Vec<String>) {
 /// 4. Compute the sample covariance matrix.
 /// 5. Eigen-decompose via Jacobi rotation.
 /// 6. Sort by descending eigenvalue, keep top `n_components`.
+/// 7. Apply the scikit-learn "svd_flip" sign convention so component
+///    directions are deterministic rather than depending on the arbitrary
+///    sign the Jacobi iteration happens to settle on.
 #[derive(Debug, Clone)]
 pub struct PCA {
     /// Number of components to keep
@@ -197,9 +250,18 @@ impl PCA {
     }
 
     /// Centre (and optionally scale) one data row using the stored statistics.
-    fn center_row(&self, row: &[f64]) -> Vec<f64> {
-        let means = self.mean_values.as_ref().expect("PCA not fitted");
-        match &self.std_values {
+    ///
+    /// Returns an error rather than panicking if called before `fit` (both
+    /// call sites already check `self.components`/`self.feature_columns`
+    /// first, which are only ever set together with `mean_values` at the end
+    /// of a successful `fit`, but that cross-field invariant is not enforced
+    /// by the type system, so it is verified here too instead of assumed).
+    fn center_row(&self, row: &[f64]) -> Result<Vec<f64>> {
+        let means = self
+            .mean_values
+            .as_ref()
+            .ok_or_else(|| Error::InvalidOperation("PCA has not been fitted".into()))?;
+        Ok(match &self.std_values {
             Some(stds) => row
                 .iter()
                 .zip(means.iter())
@@ -207,7 +269,33 @@ impl PCA {
                 .map(|((&x, &m), &s)| if s > 1e-12 { (x - m) / s } else { x - m })
                 .collect(),
             None => row.iter().zip(means.iter()).map(|(&x, &m)| x - m).collect(),
+        })
+    }
+
+    /// Fetch the columns needed to reconstruct rows in `feature_columns`
+    /// order, ONCE, rather than re-querying the DataFrame by name for every
+    /// row (the previous implementation of `transform` and
+    /// `reconstruction_mse` called `get_column` inside the per-row loop,
+    /// doing O(rows * features) name lookups instead of O(features)).
+    fn fetch_feature_columns(
+        data: &DataFrame,
+        feature_columns: &[String],
+        n_rows: usize,
+    ) -> Result<Vec<Vec<f64>>> {
+        let mut columns: Vec<Vec<f64>> = Vec::with_capacity(feature_columns.len());
+        for col_name in feature_columns {
+            let col = data.get_column::<f64>(col_name)?;
+            if col.len() < n_rows {
+                return Err(Error::InvalidValue(format!(
+                    "Column '{}' has {} values but the DataFrame has {} rows",
+                    col_name,
+                    col.len(),
+                    n_rows
+                )));
+            }
+            columns.push(col.values().to_vec());
         }
+        Ok(columns)
     }
 
     /// Compute mean squared reconstruction error (project → inverse-project → residual).
@@ -226,16 +314,14 @@ impl PCA {
         let n_comp = components.len();
         let mut mse = 0.0_f64;
 
+        let columns = Self::fetch_feature_columns(data, feature_columns, n_rows)?;
+
         for row_idx in 0..n_rows {
-            // Re-extract the same feature columns used during fit.
             let mut raw_row = Vec::with_capacity(n_features);
-            for col_name in feature_columns {
-                let col = data.get_column::<f64>(col_name)?;
-                raw_row.push(*col.get(row_idx).ok_or_else(|| {
-                    Error::InvalidValue(format!("Missing value at row {}", row_idx))
-                })?);
+            for col_data in &columns {
+                raw_row.push(col_data[row_idx]);
             }
-            let centered = self.center_row(&raw_row);
+            let centered = self.center_row(&raw_row)?;
 
             // Scores: project onto each component.
             let scores: Vec<f64> = components
@@ -368,7 +454,7 @@ impl UnsupervisedModel for PCA {
         }
 
         // 6. Jacobi eigendecomposition.
-        let (eigenvalues, eigenvectors) = jacobi_eigen_symmetric(&cov);
+        let (eigenvalues, eigenvectors) = jacobi_eigen_symmetric(&cov)?;
 
         // 7. Sort by descending eigenvalue.
         let mut pairs: Vec<(f64, Vec<f64>)> = eigenvalues.into_iter().zip(eigenvectors).collect();
@@ -380,7 +466,32 @@ impl UnsupervisedModel for PCA {
         // 8. Keep top n_components.
         let top: Vec<(f64, Vec<f64>)> = pairs.into_iter().take(n_components).collect();
 
-        self.components = Some(top.iter().map(|(_, v)| v.clone()).collect());
+        // 9. "svd_flip" sign convention (matches scikit-learn): eigenvectors
+        // are only unique up to sign, so without a canonical convention the
+        // arbitrary sign the Jacobi iteration happens to settle on would
+        // make `components` (and downstream `transform` output) flip signs
+        // unpredictably between equivalent runs. For each retained
+        // component, project the training samples onto it and flip the sign
+        // so the largest-magnitude score is positive.
+        let mut top_components: Vec<Vec<f64>> = top.iter().map(|(_, v)| v.clone()).collect();
+        for comp in top_components.iter_mut() {
+            let mut best_abs = 0.0_f64;
+            let mut best_signed = 0.0_f64;
+            for row in &x_centered {
+                let score: f64 = row.iter().zip(comp.iter()).map(|(&x, &w)| x * w).sum();
+                if score.abs() > best_abs {
+                    best_abs = score.abs();
+                    best_signed = score;
+                }
+            }
+            if best_signed < 0.0 {
+                for w in comp.iter_mut() {
+                    *w = -*w;
+                }
+            }
+        }
+
+        self.components = Some(top_components);
         self.explained_variance_ratio = Some(
             top.iter()
                 .map(|(ev, _)| {
@@ -410,19 +521,20 @@ impl UnsupervisedModel for PCA {
         let n_features = feature_columns.len();
         let n_comp = components.len();
 
+        // Fetch each feature column ONCE up front (see `fetch_feature_columns`
+        // doc comment) instead of re-querying the DataFrame by name inside
+        // the per-row loop below.
+        let columns = Self::fetch_feature_columns(data, feature_columns, n_rows)?;
+
         // Allocate per-component score vectors.
         let mut pc_data: Vec<Vec<f64>> = vec![vec![0.0_f64; n_rows]; n_comp];
 
         for row_idx in 0..n_rows {
-            // Reconstruct the raw row in feature order.
             let mut raw_row = Vec::with_capacity(n_features);
-            for col_name in feature_columns {
-                let col = data.get_column::<f64>(col_name)?;
-                raw_row.push(*col.get(row_idx).ok_or_else(|| {
-                    Error::InvalidValue(format!("Missing value at row {}", row_idx))
-                })?);
+            for col_data in &columns {
+                raw_row.push(col_data[row_idx]);
             }
-            let centered = self.center_row(&raw_row);
+            let centered = self.center_row(&raw_row)?;
 
             // Project onto each principal component.
             for (k, comp) in components.iter().enumerate() {
@@ -484,7 +596,8 @@ impl crate::ml::models::ModelEvaluator for PCA {
 pub enum TSNEInit {
     /// Small Gaussian noise (σ = 1e-4).
     Random,
-    /// PCA projections scaled by 1e-4.
+    /// PCA projections, rescaled so the first component has standard
+    /// deviation 1e-4 (matches scikit-learn's t-SNE PCA initialisation).
     PCA,
 }
 
@@ -508,6 +621,11 @@ pub struct TSNE {
     pub random_seed: Option<u64>,
     /// Embedding result — `embedding[i]` is the position of sample i
     pub embedding: Option<Vec<Vec<f64>>>,
+    /// High-dimensional joint-probability matrix P computed at `fit` time
+    /// (the real, non-early-exaggerated affinities), cached so `evaluate`
+    /// can recompute the actual KL divergence without needing the original
+    /// DataFrame again.
+    p_matrix: Option<Vec<Vec<f64>>>,
 }
 
 impl TSNE {
@@ -521,6 +639,7 @@ impl TSNE {
             init: TSNEInit::PCA,
             random_seed: None,
             embedding: None,
+            p_matrix: None,
         }
     }
 
@@ -540,6 +659,7 @@ impl TSNE {
             init,
             random_seed: None,
             embedding: None,
+            p_matrix: None,
         }
     }
 
@@ -614,12 +734,20 @@ impl TSNE {
             }
         }
 
-        // Symmetrise: P_{ij} = (p_{j|i} + p_{i|j}) / (2N).
+        // Symmetrise: P_{ij} = (p_{j|i} + p_{i|j}) / (2N), floored at 1e-12
+        // for off-diagonal entries (the diagonal stays exactly 0.0) to avoid
+        // zero/near-zero probabilities producing -inf or NaN in downstream
+        // KL-divergence computations — the standard t-SNE numerical
+        // safeguard against `P_ij == 0` combined with `ln(P_ij / Q_ij)`.
+        const P_FLOOR: f64 = 1e-12;
         let inv_2n = 0.5 / (n as f64);
         let mut sym_p = vec![vec![0.0_f64; n]; n];
         for i in 0..n {
             for j in 0..n {
-                sym_p[i][j] = (p[i][j] + p[j][i]) * inv_2n;
+                if i == j {
+                    continue;
+                }
+                sym_p[i][j] = ((p[i][j] + p[j][i]) * inv_2n).max(P_FLOOR);
             }
         }
 
@@ -707,7 +835,12 @@ impl UnsupervisedModel for TSNE {
 
         // 2. High-dimensional affinities with early exaggeration.
         let perplexity = self.perplexity.min((n_samples as f64 - 1.0) / 3.0);
-        let mut p = Self::compute_p_matrix(&x, perplexity);
+        // Keep the real (non-exaggerated) P around: it is what `evaluate`
+        // needs to report the actual KL divergence later, and it is also
+        // what the optimisation converges toward once exaggeration is
+        // removed partway through.
+        let p_original = Self::compute_p_matrix(&x, perplexity);
+        let mut p = p_original.clone();
         let exaggeration = 4.0_f64;
         let exaggeration_end = 100usize;
 
@@ -751,17 +884,50 @@ impl UnsupervisedModel for TSNE {
                 let mut pca = PCA::new(dim, false);
                 pca.fit(data)?;
                 let pca_df = pca.transform(data)?;
-                let actual_comp = pca.n_components;
+                let actual_comp = pca.n_components.min(dim);
 
-                let mut init_emb = vec![vec![0.0_f64; dim]; n_samples];
-                for comp_idx in 0..actual_comp.min(dim) {
+                // Collect raw PCA scores for every retained component.
+                let mut raw_scores: Vec<Vec<f64>> = vec![vec![0.0_f64; n_samples]; actual_comp];
+                for comp_idx in 0..actual_comp {
                     let col_name = format!("PC_{}", comp_idx + 1);
                     if let Ok(col) = pca_df.get_column::<f64>(&col_name) {
                         for row_idx in 0..n_samples {
                             if let Some(&val) = col.get(row_idx) {
-                                init_emb[row_idx][comp_idx] = val * 1e-4;
+                                raw_scores[comp_idx][row_idx] = val;
                             }
                         }
+                    }
+                }
+
+                // Normalise so PC_1's standard deviation is exactly 1e-4,
+                // matching scikit-learn's t-SNE PCA initialisation
+                // (`X_embedded / std(X_embedded[:, 0]) * 1e-4`), scaling
+                // every retained component by the SAME factor so their
+                // relative magnitudes are preserved. Multiplying raw PCA
+                // scores by a fixed 1e-4 constant regardless of their actual
+                // scale (the previous behaviour) could leave the initial
+                // embedding many orders of magnitude away from the intended
+                // "small, centered" starting point whenever input features
+                // had large or small raw variance.
+                let scale = if !raw_scores.is_empty() {
+                    let pc1 = &raw_scores[0];
+                    let mean: f64 = pc1.iter().sum::<f64>() / n_samples as f64;
+                    let var: f64 =
+                        pc1.iter().map(|&val| (val - mean).powi(2)).sum::<f64>() / n_samples as f64;
+                    let std = var.sqrt();
+                    if std > 1e-300 {
+                        1e-4 / std
+                    } else {
+                        1e-4
+                    }
+                } else {
+                    1e-4
+                };
+
+                let mut init_emb = vec![vec![0.0_f64; dim]; n_samples];
+                for comp_idx in 0..actual_comp {
+                    for row_idx in 0..n_samples {
+                        init_emb[row_idx][comp_idx] = raw_scores[comp_idx][row_idx] * scale;
                     }
                 }
                 // Fill any remaining dimensions with Gaussian noise.
@@ -774,8 +940,19 @@ impl UnsupervisedModel for TSNE {
             }
         };
 
-        // 4. Gradient descent with momentum.
+        // 4. Gradient descent with momentum and per-parameter adaptive gains.
+        //
+        // The gains array is the classic van der Maaten & Hinton t-SNE
+        // "delta-bar-delta" schedule: each embedding coordinate gets its own
+        // multiplier that grows (by +0.2) when its gradient keeps pushing in
+        // the same direction as its current velocity, and shrinks
+        // (×0.8, floored at `MIN_GAIN`) when the gradient reverses
+        // direction. This damps oscillation on noisy dimensions and speeds
+        // up consistent-direction ones, and is standard practice for t-SNE
+        // robustness (the reference implementation always includes it).
         let mut velocities = vec![vec![0.0_f64; dim]; n_samples];
+        let mut gains = vec![vec![1.0_f64; dim]; n_samples];
+        const MIN_GAIN: f64 = 0.01;
 
         for iter in 0..self.n_iter {
             // Remove early exaggeration at iter == exaggeration_end.
@@ -795,8 +972,19 @@ impl UnsupervisedModel for TSNE {
 
             for i in 0..n_samples {
                 for d in 0..dim {
+                    let grad_positive = grad[i][d] > 0.0;
+                    let vel_positive = velocities[i][d] > 0.0;
+                    if grad_positive != vel_positive {
+                        gains[i][d] += 0.2;
+                    } else {
+                        gains[i][d] *= 0.8;
+                    }
+                    if gains[i][d] < MIN_GAIN {
+                        gains[i][d] = MIN_GAIN;
+                    }
+
                     velocities[i][d] =
-                        momentum * velocities[i][d] - self.learning_rate * grad[i][d];
+                        momentum * velocities[i][d] - self.learning_rate * gains[i][d] * grad[i][d];
                     embedding[i][d] += velocities[i][d];
                 }
             }
@@ -819,6 +1007,7 @@ impl UnsupervisedModel for TSNE {
         }
 
         self.embedding = Some(embedding);
+        self.p_matrix = Some(p_original);
         Ok(())
     }
 
@@ -859,8 +1048,37 @@ impl crate::ml::models::ModelEvaluator for TSNE {
         _test_target: &str,
     ) -> Result<crate::ml::models::ModelMetrics> {
         let mut metrics = crate::ml::models::ModelMetrics::new();
-        // KL divergence requires re-computing P and Q; report 0 as placeholder.
-        metrics.add_metric("kl_divergence", 0.0);
+
+        let embedding = self.embedding.as_ref().ok_or_else(|| {
+            Error::InvalidOperation("t-SNE has not been fitted. Call fit() first.".into())
+        })?;
+        let p = self.p_matrix.as_ref().ok_or_else(|| {
+            Error::InvalidOperation("t-SNE has not been fitted. Call fit() first.".into())
+        })?;
+
+        // Recompute the ACTUAL KL divergence KL(P || Q) between the
+        // high-dimensional affinities computed at fit time and the
+        // low-dimensional Student-t affinities of the final embedding. This
+        // replaces a hardcoded 0.0 placeholder — the P and Q machinery
+        // already exists (`compute_p_matrix` / `compute_q_matrix`), it was
+        // simply never invoked from `evaluate`.
+        let (q, _z) = Self::compute_q_matrix(embedding);
+        let n = embedding.len();
+        let mut kl = 0.0_f64;
+        for i in 0..n {
+            for j in 0..n {
+                if i == j {
+                    continue;
+                }
+                let p_ij = p[i][j];
+                if p_ij > 0.0 {
+                    let q_ij = q[i][j].max(1e-12);
+                    kl += p_ij * (p_ij / q_ij).ln();
+                }
+            }
+        }
+
+        metrics.add_metric("kl_divergence", kl);
         Ok(metrics)
     }
 
@@ -884,6 +1102,7 @@ impl crate::ml::models::ModelEvaluator for TSNE {
 mod tests {
     use super::*;
     use crate::dataframe::DataFrame;
+    use crate::ml::models::ModelEvaluator;
     use crate::series::Series;
 
     /// Build a DataFrame from column-major `(name, values)` pairs.
@@ -975,6 +1194,35 @@ mod tests {
             sum_ratio > 0.99,
             "expected 2-component variance ratio > 0.99, got {}",
             sum_ratio
+        );
+    }
+
+    /// PC_1's projected scores should be dominated by a positive loading on
+    /// the largest-magnitude sample (the "svd_flip" sign convention).
+    #[test]
+    fn test_pca_svd_flip_sign_is_deterministic() {
+        let col1: Vec<f64> = vec![-10.0, -5.0, -1.0, 1.0, 5.0, 20.0];
+        let col2: Vec<f64> = vec![-9.0, -4.5, -0.8, 1.2, 4.8, 21.0];
+        let df = make_df(&[("a", col1), ("b", col2)]);
+
+        let mut pca = PCA::new(1, false);
+        pca.fit(&df).expect("fit");
+        let transformed = pca.transform(&df).expect("transform");
+        let pc1 = transformed.get_column::<f64>("PC_1").expect("PC_1");
+        let values = pc1.values();
+
+        // The largest-magnitude score (corresponding to the most extreme
+        // sample, 20.0/21.0) must be positive under the svd_flip convention.
+        let max_abs_idx = values
+            .iter()
+            .enumerate()
+            .max_by(|(_, a), (_, b)| a.abs().partial_cmp(&b.abs()).unwrap())
+            .map(|(i, _)| i)
+            .unwrap();
+        assert!(
+            values[max_abs_idx] > 0.0,
+            "Largest-magnitude PC_1 score should be positive under svd_flip, got {:?}",
+            values
         );
     }
 
@@ -1094,13 +1342,43 @@ mod tests {
         );
     }
 
+    /// The real KL divergence reported by `evaluate` must be finite and
+    /// non-negative (KL divergence is always >= 0), replacing the old
+    /// hardcoded 0.0 placeholder.
+    #[test]
+    fn test_tsne_evaluate_reports_finite_nonnegative_kl() {
+        let n = 15usize;
+        let cols: Vec<(&'static str, Vec<f64>)> = (0..3usize)
+            .map(|c| {
+                let data: Vec<f64> = (0..n).map(|r| ((r * (c + 2)) as f64).sin() * 5.0).collect();
+                let name: &'static str = Box::leak(format!("f{}", c).into_boxed_str());
+                (name, data)
+            })
+            .collect();
+        let df = make_df(&cols);
+
+        let mut tsne = TSNE::with_params(2, 4.0, 150, 100.0, TSNEInit::Random);
+        tsne.random_seed = Some(3);
+        tsne.fit(&df).expect("fit");
+
+        let metrics = tsne.evaluate(&df, "").expect("evaluate");
+        let kl = metrics.get_metric("kl_divergence").copied().unwrap();
+
+        assert!(kl.is_finite(), "KL divergence must be finite, got {}", kl);
+        assert!(
+            kl >= -1e-9,
+            "KL divergence must be (approximately) non-negative, got {}",
+            kl
+        );
+    }
+
     // ── Jacobi helper ────────────────────────────────────────────────────────
 
     /// [[3,1],[1,3]] → eigenvalues {4, 2}.
     #[test]
     fn test_jacobi_eigen_2x2() {
         let matrix = vec![vec![3.0_f64, 1.0], vec![1.0_f64, 3.0]];
-        let (evals, evecs) = jacobi_eigen_symmetric(&matrix);
+        let (evals, evecs) = jacobi_eigen_symmetric(&matrix).expect("jacobi should converge");
 
         let mut pairs: Vec<(f64, Vec<f64>)> = evals.into_iter().zip(evecs).collect();
         pairs.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap());
@@ -1125,11 +1403,88 @@ mod tests {
             vec![0.0_f64, 3.0, 0.0],
             vec![0.0_f64, 0.0, 7.0],
         ];
-        let (mut evals, _) = jacobi_eigen_symmetric(&matrix);
+        let (mut evals, _) = jacobi_eigen_symmetric(&matrix).expect("jacobi should converge");
         evals.sort_by(|a, b| b.partial_cmp(a).unwrap());
 
         assert!((evals[0] - 7.0).abs() < 1e-8);
         assert!((evals[1] - 5.0).abs() < 1e-8);
         assert!((evals[2] - 3.0).abs() < 1e-8);
+    }
+
+    /// Build a dense symmetric p×p matrix via a Householder similarity
+    /// transform of a diagonal matrix (`A = H D H` with `H = I - 2uu^T`,
+    /// `H` orthogonal and symmetric), so its eigenvalues are known EXACTLY
+    /// (the diagonal entries of D) while the matrix itself is fully dense.
+    /// A dense matrix genuinely exercises the Jacobi rotation budget; a
+    /// diagonal input would trivially "converge" in zero rotations
+    /// regardless of the budget and would not detect a regression.
+    fn householder_symmetric_from_eigenvalues(eigenvalues: &[f64]) -> Vec<Vec<f64>> {
+        let n = eigenvalues.len();
+        // Fixed, deterministic, all-nonzero vector for a dense reflection.
+        let mut u: Vec<f64> = (0..n)
+            .map(|i| ((i as f64 + 1.0) * 0.37).sin() + 1.5)
+            .collect();
+        let norm: f64 = u.iter().map(|val| val * val).sum::<f64>().sqrt();
+        for val in u.iter_mut() {
+            *val /= norm;
+        }
+
+        // H = I - 2 u u^T
+        let mut h = vec![vec![0.0_f64; n]; n];
+        for i in 0..n {
+            for j in 0..n {
+                let identity = if i == j { 1.0 } else { 0.0 };
+                h[i][j] = identity - 2.0 * u[i] * u[j];
+            }
+        }
+
+        // HD: scale columns of H by the eigenvalues.
+        let mut hd = vec![vec![0.0_f64; n]; n];
+        for i in 0..n {
+            for j in 0..n {
+                hd[i][j] = h[i][j] * eigenvalues[j];
+            }
+        }
+
+        // A = (HD) * H
+        let mut a = vec![vec![0.0_f64; n]; n];
+        for i in 0..n {
+            for j in 0..n {
+                let mut sum = 0.0_f64;
+                for k in 0..n {
+                    sum += hd[i][k] * h[k][j];
+                }
+                a[i][j] = sum;
+            }
+        }
+        a
+    }
+
+    /// Regression test for the rotation-budget fix: a dense 50×50 symmetric
+    /// matrix with a known eigenvalue spectrum must be diagonalized to
+    /// within 1e-8 of the true eigenvalues. With the old fixed 1000-rotation
+    /// cap this silently produced eigenvalues off by ~1.5e-2 at this size.
+    #[test]
+    fn test_jacobi_eigen_p50_dense_matches_reference() {
+        let n = 50;
+        let expected_eigenvalues: Vec<f64> = (1..=n).map(|i| i as f64).collect();
+        let matrix = householder_symmetric_from_eigenvalues(&expected_eigenvalues);
+
+        let (mut evals, _) = jacobi_eigen_symmetric(&matrix)
+            .expect("jacobi should converge for a dense 50x50 matrix");
+        evals.sort_by(|a, b| a.partial_cmp(b).unwrap());
+
+        let mut expected_sorted = expected_eigenvalues.clone();
+        expected_sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+
+        for (got, want) in evals.iter().zip(expected_sorted.iter()) {
+            assert!(
+                (got - want).abs() < 1e-8,
+                "eigenvalue mismatch: got {}, want {} (all: {:?})",
+                got,
+                want,
+                evals
+            );
+        }
     }
 }

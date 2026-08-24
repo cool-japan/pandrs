@@ -5,7 +5,25 @@
 
 use crate::dataframe::DataFrame;
 use crate::error::{Error, Result};
-use crate::ml::models::{ModelEvaluator, SupervisedModel};
+use crate::ml::models::SupervisedModel;
+use scirs2_core::random::rngs::StdRng;
+use scirs2_core::random::Rng;
+use scirs2_core::random::SeedableRng;
+use scirs2_core::random::SliceRandom;
+
+/// Build a seeded RNG when `seed` is given, otherwise one seeded from the
+/// system entropy source (same pattern as `models::tree::seeded_rng` and
+/// `models::mod::seeded_rng`).
+fn seeded_rng(seed: Option<u64>) -> StdRng {
+    match seed {
+        Some(seed_val) => StdRng::seed_from_u64(seed_val),
+        None => {
+            let mut seed_bytes = [0u8; 32];
+            scirs2_core::random::rng().fill_bytes(&mut seed_bytes);
+            StdRng::from_seed(seed_bytes)
+        }
+    }
+}
 
 /// Perform cross-validation on a model
 ///
@@ -51,11 +69,23 @@ pub fn cross_val_score<T: SupervisedModel + Clone>(
 /// Generate learning curve for a model.
 ///
 /// For each size fraction in `train_sizes`, the function:
-/// 1. Takes the first `floor(n * size_fraction)` rows as the working subset.
+/// 1. Takes the first `floor(n * size_fraction)` rows of one row order,
+///    shuffled once (freshly, non-reproducibly) up front and shared across
+///    every size fraction, as the working subset — so each subset is a
+///    genuine random sample of the full dataset, and larger fractions'
+///    subsets are supersets of smaller ones' (as scikit-learn's
+///    `shuffle=True` learning curves are), rather than literal first-N rows
+///    (which would silently reproduce any ordering structure already
+///    present in `data`, e.g. sorted-by-target input).
 /// 2. Splits the subset into `cv` folds.
 /// 3. For each fold: trains on the non-test rows, evaluates on the fold's test rows
 ///    and on the training rows; collects the requested `metric`.
 /// 4. Returns the mean train and test scores across folds for that size.
+///
+/// A size fraction whose subset is too small to form `cv` non-empty folds,
+/// or for which every fold fails to fit/score, reports `f64::NAN` for that
+/// entry rather than a fabricated `0.0` — a real (bad) score of `0.0` and
+/// "no score could be computed" are different facts.
 ///
 /// # Arguments
 /// * `model` - The model to evaluate (must implement `Clone`)
@@ -64,6 +94,9 @@ pub fn cross_val_score<T: SupervisedModel + Clone>(
 /// * `train_sizes` - Fractions in `(0, 1]` (e.g. `[0.5, 0.8, 1.0]`)
 /// * `metric` - Name of the metric to track (must be produced by the model's `evaluate`)
 /// * `cv` - Number of cross-validation folds (must be >= 2)
+/// * `random_seed` - Seed for the row shuffle (reproducible when `Some`;
+///   drawn from system entropy, and therefore different on every call, when
+///   `None`)
 ///
 /// # Returns
 /// * `(absolute_sizes, train_scores, test_scores)` — one entry per element of `train_sizes`
@@ -74,6 +107,7 @@ pub fn learning_curve<T: SupervisedModel + Clone>(
     train_sizes: &[f64],
     metric: &str,
     cv: usize,
+    random_seed: Option<u64>,
 ) -> Result<(Vec<usize>, Vec<f64>, Vec<f64>)> {
     if cv < 2 {
         return Err(Error::InvalidInput(
@@ -90,6 +124,9 @@ pub fn learning_curve<T: SupervisedModel + Clone>(
     }
 
     let n = data.nrows();
+    let mut shuffled_order: Vec<usize> = (0..n).collect();
+    shuffled_order.shuffle(&mut seeded_rng(random_seed));
+
     let mut absolute_sizes = Vec::with_capacity(train_sizes.len());
     let mut train_scores_out = Vec::with_capacity(train_sizes.len());
     let mut test_scores_out = Vec::with_capacity(train_sizes.len());
@@ -98,15 +135,15 @@ pub fn learning_curve<T: SupervisedModel + Clone>(
         // Compute how many rows belong to this subset; ensure at least cv+1 rows
         // so every fold can have at least one training sample.
         let subset_n = ((n as f64 * size_frac).round() as usize).max(cv + 1).min(n);
-        let indices: Vec<usize> = (0..subset_n).collect();
+        let indices: Vec<usize> = shuffled_order[..subset_n].to_vec();
         let subset = data.sample(&indices)?;
 
         let fold_size = subset_n / cv;
         if fold_size == 0 {
-            // Subset too small to form meaningful folds — record zeros and continue.
+            // Subset too small to form meaningful folds — no score exists.
             absolute_sizes.push(subset_n);
-            train_scores_out.push(0.0);
-            test_scores_out.push(0.0);
+            train_scores_out.push(f64::NAN);
+            test_scores_out.push(f64::NAN);
             continue;
         }
 
@@ -152,13 +189,16 @@ pub fn learning_curve<T: SupervisedModel + Clone>(
             }
         }
 
+        // No fold produced a usable score: report "unscored" (NaN), not a
+        // fabricated 0.0 that would be indistinguishable from a real,
+        // measured worst-possible score.
         let mean_train = if train_fold_scores.is_empty() {
-            0.0
+            f64::NAN
         } else {
             train_fold_scores.iter().sum::<f64>() / train_fold_scores.len() as f64
         };
         let mean_test = if test_fold_scores.is_empty() {
-            0.0
+            f64::NAN
         } else {
             test_fold_scores.iter().sum::<f64>() / test_fold_scores.len() as f64
         };
@@ -179,6 +219,10 @@ pub fn learning_curve<T: SupervisedModel + Clone>(
 /// 3. For each fold: trains on the non-test rows, evaluates on the fold's test rows
 ///    and on the training rows; collects the requested `metric`.
 /// 4. Returns the mean train and test scores across folds for that parameter value.
+///
+/// A parameter value for which no fold could be fit/scored (or whose
+/// dataset is too small to form `cv` non-empty folds) reports `f64::NAN`
+/// rather than a fabricated `0.0`.
 ///
 /// # Arguments
 /// * `model_factory` - Closure that creates a model configured with the given parameter value
@@ -228,9 +272,11 @@ where
         let mut train_fold_scores: Vec<f64> = Vec::with_capacity(cv);
 
         if fold_size == 0 {
-            // Dataset too small relative to cv — record zeros and continue.
-            train_scores_out.push(0.0);
-            test_scores_out.push(0.0);
+            // Dataset too small relative to cv — no score exists, so report
+            // that rather than a fabricated 0.0 indistinguishable from a
+            // real worst-possible measured score.
+            train_scores_out.push(f64::NAN);
+            test_scores_out.push(f64::NAN);
             continue;
         }
 
@@ -274,12 +320,12 @@ where
         }
 
         let mean_train = if train_fold_scores.is_empty() {
-            0.0
+            f64::NAN
         } else {
             train_fold_scores.iter().sum::<f64>() / train_fold_scores.len() as f64
         };
         let mean_test = if test_fold_scores.is_empty() {
-            0.0
+            f64::NAN
         } else {
             test_fold_scores.iter().sum::<f64>() / test_fold_scores.len() as f64
         };
@@ -321,8 +367,9 @@ mod tests {
         let df = make_linear_df(20);
         let model = LinearRegression::new();
         let train_sizes = vec![0.5, 0.8, 1.0_f64];
-        let (sizes, _train_sc, test_sc) = learning_curve(&model, &df, "y", &train_sizes, "r2", 2)
-            .expect("learning_curve should succeed");
+        let (sizes, _train_sc, test_sc) =
+            learning_curve(&model, &df, "y", &train_sizes, "r2", 2, Some(42))
+                .expect("learning_curve should succeed");
 
         assert_eq!(
             sizes.len(),

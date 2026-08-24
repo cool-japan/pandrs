@@ -4,7 +4,7 @@
 //! various data formats, I/O operations, and data transformation pipelines
 //! in a unified and extensible manner.
 
-use crate::core::error::{Error, Result};
+use crate::core::error::Result;
 use crate::dataframe::DataFrame;
 use std::collections::HashMap;
 use std::future::Future;
@@ -406,6 +406,7 @@ pub enum JoinType {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::error::Error;
     /// Mock file format for testing
     struct MockFormat;
 

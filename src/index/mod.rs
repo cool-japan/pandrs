@@ -4,7 +4,7 @@ pub use multi_index::{MultiIndex, StringMultiIndex};
 
 use crate::error::{PandRSError, Result};
 use crate::temporal::Temporal;
-use chrono::{NaiveDate, NaiveDateTime};
+use chrono::NaiveDate;
 use std::collections::HashMap;
 use std::fmt::{Debug, Display};
 use std::hash::Hash;

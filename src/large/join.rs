@@ -12,8 +12,7 @@ use csv::ReaderBuilder;
 
 use crate::core::error::{Error, Result};
 use crate::dataframe::DataFrame;
-use crate::large::out_of_core::{concat_dataframes, OutOfCoreConfig, OutOfCoreWriter};
-use crate::series::Series;
+use crate::large::out_of_core::{OutOfCoreConfig, OutOfCoreWriter};
 
 // ---------------------------------------------------------------------------
 // JoinType
@@ -60,22 +59,42 @@ pub fn hash_join_out_of_core(
     // Build hash table: right_key_value -> list of right rows (as Vec<String>)
     let right_col_names = right.column_names();
     let right_row_count = right.row_count();
+
+    // Materialise every right column as strings ONCE, honoring each
+    // column's real element type via `get_column_string_values` instead of
+    // `get_string_value(..).unwrap_or("")`. `get_string_value` errors for
+    // any column that isn't already `Series<String>` (numeric/bool/date
+    // key columns included), so the previous `.unwrap_or("")` silently
+    // collapsed every such key -- and every such value in the joined
+    // output -- to the empty string, joining unrelated rows together on
+    // non-string keys.
+    let mut right_column_values: Vec<Vec<String>> = Vec::with_capacity(right_col_names.len());
+    for col in right_col_names {
+        let values = right.get_column_string_values(col)?;
+        if values.len() != right_row_count {
+            return Err(Error::Consistency(format!(
+                "Column '{}' has {} values but the DataFrame reports {} rows",
+                col,
+                values.len(),
+                right_row_count
+            )));
+        }
+        right_column_values.push(values);
+    }
+
+    let right_key_col_idx = right_col_names
+        .iter()
+        .position(|c| c == right_key)
+        .ok_or_else(|| Error::Column(format!("Right key column '{}' does not exist", right_key)))?;
+
     // Map: key value -> Vec<(col_name, value)>
     let mut right_map: HashMap<String, Vec<Vec<String>>> = HashMap::new();
 
     for row_idx in 0..right_row_count {
-        let key_val = right
-            .get_string_value(right_key, row_idx)
-            .unwrap_or("")
-            .to_string();
-        let row: Vec<String> = right_col_names
+        let key_val = right_column_values[right_key_col_idx][row_idx].clone();
+        let row: Vec<String> = right_column_values
             .iter()
-            .map(|col| {
-                right
-                    .get_string_value(col, row_idx)
-                    .unwrap_or("")
-                    .to_string()
-            })
+            .map(|col_values| col_values[row_idx].clone())
             .collect();
         right_map.entry(key_val).or_default().push(row);
     }
@@ -138,7 +157,7 @@ pub fn hash_join_out_of_core(
         .collect();
 
     // Process left in chunks
-    let chunk_size = config.chunk_size;
+    let chunk_size = config.effective_chunk_size(output_col_names.len());
     let temp_dir = &config.temp_dir;
     let mut chunk_index = 0usize;
     let mut output_chunk_paths: Vec<PathBuf> = Vec::new();

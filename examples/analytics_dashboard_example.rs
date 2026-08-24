@@ -37,15 +37,13 @@ use pandrs::analytics::{
     OperationCategory, ThresholdOperator,
 };
 #[cfg(feature = "visualization")]
-use std::collections::HashMap;
-#[cfg(feature = "visualization")]
 use std::sync::atomic::{AtomicBool, Ordering};
 #[cfg(feature = "visualization")]
 use std::sync::{Arc, RwLock};
 #[cfg(feature = "visualization")]
 use std::thread;
 #[cfg(feature = "visualization")]
-use std::time::{Duration, Instant};
+use std::time::Duration;
 #[cfg(feature = "visualization")]
 use textplots::{Chart, Plot, Shape};
 

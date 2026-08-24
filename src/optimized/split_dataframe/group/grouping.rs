@@ -1,18 +1,120 @@
 //! Group creation logic and parallel grouping operations
 
-use std::collections::hash_map::Entry;
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
-
-use rayon::prelude::*;
 
 use super::super::core::OptimizedDataFrame;
-use super::types::GroupBy;
+use super::types::{GroupBy, GroupKey, GroupKeyValue};
 use crate::column::Column;
 use crate::error::{Error, Result};
 
+/// Marker used when a missing key has to be rendered into a `String` key.
+///
+/// Only reachable with `dropna = false`; with the pandas-compatible default
+/// (`dropna = true`) rows with a missing key component are excluded entirely.
+pub const NA_GROUP_KEY_MARKER: &str = "<NA>";
+
+/// Append `part` to `out`, escaping the composite-key separator.
+///
+/// `_` and `\` are escaped so that `("a_b", "c")` and `("a", "b_c")` render to
+/// `a\_b_c` and `a_b\_c` — distinct strings. A plain `join("_")` maps both onto
+/// `a_b_c` and silently merges two different groups.
+fn push_escaped(part: &str, out: &mut String) {
+    for ch in part.chars() {
+        if ch == '\\' || ch == '_' {
+            out.push('\\');
+        }
+        out.push(ch);
+    }
+}
+
+/// Render a typed composite key into the `String` key used by [`OptimizedDataFrame::par_groupby`].
+///
+/// A single-column group renders to the bare value (so `par_groupby(&["k"])`
+/// can still be looked up by `"A"`); multi-column groups use the escaped,
+/// collision-free encoding described on [`push_escaped`].
+fn render_group_key(key: &[GroupKeyValue<'_>]) -> String {
+    if key.len() == 1 {
+        return key[0]
+            .to_value_string()
+            .unwrap_or_else(|| NA_GROUP_KEY_MARKER.to_string());
+    }
+
+    let mut out = String::new();
+    for (idx, part) in key.iter().enumerate() {
+        if idx > 0 {
+            out.push('_');
+        }
+        match part.to_value_string() {
+            Some(value) => push_escaped(&value, &mut out),
+            // `\N` cannot be produced by `push_escaped` (it only emits `\\`
+            // and `\_`), so the NA marker cannot collide with a real value.
+            None => out.push_str("\\N"),
+        }
+    }
+    out
+}
+
 impl OptimizedDataFrame {
+    /// Resolve grouping column names to typed column references (once, not per row).
+    fn resolve_group_columns(&self, names: &[String]) -> Result<Vec<&Column>> {
+        let mut columns = Vec::with_capacity(names.len());
+        for name in names {
+            let idx = *self
+                .column_indices
+                .get(name)
+                .ok_or_else(|| Error::ColumnNotFound(name.clone()))?;
+            let column = self
+                .columns
+                .get(idx)
+                .ok_or_else(|| Error::ColumnNotFound(name.clone()))?;
+            columns.push(column);
+        }
+        Ok(columns)
+    }
+
+    /// Build the typed group map for the given key columns.
+    ///
+    /// The key buffer is reused across rows, so a fresh allocation only happens
+    /// when a *new* group is discovered instead of once per row per column.
+    fn build_groups<'a>(
+        &'a self,
+        key_columns: &[&'a Column],
+        rows: impl Iterator<Item = usize>,
+        dropna: bool,
+    ) -> HashMap<GroupKey<'a>, Vec<usize>> {
+        let mut groups: HashMap<GroupKey<'a>, Vec<usize>> = HashMap::new();
+        let mut key_buf: GroupKey<'a> = Vec::with_capacity(key_columns.len());
+
+        'rows: for row_idx in rows {
+            key_buf.clear();
+            for column in key_columns {
+                let part = GroupKeyValue::from_column(column, row_idx);
+                if dropna && part.is_null() {
+                    // pandas `dropna=True`: rows with a missing key are excluded.
+                    continue 'rows;
+                }
+                key_buf.push(part);
+            }
+
+            // Look the key up by slice so that the buffer can be reused; only
+            // materialise an owned key when the group does not exist yet.
+            if groups.contains_key(key_buf.as_slice()) {
+                if let Some(indices) = groups.get_mut(key_buf.as_slice()) {
+                    indices.push(row_idx);
+                }
+            } else {
+                groups.insert(key_buf.clone(), vec![row_idx]);
+            }
+        }
+
+        groups
+    }
+
     /// Group DataFrame
+    ///
+    /// Rows whose grouping key contains a missing value are excluded, matching
+    /// the pandas `dropna=True` default. Use
+    /// [`OptimizedDataFrame::group_by_with_config`] to keep them.
     ///
     /// # Arguments
     /// * `columns` - Column names for grouping
@@ -44,64 +146,39 @@ impl OptimizedDataFrame {
         I: IntoIterator<Item = S>,
         S: AsRef<str>,
     {
+        self.group_by_with_config(columns, as_multi_index, true)
+    }
+
+    /// Group DataFrame with full configuration
+    ///
+    /// # Arguments
+    /// * `columns` - Column names for grouping
+    /// * `as_multi_index` - Whether to create a multi-index for the result (when multiple columns)
+    /// * `dropna` - Whether to exclude rows whose key contains a missing value
+    ///   (`true` reproduces the pandas default; `false` keeps them as a distinct
+    ///   NA group that is emitted as a real NULL in the key column)
+    ///
+    /// # Returns
+    /// * `Result<GroupBy>` - Grouping results
+    pub fn group_by_with_config<I, S>(
+        &self,
+        columns: I,
+        as_multi_index: bool,
+        dropna: bool,
+    ) -> Result<GroupBy<'_>>
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
         let group_by_columns: Vec<String> = columns
             .into_iter()
             .map(|s| s.as_ref().to_string())
             .collect();
 
-        // Verify existence of each column
-        for column in &group_by_columns {
-            if !self.column_indices.contains_key(column) {
-                return Err(Error::ColumnNotFound(column.clone()));
-            }
-        }
+        // Verify existence of each column and resolve them once
+        let key_columns = self.resolve_group_columns(&group_by_columns)?;
 
-        // Create grouping keys
-        let mut groups: HashMap<Vec<String>, Vec<usize>> = HashMap::new();
-
-        for row_idx in 0..self.row_count {
-            let mut key = Vec::with_capacity(group_by_columns.len());
-
-            for col_name in &group_by_columns {
-                let col_idx = self.column_indices[col_name];
-                let col = &self.columns[col_idx];
-
-                let key_part = match col {
-                    Column::Int64(int_col) => {
-                        if let Ok(Some(val)) = int_col.get(row_idx) {
-                            val.to_string()
-                        } else {
-                            "NULL".to_string()
-                        }
-                    }
-                    Column::Float64(float_col) => {
-                        if let Ok(Some(val)) = float_col.get(row_idx) {
-                            val.to_string()
-                        } else {
-                            "NULL".to_string()
-                        }
-                    }
-                    Column::String(str_col) => {
-                        if let Ok(Some(val)) = str_col.get(row_idx) {
-                            val.to_string()
-                        } else {
-                            "NULL".to_string()
-                        }
-                    }
-                    Column::Boolean(bool_col) => {
-                        if let Ok(Some(val)) = bool_col.get(row_idx) {
-                            val.to_string()
-                        } else {
-                            "NULL".to_string()
-                        }
-                    }
-                };
-
-                key.push(key_part);
-            }
-
-            groups.entry(key).or_default().push(row_idx);
-        }
+        let groups = self.build_groups(&key_columns, 0..self.row_count, dropna);
 
         // Only use multi-index when we have multiple grouping columns and option is enabled
         let create_multi_index = as_multi_index && group_by_columns.len() > 1;
@@ -111,10 +188,15 @@ impl OptimizedDataFrame {
             group_by_columns,
             groups,
             create_multi_index,
+            dropna,
         })
     }
 
     /// Group DataFrame using parallel processing
+    ///
+    /// Rows whose grouping key contains a missing value are excluded (pandas
+    /// `dropna=True` default); use
+    /// [`OptimizedDataFrame::par_groupby_with_config`] to keep them.
     ///
     /// # Arguments
     /// * `group_by_columns` - Column names for grouping
@@ -122,211 +204,82 @@ impl OptimizedDataFrame {
     /// # Returns
     /// * `Result<HashMap<String, Self>>` - Grouping results (map of keys and DataFrames)
     pub fn par_groupby(&self, group_by_columns: &[&str]) -> Result<HashMap<String, Self>> {
+        self.par_groupby_with_config(group_by_columns, true)
+    }
+
+    /// Group DataFrame using parallel processing, with NA handling configured
+    ///
+    /// The returned map is keyed by the rendered composite group key: the bare
+    /// value for a single grouping column, and a separator-escaped encoding for
+    /// several columns (so `("a_b", "c")` and `("a", "b_c")` stay distinct).
+    ///
+    /// # Arguments
+    /// * `group_by_columns` - Column names for grouping
+    /// * `dropna` - Whether to exclude rows whose key contains a missing value
+    ///
+    /// # Returns
+    /// * `Result<HashMap<String, Self>>` - Grouping results (map of keys and DataFrames)
+    pub fn par_groupby_with_config(
+        &self,
+        group_by_columns: &[&str],
+        dropna: bool,
+    ) -> Result<HashMap<String, Self>> {
         use rayon::prelude::*;
-        use std::collections::hash_map::Entry;
-        use std::sync::{Arc, Mutex};
 
-        // Optimization threshold based on data size
-        const PARALLEL_THRESHOLD: usize = 50_000;
+        // Below these sizes the rayon fork/join overhead dominates, so the
+        // serial path is measurably faster.
+        const PARALLEL_ROW_THRESHOLD: usize = 50_000;
+        const PARALLEL_GROUP_THRESHOLD: usize = 100;
 
-        // Get column indices for grouping keys
-        let mut group_col_indices = Vec::with_capacity(group_by_columns.len());
-        for &col_name in group_by_columns {
-            let col_idx = self
-                .column_indices
-                .get(col_name)
-                .ok_or_else(|| Error::ColumnNotFound(col_name.to_string()))?;
-            group_col_indices.push(*col_idx);
-        }
+        let names: Vec<String> = group_by_columns.iter().map(|s| (*s).to_string()).collect();
+        let key_columns = self.resolve_group_columns(&names)?;
 
         // Generate group keys and group each row's index
-        let groups: HashMap<String, Vec<usize>> = if self.row_count < PARALLEL_THRESHOLD {
+        let groups: HashMap<GroupKey<'_>, Vec<usize>> = if self.row_count < PARALLEL_ROW_THRESHOLD {
             // Serial processing is more efficient for small data
-            let mut groups = HashMap::new();
-
-            for row_idx in 0..self.row_count {
-                // Generate group key for this row
-                let mut key_parts = Vec::with_capacity(group_col_indices.len());
-
-                for &col_idx in &group_col_indices {
-                    let column = &self.columns[col_idx];
-                    let part = match column {
-                        Column::Int64(col) => {
-                            if let Ok(Some(val)) = col.get(row_idx) {
-                                val.to_string()
-                            } else {
-                                "NA".to_string()
-                            }
-                        }
-                        Column::Float64(col) => {
-                            if let Ok(Some(val)) = col.get(row_idx) {
-                                val.to_string()
-                            } else {
-                                "NA".to_string()
-                            }
-                        }
-                        Column::String(col) => {
-                            if let Ok(Some(val)) = col.get(row_idx) {
-                                val.to_string()
-                            } else {
-                                "NA".to_string()
-                            }
-                        }
-                        Column::Boolean(col) => {
-                            if let Ok(Some(val)) = col.get(row_idx) {
-                                val.to_string()
-                            } else {
-                                "NA".to_string()
-                            }
-                        }
-                    };
-                    key_parts.push(part);
-                }
-
-                let group_key = key_parts.join("_");
-
-                match groups.entry(group_key) {
-                    Entry::Vacant(e) => {
-                        e.insert(vec![row_idx]);
-                    }
-                    Entry::Occupied(mut e) => {
-                        e.get_mut().push(row_idx);
-                    }
-                }
-            }
-
-            groups
+            self.build_groups(&key_columns, 0..self.row_count, dropna)
         } else {
-            // For large data, use parallel processing + lock-free approach
-            // 1. Create local group maps in parallel
-            // 2. Merge them
+            // For large data: build local maps in parallel, then merge them
             let chunk_size = (self.row_count / rayon::current_num_threads()).max(1000);
 
-            // Step 1: Create local intermediate group maps in parallel
-            let local_maps: Vec<HashMap<String, Vec<usize>>> = (0..self.row_count)
+            let local_maps: Vec<HashMap<GroupKey<'_>, Vec<usize>>> = (0..self.row_count)
                 .collect::<Vec<_>>()
                 .par_chunks(chunk_size)
-                .map(|chunk| {
-                    let mut local_groups = HashMap::new();
-
-                    for &row_idx in chunk {
-                        // Generate group key for this row
-                        let mut key_parts = Vec::with_capacity(group_col_indices.len());
-
-                        for &col_idx in &group_col_indices {
-                            let column = &self.columns[col_idx];
-                            let part = match column {
-                                Column::Int64(col) => {
-                                    if let Ok(Some(val)) = col.get(row_idx) {
-                                        val.to_string()
-                                    } else {
-                                        "NA".to_string()
-                                    }
-                                }
-                                Column::Float64(col) => {
-                                    if let Ok(Some(val)) = col.get(row_idx) {
-                                        val.to_string()
-                                    } else {
-                                        "NA".to_string()
-                                    }
-                                }
-                                Column::String(col) => {
-                                    if let Ok(Some(val)) = col.get(row_idx) {
-                                        val.to_string()
-                                    } else {
-                                        "NA".to_string()
-                                    }
-                                }
-                                Column::Boolean(col) => {
-                                    if let Ok(Some(val)) = col.get(row_idx) {
-                                        val.to_string()
-                                    } else {
-                                        "NA".to_string()
-                                    }
-                                }
-                            };
-                            key_parts.push(part);
-                        }
-
-                        let group_key = key_parts.join("_");
-
-                        match local_groups.entry(group_key) {
-                            Entry::Vacant(e) => {
-                                e.insert(vec![row_idx]);
-                            }
-                            Entry::Occupied(mut e) => {
-                                e.get_mut().push(row_idx);
-                            }
-                        }
-                    }
-
-                    local_groups
-                })
+                .map(|chunk| self.build_groups(&key_columns, chunk.iter().copied(), dropna))
                 .collect();
 
-            // Step 2: Merge intermediate maps
-            let mut merged_groups = HashMap::new();
+            let mut merged: HashMap<GroupKey<'_>, Vec<usize>> = HashMap::new();
             for local_map in local_maps {
                 for (key, indices) in local_map {
-                    match merged_groups.entry(key) {
-                        Entry::Vacant(e) => {
-                            e.insert(indices);
-                        }
-                        Entry::Occupied(mut e) => {
-                            e.get_mut().extend(indices);
-                        }
-                    }
+                    merged.entry(key).or_default().extend(indices);
                 }
             }
-
-            merged_groups
+            merged
         };
 
         // Efficiently create DataFrames for each group
-        let result = if groups.len() < 100 || self.row_count < PARALLEL_THRESHOLD {
+        if groups.len() < PARALLEL_GROUP_THRESHOLD || self.row_count < PARALLEL_ROW_THRESHOLD {
             // Use serial processing for small data or when group count is small
             let mut result = HashMap::with_capacity(groups.len());
-            for (key, indices) in groups {
-                let group_df = self.filter_by_indices(&indices)?;
-                result.insert(key, group_df);
+            for (key, indices) in &groups {
+                let group_df = self.filter_by_indices(indices)?;
+                result.insert(render_group_key(key), group_df);
             }
-            result
+            Ok(result)
         } else {
-            // Parallelize group processing for large data
-            // Process each group in parallel and safely aggregate results
-            let result_mutex = Arc::new(Mutex::new(HashMap::with_capacity(groups.len())));
+            // Parallelize group construction for large data. Errors are
+            // propagated instead of silently dropping the affected group.
+            let group_items: Vec<(&GroupKey<'_>, &Vec<usize>)> = groups.iter().collect();
 
-            // Adjust chunk size to minimize overhead
-            let chunk_size = (groups.len() / rayon::current_num_threads()).max(10);
+            let built: Vec<(String, Self)> = group_items
+                .into_par_iter()
+                .map(|(key, indices)| {
+                    let group_df = self.filter_by_indices(indices)?;
+                    Ok((render_group_key(key), group_df))
+                })
+                .collect::<Result<Vec<_>>>()?;
 
-            // Create list of groups and split into chunks for parallel processing
-            let group_items: Vec<(String, Vec<usize>)> = groups.into_iter().collect();
-
-            group_items.par_chunks(chunk_size).for_each(|chunk| {
-                // Temporarily store processing results for each chunk
-                let mut local_results = HashMap::new();
-
-                for (key, indices) in chunk {
-                    if let Ok(group_df) = self.filter_by_indices(indices) {
-                        local_results.insert(key.clone(), group_df);
-                    }
-                }
-
-                // Merge results into the main HashMap
-                if let Ok(mut result_map) = result_mutex.lock() {
-                    for (key, df) in local_results {
-                        result_map.insert(key, df);
-                    }
-                }
-            });
-
-            // Get final results
-            match Arc::try_unwrap(result_mutex) {
-                Ok(mutex) => mutex.into_inner().unwrap_or_default(),
-                Err(_) => HashMap::new(), // If failed to unwrap arc
-            }
-        };
-
-        Ok(result)
+            Ok(built.into_iter().collect())
+        }
     }
 }

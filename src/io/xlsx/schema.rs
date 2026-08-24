@@ -128,15 +128,22 @@ pub(super) fn styles_xml() -> String {
     xml
 }
 
-/// `xl/sharedStrings.xml` body built from a flat list of strings.
+/// `xl/sharedStrings.xml` body built from a flat list of unique strings plus
+/// the total number of cell references made against the table.
 ///
-/// The consumer indexes into this file via the 0-based position of each `<si>`.
-pub(super) fn shared_strings_xml(strings: &[String]) -> String {
+/// Per the OOXML spec these are two distinct counts: `uniqueCount` is the
+/// number of `<si>` entries (`strings.len()`), while `count` is the total
+/// number of cells across the workbook that reference the table — which is
+/// normally *larger* than `uniqueCount` whenever any string repeats (e.g. a
+/// column of ten "Alice" cells contributes 1 to `uniqueCount` but 10 to
+/// `count`). The consumer indexes into this file via the 0-based position of
+/// each `<si>`.
+pub(super) fn shared_strings_xml(strings: &[String], total_refs: u32) -> String {
     let mut xml = String::new();
     xml.push_str(r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>"#);
     xml.push_str(&format!(
         r#"<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="{}" uniqueCount="{}">"#,
-        strings.len(),
+        total_refs,
         strings.len()
     ));
     for s in strings {
@@ -182,11 +189,22 @@ mod tests {
 
     #[test]
     fn shared_strings_roundtrips_ordering() {
-        let ss = shared_strings_xml(&["a".to_string(), "b".to_string(), "a<b".to_string()]);
+        let ss = shared_strings_xml(&["a".to_string(), "b".to_string(), "a<b".to_string()], 3);
         assert!(ss.contains("a"));
         assert!(ss.contains("b"));
         // `<` is escaped.
         assert!(ss.contains("a&lt;b"));
+        // 3 unique strings, each referenced exactly once here.
         assert!(ss.contains(r#"count="3""#));
+        assert!(ss.contains(r#"uniqueCount="3""#));
+    }
+
+    #[test]
+    fn shared_strings_distinguishes_count_from_unique_count() {
+        // 2 unique strings, but referenced 5 times in total (e.g. because a
+        // column repeats "a" four times).
+        let ss = shared_strings_xml(&["a".to_string(), "b".to_string()], 5);
+        assert!(ss.contains(r#"count="5""#));
+        assert!(ss.contains(r#"uniqueCount="2""#));
     }
 }

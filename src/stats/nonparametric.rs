@@ -4,10 +4,9 @@
 //! specific probability distributions for the underlying data.
 
 use crate::core::error::{Error, Result};
-use crate::stats::distributions::{ChiSquared, Distribution, Normal};
+use crate::stats::distributions::{ChiSquared, Distribution};
 use crate::stats::hypothesis::{AlternativeHypothesis, EffectSize, TestResult};
 use scirs2_core::random::{rng, RngExt};
-use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// Mann-Whitney U test (Wilcoxon rank-sum test)
@@ -55,26 +54,38 @@ pub fn mann_whitney_u_test(
     let u1 = r1 - (n1 * (n1 + 1)) as f64 / 2.0;
     let u2 = (n1 * n2) as f64 - u1;
 
-    // Use smaller U as test statistic
-    let u_statistic = u1.min(u2);
-
-    // Calculate z-score for normal approximation (valid for large samples)
+    let n_total_f = n_total as f64;
     let mean_u = (n1 * n2) as f64 / 2.0;
-    let var_u = (n1 * n2 * (n_total + 1)) as f64 / 12.0;
 
-    // Continuity correction
-    let z_statistic = if u_statistic > mean_u {
-        (u_statistic - 0.5 - mean_u) / var_u.sqrt()
-    } else {
-        (u_statistic + 0.5 - mean_u) / var_u.sqrt()
-    };
+    // Tie correction (Hollander & Wolfe "Nonparametric Statistical
+    // Methods", also `scipy.stats.mannwhitneyu`'s `_get_mwu_z`):
+    // σ² = n1·n2/12 · [(N+1) − Σ(t_j³ − t_j)/(N(N−1))], `t_j` each
+    // tied-value group's size. The previous `n1·n2·(N+1)/12` formula
+    // assumes no ties and overstates the variance (understating
+    // significance) whenever the combined sample has any.
+    let tie_term = tie_correction_sum(&combined.iter().map(|(v, _)| *v).collect::<Vec<_>>());
+    let var_u =
+        (n1 * n2) as f64 / 12.0 * ((n_total_f + 1.0) - tie_term / (n_total_f * (n_total_f - 1.0)));
 
-    let normal = Normal::new(0.0, 1.0)?;
-    let p_value = match alternative {
-        AlternativeHypothesis::TwoSided => 2.0 * (1.0 - normal.cdf(z_statistic.abs())),
-        AlternativeHypothesis::Greater => 1.0 - normal.cdf(z_statistic),
-        AlternativeHypothesis::Less => normal.cdf(z_statistic),
+    // Per-alternative statistic and always-subtracted continuity
+    // correction, matching `scipy.stats.mannwhitneyu`'s asymptotic method
+    // (verified to reproduce its p-values exactly, including with ties):
+    // `Greater` (group1 stochastically greater) tests U1 against its null
+    // mean via the survival function; `Less` tests U2 the same way (by
+    // symmetry, `SF` on U2 is equivalent to a lower tail on U1); `TwoSided`
+    // uses max(U1, U2) and doubles. The previous implementation always
+    // reduced to `min(u1, u2)` before computing z, which discards exactly
+    // the information needed to tell `Greater` from `Less` apart: both
+    // one-sided directions produced the *same* p-value regardless of which
+    // group actually had the larger ranks.
+    let (u_for_p, two_sided_factor) = match alternative {
+        AlternativeHypothesis::Greater => (u1, 1.0),
+        AlternativeHypothesis::Less => (u2, 1.0),
+        AlternativeHypothesis::TwoSided => (u1.max(u2), 2.0),
     };
+    let z_statistic = (u_for_p - mean_u - 0.5) / var_u.sqrt();
+    let p_value =
+        (two_sided_factor * crate::stats::special::normal_sf(z_statistic)).clamp(0.0, 1.0);
 
     // Effect size (rank-biserial correlation)
     let effect_size_r = 2.0 * u1 / (n1 * n2) as f64 - 1.0;
@@ -90,7 +101,11 @@ pub fn mann_whitney_u_test(
     additional_info.insert("rank_sum_group1".to_string(), r1);
 
     Ok(TestResult {
-        statistic: u_statistic,
+        // Reported as U1 (matching `scipy.stats.mannwhitneyu`, which always
+        // reports the statistic for the first sample regardless of
+        // `alternative`) rather than the previous `min(u1, u2)`, which
+        // cannot itself indicate which group's ranks were larger.
+        statistic: u1,
         p_value,
         degrees_of_freedom: None,
         critical_value: None,
@@ -150,25 +165,62 @@ pub fn wilcoxon_signed_rank_test(
         }
     }
 
-    // Test statistic (smaller of the two rank sums)
-    let w_statistic = w_plus.min(w_minus);
-
-    // Normal approximation for large samples
+    // Normal approximation for large samples, with a tie correction (the
+    // ties are among the *absolute* differences; R's `wilcox.test` and
+    // `scipy.stats.wilcoxon` both apply the same `− Σ(t_j³ − t_j)/48` term):
+    // Var(W₊) = n(n+1)(2n+1)/24 − Σ(t_j³ − t_j)/48. The previous
+    // `n(n+1)(2n+1)/24` no-tie formula overstates the variance whenever the
+    // absolute differences tie.
     let mean_w = n as f64 * (n + 1) as f64 / 4.0;
-    let var_w = n as f64 * (n + 1) as f64 * (2 * n + 1) as f64 / 24.0;
+    let tie_term = tie_correction_sum(&abs_differences);
+    let var_w = (n as f64 * (n + 1) as f64 * (2 * n + 1) as f64) / 24.0 - tie_term / 48.0;
+    let se_w = var_w.sqrt();
 
-    // Continuity correction
-    let z_statistic = if w_statistic > mean_w {
-        (w_statistic - 0.5 - mean_w) / var_w.sqrt()
-    } else {
-        (w_statistic + 0.5 - mean_w) / var_w.sqrt()
+    // z is always computed from w_plus (never a direction-blind min/max),
+    // with a continuity correction whose *sign* — not magnitude — depends
+    // on `alternative`, matching `scipy.stats.wilcoxon`'s asymptotic method
+    // (verified to reproduce its p-values exactly, including with ties):
+    // `Greater` and `Less` each shave the correction toward the tail that
+    // supports them (so the test stays conservative either way); `TwoSided`
+    // shaves it toward zero. The previous implementation instead corrected
+    // `w_plus.min(w_minus)` toward its mean regardless of `alternative`,
+    // which — like the analogous Mann-Whitney bug — makes `Greater` and
+    // `Less` produce identical p-values regardless of which tail the signed
+    // ranks actually favor.
+    let z0 = (w_plus - mean_w) / se_w;
+    let correction_sign = match alternative {
+        AlternativeHypothesis::Greater => 1.0,
+        AlternativeHypothesis::Less => -1.0,
+        AlternativeHypothesis::TwoSided => {
+            if z0 > 0.0 {
+                1.0
+            } else if z0 < 0.0 {
+                -1.0
+            } else {
+                0.0
+            }
+        }
     };
+    let z_statistic = z0 - correction_sign * 0.5 / se_w;
 
-    let normal = Normal::new(0.0, 1.0)?;
     let p_value = match alternative {
-        AlternativeHypothesis::TwoSided => 2.0 * (1.0 - normal.cdf(z_statistic.abs())),
-        AlternativeHypothesis::Greater => 1.0 - normal.cdf(z_statistic),
-        AlternativeHypothesis::Less => normal.cdf(z_statistic),
+        AlternativeHypothesis::Greater => crate::stats::special::normal_sf(z_statistic),
+        AlternativeHypothesis::Less => crate::stats::special::normal_cdf(z_statistic),
+        AlternativeHypothesis::TwoSided => {
+            2.0 * crate::stats::special::normal_sf(z_statistic.abs())
+        }
+    }
+    .clamp(0.0, 1.0);
+
+    // Reported statistic: the smaller rank-sum for a two-sided test (the
+    // conventional "W"), but w_plus itself for a one-sided test — matching
+    // `scipy.stats.wilcoxon`'s convention, and meaningful because a
+    // one-sided p-value is derived from w_plus specifically, not from
+    // whichever of w_plus/w_minus happens to be smaller.
+    let w_statistic = if matches!(alternative, AlternativeHypothesis::TwoSided) {
+        w_plus.min(w_minus)
+    } else {
+        w_plus
     };
 
     // Effect size (matched-pairs rank-biserial correlation)
@@ -257,9 +309,14 @@ pub fn kruskal_wallis_test(groups: &[&[f64]]) -> Result<TestResult> {
     // Degrees of freedom
     let df = (k - 1) as f64;
 
-    // P-value using chi-squared distribution
+    // P-value using chi-squared distribution, via `special::chi2_sf`
+    // directly — never `1.0 - chi_sq.cdf(...)`, which silently reports
+    // `p_value = 0.0` for a strongly-significant H statistic (`cdf`'s own
+    // incomplete-gamma evaluation already collapses to a single `f64`
+    // indistinguishable from `1.0` at that point, so re-subtracting it from
+    // `1.0` here loses every remaining digit of the true tail probability).
     let chi_sq = ChiSquared::new(df)?;
-    let p_value = 1.0 - chi_sq.cdf(h_statistic);
+    let p_value = crate::stats::special::chi2_sf(h_statistic, df);
 
     // Effect size (eta-squared)
     let eta_squared = (h_statistic - k as f64 + 1.0) / (n_total as f64 - k as f64);
@@ -339,9 +396,11 @@ pub fn friedman_test(data: &[Vec<f64>]) -> Result<TestResult> {
     // Degrees of freedom
     let df = k - 1.0;
 
-    // P-value using chi-squared distribution
+    // P-value using chi-squared distribution — see `kruskal_wallis_test`'s
+    // doc comment above for why this must be `special::chi2_sf` directly,
+    // not `1.0 - chi_sq.cdf(...)`.
     let chi_sq = ChiSquared::new(df)?;
-    let p_value = 1.0 - chi_sq.cdf(q_statistic);
+    let p_value = crate::stats::special::chi2_sf(q_statistic, df);
 
     // Effect size (Kendall's W)
     let kendalls_w = q_statistic / (n * (k - 1.0));
@@ -422,16 +481,20 @@ pub fn ks_two_sample_test(
     let effective_n = (n1 * n2) as f64 / (n1 + n2) as f64;
     let z = d_statistic * effective_n.sqrt();
 
-    let p_value = match alternative {
-        AlternativeHypothesis::TwoSided => {
-            // Approximation for two-sided test
-            2.0 * (-2.0 * z * z).exp()
-        }
-        AlternativeHypothesis::Greater | AlternativeHypothesis::Less => {
-            // Approximation for one-sided test
-            (-2.0 * z * z).exp()
-        }
-    };
+    // Approximation for one/two-sided; the two-sided factor of 2 can push
+    // this above 1.0 for small `z`, so it is clamped to the valid [0, 1]
+    // probability range below — but *not* floored. A floor (this used to
+    // be `.max(0.001)`) fabricates a less-extreme p-value than the one
+    // actually computed, and — because `reject_null` below is derived from
+    // this same now-unclamped-below value — the two could previously
+    // disagree: `reject_null` could be `true` (correctly, from the real,
+    // possibly tiny p) while the *returned* `p_value` field displayed the
+    // artificial 0.001 floor instead of the true, more extreme result.
+    let p_value = (match alternative {
+        AlternativeHypothesis::TwoSided => 2.0 * (-2.0 * z * z).exp(),
+        AlternativeHypothesis::Greater | AlternativeHypothesis::Less => (-2.0 * z * z).exp(),
+    })
+    .min(1.0);
 
     let mut additional_info = HashMap::new();
     additional_info.insert("n1".to_string(), n1 as f64);
@@ -442,7 +505,7 @@ pub fn ks_two_sample_test(
 
     Ok(TestResult {
         statistic: d_statistic,
-        p_value: p_value.max(0.001).min(1.0), // Clamp p-value
+        p_value,
         degrees_of_freedom: None,
         critical_value: None,
         effect_size: None,
@@ -501,8 +564,11 @@ pub fn runs_test(sequence: &[bool]) -> Result<TestResult> {
         (runs as f64 + 0.5 - expected_runs) / variance_runs.sqrt()
     };
 
-    let normal = Normal::new(0.0, 1.0)?;
-    let p_value = 2.0 * (1.0 - normal.cdf(z_statistic.abs()));
+    // Direct survival function, not `1.0 - normal.cdf(...)` — see
+    // `kruskal_wallis_test`'s doc comment above for why that pattern
+    // silently reports `p_value = 0.0` for a strongly-significant (large
+    // |z|) result.
+    let p_value = 2.0 * crate::stats::special::normal_sf(z_statistic.abs());
 
     let mut additional_info = HashMap::new();
     additional_info.insert("n_runs".to_string(), runs as f64);
@@ -558,6 +624,28 @@ fn assign_ranks(data: &[f64]) -> Vec<f64> {
     }
 
     ranks
+}
+
+/// Sum of `t_j³ − t_j` over every tied-value group in `data` (`t_j` the
+/// group's size), the standard correction term subtracted from a rank-based
+/// test's no-tie variance formula (Mann-Whitney U, Wilcoxon signed-rank).
+/// Uses the same tie tolerance (`1e-10`) as [`assign_ranks`].
+fn tie_correction_sum(data: &[f64]) -> f64 {
+    let mut sorted = data.to_vec();
+    sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let n = sorted.len();
+    let mut sum = 0.0;
+    let mut i = 0;
+    while i < n {
+        let mut j = i;
+        while j < n && (sorted[j] - sorted[i]).abs() < 1e-10 {
+            j += 1;
+        }
+        let t = (j - i) as f64;
+        sum += t * t * t - t;
+        i = j;
+    }
+    sum
 }
 
 /// Calculate empirical CDF at a given value

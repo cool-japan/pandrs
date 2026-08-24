@@ -3,9 +3,7 @@ use pandrs::error::Result;
 #[cfg(feature = "visualization")]
 use pandrs::vis::config::PlotSettings;
 #[cfg(feature = "visualization")]
-use pandrs::vis::direct::{DataFramePlotExt, SeriesPlotExt};
-#[cfg(feature = "visualization")]
-use pandrs::vis::plotters_ext::{OutputType, PlotKind as PlottersPlotKind};
+use pandrs::vis::plotters_ext::PlotKind as PlottersPlotKind;
 #[cfg(feature = "visualization")]
 use pandrs::vis::PlotKind;
 #[cfg(feature = "visualization")]

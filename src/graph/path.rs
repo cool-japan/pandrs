@@ -314,7 +314,7 @@ where
     F: Fn(&Edge<W>) -> f64,
 {
     let nodes: Vec<NodeId> = graph.node_ids().collect();
-    let n = nodes.len();
+    let _n = nodes.len();
 
     // Initialize distance and next matrices
     let mut dist: HashMap<NodeId, HashMap<NodeId, f64>> = HashMap::new();
@@ -571,8 +571,18 @@ where
     all_paths
 }
 
-/// Computes the k-shortest paths between source and target
-/// Uses Yen's algorithm
+/// Computes the k-shortest paths between source and target.
+///
+/// Uses Yen's algorithm. For each candidate "spur" node along the previously
+/// found path, this builds a genuinely modified copy of the graph -- with
+/// every edge that would re-create an already-found path sharing the same
+/// root removed, and every root-path node before the spur (which would
+/// otherwise let the spur search loop back through the root) removed too --
+/// and re-runs Dijkstra on *that* graph. An earlier version ran Dijkstra on
+/// the unmodified graph and only rejected a candidate if its very FIRST edge
+/// collided with a previously used one; any collision deeper in the path
+/// went undetected, and root-path nodes were never excluded at all, so
+/// paths 2..k were frequently wrong, missing, or duplicates of path 1.
 pub fn k_shortest_paths<N, W, F>(
     graph: &Graph<N, W>,
     source: NodeId,
@@ -588,6 +598,10 @@ where
     let mut result: Vec<(Vec<NodeId>, f64)> = Vec::new();
     let mut candidates: Vec<(Vec<NodeId>, f64)> = Vec::new();
 
+    if k == 0 {
+        return result;
+    }
+
     // Find first shortest path
     if let Ok(sp_result) = dijkstra(graph, source, &weight_fn) {
         if let Some(path) = sp_result.path_to(target) {
@@ -601,45 +615,59 @@ where
     }
 
     while result.len() < k {
-        let (last_path, _) = &result[result.len() - 1];
+        let last_path = result[result.len() - 1].0.clone();
 
-        for i in 0..last_path.len() - 1 {
+        for i in 0..last_path.len().saturating_sub(1) {
             let spur_node = last_path[i];
             let root_path: Vec<NodeId> = last_path[..=i].to_vec();
 
-            // Create a modified graph by removing edges
-            let mut removed_edges: Vec<(NodeId, NodeId)> = Vec::new();
+            // Build a modified copy of the graph for this spur: remove
+            // every edge that would re-create an already-found path
+            // sharing this root (standard Yen's algorithm only excludes
+            // edges from `result`, the accepted paths -- not the tentative
+            // `candidates`), and remove every root-path node except the
+            // spur node itself so the spur search can't loop back through
+            // the root.
+            let mut modified_graph = graph.clone();
 
             for (path, _) in &result {
-                if path.len() > i && path[..=i] == root_path {
-                    removed_edges.push((path[i], path[i + 1]));
+                // `path.len() > i + 1` guarantees `path[i + 1]` is in
+                // bounds: a path of length exactly `i + 1` ends AT the spur
+                // node with no further edge to remove.
+                if path.len() > i + 1 && path[..=i] == root_path[..] {
+                    if let Some(edge) = modified_graph.get_edge_between(path[i], path[i + 1]) {
+                        let edge_id = edge.id;
+                        let _ = modified_graph.remove_edge(edge_id);
+                    }
                 }
             }
 
-            // Calculate spur path using modified graph (without actually modifying)
-            // This is a simplified version - full implementation would modify graph
-            if let Ok(sp_result) = dijkstra(graph, spur_node, &weight_fn) {
+            for &node in &root_path[..root_path.len().saturating_sub(1)] {
+                let _ = modified_graph.remove_node(node);
+            }
+
+            // Calculate the spur path on the MODIFIED graph, so it can
+            // neither reuse a removed edge nor revisit a root-path node.
+            if let Ok(sp_result) = dijkstra(&modified_graph, spur_node, &weight_fn) {
                 if let Some(spur_path) = sp_result.path_to(target) {
-                    // Check if we need to skip removed edges
-                    let mut valid = true;
-                    if !spur_path.is_empty() {
-                        let first_edge = (spur_node, spur_path[1]);
-                        if removed_edges.contains(&first_edge) {
-                            valid = false;
-                        }
-                    }
-
-                    if valid && spur_path.len() > 1 {
+                    if spur_path.len() > 1 {
                         let mut total_path = root_path.clone();
-                        total_path.pop(); // Remove spur node (it's already in spur_path)
+                        total_path.pop(); // spur_node is the first element of spur_path too
                         total_path.extend(spur_path);
+                        debug_assert_eq!(total_path.last(), Some(&target));
 
+                        // Recompute the cost from the ORIGINAL graph: every
+                        // edge in `total_path` is a real edge of `graph`
+                        // (the root-path portion was validated by an
+                        // earlier Dijkstra run; the spur portion survived
+                        // in `modified_graph`, a subgraph of `graph` whose
+                        // surviving edges carry unchanged weights).
                         let total_cost = total_path
                             .windows(2)
                             .map(|w| {
                                 graph
                                     .get_edge_between(w[0], w[1])
-                                    .map(|e| weight_fn(e))
+                                    .map(&weight_fn)
                                     .unwrap_or(f64::INFINITY)
                             })
                             .sum();

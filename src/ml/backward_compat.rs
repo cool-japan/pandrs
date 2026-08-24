@@ -7,11 +7,6 @@
 pub mod models {
     //! Backward compatibility for ML models
 
-    use crate::column::{Column, ColumnTrait, Float64Column};
-    use crate::error::{Error, Result};
-    use crate::optimized::{ColumnView, OptimizedDataFrame};
-    use std::collections::HashMap;
-
     /// Trait common to supervised learning models (backward compatibility)
     #[deprecated(
         since = "0.1.0",
@@ -37,6 +32,10 @@ pub mod models {
     pub mod model_selection {
         use crate::error::Result;
         use crate::optimized::OptimizedDataFrame;
+        use scirs2_core::random::rngs::StdRng;
+        use scirs2_core::random::Rng;
+        use scirs2_core::random::SeedableRng;
+        use scirs2_core::random::SliceRandom;
 
         /// Split dataset into training set and test set (backward compatibility)
         #[deprecated(
@@ -48,7 +47,6 @@ pub mod models {
             test_size: f64,
             random_state: Option<u64>,
         ) -> Result<(OptimizedDataFrame, OptimizedDataFrame)> {
-            // Implementation without forwarding for now
             if test_size <= 0.0 || test_size >= 1.0 {
                 return Err(crate::error::Error::InvalidInput(
                     "test_size must be between 0 and 1".into(),
@@ -65,15 +63,33 @@ pub mod models {
                 )));
             }
 
-            // Generate indices for training and test sets
-            let train_indices: Vec<usize> = (0..(n_rows - n_test)).collect();
-            let test_indices: Vec<usize> = ((n_rows - n_test)..n_rows).collect();
+            // One real seeded permutation of all row indices, sliced into a
+            // test prefix and a train suffix. Previously `train_indices` and
+            // `test_indices` were disjoint *by construction* (a plain
+            // sequential split), but were then thrown away: the actual rows
+            // returned came from two independent `df.sample(count, ..)`
+            // calls with different seeds, each an unconstrained random draw
+            // over *all* `n_rows` — so the two returned sets could (and,
+            // empirically, did) share rows. Slicing one permutation instead
+            // guarantees the returned train/test sets are an actual
+            // partition, and `random_state` is honored instead of a fixed
+            // seed of `42`.
+            let mut rng = match random_state {
+                Some(seed) => StdRng::seed_from_u64(seed),
+                None => {
+                    let mut seed_bytes = [0u8; 32];
+                    scirs2_core::random::rng().fill_bytes(&mut seed_bytes);
+                    StdRng::from_seed(seed_bytes)
+                }
+            };
+            let mut indices: Vec<usize> = (0..n_rows).collect();
+            indices.shuffle(&mut rng);
 
-            // Use sample functionality in the optimized dataframe implementation
-            // Create a fixed seed from the train/test indices to make sure we get consistent results
-            let seed = 42;
-            let train_data = df.sample(train_indices.len(), false, Some(seed))?;
-            let test_data = df.sample(test_indices.len(), false, Some(seed + 1))?;
+            let test_indices: Vec<usize> = indices[..n_test].to_vec();
+            let train_indices: Vec<usize> = indices[n_test..].to_vec();
+
+            let train_data = df.sample_rows(&train_indices)?;
+            let test_data = df.sample_rows(&test_indices)?;
 
             Ok((train_data, test_data))
         }
@@ -84,18 +100,31 @@ pub mod models {
             note = "Use `pandrs::ml::models::evaluation::cross_val_score` instead"
         )]
         pub fn cross_val_score<M>(
-            model: &M,
-            df: &OptimizedDataFrame,
-            target: &str,
-            features: &[&str],
-            k_folds: usize,
+            _model: &M,
+            _df: &OptimizedDataFrame,
+            _target: &str,
+            _features: &[&str],
+            _k_folds: usize,
         ) -> Result<Vec<f64>>
         where
             M: crate::ml::models::SupervisedModel + Clone,
         {
-            // This is a stub that returns an error, as the new API is different
+            // Deliberately `Err`, not a fabricated score: `SupervisedModel`
+            // (and the real cross-validation loop it plugs into, see
+            // `models::contiguous_kfold_cross_validate`) operates on
+            // `crate::dataframe::DataFrame`, while this legacy signature
+            // takes an `OptimizedDataFrame`. There is no
+            // `OptimizedDataFrame -> DataFrame` converter anywhere in the
+            // crate to bridge the two (checked: no `From`/`to_dataframe`
+            // exists), and writing a general column-type-dispatching one is
+            // outside this module's scope. Erroring honestly is preferable
+            // to silently dropping `_features`/discarding fold results.
             Err(crate::error::Error::InvalidOperation(
-                "This function is deprecated. Please use `pandrs::ml::models::evaluation::cross_val_score` with the new API".into()
+                "This function is deprecated and cannot be bridged to the current API: \
+                 SupervisedModel operates on `DataFrame`, not `OptimizedDataFrame`, and no \
+                 conversion between the two exists. Please use \
+                 `pandrs::ml::models::evaluation::cross_val_score` with a `DataFrame` instead"
+                    .into(),
             ))
         }
     }
@@ -124,9 +153,6 @@ pub mod models {
 pub mod anomaly_detection {
     //! Backward compatibility for anomaly detection
 
-    use crate::error::Result;
-    use crate::optimized::OptimizedDataFrame;
-
     /// Isolation Forest anomaly detection algorithm (backward compatibility)
     #[deprecated(
         since = "0.1.0",
@@ -138,7 +164,16 @@ pub mod anomaly_detection {
     }
 
     impl IsolationForest {
-        /// Create a new IsolationForest instance (backward compatibility)
+        /// Create a new IsolationForest instance (backward compatibility).
+        ///
+        /// Returns `Err` if `max_features` is `Some(_)`: the new
+        /// `pandrs::ml::anomaly::IsolationForest` has no per-split feature
+        /// subsampling to forward it to (unlike its Random Forest cousin, it
+        /// always splits on a feature chosen uniformly at random from *all*
+        /// features), so silently dropping a caller's explicit
+        /// `max_features` request would misrepresent what the forest
+        /// actually did. Pass `None` to opt into the (only) supported
+        /// behavior.
         #[deprecated(
             since = "0.1.0",
             note = "Use `pandrs::ml::anomaly::IsolationForest::new` instead"
@@ -149,14 +184,23 @@ pub mod anomaly_detection {
             max_features: Option<f64>,
             contamination: f64,
             random_seed: Option<u64>,
-        ) -> Self {
+        ) -> crate::error::Result<Self> {
+            if max_features.is_some() {
+                return Err(crate::error::Error::InvalidInput(
+                    "IsolationForest (backward-compat) does not support max_features: the \
+                     current implementation always draws split features uniformly from all \
+                     columns; pass None instead of silently ignoring the requested value"
+                        .into(),
+                ));
+            }
+
             let mut forest = crate::ml::anomaly::IsolationForest::new();
             forest.n_estimators = n_estimators;
             forest.max_samples = max_samples;
             forest.contamination = contamination;
             forest.random_seed = random_seed;
 
-            IsolationForest { inner: forest }
+            Ok(IsolationForest { inner: forest })
         }
 
         /// Get anomaly scores (backward compatibility)
@@ -213,16 +257,52 @@ pub mod anomaly_detection {
     }
 
     impl LocalOutlierFactor {
-        /// Create a new LocalOutlierFactor instance (backward compatibility)
+        /// Create a new LocalOutlierFactor instance (backward compatibility).
+        ///
+        /// Returns `Err` for `metric` other than `Euclidean`: the current
+        /// `pandrs::ml::anomaly::LocalOutlierFactor` always computes
+        /// Euclidean distances (its `algorithm` field only ever selects a
+        /// neighbor-search strategy, never a distance function), so
+        /// `Manhattan`/`Cosine` cannot actually be honored.
         #[deprecated(
             since = "0.1.0",
             note = "Use `pandrs::ml::anomaly::LocalOutlierFactor::new` instead"
         )]
-        pub fn new(n_neighbors: usize, contamination: f64, metric: DistanceMetric) -> Self {
+        pub fn new(
+            n_neighbors: usize,
+            contamination: f64,
+            metric: DistanceMetric,
+        ) -> crate::error::Result<Self> {
+            if !matches!(metric, DistanceMetric::Euclidean) {
+                return Err(crate::error::Error::InvalidInput(
+                    "LocalOutlierFactor (backward-compat) only supports DistanceMetric::Euclidean: \
+                     the current implementation always computes Euclidean distances"
+                        .into(),
+                ));
+            }
+
             let lof = crate::ml::anomaly::LocalOutlierFactor::new(n_neighbors)
                 .contamination(contamination);
 
-            LocalOutlierFactor { inner: lof }
+            Ok(LocalOutlierFactor { inner: lof })
+        }
+
+        /// Get LOF anomaly scores (backward compatibility)
+        #[deprecated(
+            since = "0.1.0",
+            note = "Use `pandrs::ml::anomaly::LocalOutlierFactor::anomaly_scores` instead"
+        )]
+        pub fn anomaly_scores(&self) -> &[f64] {
+            self.inner.anomaly_scores()
+        }
+
+        /// Get anomaly labels (backward compatibility)
+        #[deprecated(
+            since = "0.1.0",
+            note = "Use `pandrs::ml::anomaly::LocalOutlierFactor::labels` instead"
+        )]
+        pub fn labels(&self) -> &[i64] {
+            self.inner.labels()
         }
     }
 
@@ -237,15 +317,51 @@ pub mod anomaly_detection {
     }
 
     impl OneClassSVM {
-        /// Create a new OneClassSVM instance (backward compatibility)
+        /// Create a new OneClassSVM instance (backward compatibility).
+        ///
+        /// `max_iter` and `tol` control an iterative QP solver's stopping
+        /// criteria; the current `pandrs::ml::anomaly::OneClassSVM` is a
+        /// closed-form mean-RBF-similarity estimator with no iterative
+        /// solver to bound, so there is nothing to forward either to. `0`
+        /// and `0.0` are accepted as "no preference" sentinels (matching the
+        /// natural "unset" value for a non-negative count and a tolerance);
+        /// any other value is a request this implementation cannot honor and
+        /// is rejected rather than silently ignored.
         #[deprecated(
             since = "0.1.0",
             note = "Use `pandrs::ml::anomaly::OneClassSVM::new` instead"
         )]
-        pub fn new(nu: f64, gamma: f64, max_iter: usize, tol: f64) -> Self {
+        pub fn new(nu: f64, gamma: f64, max_iter: usize, tol: f64) -> crate::error::Result<Self> {
+            if max_iter != 0 || tol != 0.0 {
+                return Err(crate::error::Error::InvalidInput(
+                    "OneClassSVM (backward-compat) does not support max_iter/tol: the current \
+                     implementation has no iterative solver to bound; pass 0 and 0.0 instead of \
+                     silently ignoring the requested values"
+                        .into(),
+                ));
+            }
+
             let svm = crate::ml::anomaly::OneClassSVM::new().nu(nu).gamma(gamma);
 
-            OneClassSVM { inner: svm }
+            Ok(OneClassSVM { inner: svm })
+        }
+
+        /// Get anomaly scores (backward compatibility)
+        #[deprecated(
+            since = "0.1.0",
+            note = "Use `pandrs::ml::anomaly::OneClassSVM::anomaly_scores` instead"
+        )]
+        pub fn anomaly_scores(&self) -> &[f64] {
+            self.inner.anomaly_scores()
+        }
+
+        /// Get anomaly labels (backward compatibility)
+        #[deprecated(
+            since = "0.1.0",
+            note = "Use `pandrs::ml::anomaly::OneClassSVM::labels` instead"
+        )]
+        pub fn labels(&self) -> &[i64] {
+            self.inner.labels()
         }
     }
 }

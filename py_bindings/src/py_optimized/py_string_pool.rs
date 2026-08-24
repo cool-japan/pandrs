@@ -122,8 +122,8 @@ impl PyStringPool {
     }
 
     /// Add strings from a Python list to the pool
-    fn add_list(&self, py: Python<'_>, strings: PyObject) -> PyResult<Vec<usize>> {
-        let list_obj = strings.downcast_bound::<PyList>(py)?;
+    fn add_list(&self, py: Python<'_>, strings: Py<PyAny>) -> PyResult<Vec<usize>> {
+        let list_obj = strings.cast_bound::<PyList>(py)?;
         let mut indices = Vec::new();
 
         for item in list_obj.iter() {
@@ -153,7 +153,7 @@ impl PyStringPool {
     }
 
     /// Get a list of strings from a list of indices
-    fn get_list(&self, py: Python<'_>, indices: Vec<usize>) -> PyResult<PyObject> {
+    fn get_list(&self, py: Python<'_>, indices: Vec<usize>) -> PyResult<Py<PyAny>> {
         let pool = match self.inner.lock() {
             Ok(p) => p,
             Err(_) => return Err(PyValueError::new_err("Failed to lock string pool")),
@@ -176,7 +176,7 @@ impl PyStringPool {
     }
 
     /// Get pool statistics
-    fn get_stats(&self, py: Python<'_>) -> PyResult<PyObject> {
+    fn get_stats(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         let pool = match self.inner.lock() {
             Ok(p) => p,
             Err(_) => return Err(PyValueError::new_err("Failed to lock string pool")),
@@ -247,7 +247,7 @@ pub fn py_string_list_to_indices(
 }
 
 /// Convert index list to Python string list
-pub fn indices_to_py_string_list(py: Python<'_>, indices: &[usize]) -> PyResult<PyObject> {
+pub fn indices_to_py_string_list(py: Python<'_>, indices: &[usize]) -> PyResult<Py<PyAny>> {
     let pool = get_or_init_global_pool();
     let pool_guard = match pool.lock() {
         Ok(guard) => guard,

@@ -6,8 +6,6 @@
 #[cfg(feature = "distributed")]
 use std::collections::HashMap;
 #[cfg(feature = "distributed")]
-use std::path::Path;
-#[cfg(feature = "distributed")]
 use std::sync::{Arc, Mutex};
 
 #[cfg(feature = "distributed")]
@@ -22,8 +20,6 @@ use crate::distributed::execution::{ExecutionContext, ExecutionEngine, Execution
 use crate::distributed::expr::ExprSchema;
 #[cfg(feature = "distributed")]
 use crate::distributed::schema_validator::SchemaValidator;
-#[cfg(feature = "distributed")]
-use crate::distributed::ToDistributed;
 use crate::error::{Error, Result};
 #[cfg(feature = "distributed")]
 use crate::lock_safe;
@@ -62,14 +58,17 @@ impl DistributedContext {
 
     /// Creates a new distributed context
     pub fn new(config: DistributedConfig) -> Result<Self> {
-        // Create the engine based on the config
+        // Create the engine based on the config. Ballista is not implemented;
+        // return an honest error rather than silently running on DataFusion.
         let mut engine: Box<dyn ExecutionEngine> = match config.executor_type() {
             crate::distributed::core::config::ExecutorType::DataFusion => {
                 Box::new(crate::distributed::engines::datafusion::DataFusionEngine::new())
             }
-            _ => {
-                // Default to DataFusion for now
-                Box::new(crate::distributed::engines::datafusion::DataFusionEngine::new())
+            crate::distributed::core::config::ExecutorType::Ballista => {
+                return Err(Error::NotImplemented(
+                    "The Ballista executor is not implemented; use ExecutorType::DataFusion"
+                        .to_string(),
+                ));
             }
         };
 
@@ -87,23 +86,48 @@ impl DistributedContext {
         })
     }
 
-    /// Registers a DataFrame with the context under the given name
+    /// Registers a DataFrame with the context under the given name.
+    ///
+    /// The data is converted to Arrow record batches and registered as an
+    /// in-memory table in **this context's shared execution context**, and the
+    /// returned dataset shares that same context. Previously this registered a
+    /// throwaway DataFrame in its own private context (immediately dropped) and
+    /// then built the stored dataset around an *empty* cloned context — so
+    /// nothing was ever queryable under `name`.
     pub fn register_dataframe(&mut self, name: &str, df: &DataFrame) -> Result<()> {
-        // Convert the DataFrame to a distributed DataFrame
-        let dist_df = df.to_distributed(self.config.clone())?;
+        use crate::distributed::core::partition::{Partition, PartitionSet};
+        use crate::distributed::engines::datafusion::conversion::dataframe_to_record_batches;
 
-        // Clone the context reference for the distributed DataFrame
-        let dist_df_with_context = DistributedDataFrame::new(
+        // Convert the local DataFrame to Arrow record batches.
+        let row_count = df.row_count();
+        let batch_size = std::cmp::max(1, row_count / std::cmp::max(1, self.config.concurrency()));
+        let batches = dataframe_to_record_batches(df, batch_size)?;
+
+        // Build a partition set from the batches.
+        let mut partitions = Vec::new();
+        for (i, batch) in batches.iter().enumerate() {
+            partitions.push(Arc::new(Partition::new(i, batch.clone())));
+        }
+        let schema = batches.first().map(|b| b.schema()).ok_or_else(|| {
+            Error::InvalidInput(format!("DataFrame '{}' produced no record batches", name))
+        })?;
+        let partition_set = PartitionSet::new(partitions, schema);
+
+        // Register the data into the shared execution context under `name`.
+        {
+            let mut context = lock_safe!(self.context, "distributed context lock")?;
+            context.register_in_memory_table(name, partition_set)?;
+        }
+
+        // The stored dataset SHARES the same context, so a query against it
+        // resolves the table just registered.
+        let dist_df = DistributedDataFrame::from_shared_context(
             self.config.clone(),
             self.engine.clone(),
-            lock_safe!(self.context, "distributed context lock")?
-                .as_ref()
-                .clone(),
+            self.context.clone(),
             name.to_string(),
         );
-
-        // Register the distributed DataFrame
-        self.datasets.insert(name.to_string(), dist_df_with_context);
+        self.datasets.insert(name.to_string(), dist_df);
 
         Ok(())
     }

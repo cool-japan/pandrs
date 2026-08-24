@@ -6,11 +6,12 @@
 //!   cargo run --example visualization_plotters_example --features visualization
 
 #[cfg(feature = "visualization")]
+#[allow(unused_imports)]
 use pandrs::vis::direct::{DataFramePlotExt, SeriesPlotExt};
 #[cfg(feature = "visualization")]
 use pandrs::{DataFrame, Series};
 #[cfg(feature = "visualization")]
-use scirs2_core::random::{rng, Rng, RngExt};
+use scirs2_core::random::{rng, RngExt};
 
 #[cfg(not(feature = "visualization"))]
 fn main() {

@@ -1,12 +1,9 @@
 use pandrs::{DataFrame, PandRSError, Series};
 
-// Test for CSV file operations (using temporary files)
+// Test for CSV file operations using a real round-trip through a temporary file.
 #[test]
 #[allow(clippy::result_large_err)]
 fn test_csv_io() -> Result<(), PandRSError> {
-    // Skip file I/O and only test the API
-    println!("Testing CSV I/O API (skipping actual file I/O)");
-
     // Create test DataFrame
     let mut df = DataFrame::new();
     let names = Series::new(
@@ -22,44 +19,43 @@ fn test_csv_io() -> Result<(), PandRSError> {
     df.add_column("name".to_string(), names)?;
     df.add_column("age".to_string(), ages)?;
 
-    // Just test API, not actual file I/O
-    let write_result = df.to_csv("dummy_path.csv");
+    // Write to a temporary CSV file (real I/O).
+    let mut path = std::env::temp_dir();
+    path.push(format!("pandrs_csv_io_test_{}.csv", std::process::id()));
 
-    // Confirm write API works
+    let write_result = df.to_csv(&path);
+    assert!(write_result.is_ok(), "to_csv should write the file");
+
+    // Read it back and verify the real data round-trips.
+    let df_from_csv = DataFrame::from_csv(&path, true)?;
+
+    assert_eq!(
+        df_from_csv.column_names().len(),
+        2,
+        "Column count should match"
+    );
     assert!(
-        write_result.is_ok(),
-        "to_csv API should not return an error"
+        df_from_csv.contains_column("name"),
+        "name column should exist"
     );
-
-    println!(
-        "To work around a temporary issue with stub implementations, we're skipping detailed tests"
+    assert!(
+        df_from_csv.contains_column("age"),
+        "age column should exist"
     );
-    println!("Marking test as passing until implementation is fixed");
+    assert_eq!(df_from_csv.row_count(), 3, "Row count should match");
 
-    /*
-    // Test from_csv API
-    let df_from_csv = DataFrame::from_csv("dummy_path.csv", true)?;
-
-    // Verify mock DataFrame returned
-    assert_eq!(df_from_csv.column_names().len(), 2, "Column count should match");
-    assert!(df_from_csv.contains_column("name"), "name column should exist");
-    assert!(df_from_csv.contains_column("age"), "age column should exist");
-
-    let row_count = df_from_csv.row_count();
-    assert_eq!(row_count, 3, "Row count should match original data");
-
-    // Check name column values
     let name_values = df_from_csv.get_column_string_values("name")?;
-    assert!(name_values[0].contains("Alice"), "First row name column value should be correct");
-    assert!(name_values[1].contains("Bob"), "Second row name column value should be correct");
-    assert!(name_values[2].contains("Charlie"), "Third row name column value should be correct");
+    assert_eq!(name_values[0], "Alice");
+    assert_eq!(name_values[1], "Bob");
+    assert_eq!(name_values[2], "Charlie");
 
-    // Check age column values
-    let age_str_values = df_from_csv.get_column_string_values("age")?;
-    assert!(age_str_values[0].contains("30"), "First row age column value should be correct");
-    assert!(age_str_values[1].contains("25"), "Second row age column value should be correct");
-    assert!(age_str_values[2].contains("35"), "Third row age column value should be correct");
-    */
+    let age_values = df_from_csv.get_column_string_values("age")?;
+    assert_eq!(age_values[0], "30");
+    assert_eq!(age_values[1], "25");
+    assert_eq!(age_values[2], "35");
+
+    // Clean up the temporary file.
+    let _ = std::fs::remove_file(&path);
 
     Ok(())
 }

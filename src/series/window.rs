@@ -7,6 +7,32 @@ use crate::core::error::{Error, Result};
 use crate::series::base::Series;
 use std::fmt::Debug;
 
+/// Convert a `Series<T>`'s values to `Option<f64>`, treating `NaN` as
+/// missing -- `Series<T>` has no null bitmap, so `NaN` is this crate's
+/// missing-value sentinel for a plain, non-`NA`-wrapped numeric series
+/// (matching `Series::<f64>::sum`'s convention). Shared by `Rolling`,
+/// `Expanding`, and `EWM` so all three treat "missing" the same way; this
+/// is also what makes `EWM::ignore_na` meaningful at all (an input that
+/// unconditionally wrapped every value in `Some` had no missing rows to
+/// ever exercise that flag against).
+fn series_values_as_f64_opt<T>(series: &Series<T>) -> Vec<Option<f64>>
+where
+    T: Debug + Clone + Into<f64> + Copy,
+{
+    series
+        .values()
+        .iter()
+        .map(|&v| {
+            let f: f64 = v.into();
+            if f.is_nan() {
+                None
+            } else {
+                Some(f)
+            }
+        })
+        .collect()
+}
+
 /// Rolling window configuration and operations
 #[derive(Debug, Clone)]
 pub struct Rolling<T>
@@ -42,9 +68,18 @@ where
     halflife: Option<f64>,
     adjust: bool,
     ignore_na: bool,
+    min_periods: usize,
 }
 
-/// How to handle window boundaries
+/// How to handle window boundaries.
+///
+/// Applied to the trailing (non-centered) window `[i + 1 - window_size, i]`
+/// at each position `i`, mirroring pandas' fixed-window indexer: `Right`
+/// (the default) leaves it unshifted; `Left` shifts the whole window one
+/// step earlier (drop the current row, include one more from the past);
+/// `Both` keeps the current row and additionally includes one more from
+/// the past (window grows by one); `Neither` drops the current row without
+/// adding a past one (window shrinks by one).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WindowClosed {
     /// Window includes both endpoints
@@ -95,8 +130,13 @@ where
     /// Calculate a quantile of the window
     fn quantile(&self, q: f64) -> Result<Series<f64>>;
 
-    /// Apply a custom aggregation function
-    fn apply<F, R>(&self, func: F) -> Result<Series<R>>
+    /// Apply a custom aggregation function.
+    ///
+    /// The result is aligned with the input series: one entry per row,
+    /// `None` wherever that row didn't have enough observations for
+    /// `min_periods` (rather than being dropped, which would silently
+    /// shorten and misalign the output relative to the input series).
+    fn apply<F, R>(&self, func: F) -> Result<Series<Option<R>>>
     where
         F: Fn(&[f64]) -> R + Copy,
         R: Debug + Clone;
@@ -147,19 +187,39 @@ where
         self.min_periods.unwrap_or(self.window_size)
     }
 
-    /// Convert values to f64 for calculations
+    /// Convert values to f64 for calculations, treating `NaN` as missing.
     fn values_as_f64(&self) -> Result<Vec<Option<f64>>>
     where
         T: Into<f64> + Copy,
     {
-        let mut result = Vec::with_capacity(self.series.len());
-        for value in self.series.values() {
-            result.push(Some((*value).into()));
-        }
-        Ok(result)
+        Ok(series_values_as_f64_opt(&self.series))
     }
 
-    /// Apply window operation with generic aggregation function
+    /// Apply window operation with generic aggregation function.
+    ///
+    /// Honors `window_size`, `min_periods`, `closed`, and `center`:
+    /// - The base (non-centered) window at position `i` is the trailing
+    ///   range `[i + 1 - window_size, i]`, clipped to `[0, len)`; `closed`
+    ///   shifts that range's endpoints before clipping, mirroring pandas'
+    ///   `FixedWindowIndexer` (`Left`/`Both` pull the start back by one,
+    ///   `Left`/`Neither` pull the end back by one; `Right`, the default,
+    ///   is the unshifted base range -- see [`WindowClosed`]'s docs).
+    /// - `center` is applied as a *post-hoc shift* of the trailing results
+    ///   by `window_size / 2` positions, exactly like pandas: the trailing
+    ///   (non-centered) result array is computed first, honoring
+    ///   `min_periods` as usual, and the final output at position `i` is
+    ///   the trailing result at position `i + window_size / 2` (`None` if
+    ///   that's out of range). This reports missing/insufficient data at
+    ///   the series' edges as `None`, rather than clamping the window's
+    ///   start to `0` and silently pulling in extra right-side context
+    ///   there instead.
+    /// - An empty window (reachable with `closed = Neither`/`Both` at the
+    ///   series' edges, or when every value in range is `NaN`) is always
+    ///   `None` regardless of `min_periods`: `min_periods == 0` means "at
+    ///   least zero observations is fine", not "call the aggregator on
+    ///   nothing" -- `median`/`quantile` would panic indexing an empty
+    ///   slice, and `min`/`max`'s `INFINITY`/`NEG_INFINITY` fold seeds
+    ///   would otherwise leak out as fabricated data.
     fn apply_window_op<F, R>(&self, mut func: F) -> Result<Series<Option<R>>>
     where
         T: Into<f64> + Copy,
@@ -167,37 +227,58 @@ where
         R: Debug + Clone,
     {
         let values = self.values_as_f64()?;
-        let mut result = Vec::with_capacity(values.len());
+        let n = values.len();
         let min_periods = self.effective_min_periods();
 
-        for i in 0..values.len() {
-            let (start, end) = if self.center {
-                // Center the window around current position
-                let half_window = self.window_size / 2;
-                let start = if i >= half_window { i - half_window } else { 0 };
-                let end = std::cmp::min(start + self.window_size, values.len());
-                (start, end)
+        let mut trailing: Vec<Option<R>> = Vec::with_capacity(n);
+        for i in 0..n {
+            let end1 = (i + 1) as i64;
+            let start1 = end1 - self.window_size as i64;
+            let (mut start, mut end) = (start1, end1);
+            match self.closed {
+                WindowClosed::Right => {}
+                WindowClosed::Left => {
+                    start -= 1;
+                    end -= 1;
+                }
+                WindowClosed::Both => {
+                    start -= 1;
+                }
+                WindowClosed::Neither => {
+                    end -= 1;
+                }
+            }
+            let start = start.clamp(0, n as i64) as usize;
+            let end = end.clamp(0, n as i64) as usize;
+
+            let window_values: Vec<f64> = if end > start {
+                values[start..end].iter().filter_map(|&v| v).collect()
             } else {
-                // Standard rolling window (looking backwards)
-                let start = if i + 1 >= self.window_size {
-                    i + 1 - self.window_size
-                } else {
-                    0
-                };
-                let end = i + 1;
-                (start, end)
+                Vec::new()
             };
 
-            // Extract non-null values in the window
-            let window_values: Vec<f64> = values[start..end].iter().filter_map(|&v| v).collect();
-
-            if window_values.len() >= min_periods {
-                let agg_result = func(&window_values);
-                result.push(Some(agg_result));
+            if !window_values.is_empty() && window_values.len() >= min_periods {
+                trailing.push(Some(func(&window_values)));
             } else {
-                result.push(None);
+                trailing.push(None);
             }
         }
+
+        let result: Vec<Option<R>> = if self.center {
+            let offset = self.window_size / 2;
+            (0..n)
+                .map(|i| {
+                    let src = i + offset;
+                    if src < n {
+                        trailing[src].clone()
+                    } else {
+                        None
+                    }
+                })
+                .collect()
+        } else {
+            trailing
+        };
 
         Series::new(result, self.series.name().cloned())
     }
@@ -335,18 +416,12 @@ where
         Series::new(values, result.name().cloned())
     }
 
-    fn apply<F, R>(&self, func: F) -> Result<Series<R>>
+    fn apply<F, R>(&self, func: F) -> Result<Series<Option<R>>>
     where
         F: Fn(&[f64]) -> R + Copy,
         R: Debug + Clone,
     {
-        let result = self.apply_window_op(func)?;
-        let values: Vec<R> = result
-            .values()
-            .iter()
-            .filter_map(|v| v.as_ref().cloned())
-            .collect();
-        Series::new(values, result.name().cloned())
+        self.apply_window_op(func)
     }
 }
 
@@ -363,19 +438,20 @@ where
         })
     }
 
-    /// Convert values to f64 for calculations
+    /// Convert values to f64 for calculations, treating `NaN` as missing.
     fn values_as_f64(&self) -> Result<Vec<Option<f64>>>
     where
         T: Into<f64> + Copy,
     {
-        let mut result = Vec::with_capacity(self.series.len());
-        for value in self.series.values() {
-            result.push(Some((*value).into()));
-        }
-        Ok(result)
+        Ok(series_values_as_f64_opt(&self.series))
     }
 
-    /// Apply expanding operation with generic aggregation function
+    /// Apply expanding operation with generic aggregation function.
+    ///
+    /// An empty window (reachable when `min_periods == 0` and every value
+    /// from the start through position `i` is `NaN`) is always `None`
+    /// regardless of `min_periods` -- see `Rolling::apply_window_op`'s docs
+    /// for why calling the aggregator on an empty slice must be avoided.
     fn apply_expanding_op<F, R>(&self, mut func: F) -> Result<Series<Option<R>>>
     where
         T: Into<f64> + Copy,
@@ -389,7 +465,7 @@ where
             // Get all values from start to current position
             let window_values: Vec<f64> = values[0..=i].iter().filter_map(|&v| v).collect();
 
-            if window_values.len() >= self.min_periods {
+            if !window_values.is_empty() && window_values.len() >= self.min_periods {
                 let agg_result = func(&window_values);
                 result.push(Some(agg_result));
             } else {
@@ -531,18 +607,12 @@ where
         Series::new(values, result.name().cloned())
     }
 
-    fn apply<F, R>(&self, func: F) -> Result<Series<R>>
+    fn apply<F, R>(&self, func: F) -> Result<Series<Option<R>>>
     where
         F: Fn(&[f64]) -> R + Copy,
         R: Debug + Clone,
     {
-        let result = self.apply_expanding_op(func)?;
-        let values: Vec<R> = result
-            .values()
-            .iter()
-            .filter_map(|v| v.as_ref().cloned())
-            .collect();
-        Series::new(values, result.name().cloned())
+        self.apply_expanding_op(func)
     }
 }
 
@@ -560,6 +630,7 @@ where
             halflife: None,
             adjust: true,
             ignore_na: false,
+            min_periods: 0,
         }
     }
 
@@ -604,6 +675,15 @@ where
         self
     }
 
+    /// Set the minimum number of observations required to have a value
+    /// (default `0`, meaning a single observation is already enough --
+    /// matching pandas' `EWM(min_periods=0)` default). Positions with
+    /// fewer non-NA observations than this report `NaN`.
+    pub fn min_periods(mut self, min_periods: usize) -> Self {
+        self.min_periods = min_periods;
+        self
+    }
+
     /// Calculate the effective alpha value
     fn get_alpha(&self) -> Result<f64> {
         if let Some(alpha) = self.alpha {
@@ -619,16 +699,124 @@ where
         }
     }
 
-    /// Convert values to f64 for calculations
+    /// Convert values to f64 for calculations, treating `NaN` as missing.
     fn values_as_f64(&self) -> Result<Vec<Option<f64>>>
     where
         T: Into<f64> + Copy,
     {
-        let mut result = Vec::with_capacity(self.series.len());
-        for value in self.series.values() {
-            result.push(Some((*value).into()));
+        Ok(series_values_as_f64_opt(&self.series))
+    }
+}
+
+/// Running state produced by `ewm_recursion` for every position: the
+/// exponentially weighted mean, the biased (`ddof = 0`) weighted variance,
+/// the weight-based effective sample size (`sum_wt^2 / sum_wt2`, used to
+/// bias-correct the variance for an arbitrary `ddof`), and the observation
+/// count so far.
+struct EwmState {
+    mean: Vec<f64>,
+    cov_biased: Vec<f64>,
+    n_eff: Vec<f64>,
+    nobs: Vec<usize>,
+}
+
+/// The recursive EWM algorithm pandas uses (`pandas.core.window.ewm`,
+/// `_libs/window/aggregations.pyx`'s `ewma`/`ewmcov`), specialized here to
+/// a single series with no `times=`/variable-spacing support (every step
+/// decays by exactly one period). Hand-verified against the direct
+/// weighted-average definition `y_t = sum_i w_i x_{t-i} / sum_i w_i` with
+/// `w_i = (1 - alpha)^i` for `adjust = true`, the plain recursive form
+/// `y_t = alpha * x_t + (1 - alpha) * y_{t-1}` for `adjust = false`, and
+/// pandas' own `ignore_na` docstring example (`[x0, None, x2]`'s weights
+/// are `(1-alpha)^2, 1` when `ignore_na = false` and `1-alpha, 1` when
+/// `ignore_na = true`, for `adjust = true`) -- for both `adjust` settings
+/// and both `ignore_na` settings; see the
+/// `ewm_adjust_matches_pandas_formula` regression test.
+///
+/// `old_wt`/`new_wt` drive the mean recursion; `sum_wt`/`sum_wt2`
+/// separately accumulate the weight moments used for the variance's
+/// `ddof` bias correction in [`EWM::var`] (`n_eff = sum_wt^2 / sum_wt2`;
+/// the corrected variance is `cov_biased * n_eff / (n_eff - ddof)`, which
+/// reduces to pandas' own `sum_wt^2 / (sum_wt^2 - sum_wt2)` bias-correction
+/// factor at `ddof = 1`, pandas' default).
+fn ewm_recursion(values: &[Option<f64>], alpha: f64, adjust: bool, ignore_na: bool) -> EwmState {
+    let n = values.len();
+    let old_wt_factor = 1.0 - alpha;
+    let new_wt = if adjust { 1.0 } else { alpha };
+
+    let mut mean_out = vec![f64::NAN; n];
+    let mut cov_out = vec![f64::NAN; n];
+    let mut n_eff_out = vec![f64::NAN; n];
+    let mut nobs_out = vec![0usize; n];
+
+    let mut mean: Option<f64> = None;
+    let mut cov = 0.0_f64;
+    let mut old_wt = 1.0_f64;
+    let mut sum_wt = 1.0_f64;
+    let mut sum_wt2 = 1.0_f64;
+    let mut nobs = 0usize;
+
+    for i in 0..n {
+        let cur = values[i];
+        let is_obs = cur.is_some();
+        if is_obs {
+            nobs += 1;
         }
-        Ok(result)
+
+        if i == 0 {
+            if let Some(v) = cur {
+                mean = Some(v);
+                cov = 0.0;
+            }
+        } else if let Some(m) = mean {
+            if is_obs || !ignore_na {
+                old_wt *= old_wt_factor;
+                sum_wt *= old_wt_factor;
+                sum_wt2 *= old_wt_factor * old_wt_factor;
+            }
+            if let Some(c) = cur {
+                let old_mean = m;
+                let new_mean = if old_mean != c {
+                    (old_wt * old_mean + new_wt * c) / (old_wt + new_wt)
+                } else {
+                    old_mean
+                };
+                cov = (old_wt * (cov + (old_mean - new_mean) * (old_mean - new_mean))
+                    + new_wt * (c - new_mean) * (c - new_mean))
+                    / (old_wt + new_wt);
+                mean = Some(new_mean);
+
+                sum_wt += new_wt;
+                sum_wt2 += new_wt * new_wt;
+                old_wt += new_wt;
+                if !adjust {
+                    sum_wt /= old_wt;
+                    sum_wt2 /= old_wt * old_wt;
+                    old_wt = 1.0;
+                }
+            }
+        } else if is_obs {
+            mean = cur;
+            cov = 0.0;
+        }
+
+        nobs_out[i] = nobs;
+        if let Some(m) = mean {
+            mean_out[i] = m;
+            cov_out[i] = cov;
+            n_eff_out[i] = if sum_wt2 > 0.0 {
+                sum_wt * sum_wt / sum_wt2
+            } else {
+                f64::NAN
+            };
+        }
+    }
+
+    EwmState {
+        mean: mean_out,
+        cov_biased: cov_out,
+        n_eff: n_eff_out,
+        nobs: nobs_out,
     }
 }
 
@@ -636,94 +824,76 @@ impl<T> EWM<T>
 where
     T: Debug + Clone + Into<f64> + Copy,
 {
-    /// Calculate exponentially weighted moving average
+    /// Calculate exponentially weighted moving average.
+    ///
+    /// Honors `adjust` (default `true`, pandas' default: the "adjusted"
+    /// weighted average over *all* prior observations, vs. the plain
+    /// recursive form `y_t = alpha * x_t + (1 - alpha) * y_{t-1}` when
+    /// `false`, which is what this crate previously computed
+    /// unconditionally regardless of `adjust`), `ignore_na` (whether a gap
+    /// left by a missing value still costs decay weight), and
+    /// `min_periods`. See `ewm_recursion`'s docs for the algorithm and
+    /// how it was checked.
     pub fn mean(&self) -> Result<Series<f64>> {
         let alpha = self.get_alpha()?;
         let values = self.values_as_f64()?;
-        let mut result = Vec::with_capacity(values.len());
+        let state = ewm_recursion(&values, alpha, self.adjust, self.ignore_na);
 
-        if values.is_empty() {
-            return Series::new(result, self.series.name().cloned());
-        }
-
-        // Find first non-null value
-        let mut ewm_val = None;
-        for (i, &val) in values.iter().enumerate() {
-            if let Some(v) = val {
-                if ewm_val.is_none() {
-                    ewm_val = Some(v);
-                    result.extend(std::iter::repeat(f64::NAN).take(i));
-                    result.push(v);
+        let result: Vec<f64> = (0..values.len())
+            .map(|i| {
+                if state.nobs[i] >= self.min_periods {
+                    state.mean[i]
                 } else {
-                    // SAFETY: ewm_val is Some because we're in the else branch
-                    let prev = ewm_val.expect("ewm_val should be Some in else branch");
-                    ewm_val = Some(alpha * v + (1.0 - alpha) * prev);
-                    result.push(ewm_val.expect("ewm_val was just set to Some"));
+                    f64::NAN
                 }
-            } else if ewm_val.is_some() {
-                // SAFETY: We just checked that ewm_val is Some
-                result.push(ewm_val.expect("ewm_val should be Some"));
-            } else {
-                result.push(f64::NAN);
-            }
-        }
-
+            })
+            .collect();
         Series::new(result, self.series.name().cloned())
     }
 
-    /// Calculate exponentially weighted moving standard deviation
-    pub fn std(&self, ddof: usize) -> Result<Series<f64>> {
+    /// Calculate exponentially weighted moving variance.
+    ///
+    /// `ddof` (previously accepted but silently ignored) bias-corrects the
+    /// weighted variance via its effective sample size,
+    /// `n_eff = sum_wt^2 / sum_wt2`: the reported variance is
+    /// `cov_biased * n_eff / (n_eff - ddof)`, `NaN` when there isn't enough
+    /// effective sample size for that correction (`n_eff <= ddof` -- e.g.
+    /// `ddof = 1`, pandas' implied default, is always `NaN` at the first
+    /// observation, matching pandas). Pass `ddof = 0` for the plain
+    /// ("biased") weighted variance. Clamped to `0.0` to absorb float
+    /// rounding noise near zero (the underlying weighted sum of squared
+    /// deviations cannot be negative).
+    pub fn var(&self, ddof: usize) -> Result<Series<f64>> {
         let alpha = self.get_alpha()?;
         let values = self.values_as_f64()?;
-        let mut result = Vec::with_capacity(values.len());
+        let state = ewm_recursion(&values, alpha, self.adjust, self.ignore_na);
+        let ddof = ddof as f64;
 
-        if values.is_empty() {
-            return Series::new(result, self.series.name().cloned());
-        }
-
-        let mut ewm_mean = None;
-        let mut ewm_var = None;
-
-        for (i, &val) in values.iter().enumerate() {
-            if let Some(v) = val {
-                if ewm_mean.is_none() {
-                    ewm_mean = Some(v);
-                    ewm_var = Some(0.0);
-                    result.extend(std::iter::repeat(f64::NAN).take(i + 1));
-                } else {
-                    // SAFETY: ewm_mean and ewm_var are Some because we're in the else branch
-                    let prev_mean = ewm_mean.expect("ewm_mean should be Some in else branch");
-                    let prev_var = ewm_var.expect("ewm_var should be Some in else branch");
-
-                    // Update mean
-                    ewm_mean = Some(alpha * v + (1.0 - alpha) * prev_mean);
-
-                    // Update variance using recursive formula
-                    let diff = v - prev_mean;
-                    ewm_var = Some((1.0 - alpha) * (prev_var + alpha * diff * diff));
-
-                    result.push(ewm_var.expect("ewm_var was just set to Some").sqrt());
+        let result: Vec<f64> = (0..values.len())
+            .map(|i| {
+                if state.nobs[i] < self.min_periods {
+                    return f64::NAN;
                 }
-            } else if ewm_var.is_some() {
-                // SAFETY: We just checked that ewm_var is Some
-                result.push(ewm_var.expect("ewm_var should be Some").sqrt());
-            } else {
-                result.push(f64::NAN);
-            }
-        }
-
+                let n_eff = state.n_eff[i];
+                let denom = n_eff - ddof;
+                if denom > 0.0 && state.cov_biased[i].is_finite() {
+                    (state.cov_biased[i] * n_eff / denom).max(0.0)
+                } else {
+                    f64::NAN
+                }
+            })
+            .collect();
         Series::new(result, self.series.name().cloned())
     }
 
-    /// Calculate exponentially weighted moving variance
-    pub fn var(&self, ddof: usize) -> Result<Series<f64>> {
-        let std_series = self.std(ddof)?;
-        let var_values: Vec<f64> = std_series
-            .values()
-            .iter()
-            .map(|&v| if v.is_nan() { f64::NAN } else { v * v })
-            .collect();
-        Series::new(var_values, std_series.name().cloned())
+    /// Calculate exponentially weighted moving standard deviation: `sqrt`
+    /// of [`EWM::var`] (computed directly, not squared back out of a
+    /// separately-computed `std`, so the `ddof` correction only ever needs
+    /// to be applied once). See [`EWM::var`]'s docs for `ddof`.
+    pub fn std(&self, ddof: usize) -> Result<Series<f64>> {
+        let var_series = self.var(ddof)?;
+        let std_values: Vec<f64> = var_series.values().iter().map(|&v| v.sqrt()).collect();
+        Series::new(std_values, var_series.name().cloned())
     }
 }
 

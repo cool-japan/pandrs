@@ -34,11 +34,21 @@
 //! let sales = manager.get_dataframe("tenant_a", "sales_data")?;
 //! ```
 
+use crate::audit::{AuditEntry, EventCategory, LogLevel, SharedAuditLogger};
 use crate::dataframe::DataFrame;
 use crate::error::{Error, Result};
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant, SystemTime};
+
+/// Rough per-cell memory estimate (bytes) used only for quota accounting.
+///
+/// The tenant layer does not have cheap access to a `DataFrame`'s true heap
+/// footprint, so `TenantUsage::estimated_memory` and the `max_memory_bytes`
+/// quota are computed from `rows * cols * ESTIMATED_BYTES_PER_CELL`. This is an
+/// **estimate**, deliberately conservative (an 8-byte `f64`/pointer plus
+/// overhead), never presented as a measured value.
+const ESTIMATED_BYTES_PER_CELL: usize = 16;
 
 /// Tenant identifier type
 pub type TenantId = String;
@@ -311,6 +321,10 @@ pub struct TenantManager {
     max_audit_entries: usize,
     /// Whether to enforce quotas
     enforce_quotas: bool,
+    /// Optional shared security audit sink. When set, permission/active denials
+    /// on data paths are emitted as `Security` audit entries (the internal
+    /// `audit_log` only records tenant operations, historically successes only).
+    audit: Option<SharedAuditLogger>,
 }
 
 impl TenantManager {
@@ -322,6 +336,7 @@ impl TenantManager {
             audit_log: Vec::new(),
             max_audit_entries: 10000,
             enforce_quotas: true,
+            audit: None,
         }
     }
 
@@ -335,6 +350,65 @@ impl TenantManager {
     pub fn with_quota_enforcement(mut self, enforce: bool) -> Self {
         self.enforce_quotas = enforce;
         self
+    }
+
+    /// Attach a shared security audit logger. Data-path denials (inactive
+    /// tenant or missing permission) are emitted as `Security` audit entries.
+    pub fn with_audit_logger(mut self, logger: SharedAuditLogger) -> Self {
+        self.audit = Some(logger);
+        self
+    }
+
+    /// Emit a `Security` audit entry for a denied data-path operation. Uses
+    /// interior mutability of [`SharedAuditLogger`] so it works from `&self`
+    /// (read-path) methods too. Best-effort: never blocks the caller.
+    fn audit_denied(&self, tenant_id: &str, operation: &str, reason: &str) {
+        if let Some(ref logger) = self.audit {
+            let message = format!("tenant '{}' denied {}: {}", tenant_id, operation, reason);
+            let entry = AuditEntry::new(
+                LogLevel::Warn,
+                EventCategory::Security,
+                operation,
+                tenant_id,
+                &message,
+            )
+            .with_user(tenant_id)
+            .with_error(reason);
+            logger.log(entry);
+        }
+    }
+
+    /// Single authorization chokepoint for every tenant data path.
+    ///
+    /// A request is authorized only when the tenant exists, is **active**, and
+    /// holds `permission`. Any failure emits a `Security` denial (when a logger
+    /// is attached) and returns an error. Routing all six operations through
+    /// this helper is what keeps `active`-gating and permission checks from
+    /// drifting apart (the previous inline checks omitted the `active` gate
+    /// entirely, so a deactivated tenant retained full access).
+    fn authorize(&self, tenant_id: &str, permission: Permission, operation: &str) -> Result<()> {
+        let config = self.tenants.get(tenant_id).ok_or_else(|| {
+            self.audit_denied(tenant_id, operation, "unknown tenant");
+            Error::InvalidInput(format!("Tenant '{}' not found", tenant_id))
+        })?;
+
+        if !config.active {
+            self.audit_denied(tenant_id, operation, "tenant is not active");
+            return Err(Error::InvalidOperation(format!(
+                "Tenant '{}' is not active",
+                tenant_id
+            )));
+        }
+
+        if !config.permissions.contains(&permission) {
+            self.audit_denied(tenant_id, operation, "missing permission");
+            return Err(Error::InvalidOperation(format!(
+                "Tenant '{}' does not have {:?} permission",
+                tenant_id, permission
+            )));
+        }
+
+        Ok(())
     }
 
     /// Register a new tenant
@@ -418,45 +492,33 @@ impl TenantManager {
         dataset_id: &str,
         df: DataFrame,
     ) -> Result<()> {
-        // Check tenant exists
-        let config = self
-            .tenants
-            .get(tenant_id)
-            .ok_or_else(|| Error::InvalidInput(format!("Tenant '{}' not found", tenant_id)))?;
-
-        // Check permissions
-        let operation = if self
+        // An overwrite of an existing dataset is an update (needs Write); a new
+        // dataset is a create (needs Create). Determine this before authorizing
+        // so the correct permission — and the active gate — are enforced.
+        let is_update = self
             .stores
             .get(tenant_id)
             .map(|s| s.datasets.contains_key(dataset_id))
-            .unwrap_or(false)
-        {
-            if !config.permissions.contains(&Permission::Write) {
-                return Err(Error::InvalidOperation(format!(
-                    "Tenant '{}' does not have write permission",
-                    tenant_id
-                )));
-            }
-            TenantOperation::UpdateDataset
+            .unwrap_or(false);
+
+        let (operation, permission) = if is_update {
+            (TenantOperation::UpdateDataset, Permission::Write)
         } else {
-            if !config.permissions.contains(&Permission::Create) {
-                return Err(Error::InvalidOperation(format!(
-                    "Tenant '{}' does not have create permission",
-                    tenant_id
-                )));
-            }
-            TenantOperation::CreateDataset
+            (TenantOperation::CreateDataset, Permission::Create)
         };
 
-        // Check quotas
+        self.authorize(tenant_id, permission, "store_dataframe")?;
+
+        // Check quotas (accounts for an in-place overwrite so replaced rows and
+        // memory are not charged twice against the quota).
         if self.enforce_quotas {
-            self.check_quotas(tenant_id, &df)?;
+            self.check_quotas(tenant_id, dataset_id, &df)?;
         }
 
         let store = self
             .stores
             .get_mut(tenant_id)
-            .ok_or_else(|| Error::InvalidInput(format!("Tenant store not found")))?;
+            .ok_or_else(|| Error::InvalidOperation("Tenant store not found".to_string()))?;
 
         // Create metadata
         let column_names = df.column_names();
@@ -470,18 +532,29 @@ impl TenantManager {
             modified_at: SystemTime::now(),
             row_count,
             column_count: col_count,
-            columns: column_names,
+            columns: column_names.to_vec(),
             tags: HashMap::new(),
             shared_with: HashSet::new(),
         };
 
-        // Update usage stats
+        // Update usage stats. On an overwrite, back out the previous dataset's
+        // rows and estimated memory before adding the new figures so neither is
+        // double-counted; on a create, bump the dataset count.
+        let new_memory = row_count
+            .saturating_mul(col_count)
+            .saturating_mul(ESTIMATED_BYTES_PER_CELL);
         if let Some(old_meta) = store.metadata.get(dataset_id) {
+            let old_memory = old_meta
+                .row_count
+                .saturating_mul(old_meta.column_count)
+                .saturating_mul(ESTIMATED_BYTES_PER_CELL);
             store.usage.total_rows = store.usage.total_rows.saturating_sub(old_meta.row_count);
+            store.usage.estimated_memory = store.usage.estimated_memory.saturating_sub(old_memory);
         } else {
             store.usage.dataset_count += 1;
         }
         store.usage.total_rows += row_count;
+        store.usage.estimated_memory = store.usage.estimated_memory.saturating_add(new_memory);
         store.usage.write_operations += 1;
         store.usage.last_access = Some(Instant::now());
 
@@ -502,77 +575,136 @@ impl TenantManager {
         Ok(())
     }
 
-    /// Get a DataFrame for a tenant (cloned)
+    /// Get a DataFrame for a tenant (cloned).
+    ///
+    /// Resolves the tenant's own datasets first, then datasets that another
+    /// *active* tenant has shared with this one (read-only). A dataset that is
+    /// neither owned nor shared returns the **same** "not found" error as a
+    /// non-existent one, so the shared path cannot be turned into a cross-tenant
+    /// dataset-enumeration oracle.
     pub fn get_dataframe(&mut self, tenant_id: &str, dataset_id: &str) -> Result<DataFrame> {
-        // Check tenant exists and has permission
-        let config = self
-            .tenants
-            .get(tenant_id)
-            .ok_or_else(|| Error::InvalidInput(format!("Tenant '{}' not found", tenant_id)))?;
+        self.authorize(tenant_id, Permission::Read, "get_dataframe")?;
 
-        if !config.permissions.contains(&Permission::Read) {
-            return Err(Error::InvalidOperation(format!(
-                "Tenant '{}' does not have read permission",
-                tenant_id
-            )));
+        // Fast path: the tenant owns the dataset.
+        let owns = self
+            .stores
+            .get(tenant_id)
+            .map(|s| s.datasets.contains_key(dataset_id))
+            .unwrap_or(false);
+
+        if owns {
+            let store = self
+                .stores
+                .get_mut(tenant_id)
+                .ok_or_else(|| Error::InvalidOperation("Tenant store not found".to_string()))?;
+
+            let df_lock = store.datasets.get(dataset_id).ok_or_else(|| {
+                Error::InvalidInput(format!(
+                    "Dataset '{}' not found for tenant '{}'",
+                    dataset_id, tenant_id
+                ))
+            })?;
+
+            let df = df_lock
+                .read()
+                .map_err(|_| Error::InvalidOperation("Failed to acquire read lock".to_string()))?
+                .clone();
+
+            store.usage.read_operations += 1;
+            store.usage.last_access = Some(Instant::now());
+
+            self.log_operation(
+                tenant_id.to_string(),
+                TenantOperation::ReadDataset,
+                Some(dataset_id.to_string()),
+                true,
+                None,
+            );
+
+            return Ok(df);
         }
 
-        let store = self
-            .stores
-            .get_mut(tenant_id)
-            .ok_or_else(|| Error::InvalidInput(format!("Tenant store not found")))?;
+        // Shared path: read-only access to a dataset shared by an active owner.
+        if let Some(df) = self.resolve_shared_dataframe(tenant_id, dataset_id)? {
+            self.log_operation(
+                tenant_id.to_string(),
+                TenantOperation::ReadDataset,
+                Some(dataset_id.to_string()),
+                true,
+                None,
+            );
+            return Ok(df);
+        }
 
-        let df_lock = store.datasets.get(dataset_id).ok_or_else(|| {
-            Error::InvalidInput(format!(
-                "Dataset '{}' not found for tenant '{}'",
-                dataset_id, tenant_id
-            ))
-        })?;
+        Err(Error::InvalidInput(format!(
+            "Dataset '{}' not found for tenant '{}'",
+            dataset_id, tenant_id
+        )))
+    }
 
-        let df = df_lock
-            .read()
-            .map_err(|_| Error::InvalidOperation("Failed to acquire read lock".to_string()))?
-            .clone();
-
-        // Update usage
-        store.usage.read_operations += 1;
-        store.usage.last_access = Some(Instant::now());
-
-        self.log_operation(
-            tenant_id.to_string(),
-            TenantOperation::ReadDataset,
-            Some(dataset_id.to_string()),
-            true,
-            None,
-        );
-
-        Ok(df)
+    /// Resolve a dataset shared with `requester` by another owner tenant.
+    ///
+    /// Returns the cloned DataFrame (read-only) when some *active* owner tenant
+    /// holds `dataset_id` and has shared it with `requester`; `Ok(None)` when no
+    /// such share exists. The caller maps `None` to the same "not found" error a
+    /// missing dataset yields, so "exists but not shared with you" is
+    /// indistinguishable from "does not exist". Sharing never grants write or
+    /// delete — only this read path consults `shared_with`.
+    fn resolve_shared_dataframe(
+        &self,
+        requester: &str,
+        dataset_id: &str,
+    ) -> Result<Option<DataFrame>> {
+        for (owner_id, store) in &self.stores {
+            if owner_id == requester {
+                continue;
+            }
+            let Some(metadata) = store.metadata.get(dataset_id) else {
+                continue;
+            };
+            if !metadata.shared_with.contains(requester) {
+                continue;
+            }
+            // A deactivated owner's shared data must not remain readable.
+            let owner_active = self
+                .tenants
+                .get(owner_id)
+                .map(|t| t.active)
+                .unwrap_or(false);
+            if !owner_active {
+                continue;
+            }
+            if let Some(df_lock) = store.datasets.get(dataset_id) {
+                let df = df_lock
+                    .read()
+                    .map_err(|_| {
+                        Error::InvalidOperation("Failed to acquire read lock".to_string())
+                    })?
+                    .clone();
+                return Ok(Some(df));
+            }
+        }
+        Ok(None)
     }
 
     /// Delete a dataset for a tenant
     pub fn delete_dataframe(&mut self, tenant_id: &str, dataset_id: &str) -> Result<()> {
-        // Check tenant exists and has permission
-        let config = self
-            .tenants
-            .get(tenant_id)
-            .ok_or_else(|| Error::InvalidInput(format!("Tenant '{}' not found", tenant_id)))?;
-
-        if !config.permissions.contains(&Permission::Delete) {
-            return Err(Error::InvalidOperation(format!(
-                "Tenant '{}' does not have delete permission",
-                tenant_id
-            )));
-        }
+        self.authorize(tenant_id, Permission::Delete, "delete_dataframe")?;
 
         let store = self
             .stores
             .get_mut(tenant_id)
-            .ok_or_else(|| Error::InvalidInput(format!("Tenant store not found")))?;
+            .ok_or_else(|| Error::InvalidOperation("Tenant store not found".to_string()))?;
 
         if let Some(metadata) = store.metadata.remove(dataset_id) {
             store.datasets.remove(dataset_id);
             store.usage.dataset_count = store.usage.dataset_count.saturating_sub(1);
             store.usage.total_rows = store.usage.total_rows.saturating_sub(metadata.row_count);
+            let freed = metadata
+                .row_count
+                .saturating_mul(metadata.column_count)
+                .saturating_mul(ESTIMATED_BYTES_PER_CELL);
+            store.usage.estimated_memory = store.usage.estimated_memory.saturating_sub(freed);
         }
 
         self.log_operation(
@@ -586,26 +718,34 @@ impl TenantManager {
         Ok(())
     }
 
-    /// List datasets for a tenant
+    /// List datasets for a tenant.
+    ///
+    /// Requires the tenant to be active and hold `Read` permission — dataset
+    /// metadata (ids, columns, row counts, share lists) is itself sensitive and
+    /// was previously returned to any caller with no check at all.
     pub fn list_datasets(&self, tenant_id: &str) -> Result<Vec<&DatasetMetadata>> {
+        self.authorize(tenant_id, Permission::Read, "list_datasets")?;
+
         let store = self
             .stores
             .get(tenant_id)
-            .ok_or_else(|| Error::InvalidInput(format!("Tenant '{}' not found", tenant_id)))?;
+            .ok_or_else(|| Error::InvalidOperation("Tenant store not found".to_string()))?;
 
         Ok(store.metadata.values().collect())
     }
 
-    /// Get dataset metadata
+    /// Get dataset metadata (requires active tenant + `Read` permission).
     pub fn get_dataset_metadata(
         &self,
         tenant_id: &str,
         dataset_id: &str,
     ) -> Result<&DatasetMetadata> {
+        self.authorize(tenant_id, Permission::Read, "get_dataset_metadata")?;
+
         let store = self
             .stores
             .get(tenant_id)
-            .ok_or_else(|| Error::InvalidInput(format!("Tenant '{}' not found", tenant_id)))?;
+            .ok_or_else(|| Error::InvalidOperation("Tenant store not found".to_string()))?;
 
         store.metadata.get(dataset_id).ok_or_else(|| {
             Error::InvalidInput(format!(
@@ -622,18 +762,8 @@ impl TenantManager {
         dataset_id: &str,
         target_tenant: &str,
     ) -> Result<()> {
-        // Check owner has share permission
-        let owner_config = self
-            .tenants
-            .get(owner_tenant)
-            .ok_or_else(|| Error::InvalidInput(format!("Tenant '{}' not found", owner_tenant)))?;
-
-        if !owner_config.permissions.contains(&Permission::Share) {
-            return Err(Error::InvalidOperation(format!(
-                "Tenant '{}' does not have share permission",
-                owner_tenant
-            )));
-        }
+        // Owner must be active and hold Share permission.
+        self.authorize(owner_tenant, Permission::Share, "share_dataset")?;
 
         // Check target tenant exists
         if !self.tenants.contains_key(target_tenant) {
@@ -647,7 +777,7 @@ impl TenantManager {
         let store = self
             .stores
             .get_mut(owner_tenant)
-            .ok_or_else(|| Error::InvalidInput(format!("Tenant store not found")))?;
+            .ok_or_else(|| Error::InvalidOperation("Tenant store not found".to_string()))?;
 
         let metadata = store
             .metadata
@@ -685,8 +815,19 @@ impl TenantManager {
             .collect()
     }
 
-    /// Check resource quotas
-    fn check_quotas(&self, tenant_id: &str, df: &DataFrame) -> Result<()> {
+    /// Check resource quotas for a prospective store of `df` into `dataset_id`.
+    ///
+    /// An overwrite of an existing dataset backs out that dataset's current
+    /// rows/memory before adding the new figures, so replacing data never
+    /// double-counts against the quota (previously an update at the row cap was
+    /// falsely rejected) and does not consume a fresh dataset slot.
+    ///
+    /// `max_memory_bytes` is enforced against an **estimate**
+    /// (`rows * cols * ESTIMATED_BYTES_PER_CELL`), never a measured footprint.
+    /// `max_query_time` is not enforced here: there is no query execution at the
+    /// storage layer — callers enforce it via
+    /// [`IsolationContext::check_time_limit`].
+    fn check_quotas(&self, tenant_id: &str, dataset_id: &str, df: &DataFrame) -> Result<()> {
         let config = self
             .tenants
             .get(tenant_id)
@@ -695,24 +836,42 @@ impl TenantManager {
         let store = self
             .stores
             .get(tenant_id)
-            .ok_or_else(|| Error::InvalidInput(format!("Tenant store not found")))?;
+            .ok_or_else(|| Error::InvalidOperation("Tenant store not found".to_string()))?;
 
         let new_rows = df.row_count();
         let new_cols = df.column_names().len();
 
-        // Check max datasets
-        if let Some(max) = config.quota.max_datasets {
-            if store.usage.dataset_count >= max {
-                return Err(Error::InvalidOperation(format!(
-                    "Dataset quota exceeded: max {} datasets allowed",
-                    max
-                )));
+        // Existing footprint of the dataset being overwritten (0 for a create).
+        let (old_rows, old_memory) = store
+            .metadata
+            .get(dataset_id)
+            .map(|m| {
+                (
+                    m.row_count,
+                    m.row_count
+                        .saturating_mul(m.column_count)
+                        .saturating_mul(ESTIMATED_BYTES_PER_CELL),
+                )
+            })
+            .unwrap_or((0, 0));
+        let is_update = store.datasets.contains_key(dataset_id);
+
+        // Max datasets — only a *new* dataset consumes a slot.
+        if !is_update {
+            if let Some(max) = config.quota.max_datasets {
+                if store.usage.dataset_count >= max {
+                    return Err(Error::InvalidOperation(format!(
+                        "Dataset quota exceeded: max {} datasets allowed",
+                        max
+                    )));
+                }
             }
         }
 
-        // Check max rows
+        // Max rows — project by replacing the old dataset's rows.
         if let Some(max) = config.quota.max_total_rows {
-            if store.usage.total_rows + new_rows > max {
+            let projected = store.usage.total_rows.saturating_sub(old_rows) + new_rows;
+            if projected > max {
                 return Err(Error::InvalidOperation(format!(
                     "Row quota exceeded: max {} total rows allowed",
                     max
@@ -720,11 +879,25 @@ impl TenantManager {
             }
         }
 
-        // Check max columns
+        // Max columns per dataset.
         if let Some(max) = config.quota.max_columns_per_dataset {
             if new_cols > max {
                 return Err(Error::InvalidOperation(format!(
                     "Column quota exceeded: max {} columns per dataset",
+                    max
+                )));
+            }
+        }
+
+        // Max memory (estimate) — project by replacing the old dataset's memory.
+        if let Some(max) = config.quota.max_memory_bytes {
+            let new_memory = new_rows
+                .saturating_mul(new_cols)
+                .saturating_mul(ESTIMATED_BYTES_PER_CELL);
+            let projected = store.usage.estimated_memory.saturating_sub(old_memory) + new_memory;
+            if projected > max {
+                return Err(Error::InvalidOperation(format!(
+                    "Memory quota exceeded: max {} bytes allowed (estimated)",
                     max
                 )));
             }
@@ -776,6 +949,20 @@ pub fn create_shared_manager() -> SharedTenantManager {
     Arc::new(RwLock::new(TenantManager::new()))
 }
 
+/// Generate a CSPRNG-backed session id (128 bits, hex) for an isolation context.
+fn generate_session_id() -> String {
+    use scirs2_core::random::Rng;
+    let mut bytes = [0u8; 16];
+    scirs2_core::random::rng().fill_bytes(&mut bytes);
+    format!(
+        "session_{}",
+        bytes
+            .iter()
+            .map(|b| format!("{:02x}", b))
+            .collect::<String>()
+    )
+}
+
 /// Isolation context for tenant-scoped operations
 #[derive(Debug, Clone)]
 pub struct IsolationContext {
@@ -790,17 +977,15 @@ pub struct IsolationContext {
 }
 
 impl IsolationContext {
-    /// Create a new isolation context
+    /// Create a new isolation context.
+    ///
+    /// The session id is drawn from the CSPRNG (128 bits, hex). The previous
+    /// millisecond-timestamp id was predictable and collided for contexts
+    /// created in the same millisecond.
     pub fn new(tenant_id: impl Into<String>) -> Self {
         IsolationContext {
             tenant_id: tenant_id.into(),
-            session_id: format!(
-                "session_{}",
-                SystemTime::now()
-                    .duration_since(SystemTime::UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_millis()
-            ),
+            session_id: generate_session_id(),
             start_time: Instant::now(),
             max_execution_time: None,
         }

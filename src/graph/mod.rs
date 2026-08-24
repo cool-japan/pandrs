@@ -152,7 +152,6 @@ pub use components::{
 use crate::{DataFrame, Series};
 use std::collections::HashMap;
 use std::fmt::Debug;
-use std::hash::Hash;
 
 /// Creates a graph from a DataFrame representing an edge list
 ///
@@ -419,7 +418,7 @@ mod tests {
         assert_eq!(graph.node_count(), 3);
         assert_eq!(graph.edge_count(), 2); // Undirected, so 2 edges
 
-        let (result_matrix, node_to_idx) = to_adjacency_matrix(&graph);
+        let (result_matrix, _node_to_idx) = to_adjacency_matrix(&graph);
 
         // Check matrix dimensions match
         assert_eq!(result_matrix.len(), 3);

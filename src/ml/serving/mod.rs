@@ -4,6 +4,7 @@
 //! model serialization, REST API serving, model registry, versioning, and deployment
 //! configuration management.
 
+pub mod bridge;
 pub mod deployment;
 pub mod endpoints;
 pub mod monitoring;
@@ -12,10 +13,10 @@ pub mod serialization;
 pub mod server;
 
 use crate::core::error::{Error, Result};
-use crate::dataframe::DataFrame;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::Arc;
 
 /// Model metadata for serving
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -129,6 +130,10 @@ pub struct BatchProcessingSummary {
     pub total_processing_time_ms: u64,
     /// Average processing time per prediction in milliseconds
     pub avg_processing_time_ms: f64,
+    /// `(batch_index, error_message)` for every item that failed, preserving which input row
+    /// each failure came from (rather than only a bare failure count).
+    #[serde(default)]
+    pub failed_items: Vec<(usize, String)>,
 }
 
 /// Model deployment configuration
@@ -211,7 +216,12 @@ pub struct MonitoringConfig {
 }
 
 /// Model serving interface trait
-pub trait ModelServing {
+///
+/// Requires `Send + Sync` because servable models are shared via `Arc<dyn ModelServing>`
+/// across registry lookups and (in a real deployment) concurrent request handlers; a
+/// trait object that couldn't cross threads would make this module unusable for backing
+/// an actual concurrent server.
+pub trait ModelServing: Send + Sync {
     /// Make a single prediction
     fn predict(&self, request: &PredictionRequest) -> Result<PredictionResponse>;
 
@@ -226,6 +236,22 @@ pub trait ModelServing {
 
     /// Get model information
     fn info(&self) -> ModelInfo;
+
+    /// Convert this model back into its persistable [`serialization::SerializableModel`]
+    /// representation, preserving whatever weights/parameters it holds.
+    ///
+    /// The default implementation honestly reports that a given `ModelServing`
+    /// implementation cannot be persisted, rather than silently producing an empty
+    /// (weight-losing) placeholder. [`serialization::GenericServingModel`] overrides this
+    /// with a real implementation; wrappers such as [`deployment::DeployedModel`] delegate
+    /// to their inner model.
+    fn to_serializable(&self) -> Result<serialization::SerializableModel> {
+        Err(Error::NotImplemented(format!(
+            "Model type backing '{}' does not implement to_serializable(); it cannot be \
+             persisted by a ModelRegistry",
+            self.get_metadata().model_type
+        )))
+    }
 }
 
 /// Health status
@@ -303,7 +329,7 @@ impl ModelServingFactory {
         registry: &dyn registry::ModelRegistry,
         model_name: &str,
         version: Option<&str>,
-    ) -> Result<std::sync::Arc<dyn ModelServing>> {
+    ) -> Result<Arc<dyn ModelServing>> {
         let model_version = version.unwrap_or("latest");
         registry.load_model(model_name, model_version)
     }
@@ -319,12 +345,14 @@ impl ModelServingFactory {
 
 /// Model serving server
 pub struct ModelServer {
-    /// Registered models
-    models: HashMap<String, Box<dyn ModelServing>>,
+    /// Registered models, held as `Arc` so `get_model` can hand out owned, cheaply-cloneable
+    /// handles (needed for the registry-backed fallback path, which loads models on demand
+    /// rather than requiring every model to be pre-registered).
+    models: HashMap<String, Arc<dyn ModelServing>>,
     /// Server configuration
     config: ServerConfig,
-    /// Model registry
-    registry: Option<Box<dyn registry::ModelRegistry>>,
+    /// Model registry, consulted by `get_model` when a name isn't already registered locally.
+    registry: Option<Arc<dyn registry::ModelRegistry>>,
 }
 
 /// Server configuration
@@ -379,7 +407,7 @@ impl ModelServer {
             )));
         }
 
-        self.models.insert(name, model);
+        self.models.insert(name, Arc::from(model));
         Ok(())
     }
 
@@ -395,22 +423,35 @@ impl ModelServer {
         Ok(())
     }
 
-    /// Set model registry
-    pub fn set_registry(&mut self, registry: Box<dyn registry::ModelRegistry>) {
+    /// Set model registry, consulted by `get_model` as a fallback for names that aren't
+    /// directly registered on this server.
+    pub fn set_registry(&mut self, registry: Arc<dyn registry::ModelRegistry>) {
         self.registry = Some(registry);
     }
 
-    /// Get list of registered models
+    /// Get list of registered models (locally registered only; does not enumerate the
+    /// backing registry, which may hold many more models than are currently loaded).
     pub fn list_models(&self) -> Vec<String> {
         self.models.keys().cloned().collect()
     }
 
-    /// Get model by name
-    pub fn get_model(&self, name: &str) -> Result<&dyn ModelServing> {
-        self.models
-            .get(name)
-            .map(|model| model.as_ref())
-            .ok_or_else(|| Error::KeyNotFound(format!("Model '{}' not found", name)))
+    /// Get model by name.
+    ///
+    /// Looks up locally-registered models first; if not found and a [`registry::ModelRegistry`]
+    /// has been configured via [`Self::set_registry`], falls back to loading the model's
+    /// `"latest"` version from the registry. The registry-loaded instance is returned directly
+    /// (not cached into the local map): the registry itself is expected to do any caching a
+    /// given backend needs, so this stays honest about not silently duplicating that policy.
+    pub fn get_model(&self, name: &str) -> Result<Arc<dyn ModelServing>> {
+        if let Some(model) = self.models.get(name) {
+            return Ok(Arc::clone(model));
+        }
+
+        if let Some(registry) = &self.registry {
+            return registry.load_model(name, "latest");
+        }
+
+        Err(Error::KeyNotFound(format!("Model '{}' not found", name)))
     }
 
     /// Start the server (placeholder - actual implementation would use a web framework)

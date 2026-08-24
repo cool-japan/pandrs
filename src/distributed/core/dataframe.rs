@@ -8,14 +8,9 @@ use std::sync::{Arc, Mutex};
 #[cfg(feature = "distributed")]
 use super::config::DistributedConfig;
 #[cfg(feature = "distributed")]
-use super::partition::{PartitionSet, PartitionStrategy, Partitioner};
-#[cfg(feature = "distributed")]
 use crate::distributed::execution::{
-    AggregateExpr, ExecutionContext, ExecutionEngine, ExecutionPlan, ExecutionResult, JoinType,
-    Operation, SortExpr,
+    AggregateExpr, ExecutionContext, ExecutionEngine, ExecutionPlan, ExecutionResult, Operation,
 };
-#[cfg(feature = "distributed")]
-use crate::distributed::ToDistributed;
 use crate::error::{Error, Result};
 #[cfg(feature = "distributed")]
 use crate::lock_safe;
@@ -59,18 +54,49 @@ impl DistributedDataFrame {
         }
     }
 
+    /// Creates a distributed DataFrame that shares an existing execution
+    /// context.
+    ///
+    /// Unlike [`Self::new`] (which wraps a fresh, private context), this reuses
+    /// the caller's shared `Arc<Mutex<..>>` context, so a table already
+    /// registered in that context under `id` is visible to queries on this
+    /// DataFrame. Used by
+    /// [`DistributedContext::register_dataframe`](crate::distributed::DistributedContext::register_dataframe)
+    /// so the registered data is actually queryable.
+    pub fn from_shared_context(
+        config: DistributedConfig,
+        engine: Box<dyn ExecutionEngine>,
+        context: Arc<Mutex<Box<dyn ExecutionContext>>>,
+        id: String,
+    ) -> Self {
+        Self {
+            config,
+            engine,
+            context,
+            current_result: None,
+            id,
+            lazy: true,
+            pending_operations: Vec::new(),
+        }
+    }
+
     /// Creates a distributed DataFrame from a local DataFrame
     pub fn from_local(df: &crate::dataframe::DataFrame, config: DistributedConfig) -> Result<Self> {
         use std::time::{SystemTime, UNIX_EPOCH};
 
-        // Create the engine based on the config
+        // Create the engine based on the config. Ballista is not implemented;
+        // rather than silently falling back to DataFusion (which would run a
+        // "distributed Ballista" job locally and mislabel it), return an honest
+        // error.
         let mut engine: Box<dyn ExecutionEngine> = match config.executor_type() {
             crate::distributed::core::config::ExecutorType::DataFusion => {
                 Box::new(crate::distributed::engines::datafusion::DataFusionEngine::new())
             }
-            _ => {
-                // Default to DataFusion for now
-                Box::new(crate::distributed::engines::datafusion::DataFusionEngine::new())
+            crate::distributed::core::config::ExecutorType::Ballista => {
+                return Err(Error::NotImplemented(
+                    "The Ballista executor is not implemented; use ExecutorType::DataFusion"
+                        .to_string(),
+                ));
             }
         };
 
@@ -179,8 +205,22 @@ impl DistributedDataFrame {
 
         let mut context = lock_safe!(self.context, "distributed dataframe context lock")?;
 
-        // Create a plan for the pending operations
-        let mut plan = ExecutionPlan::new(&self.id);
+        // Create a plan for the pending operations.
+        //
+        // The plan's input must be the *registered base table*, which is the
+        // input of the first pending operation (the id of the DataFrame the
+        // chain started from). `self.id` here is a derived lineage id
+        // (`{base}_{n}`) that was never registered with the execution context —
+        // using it produced "table not found". When there are no pending
+        // operations this DataFrame *is* the registered table, so fall back to
+        // `self.id`.
+        let base_input = self
+            .pending_operations
+            .first()
+            .map(|op| op.input().to_string())
+            .unwrap_or_else(|| self.id.clone());
+
+        let mut plan = ExecutionPlan::new(&base_input);
         for op in &self.pending_operations {
             plan.add_operations(op.operations().clone());
         }
@@ -266,10 +306,14 @@ impl DistributedDataFrame {
             columns.iter().map(|s| s.to_string()).collect(),
         ));
 
-        // Add to pending operations
+        // Build the child's pending operations WITHOUT mutating self. The
+        // previous code pushed onto `self.pending_operations`, so branching a
+        // pipeline (calling `.select()`/`.filter()` twice on the same parent)
+        // corrupted the parent and duplicated operations.
         if self.lazy {
-            self.pending_operations.push(plan);
-            let id = format!("{}_{}", self.id, self.pending_operations.len());
+            let mut new_pending = self.pending_operations.clone();
+            new_pending.push(plan);
+            let id = format!("{}_{}", self.id, new_pending.len());
 
             Ok(Self {
                 config: self.config.clone(),
@@ -278,7 +322,7 @@ impl DistributedDataFrame {
                 current_result: None,
                 id,
                 lazy: true,
-                pending_operations: self.pending_operations.clone(),
+                pending_operations: new_pending,
             })
         } else {
             // Execute immediately
@@ -304,10 +348,12 @@ impl DistributedDataFrame {
         let mut plan = ExecutionPlan::new(&self.id);
         plan.add_operation(Operation::Filter(condition.to_string()));
 
-        // Add to pending operations
+        // Build the child's pending operations WITHOUT mutating self (see the
+        // note in `select` — mutating the parent corrupts branched pipelines).
         if self.lazy {
-            self.pending_operations.push(plan);
-            let id = format!("{}_{}", self.id, self.pending_operations.len());
+            let mut new_pending = self.pending_operations.clone();
+            new_pending.push(plan);
+            let id = format!("{}_{}", self.id, new_pending.len());
 
             Ok(Self {
                 config: self.config.clone(),
@@ -316,7 +362,7 @@ impl DistributedDataFrame {
                 current_result: None,
                 id,
                 lazy: true,
-                pending_operations: self.pending_operations.clone(),
+                pending_operations: new_pending,
             })
         } else {
             // Execute immediately
@@ -360,10 +406,12 @@ impl DistributedDataFrame {
 
         plan.add_operation(Operation::Aggregate(group_by, agg_exprs));
 
-        // Add to pending operations
+        // Build the child's pending operations WITHOUT mutating self (see the
+        // note in `select` — mutating the parent corrupts branched pipelines).
         if self.lazy {
-            self.pending_operations.push(plan);
-            let id = format!("{}_{}", self.id, self.pending_operations.len());
+            let mut new_pending = self.pending_operations.clone();
+            new_pending.push(plan);
+            let id = format!("{}_{}", self.id, new_pending.len());
 
             Ok(Self {
                 config: self.config.clone(),
@@ -372,7 +420,7 @@ impl DistributedDataFrame {
                 current_result: None,
                 id,
                 lazy: true,
-                pending_operations: self.pending_operations.clone(),
+                pending_operations: new_pending,
             })
         } else {
             // Execute immediately

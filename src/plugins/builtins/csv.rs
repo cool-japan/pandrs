@@ -12,7 +12,12 @@ use crate::plugins::traits::{DataSinkPlugin, DataSourcePlugin, PluginMetadata, P
 /// Options:
 /// - `path`: Path to the CSV file (required)
 /// - `has_header`: "true" or "false" (default: "true")
-/// - `delimiter`: single character delimiter (currently passed to underlying reader; default: ",")
+///
+/// There is no `delimiter` option: [`crate::io::csv::read_csv`], which this
+/// plugin delegates to, only supports comma-delimited files (it takes no
+/// delimiter parameter at all). An earlier version of this doc comment and
+/// this plugin's `capabilities` claimed delimiter support that was never
+/// implemented.
 pub struct CsvSourcePlugin {
     metadata: PluginMetadata,
 }
@@ -26,11 +31,7 @@ impl CsvSourcePlugin {
                 description: "Read DataFrames from CSV files".to_string(),
                 author: "PandRS".to_string(),
                 plugin_type: PluginType::DataSource,
-                capabilities: vec![
-                    "read".to_string(),
-                    "header".to_string(),
-                    "delimiter".to_string(),
-                ],
+                capabilities: vec!["read".to_string(), "header".to_string()],
             },
         }
     }

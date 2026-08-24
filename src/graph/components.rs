@@ -17,9 +17,9 @@
 //! let components = connected_components(&graph);
 //! ```
 
-use super::core::{Graph, GraphError, GraphType, NodeId};
-use super::traversal::{bfs, dfs_from};
-use std::collections::{HashMap, HashSet, VecDeque};
+use super::core::{Graph, NodeId};
+use super::traversal::bfs;
+use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
 
 /// Result of connected components analysis
@@ -655,13 +655,12 @@ fn ap_dfs<N, W>(
     }
 
     // Initialize root parent
-    if !parent.contains_key(&node) {
-        parent.insert(node, None);
-    }
+    parent.entry(node).or_insert(None);
 }
 
 #[cfg(test)]
 mod tests {
+    use super::super::core::GraphType;
     use super::*;
 
     #[test]
@@ -845,7 +844,7 @@ mod tests {
             .add_edge(c, d, None)
             .expect("operation should succeed");
 
-        let (communities, modularity) = louvain_default(&graph);
+        let (communities, _modularity) = louvain_default(&graph);
 
         assert!(!communities.is_empty());
         // With two disconnected pairs, should find 2 communities

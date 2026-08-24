@@ -6,6 +6,28 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
+/// Reject identifier components that could be re-interpreted by the string
+/// parsers as structural separators.
+///
+/// `:` separates `type:id` and `#` separates a subject-set relation
+/// (`type:id#relation`). If either character is allowed to appear *inside* an
+/// id or relation supplied by an untrusted caller, that caller can forge a
+/// different node than intended (identifier-injection / subject-set
+/// escalation). Validation is enforced in the `parse` constructors, which are
+/// the sole chokepoint for untrusted input (`RebacManager::grant/revoke/
+/// check_access` all route through them). The infallible `new`/`with_relation`
+/// constructors are intentionally left untouched so internal, already-trusted
+/// call sites keep compiling.
+fn reject_reserved(component: &str, field: &str) -> Result<(), String> {
+    if component.contains(':') || component.contains('#') {
+        return Err(format!(
+            "Invalid {} '{}': must not contain ':' or '#'",
+            field, component
+        ));
+    }
+    Ok(())
+}
+
 /// Subject represents an entity that can have relationships
 /// Examples: "user:alice", "team:engineering#member", "group:admins"
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -42,6 +64,12 @@ impl Subject {
     }
 
     /// Parse from string format: "type:id" or "type:id#relation"
+    ///
+    /// Rejects any `:`/`#` embedded inside the type, id, or set-relation
+    /// components beyond the single structural `:` separator and the single
+    /// optional `#` set separator. This prevents identifier-injection where a
+    /// caller-controlled id such as `alice#admin` would otherwise be
+    /// re-interpreted as the subject-set `user:alice#admin`.
     pub fn parse(s: &str) -> Result<Self, String> {
         let parts: Vec<&str> = s.split(':').collect();
         if parts.len() != 2 {
@@ -49,6 +77,9 @@ impl Subject {
         }
 
         let subject_type = parts[0].to_string();
+        if subject_type.contains('#') {
+            return Err(format!("Invalid subject type in '{}'", s));
+        }
         let id_and_relation = parts[1];
 
         if id_and_relation.contains('#') {
@@ -56,6 +87,10 @@ impl Subject {
             if rel_parts.len() != 2 {
                 return Err(format!("Invalid subject relation format: {}", s));
             }
+            // `:` cannot appear here (the outer split consumed all colons), but
+            // guard both characters explicitly so the invariant is local.
+            reject_reserved(rel_parts[0], "subject id")?;
+            reject_reserved(rel_parts[1], "subject relation")?;
             Ok(Subject {
                 subject_type,
                 subject_id: rel_parts[0].to_string(),
@@ -101,10 +136,15 @@ impl Relation {
     }
 
     /// Parse from string
+    ///
+    /// A relation is a single opaque token; it must not embed the `:` or `#`
+    /// structural separators, otherwise a caller-supplied relation could be
+    /// spliced into a subject-set or object reference.
     pub fn parse(s: &str) -> Result<Self, String> {
         if s.is_empty() {
             return Err("Relation cannot be empty".to_string());
         }
+        reject_reserved(s, "relation")?;
         Ok(Relation {
             name: s.to_string(),
         })
@@ -137,10 +177,19 @@ impl Object {
     }
 
     /// Parse from string format: "type:id"
+    ///
+    /// Objects never carry a set relation, so a `#` anywhere is illegal. Today
+    /// `"document:123#owner"` would otherwise parse as the object
+    /// `document / 123#owner`, letting a caller who controls an id smuggle a
+    /// `#relation` fragment through the object channel.
     pub fn parse(s: &str) -> Result<Self, String> {
         let parts: Vec<&str> = s.split(':').collect();
         if parts.len() != 2 {
             return Err(format!("Invalid object format: {}", s));
+        }
+
+        if parts[0].contains('#') || parts[1].contains('#') {
+            return Err(format!("Invalid object '{}': must not contain '#'", s));
         }
 
         Ok(Object {
@@ -258,6 +307,20 @@ mod tests {
         assert_eq!(tuple.subject.subject_id, "alice");
         assert_eq!(tuple.relation.name, "owner");
         assert_eq!(tuple.object.object_id, "123");
+    }
+
+    #[test]
+    fn test_identifier_injection_rejected() {
+        // `#` in an object id must be rejected (would forge a subject-set).
+        assert!(Object::parse("document:123#owner").is_err());
+        // `#` in a relation must be rejected.
+        assert!(Relation::parse("viewer#admin").is_err());
+        assert!(Relation::parse("view:er").is_err());
+        // A doubled `#` in a subject must be rejected.
+        assert!(Subject::parse("user:alice#a#b").is_err());
+        // Legitimate subject-set form still parses.
+        let s = Subject::parse("team:eng#member").expect("valid subject-set");
+        assert_eq!(s.relation, Some("member".to_string()));
     }
 
     #[test]

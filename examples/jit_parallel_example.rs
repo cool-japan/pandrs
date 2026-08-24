@@ -5,7 +5,7 @@
 //!
 //! Run with: cargo run --example jit_parallel_example --features jit --release
 
-use scirs2_core::random::{Rng, RngExt};
+use scirs2_core::random::RngExt;
 use std::error::Error;
 use std::time::{Duration, Instant};
 

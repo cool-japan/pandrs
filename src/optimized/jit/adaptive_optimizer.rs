@@ -5,23 +5,23 @@
 
 use crate::core::error::{Error, Result};
 use crate::optimized::jit::{
-    cache::{CachedFunctionMetadata, FunctionId, JitFunctionCache},
-    config::{JITConfig, LoadBalancing, ParallelConfig, SIMDConfig},
-    expression_tree::{ExpressionTree, OptimizationType as ExprOptType},
+    cache::{FunctionId, JitFunctionCache},
+    config::{JITConfig, LoadBalancing},
     performance_monitor::{
         FunctionPerformanceMetrics, JitPerformanceMonitor, OptimizationSuggestion, OptimizationType,
     },
 };
 use crate::{read_lock_safe, write_lock_safe};
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 /// Adaptive optimizer that learns from performance data
 pub struct AdaptiveOptimizer {
     /// Performance monitor for gathering runtime data
     monitor: Arc<JitPerformanceMonitor>,
     /// Function cache for storing optimized functions
+    #[allow(dead_code)] // reserved for future use
     cache: Arc<JitFunctionCache>,
     /// Current JIT configuration
     config: Arc<RwLock<JITConfig>>,
@@ -156,7 +156,7 @@ impl OptimizationStrategy for SIMDOptimizationStrategy {
 
         if !config.simd.enabled || config.simd.min_simd_size > 32 {
             if metrics.avg_cpu_utilization < 0.7 && metrics.execution_count > 10 {
-                let improvement = if let Some(baseline) = baseline {
+                let improvement = if let Some(_baseline) = baseline {
                     // Estimate improvement based on baseline
                     0.2 + (0.7 - metrics.avg_cpu_utilization) * 0.5
                 } else {
@@ -229,7 +229,7 @@ impl OptimizationStrategy for ParallelOptimizationStrategy {
         if metrics.avg_cpu_utilization < 0.6 && metrics.avg_execution_time_ns > 1_000_000.0 {
             // > 1ms
             if config.parallel.min_chunk_size > 1000 {
-                let improvement = if let Some(baseline) = baseline {
+                let improvement = if let Some(_baseline) = baseline {
                     0.15 + (0.6 - metrics.avg_cpu_utilization) * 0.4
                 } else {
                     0.20
@@ -345,10 +345,11 @@ impl AdaptiveOptimizer {
         cache: Arc<JitFunctionCache>,
         config: JITConfig,
     ) -> Self {
-        let mut strategies: Vec<Box<dyn OptimizationStrategy + Send + Sync>> = Vec::new();
-        strategies.push(Box::new(SIMDOptimizationStrategy));
-        strategies.push(Box::new(ParallelOptimizationStrategy));
-        strategies.push(Box::new(MemoryOptimizationStrategy));
+        let strategies: Vec<Box<dyn OptimizationStrategy + Send + Sync>> = vec![
+            Box::new(SIMDOptimizationStrategy),
+            Box::new(ParallelOptimizationStrategy),
+            Box::new(MemoryOptimizationStrategy),
+        ];
 
         Self {
             monitor,

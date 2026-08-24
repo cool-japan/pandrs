@@ -12,10 +12,10 @@ fn copy_df_with_column(
 ) -> Result<DataFrame> {
     let mut result = DataFrame::new();
     for col_name in df.column_names() {
-        if &col_name == target_column {
+        if col_name == target_column {
             result.add_column(
                 col_name.clone(),
-                Series::new(new_values.clone(), Some(col_name))?,
+                Series::new(new_values.clone(), Some(col_name.clone()))?,
             )?;
         } else if let Ok(vals) = df.get_column_numeric_values(&col_name) {
             result.add_column(col_name.clone(), Series::new(vals, Some(col_name.clone()))?)?;

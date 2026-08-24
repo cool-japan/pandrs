@@ -208,7 +208,7 @@ fn main() {
     for name in df.column_names() {
         let col_view = df.column(name).unwrap();
 
-        let new_col = if name == "value" {
+        let new_col = if name.as_str() == "value" {
             let float_col = col_view.as_float64().unwrap();
             let mut doubled_values = Vec::with_capacity(float_col.len());
 

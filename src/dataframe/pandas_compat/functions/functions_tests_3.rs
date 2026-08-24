@@ -4,15 +4,10 @@
 
 #[cfg(test)]
 mod tests {
-    use super::super::functions::select_rows_by_indices;
-    use crate::core::error::Result;
     use crate::dataframe::base::DataFrame;
     use crate::dataframe::pandas_compat::trait_def::PandasCompatExt;
-    use crate::dataframe::pandas_compat::types::{
-        Axis, CorrelationMatrix, DescribeStats, RankMethod, SeriesValue,
-    };
+    use crate::dataframe::pandas_compat::types::SeriesValue;
     use crate::series::Series;
-    use std::collections::{HashMap, HashSet};
 
     fn create_test_df() -> DataFrame {
         let mut df = DataFrame::new();

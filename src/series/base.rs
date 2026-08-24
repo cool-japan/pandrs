@@ -1,5 +1,4 @@
 use std::fmt::Debug;
-use std::sync::Arc;
 
 use crate::core::error::Result;
 
@@ -126,22 +125,40 @@ where
 }
 
 // Additional implementations for numeric types
+//
+// `i32`/`i64`/`f64` each get their own small `sum`/`mean`/`min`/`max` block
+// below rather than one generic impl: the three types need genuinely
+// different missing-value handling (`i32`/`i64` have no NA representation
+// at all -- every stored element participates; `f64` uses `NaN` as this
+// crate's missing-value sentinel for a plain, non-`NA`-wrapped series and
+// so must skip it, matching pandas' `skipna=True` default), and mirroring
+// the existing per-type style keeps that difference explicit at each call
+// site instead of hidden behind a shared generic bound.
 impl Series<i32> {
-    /// Calculate the sum of the Series
-    pub fn sum(&self) -> i32 {
-        self.values.iter().sum()
+    /// Calculate the sum of the Series.
+    ///
+    /// Accumulates in `i64` so the result cannot silently wrap around for
+    /// series whose true sum exceeds `i32::MAX`/`i32::MIN` (which a plain
+    /// `i32` accumulation would either panic on in debug builds or wrap on
+    /// in release builds). `i32` has no NA representation, so every stored
+    /// element participates -- there is nothing to skip.
+    pub fn sum(&self) -> i64 {
+        self.values.iter().map(|&v| v as i64).sum()
     }
 
-    /// Calculate the mean of the Series
+    /// Calculate the mean of the Series.
+    ///
+    /// `i32` has no NA representation, so the divisor is simply `len()`
+    /// (every element is a real observation; there is no separate
+    /// "non-NA count" to track for this type).
     pub fn mean(&self) -> Result<f64> {
         if self.is_empty() {
             return Err(crate::core::error::Error::EmptySeries);
         }
-        let sum: i32 = self.sum();
-        Ok(sum as f64 / self.len() as f64)
+        Ok(self.sum() as f64 / self.len() as f64)
     }
 
-    /// Get the minimum value in the Series
+    /// Get the minimum value in the Series.
     pub fn min(&self) -> Result<i32> {
         self.values
             .iter()
@@ -150,12 +167,114 @@ impl Series<i32> {
             .ok_or_else(|| crate::core::error::Error::EmptySeries)
     }
 
-    /// Get the maximum value in the Series
+    /// Get the maximum value in the Series.
     pub fn max(&self) -> Result<i32> {
         self.values
             .iter()
             .max()
             .cloned()
+            .ok_or_else(|| crate::core::error::Error::EmptySeries)
+    }
+}
+
+impl Series<i64> {
+    /// Calculate the sum of the Series. `i64` has no NA representation, so
+    /// every stored element participates. Unlike [`Series::<i32>::sum`],
+    /// there is no wider standard integer type to promote to here; a sum
+    /// that itself overflows `i64` follows Rust's normal integer-overflow
+    /// semantics (panics in debug builds, wraps in release), same as any
+    /// other bare `i64` addition.
+    pub fn sum(&self) -> i64 {
+        self.values.iter().sum()
+    }
+
+    /// Calculate the mean of the Series. `i64` has no NA representation,
+    /// so the divisor is simply `len()`.
+    pub fn mean(&self) -> Result<f64> {
+        if self.is_empty() {
+            return Err(crate::core::error::Error::EmptySeries);
+        }
+        Ok(self.sum() as f64 / self.len() as f64)
+    }
+
+    /// Get the minimum value in the Series.
+    pub fn min(&self) -> Result<i64> {
+        self.values
+            .iter()
+            .min()
+            .cloned()
+            .ok_or_else(|| crate::core::error::Error::EmptySeries)
+    }
+
+    /// Get the maximum value in the Series.
+    pub fn max(&self) -> Result<i64> {
+        self.values
+            .iter()
+            .max()
+            .cloned()
+            .ok_or_else(|| crate::core::error::Error::EmptySeries)
+    }
+}
+
+impl Series<f64> {
+    /// Calculate the sum of the Series, skipping `NaN` (pandas
+    /// `skipna=True` semantics -- `NaN` is this crate's missing-value
+    /// sentinel for a plain, non-`NA`-wrapped float series, since
+    /// `Series<T>` itself has no null bitmap). Returns `0.0` if the series
+    /// is empty or every value is `NaN`, matching both
+    /// [`Series::<i32>::sum`]'s empty-series-sums-to-0 convention and
+    /// pandas' own `Series.sum()`, which also returns `0.0` for an empty or
+    /// all-NaN series (sum of zero observations is the additive identity,
+    /// not a fabricated stand-in for missing data).
+    pub fn sum(&self) -> f64 {
+        self.values.iter().copied().filter(|v| !v.is_nan()).sum()
+    }
+
+    /// Calculate the mean of the Series, skipping `NaN` (pandas
+    /// `skipna=True`). The divisor is the count of non-`NaN` values, not
+    /// `len()`. Returns `Err(EmptySeries)` when there are no non-`NaN`
+    /// observations to average -- this covers both an empty series and a
+    /// non-empty, all-`NaN` one; unlike `sum`'s additive-identity case,
+    /// there is no honest numeric value to report for "the average of zero
+    /// observations".
+    pub fn mean(&self) -> Result<f64> {
+        let (sum, count) = self
+            .values
+            .iter()
+            .copied()
+            .filter(|v| !v.is_nan())
+            .fold((0.0_f64, 0usize), |(s, c), v| (s + v, c + 1));
+        if count == 0 {
+            return Err(crate::core::error::Error::EmptySeries);
+        }
+        Ok(sum / count as f64)
+    }
+
+    /// Get the minimum value in the Series, skipping `NaN`.
+    /// `Err(EmptySeries)` when there are no non-`NaN` observations
+    /// (empty series, or every value `NaN`).
+    pub fn min(&self) -> Result<f64> {
+        self.values
+            .iter()
+            .copied()
+            .filter(|v| !v.is_nan())
+            .fold(None, |acc: Option<f64>, v| {
+                Some(acc.map_or(v, |a| a.min(v)))
+            })
+            .ok_or_else(|| crate::core::error::Error::EmptySeries)
+    }
+
+    /// Get the maximum value in the Series, skipping `NaN`.
+    /// `Err(EmptySeries)` when there are no non-`NaN` observations
+    /// (empty series, or every value `NaN`).
+    pub fn max(&self) -> Result<f64> {
+        self.values
+            .iter()
+            .copied()
+            .filter(|v| !v.is_nan())
+            .fold(None, |acc: Option<f64>, v| {
+                Some(acc.map_or(v, |a| a.max(v)))
+            })
             .ok_or_else(|| crate::core::error::Error::EmptySeries)
     }
 }
@@ -187,5 +306,121 @@ impl Series<chrono::DateTime<chrono::Utc>> {
         crate::series::datetime_accessor::DateTimeAccessorTz::new(self.clone()).map_err(|e| {
             crate::core::error::Error::Type(format!("Failed to create datetime accessor: {:?}", e))
         })
+    }
+}
+
+// --- Idiomatic Rust trait implementations ---
+
+impl<T> std::ops::Index<usize> for Series<T>
+where
+    T: Debug + Clone,
+{
+    type Output = T;
+
+    fn index(&self, i: usize) -> &T {
+        &self.values[i]
+    }
+}
+
+impl<'a, T> IntoIterator for &'a Series<T>
+where
+    T: Debug + Clone,
+{
+    type Item = &'a T;
+    type IntoIter = std::slice::Iter<'a, T>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.values.iter()
+    }
+}
+
+impl<T> FromIterator<T> for Series<T>
+where
+    T: Debug + Clone,
+{
+    fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
+        let values: Vec<T> = iter.into_iter().collect();
+        // `new` only fails on validation, which doesn't exist here; the
+        // fallback to an empty Series is unreachable in practice.
+        Series::new(values, None).unwrap_or_else(|_| Series {
+            values: Vec::new(),
+            name: None,
+        })
+    }
+}
+
+impl<T> Extend<T> for Series<T>
+where
+    T: Debug + Clone,
+{
+    fn extend<I: IntoIterator<Item = T>>(&mut self, iter: I) {
+        self.values.extend(iter);
+    }
+}
+
+impl<T> std::fmt::Display for Series<T>
+where
+    T: Debug + Clone + std::fmt::Display,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let name = self.name.as_deref().unwrap_or("unnamed");
+        write!(f, "Series[{}](", name)?;
+        for (i, v) in self.values.iter().enumerate() {
+            if i > 0 {
+                write!(f, ", ")?;
+            }
+            write!(f, "{}", v)?;
+        }
+        write!(f, ")")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_series_index_trait() {
+        let s = Series::new(vec![10i64, 20, 30], Some("nums".to_string())).unwrap();
+        assert_eq!(s[0], 10);
+        assert_eq!(s[2], 30);
+    }
+
+    #[test]
+    fn test_series_into_iterator() {
+        let s = Series::new(vec![1.0f64, 2.0, 3.0], Some("vals".to_string())).unwrap();
+        let sum: f64 = (&s).into_iter().copied().sum();
+        assert!((sum - 6.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_series_collect() {
+        let s = Series::new(vec![1i64, 2, 3], Some("x".to_string())).unwrap();
+        let doubled: Vec<i64> = (&s).into_iter().map(|&v| v * 2).collect();
+        assert_eq!(doubled, vec![2, 4, 6]);
+    }
+
+    #[test]
+    fn test_series_from_iterator() {
+        let v = vec![4i64, 5, 6];
+        let s: Series<i64> = v.into_iter().collect();
+        assert_eq!(s.len(), 3);
+        assert_eq!(s[0], 4);
+    }
+
+    #[test]
+    fn test_series_extend() {
+        let mut s = Series::new(vec![1i64, 2], None).unwrap();
+        s.extend(vec![3i64, 4]);
+        assert_eq!(s.len(), 4);
+        assert_eq!(s[3], 4);
+    }
+
+    #[test]
+    fn test_series_display() {
+        let s = Series::new(vec![1i64, 2, 3], Some("nums".to_string())).unwrap();
+        let disp = s.to_string();
+        assert!(disp.contains("nums"), "Display missing name: {}", disp);
+        assert!(disp.contains("1"), "Display missing value: {}", disp);
     }
 }

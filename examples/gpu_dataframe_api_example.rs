@@ -13,7 +13,7 @@
 #[cfg(cuda_available)]
 use pandrs::error::Result;
 #[cfg(cuda_available)]
-use pandrs::gpu::{init_gpu, GpuManager};
+use pandrs::gpu::init_gpu;
 #[cfg(cuda_available)]
 use pandrs::DataFrame;
 #[cfg(cuda_available)]

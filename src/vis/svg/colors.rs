@@ -52,12 +52,18 @@ impl Color {
         format!("rgba({},{},{},{:.3})", self.r, self.g, self.b, alpha)
     }
 
-    /// Convert to SVG fill/stroke attribute string
+    /// Convert to an SVG color string, encoding alpha when present.
+    ///
+    /// SVG's `fill`/`stroke` attributes accept the 8-digit
+    /// `#RRGGBBAA` hex form (supported by every modern SVG renderer),
+    /// so a translucent color round-trips through this single string
+    /// instead of silently becoming opaque. Fully-opaque colors keep
+    /// the plain 6-digit form for maximum compatibility.
     pub fn to_svg_color(&self) -> String {
         if self.a == 255 {
             self.to_hex()
         } else {
-            self.to_hex()
+            format!("#{:02X}{:02X}{:02X}{:02X}", self.r, self.g, self.b, self.a)
         }
     }
 

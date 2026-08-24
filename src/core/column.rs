@@ -78,10 +78,31 @@ pub enum Column {
 impl Column {
     /// Create a Column from an Any type (useful for legacy conversion)
     pub fn from_any(data: Box<dyn std::any::Any>) -> Self {
-        // For now, create a default empty Int64Column
-        // In a real implementation, this would try to cast and convert
-        // the Any type to an appropriate column type
-        Column::Int64(crate::column::Int64Column::new(vec![]))
+        use crate::column::{BooleanColumn, Float64Column, Int64Column, StringColumn};
+
+        // Common path: the box already holds a Column enum value
+        let data = match data.downcast::<Column>() {
+            Ok(col) => return *col,
+            Err(data) => data,
+        };
+        // Fallback: bare concrete column struct
+        let data = match data.downcast::<Int64Column>() {
+            Ok(col) => return Column::Int64(*col),
+            Err(data) => data,
+        };
+        let data = match data.downcast::<Float64Column>() {
+            Ok(col) => return Column::Float64(*col),
+            Err(data) => data,
+        };
+        let data = match data.downcast::<StringColumn>() {
+            Ok(col) => return Column::String(*col),
+            Err(data) => data,
+        };
+        match data.downcast::<BooleanColumn>() {
+            Ok(col) => Column::Boolean(*col),
+            // Unknown payload: preserve non-panicking behavior
+            Err(_) => Column::Int64(Int64Column::new(vec![])),
+        }
     }
 }
 
@@ -306,5 +327,78 @@ impl From<crate::column::StringColumn> for Column {
 impl From<crate::column::BooleanColumn> for Column {
     fn from(col: crate::column::BooleanColumn) -> Self {
         Column::Boolean(col)
+    }
+}
+
+impl std::fmt::Display for Column {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Column::Int64(c) => write!(f, "Column::Int64(len={})", c.len()),
+            Column::Float64(c) => write!(f, "Column::Float64(len={})", c.len()),
+            Column::String(c) => write!(f, "Column::String(len={})", c.len()),
+            Column::Boolean(c) => write!(f, "Column::Boolean(len={})", c.len()),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_from_any_round_trips_all_column_types() {
+        use crate::column::{BooleanColumn, Float64Column, Int64Column, StringColumn};
+
+        // Int64
+        let col = Column::Int64(Int64Column::new(vec![1i64, 2, 3]));
+        let boxed: Box<dyn std::any::Any> = Box::new(col.clone());
+        let recovered = Column::from_any(boxed);
+        match (&col, &recovered) {
+            (Column::Int64(orig), Column::Int64(rec)) => assert_eq!(orig.len(), rec.len()),
+            _ => panic!("Int64 type changed!"),
+        }
+
+        // Float64
+        let col = Column::Float64(Float64Column::new(vec![1.0f64, 2.0, 3.0]));
+        let boxed: Box<dyn std::any::Any> = Box::new(col.clone());
+        let recovered = Column::from_any(boxed);
+        match &recovered {
+            Column::Float64(c) => assert_eq!(c.len(), 3),
+            _ => panic!("Float64 type changed"),
+        }
+
+        // String
+        let col = Column::String(StringColumn::new(vec!["a".to_string(), "b".to_string()]));
+        let boxed: Box<dyn std::any::Any> = Box::new(col.clone());
+        let recovered = Column::from_any(boxed);
+        match &recovered {
+            Column::String(c) => assert_eq!(c.len(), 2),
+            _ => panic!("String type changed"),
+        }
+
+        // Boolean
+        let col = Column::Boolean(BooleanColumn::new(vec![true, false, true]));
+        let boxed: Box<dyn std::any::Any> = Box::new(col.clone());
+        let recovered = Column::from_any(boxed);
+        match &recovered {
+            Column::Boolean(c) => assert_eq!(c.len(), 3),
+            _ => panic!("Boolean type changed"),
+        }
+    }
+
+    #[test]
+    fn test_column_display() {
+        use crate::column::{Float64Column, Int64Column};
+        let col = Column::Int64(Int64Column::new(vec![1i64, 2, 3]));
+        let s = col.to_string();
+        assert!(s.contains("Int64") && s.contains("3"), "Display: {}", s);
+
+        let col2 = Column::Float64(Float64Column::new(vec![1.0f64, 2.0]));
+        let s2 = col2.to_string();
+        assert!(
+            s2.contains("Float64") && s2.contains("2"),
+            "Display: {}",
+            s2
+        );
     }
 }

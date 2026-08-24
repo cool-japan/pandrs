@@ -7,21 +7,31 @@ use std::iter::Peekable;
 use std::str::Chars;
 
 use super::ast::{BinaryOp, Expr, LiteralValue, Token, UnaryOp};
-use crate::core::error::{Error, OptionExt, Result};
+use crate::core::error::{Error, Result};
 
-/// Lexer for tokenizing query expressions
-pub struct Lexer {
-    chars: Peekable<Chars<'static>>,
-    input: &'static str,
+/// Lexer for tokenizing query expressions.
+///
+/// The lexer borrows the query string for the lifetime `'a`; no `'static`
+/// promotion (and therefore no `transmute`) is required to build one from a
+/// short-lived `&str`.
+pub struct Lexer<'a> {
+    chars: Peekable<Chars<'a>>,
+    /// The original source, retained for diagnostics.
+    input: &'a str,
 }
 
-impl Lexer {
+impl<'a> Lexer<'a> {
     /// Create a new lexer
-    pub fn new(input: &'static str) -> Self {
+    pub fn new(input: &'a str) -> Self {
         Self {
             chars: input.chars().peekable(),
             input,
         }
+    }
+
+    /// The query string this lexer was built from.
+    pub fn input(&self) -> &'a str {
+        self.input
     }
 
     /// Get the next token
@@ -106,30 +116,47 @@ impl Lexer {
                         Ok(Token::GreaterThan)
                     }
                 }
+                // pandas spells logical AND as a single '&'; '&&' is also
+                // accepted for the Rust-flavoured syntax this crate started
+                // with.
                 '&' => {
                     self.chars.next();
                     if self.chars.peek() == Some(&'&') {
                         self.chars.next();
-                        Ok(Token::And)
-                    } else {
-                        Err(Error::InvalidValue(
-                            "Expected '&&' for logical AND".to_string(),
-                        ))
                     }
+                    Ok(Token::And)
                 }
+                // Likewise '|' and '||' are both logical OR.
                 '|' => {
                     self.chars.next();
                     if self.chars.peek() == Some(&'|') {
                         self.chars.next();
-                        Ok(Token::Or)
-                    } else {
+                    }
+                    Ok(Token::Or)
+                }
+                // pandas spells logical NOT as '~'.
+                '~' => {
+                    self.chars.next();
+                    Ok(Token::Not)
+                }
+                // '@name' explicitly references a query-context variable.
+                '@' => {
+                    self.chars.next();
+                    let name = self.read_word();
+                    if name.is_empty() {
                         Err(Error::InvalidValue(
-                            "Expected '||' for logical OR".to_string(),
+                            "Expected a variable name after '@'".to_string(),
                         ))
+                    } else {
+                        Ok(Token::Variable(name))
                     }
                 }
+                // Backtick-quoted identifiers allow column names containing
+                // spaces or punctuation, as in pandas.
+                '`' => self.read_quoted_identifier(),
                 '\'' | '"' => self.read_string(),
                 '0'..='9' => self.read_number(),
+                '.' => self.read_number(),
                 'a'..='z' | 'A'..='Z' | '_' => self.read_identifier(),
                 _ => Err(Error::InvalidValue(format!("Unexpected character: {}", ch))),
             },
@@ -183,14 +210,46 @@ impl Lexer {
         ))
     }
 
-    /// Read a number literal
+    /// Read a number literal, including `1.5`, `.5` and `1e-3` forms.
     fn read_number(&mut self) -> Result<Token> {
         let mut number = String::new();
+        let mut seen_dot = false;
 
         while let Some(&ch) = self.chars.peek() {
-            if ch.is_ascii_digit() || ch == '.' {
+            if ch.is_ascii_digit() {
                 number.push(ch);
                 self.chars.next();
+            } else if ch == '.' && !seen_dot {
+                seen_dot = true;
+                number.push(ch);
+                self.chars.next();
+            } else if (ch == 'e' || ch == 'E') && !number.is_empty() {
+                // Only consume the exponent when it is actually well formed,
+                // so an identifier such as `e_id` is not swallowed.
+                let mut lookahead = self.chars.clone();
+                lookahead.next();
+                let mut exponent = String::from("e");
+                if let Some(&sign) = lookahead.peek() {
+                    if sign == '+' || sign == '-' {
+                        exponent.push(sign);
+                        lookahead.next();
+                    }
+                }
+                let mut digits = 0usize;
+                while let Some(&digit) = lookahead.peek() {
+                    if digit.is_ascii_digit() {
+                        exponent.push(digit);
+                        lookahead.next();
+                        digits += 1;
+                    } else {
+                        break;
+                    }
+                }
+                if digits == 0 {
+                    break;
+                }
+                number.push_str(&exponent);
+                self.chars = lookahead;
             } else {
                 break;
             }
@@ -202,23 +261,50 @@ impl Lexer {
         }
     }
 
-    /// Read an identifier or keyword
-    fn read_identifier(&mut self) -> Result<Token> {
-        let mut identifier = String::new();
+    /// Read a bare word (identifier characters only).
+    fn read_word(&mut self) -> String {
+        let mut word = String::new();
 
         while let Some(&ch) = self.chars.peek() {
             if ch.is_alphanumeric() || ch == '_' {
-                identifier.push(ch);
+                word.push(ch);
                 self.chars.next();
             } else {
                 break;
             }
         }
 
-        // Check for keywords
+        word
+    }
+
+    /// Read a backtick-quoted identifier, which may contain any character
+    /// except the closing backtick.
+    fn read_quoted_identifier(&mut self) -> Result<Token> {
+        self.chars.next(); // consume the opening backtick
+        let mut identifier = String::new();
+
+        for ch in self.chars.by_ref() {
+            if ch == '`' {
+                return Ok(Token::Identifier(identifier));
+            }
+            identifier.push(ch);
+        }
+
+        Err(Error::InvalidValue(
+            "Unterminated backtick-quoted identifier".to_string(),
+        ))
+    }
+
+    /// Read an identifier or keyword
+    fn read_identifier(&mut self) -> Result<Token> {
+        let identifier = self.read_word();
+
+        // Check for keywords. Both the Python/pandas spellings (`True`,
+        // `False`, `and`, `or`, `not`) and the lowercase Rust spellings are
+        // accepted.
         match identifier.as_str() {
-            "true" => Ok(Token::Boolean(true)),
-            "false" => Ok(Token::Boolean(false)),
+            "true" | "True" => Ok(Token::Boolean(true)),
+            "false" | "False" => Ok(Token::Boolean(false)),
             "and" => Ok(Token::And),
             "or" => Ok(Token::Or),
             "not" => Ok(Token::Not),
@@ -249,9 +335,21 @@ impl Parser {
         }
     }
 
-    /// Parse the tokens into an expression AST
+    /// Parse the tokens into an expression AST.
+    ///
+    /// The whole token stream must be consumed: trailing tokens are a syntax
+    /// error rather than being silently ignored (which would quietly change the
+    /// meaning of a query).
     pub fn parse(&mut self) -> Result<Expr> {
-        self.parse_or_expression()
+        let expr = self.parse_or_expression()?;
+
+        match self.current_token() {
+            None | Some(Token::Eof) => Ok(expr),
+            Some(token) => Err(Error::InvalidValue(format!(
+                "Unexpected trailing token in query expression: {:?}",
+                token
+            ))),
+        }
     }
 
     /// Parse OR expressions
@@ -405,40 +503,21 @@ impl Parser {
                 }
                 Token::Identifier(name) => {
                     self.advance();
+                    // `name (args)` with whitespace before the parenthesis is a
+                    // function call too; the lexer only tags a name as a
+                    // function when '(' follows immediately.
+                    if self.check_token(&Token::LeftParen) {
+                        return self.parse_call_arguments(name);
+                    }
                     Ok(Expr::Column(name))
                 }
-                Token::Function(name) => {
-                    let func_name = name;
+                Token::Variable(name) => {
                     self.advance();
-
-                    if !self.match_token(&Token::LeftParen) {
-                        return Err(Error::InvalidValue(
-                            "Expected '(' after function name".to_string(),
-                        ));
-                    }
-
-                    let mut args = Vec::new();
-
-                    if !self.check_token(&Token::RightParen) {
-                        loop {
-                            args.push(self.parse_or_expression()?);
-
-                            if !self.match_token(&Token::Comma) {
-                                break;
-                            }
-                        }
-                    }
-
-                    if !self.match_token(&Token::RightParen) {
-                        return Err(Error::InvalidValue(
-                            "Expected ')' after function arguments".to_string(),
-                        ));
-                    }
-
-                    Ok(Expr::Function {
-                        name: func_name,
-                        args,
-                    })
+                    Ok(Expr::Variable(name))
+                }
+                Token::Function(name) => {
+                    self.advance();
+                    self.parse_call_arguments(name)
                 }
                 Token::LeftParen => {
                     self.advance();
@@ -460,6 +539,35 @@ impl Parser {
         } else {
             Err(Error::InvalidValue("Unexpected end of input".to_string()))
         }
+    }
+
+    /// Parse the argument list of a function call, starting at '('.
+    fn parse_call_arguments(&mut self, name: String) -> Result<Expr> {
+        if !self.match_token(&Token::LeftParen) {
+            return Err(Error::InvalidValue(
+                "Expected '(' after function name".to_string(),
+            ));
+        }
+
+        let mut args = Vec::new();
+
+        if !self.check_token(&Token::RightParen) {
+            loop {
+                args.push(self.parse_or_expression()?);
+
+                if !self.match_token(&Token::Comma) {
+                    break;
+                }
+            }
+        }
+
+        if !self.match_token(&Token::RightParen) {
+            return Err(Error::InvalidValue(
+                "Expected ')' after function arguments".to_string(),
+            ));
+        }
+
+        Ok(Expr::Function { name, args })
     }
 
     /// Helper methods for parsing

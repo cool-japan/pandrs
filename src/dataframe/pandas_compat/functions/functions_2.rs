@@ -5,18 +5,11 @@
 //! - functions_2_impl_part2: Reshape and analysis operations
 //! - functions_2_impl_part3: Element-wise, string, comparison, and utility operations
 
-use super::super::helpers::{aggregations, comparison_ops, math_ops, string_ops, window_ops};
-use super::super::merge;
 use super::super::trait_def::PandasCompatExt;
 use super::super::types::{Axis, CorrelationMatrix, DescribeStats, RankMethod, SeriesValue};
-use crate::core::error::{Error, Result};
+use crate::core::error::Result;
 use crate::dataframe::base::DataFrame;
-use crate::series::Series;
-use std::cmp::Ordering;
-use std::collections::{HashMap, HashSet};
-
-use super::functions::select_rows_by_indices;
-use super::functions_3::{covariance, pearson_correlation};
+use std::collections::HashMap;
 
 impl PandasCompatExt for DataFrame {
     fn assign<F, T>(&self, name: &str, func: F) -> Result<DataFrame>

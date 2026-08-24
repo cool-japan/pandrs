@@ -4,12 +4,12 @@
 //! and enables adaptive optimization based on runtime performance characteristics.
 
 use crate::core::error::{Error, Result};
-use crate::optimized::jit::cache::{CacheStats, FunctionId};
-use crate::optimized::jit::config::{JITConfig, LoadBalancing, ParallelConfig, SIMDConfig};
+use crate::optimized::jit::cache::FunctionId;
+use crate::optimized::jit::config::{JITConfig, LoadBalancing};
 use crate::{read_lock_safe, write_lock_safe};
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, RwLock};
-use std::time::{Duration, Instant, SystemTime};
+use std::time::{Duration, Instant};
 
 /// Performance metrics for a specific function
 #[derive(Debug, Clone)]
@@ -387,7 +387,7 @@ impl JitPerformanceMonitor {
     /// Record compilation event
     pub fn record_compilation(
         &self,
-        function_id: &FunctionId,
+        _function_id: &FunctionId,
         compilation_time_ns: u64,
         success: bool,
     ) -> Result<()> {

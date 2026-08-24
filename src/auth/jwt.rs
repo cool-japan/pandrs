@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// JWT configuration
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct JwtConfig {
     /// Secret key for HMAC signing
     pub secret_key: Vec<u8>,
@@ -28,7 +28,49 @@ pub struct JwtConfig {
     pub leeway_secs: u64,
 }
 
+impl std::fmt::Debug for JwtConfig {
+    /// Redacting `Debug`: the HMAC signing key must never appear in logs.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("JwtConfig")
+            .field("secret_key", &"<redacted>")
+            .field("issuer", &self.issuer)
+            .field("audience", &self.audience)
+            .field("expiration_secs", &self.expiration_secs)
+            .field("validate_exp", &self.validate_exp)
+            .field("validate_iss", &self.validate_iss)
+            .field("validate_aud", &self.validate_aud)
+            .field("leeway_secs", &self.leeway_secs)
+            .finish()
+    }
+}
+
+impl Drop for JwtConfig {
+    /// Best-effort zeroization of the signing key when the config is dropped.
+    ///
+    /// The `zeroize` crate would be idiomatic but adding a dependency is
+    /// outside this change's file ownership; this pure-Rust equivalent
+    /// overwrites the bytes and uses `black_box` to keep the optimizer from
+    /// eliding the writes on a soon-to-be-freed buffer.
+    fn drop(&mut self) {
+        for b in self.secret_key.iter_mut() {
+            *b = 0;
+        }
+        std::hint::black_box(self.secret_key.as_ptr());
+    }
+}
+
 impl Default for JwtConfig {
+    /// Builds a config with a **fresh random 64-byte secret each call**.
+    ///
+    /// This is fail-closed and secure for a single long-lived process, but it is
+    /// *not* stable across restarts or processes: two `AuthManager`s built from
+    /// separate `JwtConfig::default()` values cannot validate each other's
+    /// tokens, and a restart invalidates every previously issued token. Any
+    /// multi-process, load-balanced, or restart-surviving deployment MUST supply
+    /// an explicit shared secret via [`JwtConfig::new`] (which still enforces the
+    /// >= 32-byte minimum at encode/decode time). A fixed default secret is
+    /// deliberately not provided — that would be strictly worse (a public,
+    /// forgeable key).
     fn default() -> Self {
         use scirs2_core::random::Rng;
         let mut secret = vec![0u8; 64];
@@ -50,10 +92,12 @@ impl Default for JwtConfig {
 impl JwtConfig {
     /// Create a new JWT configuration with a specific secret
     pub fn new(secret: impl Into<Vec<u8>>) -> Self {
-        JwtConfig {
-            secret_key: secret.into(),
-            ..Default::default()
-        }
+        // Field assignment rather than functional-record-update: `JwtConfig`
+        // implements `Drop` (to zeroize the key), and FRU would require moving
+        // fields out of the `Default` temporary, which Drop forbids.
+        let mut config = JwtConfig::default();
+        config.secret_key = secret.into();
+        config
     }
 
     /// Set the issuer
@@ -106,6 +150,10 @@ pub struct TokenClaims {
     pub permissions: Vec<String>,
     /// Issued at (Unix timestamp)
     pub iat: u64,
+    /// Not before (Unix timestamp). Optional; defaults to absent for tokens
+    /// minted before this field existed.
+    #[serde(default)]
+    pub nbf: Option<u64>,
     /// Expiration time (Unix timestamp)
     pub exp: u64,
     /// Issuer
@@ -134,8 +182,18 @@ impl Default for JwtHeader {
     }
 }
 
+/// Minimum accepted HMAC secret length (bytes). HS256 with a key shorter than
+/// its 256-bit output is trivially brute-forceable; an empty key is no key.
+const MIN_SECRET_LEN: usize = 32;
+
 /// Encode JWT token
 pub fn encode_jwt(claims: &TokenClaims, config: &JwtConfig) -> Result<String> {
+    if config.secret_key.len() < MIN_SECRET_LEN {
+        return Err(Error::InvalidInput(format!(
+            "JWT secret key must be at least {} bytes",
+            MIN_SECRET_LEN
+        )));
+    }
     let header = JwtHeader::default();
 
     // Encode header
@@ -158,6 +216,13 @@ pub fn encode_jwt(claims: &TokenClaims, config: &JwtConfig) -> Result<String> {
 
 /// Decode and validate JWT token
 pub fn decode_jwt(token: &str, config: &JwtConfig) -> Result<TokenClaims> {
+    if config.secret_key.len() < MIN_SECRET_LEN {
+        return Err(Error::InvalidInput(format!(
+            "JWT secret key must be at least {} bytes",
+            MIN_SECRET_LEN
+        )));
+    }
+
     let parts: Vec<&str> = token.split('.').collect();
     if parts.len() != 3 {
         return Err(Error::InvalidInput("Invalid token format".to_string()));
@@ -167,12 +232,17 @@ pub fn decode_jwt(token: &str, config: &JwtConfig) -> Result<TokenClaims> {
     let payload_b64 = parts[1];
     let signature_b64 = parts[2];
 
-    // Verify signature
+    // Verify signature in constant time over the RAW MAC bytes. Comparing the
+    // base64 text with `!=` both leaks a timing oracle (byte-by-byte
+    // short-circuit) and, because the previous decoder silently dropped invalid
+    // characters, accepted malleable encodings. Decode the presented signature
+    // strictly and `ct_eq` it against the freshly computed MAC.
     let message = format!("{}.{}", header_b64, payload_b64);
     let expected_signature = hmac_sha256(&config.secret_key, message.as_bytes());
-    let expected_signature_b64 = base64_url_encode(&expected_signature);
+    let actual_signature = base64_url_decode(signature_b64)
+        .ok_or_else(|| Error::InvalidInput("Invalid signature encoding".to_string()))?;
 
-    if signature_b64 != expected_signature_b64 {
+    if !crate::auth::constant_time_eq(&expected_signature, &actual_signature) {
         return Err(Error::InvalidInput("Invalid token signature".to_string()));
     }
 
@@ -199,8 +269,18 @@ pub fn decode_jwt(token: &str, config: &JwtConfig) -> Result<TokenClaims> {
         .as_secs();
 
     if config.validate_exp {
-        if claims.exp + config.leeway_secs < now {
+        // Saturating so a token claiming exp == u64::MAX cannot wrap the
+        // leeway addition to a small number and appear expired.
+        if claims.exp.saturating_add(config.leeway_secs) < now {
             return Err(Error::InvalidOperation("Token has expired".to_string()));
+        }
+        // Reject tokens that are not yet valid (nbf), honouring the same leeway.
+        if let Some(nbf) = claims.nbf {
+            if nbf > now.saturating_add(config.leeway_secs) {
+                return Err(Error::InvalidOperation(
+                    "Token is not yet valid".to_string(),
+                ));
+            }
         }
     }
 
@@ -215,34 +295,41 @@ pub fn decode_jwt(token: &str, config: &JwtConfig) -> Result<TokenClaims> {
     Ok(claims)
 }
 
-/// Verify JWT token without decoding (just check signature and expiration)
+/// Verify a JWT and report validity as a boolean.
+///
+/// Returns `Ok(true)` only when the token is fully valid, and `Ok(false)` for
+/// *every* validation failure — bad signature, malformed token, wrong
+/// issuer/audience, expired, or not-yet-valid. The previous implementation
+/// returned `Err` for a forged signature, which inverts the security
+/// predicate: a caller writing `if verify_jwt(t, c)?` would propagate the error
+/// (often surfacing as a 500 / retry) instead of treating the token as
+/// rejected.
 pub fn verify_jwt(token: &str, config: &JwtConfig) -> Result<bool> {
-    match decode_jwt(token, config) {
-        Ok(_) => Ok(true),
-        Err(Error::InvalidOperation(_)) => Ok(false), // Expired
-        Err(e) => Err(e),
-    }
+    Ok(decode_jwt(token, config).is_ok())
 }
 
-/// Get token expiration time without full validation
-pub fn get_token_expiration(token: &str) -> Result<u64> {
-    let parts: Vec<&str> = token.split('.').collect();
-    if parts.len() != 3 {
-        return Err(Error::InvalidInput("Invalid token format".to_string()));
-    }
-
-    let payload_bytes = base64_url_decode(parts[1])
-        .ok_or_else(|| Error::InvalidInput("Invalid payload encoding".to_string()))?;
-
-    let claims: TokenClaims = serde_json::from_slice(&payload_bytes)
-        .map_err(|e| Error::InvalidInput(format!("Invalid payload: {}", e)))?;
-
+/// Read a token's expiration **after verifying its signature**, ignoring only
+/// the temporal (exp/nbf) and issuer/audience claims so the expiry of an
+/// already-expired token can still be inspected.
+///
+/// This requires the `JwtConfig` (and therefore the signing key): the previous
+/// signature-less variant let an attacker mint arbitrary expiry values and was
+/// re-exported at the crate root, an auth-bypass invitation. It is renamed in
+/// spirit — callers must supply the config — but the public symbol is retained
+/// because it is re-exported from the crate root (`src/lib.rs`, outside this
+/// change's ownership) and renaming it there is not possible here.
+pub fn get_token_expiration(token: &str, config: &JwtConfig) -> Result<u64> {
+    let mut cfg = config.clone();
+    cfg.validate_exp = false;
+    cfg.validate_iss = false;
+    cfg.validate_aud = false;
+    let claims = decode_jwt(token, &cfg)?;
     Ok(claims.exp)
 }
 
-/// Check if token is expired
-pub fn is_token_expired(token: &str) -> Result<bool> {
-    let exp = get_token_expiration(token)?;
+/// Check if a token is expired, verifying its signature first.
+pub fn is_token_expired(token: &str, config: &JwtConfig) -> Result<bool> {
+    let exp = get_token_expiration(token, config)?;
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
@@ -276,7 +363,12 @@ fn base64_url_encode(data: &[u8]) -> String {
     result
 }
 
-// Base64 URL-safe decoding
+// Base64 URL-safe decoding.
+//
+// Rejects any character outside the URL-safe alphabet by returning `None`
+// rather than silently dropping it. Dropping invalid characters makes the
+// encoding malleable — distinct byte strings decode to the same value — which
+// for a JWT signature means forged variants can slip past a naive comparison.
 fn base64_url_decode(input: &str) -> Option<Vec<u8>> {
     let decode_char = |c: char| -> Option<u8> {
         match c {
@@ -289,15 +381,22 @@ fn base64_url_decode(input: &str) -> Option<Vec<u8>> {
         }
     };
 
-    let chars: Vec<u8> = input.chars().filter_map(decode_char).collect();
+    let mut vals: Vec<u8> = Vec::with_capacity(input.len());
+    for c in input.chars() {
+        vals.push(decode_char(c)?);
+    }
 
-    if chars.is_empty() {
+    if vals.is_empty() {
         return Some(Vec::new());
     }
 
-    let mut result = Vec::with_capacity((chars.len() * 3) / 4);
+    let mut result = Vec::with_capacity((vals.len() * 3) / 4);
 
-    for chunk in chars.chunks(4) {
+    for chunk in vals.chunks(4) {
+        // A trailing group of a single sextet cannot come from valid base64.
+        if chunk.len() == 1 {
+            return None;
+        }
         if chunk.len() >= 2 {
             result.push((chunk[0] << 2) | (chunk[1] >> 4));
         }
@@ -328,7 +427,7 @@ fn hmac_sha256(key: &[u8], message: &[u8]) -> [u8; 32] {
     };
 
     // Pad key to block size
-    let mut key_padded = vec![0u8; BLOCK_SIZE];
+    let mut key_padded = [0u8; BLOCK_SIZE];
     key_padded[..key_bytes.len()].copy_from_slice(&key_bytes);
 
     // Create inner and outer pads
@@ -376,6 +475,7 @@ mod tests {
                 .duration_since(UNIX_EPOCH)
                 .expect("operation should succeed")
                 .as_secs(),
+            nbf: None,
             exp: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .expect("operation should succeed")
@@ -402,8 +502,8 @@ mod tests {
 
     #[test]
     fn test_jwt_invalid_signature() {
-        let config = JwtConfig::new(b"secret1".to_vec());
-        let config2 = JwtConfig::new(b"secret2".to_vec());
+        let config = JwtConfig::new(b"secret1_padded_to_at_least_32_bytes".to_vec());
+        let config2 = JwtConfig::new(b"secret2_padded_to_at_least_32_bytes".to_vec());
 
         let claims = TokenClaims {
             sub: "user123".to_string(),
@@ -414,6 +514,7 @@ mod tests {
                 .duration_since(UNIX_EPOCH)
                 .expect("operation should succeed")
                 .as_secs(),
+            nbf: None,
             exp: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .expect("operation should succeed")
@@ -433,7 +534,7 @@ mod tests {
 
     #[test]
     fn test_jwt_expired() {
-        let config = JwtConfig::new(b"secret".to_vec());
+        let config = JwtConfig::new(b"secret_padded_to_at_least_32_bytes_x".to_vec());
 
         let claims = TokenClaims {
             sub: "user123".to_string(),
@@ -441,6 +542,7 @@ mod tests {
             roles: vec![],
             permissions: vec![],
             iat: 0,
+            nbf: None,
             exp: 1, // Expired in 1970
             iss: config.issuer.clone(),
             aud: config.audience.clone(),
@@ -475,7 +577,7 @@ mod tests {
 
     #[test]
     fn test_token_expiration_check() {
-        let config = JwtConfig::new(b"secret".to_vec());
+        let config = JwtConfig::new(b"secret_padded_to_at_least_32_bytes_x".to_vec());
 
         let claims = TokenClaims {
             sub: "user123".to_string(),
@@ -486,6 +588,7 @@ mod tests {
                 .duration_since(UNIX_EPOCH)
                 .expect("operation should succeed")
                 .as_secs(),
+            nbf: None,
             exp: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .expect("operation should succeed")
@@ -499,10 +602,10 @@ mod tests {
         let token = encode_jwt(&claims, &config).expect("operation should succeed");
 
         // Should not be expired
-        assert!(!is_token_expired(&token).expect("operation should succeed"));
+        assert!(!is_token_expired(&token, &config).expect("operation should succeed"));
 
         // Get expiration time
-        let exp = get_token_expiration(&token).expect("operation should succeed");
+        let exp = get_token_expiration(&token, &config).expect("operation should succeed");
         assert!(exp > 0);
     }
 }

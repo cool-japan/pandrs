@@ -12,12 +12,9 @@ use crate::column::{
     BooleanColumn, Column, ColumnTrait, ColumnType, Float64Column, Int64Column, StringColumn,
 };
 use crate::error::{Error, Result};
-use crate::index::{DataFrameIndex, Index, IndexTrait};
+use crate::index::{DataFrameIndex, IndexTrait};
 
 use super::core::{ColumnView, OptimizedDataFrame};
-
-// Import direct aggregation methods
-use crate::optimized::direct_aggregations::*;
 
 impl OptimizedDataFrame {
     /// Add a column

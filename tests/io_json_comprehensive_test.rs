@@ -5,9 +5,7 @@
 
 use pandrs::io::json::{read_json, write_json, JsonOrient};
 use pandrs::{DataFrame, PandRSError, Series};
-use std::env;
 use std::fs;
-use std::io::Write;
 use std::path::PathBuf;
 
 mod common;

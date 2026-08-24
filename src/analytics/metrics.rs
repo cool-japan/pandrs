@@ -3,7 +3,7 @@
 //! This module provides efficient metrics collection with support for
 //! counters, gauges, histograms, and timers.
 
-use super::{MetricStats, MetricType, MetricValue, TimeResolution};
+use super::{MetricStats, MetricType, MetricValue};
 use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};

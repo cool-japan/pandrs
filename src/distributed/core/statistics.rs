@@ -4,15 +4,9 @@
 //! about datasets, which can be used for query optimization.
 
 use std::collections::HashMap;
-use std::sync::Arc;
 
-use crate::error::Result;
 #[cfg(feature = "distributed")]
-use arrow::array::{self, Array, PrimitiveArray, StringArray};
-#[cfg(feature = "distributed")]
-use arrow::compute::{self, max, min};
-#[cfg(feature = "distributed")]
-use arrow::datatypes::{DataType, Field, Schema, SchemaRef};
+use arrow::datatypes::{DataType, SchemaRef};
 
 /// Statistics for a column
 #[derive(Debug, Clone)]

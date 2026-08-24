@@ -9,7 +9,11 @@ use crate::series::{Series, WindowExt, WindowOps};
 
 /// Extension trait to add window operations to DataFrame
 pub trait DataFrameWindowExt {
-    /// Apply a rolling window operation to a column
+    /// Apply a rolling window operation to a column.
+    ///
+    /// Equivalent to [`DataFrameWindowExt::rolling_with_options`] with
+    /// `min_periods = None` (defaults to `window_size`), `center = false`,
+    /// and `ddof = 1`.
     fn rolling(
         &self,
         window_size: usize,
@@ -18,7 +22,26 @@ pub trait DataFrameWindowExt {
         new_column_name: Option<&str>,
     ) -> Result<DataFrame>;
 
-    /// Apply an expanding window operation to a column
+    /// Apply a rolling window operation to a column with explicit
+    /// `min_periods`, `center`, and `ddof` (used by `"std"`/`"var"`) --
+    /// the string-dispatch equivalent of the options the fluent
+    /// [`crate::dataframe::enhanced_window::DataFrameRolling`] builder
+    /// already exposes.
+    fn rolling_with_options(
+        &self,
+        window_size: usize,
+        column_name: &str,
+        operation: &str,
+        min_periods: Option<usize>,
+        center: bool,
+        ddof: usize,
+        new_column_name: Option<&str>,
+    ) -> Result<DataFrame>;
+
+    /// Apply an expanding window operation to a column.
+    ///
+    /// Equivalent to [`DataFrameWindowExt::expanding_with_options`] with
+    /// `ddof = 1`.
     fn expanding(
         &self,
         min_periods: usize,
@@ -27,13 +50,39 @@ pub trait DataFrameWindowExt {
         new_column_name: Option<&str>,
     ) -> Result<DataFrame>;
 
-    /// Apply an exponentially weighted moving operation to a column
+    /// Apply an expanding window operation to a column with an explicit
+    /// `ddof` (used by `"std"`/`"var"`).
+    fn expanding_with_options(
+        &self,
+        min_periods: usize,
+        column_name: &str,
+        operation: &str,
+        ddof: usize,
+        new_column_name: Option<&str>,
+    ) -> Result<DataFrame>;
+
+    /// Apply an exponentially weighted moving operation to a column.
+    ///
+    /// Equivalent to [`DataFrameWindowExt::ewm_with_options`] with
+    /// `ddof = 1`.
     fn ewm(
         &self,
         column_name: &str,
         operation: &str,
         span: Option<usize>,
         alpha: Option<f64>,
+        new_column_name: Option<&str>,
+    ) -> Result<DataFrame>;
+
+    /// Apply an exponentially weighted moving operation to a column with an
+    /// explicit `ddof` (used by `"std"`/`"var"`).
+    fn ewm_with_options(
+        &self,
+        column_name: &str,
+        operation: &str,
+        span: Option<usize>,
+        alpha: Option<f64>,
+        ddof: usize,
         new_column_name: Option<&str>,
     ) -> Result<DataFrame>;
 }
@@ -46,16 +95,40 @@ impl DataFrameWindowExt for DataFrame {
         operation: &str,
         new_column_name: Option<&str>,
     ) -> Result<DataFrame> {
+        self.rolling_with_options(
+            window_size,
+            column_name,
+            operation,
+            None,
+            false,
+            1,
+            new_column_name,
+        )
+    }
+
+    fn rolling_with_options(
+        &self,
+        window_size: usize,
+        column_name: &str,
+        operation: &str,
+        min_periods: Option<usize>,
+        center: bool,
+        ddof: usize,
+        new_column_name: Option<&str>,
+    ) -> Result<DataFrame> {
         // Get the column as a Series<f64>
         let column = self.get_column_as_f64_legacy(column_name)?;
 
         // Apply the rolling operation
-        let rolling = column.rolling(window_size)?;
+        let rolling = column
+            .rolling(window_size)?
+            .min_periods(min_periods.unwrap_or(window_size))
+            .center(center);
         let result_series = match operation.to_lowercase().as_str() {
             "mean" => rolling.mean()?,
             "sum" => rolling.sum()?,
-            "std" => rolling.std(1)?,
-            "var" => rolling.var(1)?,
+            "std" => rolling.std(ddof)?,
+            "var" => rolling.var(ddof)?,
             "min" => rolling.min()?,
             "max" => rolling.max()?,
             "median" => rolling.median()?,
@@ -68,7 +141,8 @@ impl DataFrameWindowExt for DataFrame {
         };
 
         // Create a new DataFrame with the result
-        let mut new_df = self.clone();
+        let col_names: Vec<&str> = self.column_names().iter().map(|s| s.as_str()).collect();
+        let mut new_df = self.select_columns(&col_names)?;
         let default_name = format!("{}_{}", column_name, operation);
         let result_column_name = new_column_name.unwrap_or(&default_name);
         new_df.add_column(
@@ -86,6 +160,17 @@ impl DataFrameWindowExt for DataFrame {
         operation: &str,
         new_column_name: Option<&str>,
     ) -> Result<DataFrame> {
+        self.expanding_with_options(min_periods, column_name, operation, 1, new_column_name)
+    }
+
+    fn expanding_with_options(
+        &self,
+        min_periods: usize,
+        column_name: &str,
+        operation: &str,
+        ddof: usize,
+        new_column_name: Option<&str>,
+    ) -> Result<DataFrame> {
         // Get the column as a Series<f64>
         let column = self.get_column_as_f64_legacy(column_name)?;
 
@@ -94,8 +179,8 @@ impl DataFrameWindowExt for DataFrame {
         let result_series = match operation.to_lowercase().as_str() {
             "mean" => expanding.mean()?,
             "sum" => expanding.sum()?,
-            "std" => expanding.std(1)?,
-            "var" => expanding.var(1)?,
+            "std" => expanding.std(ddof)?,
+            "var" => expanding.var(ddof)?,
             "min" => expanding.min()?,
             "max" => expanding.max()?,
             "median" => expanding.median()?,
@@ -108,7 +193,8 @@ impl DataFrameWindowExt for DataFrame {
         };
 
         // Create a new DataFrame with the result
-        let mut new_df = self.clone();
+        let col_names: Vec<&str> = self.column_names().iter().map(|s| s.as_str()).collect();
+        let mut new_df = self.select_columns(&col_names)?;
         let default_name = format!("{}_{}", column_name, operation);
         let result_column_name = new_column_name.unwrap_or(&default_name);
         new_df.add_column(
@@ -125,6 +211,18 @@ impl DataFrameWindowExt for DataFrame {
         operation: &str,
         span: Option<usize>,
         alpha: Option<f64>,
+        new_column_name: Option<&str>,
+    ) -> Result<DataFrame> {
+        self.ewm_with_options(column_name, operation, span, alpha, 1, new_column_name)
+    }
+
+    fn ewm_with_options(
+        &self,
+        column_name: &str,
+        operation: &str,
+        span: Option<usize>,
+        alpha: Option<f64>,
+        ddof: usize,
         new_column_name: Option<&str>,
     ) -> Result<DataFrame> {
         // Get the column as a Series<f64>
@@ -145,8 +243,8 @@ impl DataFrameWindowExt for DataFrame {
         // Apply the EWM operation
         let result_series = match operation.to_lowercase().as_str() {
             "mean" => ewm.mean()?,
-            "std" => ewm.std(1)?,
-            "var" => ewm.var(1)?,
+            "std" => ewm.std(ddof)?,
+            "var" => ewm.var(ddof)?,
             _ => {
                 return Err(Error::InvalidValue(format!(
                     "Unsupported EWM operation: {}",
@@ -156,7 +254,8 @@ impl DataFrameWindowExt for DataFrame {
         };
 
         // Create a new DataFrame with the result
-        let mut new_df = self.clone();
+        let col_names: Vec<&str> = self.column_names().iter().map(|s| s.as_str()).collect();
+        let mut new_df = self.select_columns(&col_names)?;
         let default_name = format!("{}_{}", column_name, operation);
         let result_column_name = new_column_name.unwrap_or(&default_name);
         new_df.add_column(
@@ -169,26 +268,19 @@ impl DataFrameWindowExt for DataFrame {
 }
 
 impl DataFrame {
-    /// Legacy helper method to get a column as `Series<f64>`
+    /// Helper method to get a column as `Series<f64>`, regardless of its
+    /// underlying storage type.
+    ///
+    /// This used to accept *only* `Series<String>` columns, so a column
+    /// actually stored as `Series<f64>`/`Series<i64>`/etc. (the normal case
+    /// for numeric data) always failed with `ColumnNotFound` even though it
+    /// existed -- silently turning every rolling/expanding/EWM call in this
+    /// module into a no-op `Ok` for such DataFrames. Delegates to
+    /// [`DataFrame::get_column_numeric_values`], which downcasts the
+    /// column's actual element type once instead of assuming a single
+    /// storage type.
     fn get_column_as_f64_legacy(&self, column_name: &str) -> Result<Series<f64>> {
-        // Try to get the column as a string series first, then parse to f64
-        if let Ok(string_series) = self.get_column::<String>(column_name) {
-            // Parse string values to f64
-            let mut f64_values = Vec::new();
-            for value in string_series.values() {
-                match value.parse::<f64>() {
-                    Ok(val) => f64_values.push(val),
-                    Err(_) => {
-                        return Err(Error::InvalidValue(format!(
-                            "Cannot convert column '{}' to numeric",
-                            column_name
-                        )))
-                    }
-                }
-            }
-            return Series::new(f64_values, Some(column_name.to_string()));
-        }
-
-        Err(Error::ColumnNotFound(column_name.to_string()))
+        let values = self.get_column_numeric_values(column_name)?;
+        Series::new(values, Some(column_name.to_string()))
     }
 }

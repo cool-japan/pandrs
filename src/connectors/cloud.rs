@@ -21,9 +21,7 @@ use bytes::Bytes;
 use futures::StreamExt;
 
 #[cfg(feature = "cloud-storage")]
-use object_store::{
-    path::Path as ObjectPath, GetResult, ObjectMeta, ObjectStore, ObjectStoreExt, PutPayload,
-};
+use object_store::{path::Path as ObjectPath, ObjectMeta, ObjectStore, ObjectStoreExt, PutPayload};
 
 #[cfg(feature = "cloud-storage")]
 use object_store::aws::AmazonS3Builder;
@@ -167,7 +165,7 @@ pub enum FileFormat {
 impl FileFormat {
     /// Detect format from file extension
     pub fn from_extension(path: &str) -> Option<Self> {
-        let extension = path.split('.').last()?.to_lowercase();
+        let extension = path.split('.').next_back()?.to_lowercase();
         match extension.as_str() {
             "csv" => Some(FileFormat::CSV {
                 delimiter: ',',
@@ -264,8 +262,6 @@ fn meta_to_object_metadata(meta: ObjectMeta) -> ObjectMetadata {
 /// Serialize a `DataFrame` into a `PutPayload` using the requested `FileFormat`.
 #[cfg(feature = "cloud-storage")]
 fn df_to_payload(df: &DataFrame, format: &FileFormat) -> Result<PutPayload> {
-    use std::io::Write as IoWrite;
-
     match format {
         FileFormat::CSV { has_header, .. } => {
             let tmp = tempfile::NamedTempFile::new().map_err(|e| Error::IoError(e.to_string()))?;
@@ -317,6 +313,36 @@ fn make_path(key: &str) -> ObjectPath {
     ObjectPath::from(key)
 }
 
+/// Ensure a process-wide rustls [`CryptoProvider`] is installed before the first
+/// cloud client is constructed.
+///
+/// `object_store` 0.14 builds its reqwest HTTP client with reqwest's
+/// `rustls-no-provider` feature. Under that feature reqwest's
+/// `ClientBuilder::build()` **panics** ("No rustls crypto provider is configured")
+/// unless a process-level [`CryptoProvider`] has already been installed — and
+/// `object_store`'s `AmazonS3Builder`/`GoogleCloudStorageBuilder`/
+/// `MicrosoftAzureBuilder` all construct that reqwest client eagerly inside
+/// `build()`. Every S3/GCS/Azure/MinIO client build therefore has to be preceded
+/// by a provider install, so this runs at the top of each `build_store`.
+///
+/// The `ring` provider is installed exactly once (guarded by [`Once`]).
+/// `install_default` returns `Err` when a provider is already installed — by a
+/// previous call here or by another crate — which is success for our purposes, so
+/// the result is ignored. This never panics and never overwrites an existing
+/// provider.
+///
+/// [`CryptoProvider`]: rustls::crypto::CryptoProvider
+/// [`Once`]: std::sync::Once
+#[cfg(feature = "cloud-storage")]
+fn ensure_crypto_provider() {
+    use std::sync::Once;
+    static INSTALL_PROVIDER: Once = Once::new();
+    INSTALL_PROVIDER.call_once(|| {
+        // Ignore Err(already-installed): any installed provider satisfies reqwest.
+        let _ = rustls::crypto::ring::default_provider().install_default();
+    });
+}
+
 // ──────────────────────────────────────────────────────────────────────────────
 // S3 Connector
 // ──────────────────────────────────────────────────────────────────────────────
@@ -361,6 +387,9 @@ impl S3Connector {
 
     #[cfg(feature = "cloud-storage")]
     fn build_store(config: &CloudConfig, bucket: &str) -> Result<Arc<dyn ObjectStore>> {
+        // Install a rustls CryptoProvider before object_store eagerly builds its
+        // reqwest client, otherwise reqwest panics (see `ensure_crypto_provider`).
+        ensure_crypto_provider();
         let mut builder = AmazonS3Builder::new().with_bucket_name(bucket);
 
         match &config.credentials {
@@ -714,6 +743,9 @@ impl GCSConnector {
 
     #[cfg(feature = "cloud-storage")]
     fn build_store(config: &CloudConfig, bucket: &str) -> Result<Arc<dyn ObjectStore>> {
+        // Install a rustls CryptoProvider before object_store eagerly builds its
+        // reqwest client, otherwise reqwest panics (see `ensure_crypto_provider`).
+        ensure_crypto_provider();
         let mut builder = GoogleCloudStorageBuilder::new().with_bucket_name(bucket);
 
         match &config.credentials {
@@ -1044,6 +1076,9 @@ impl AzureConnector {
 
     #[cfg(feature = "cloud-storage")]
     fn build_store(config: &CloudConfig, container: &str) -> Result<Arc<dyn ObjectStore>> {
+        // Install a rustls CryptoProvider before object_store eagerly builds its
+        // reqwest client, otherwise reqwest panics (see `ensure_crypto_provider`).
+        ensure_crypto_provider();
         let mut builder = MicrosoftAzureBuilder::new().with_container_name(container);
 
         match &config.credentials {

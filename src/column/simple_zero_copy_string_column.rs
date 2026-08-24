@@ -51,6 +51,38 @@ impl SimpleZeroCopyStringColumn {
         })
     }
 
+    /// Create a zero-copy string column with a shared pool AND explicit
+    /// NULL positions.
+    ///
+    /// This is what derived-column operations (`to_lowercase_optimized`,
+    /// `to_uppercase_optimized`, `concat_with`, `substring_views`) build on
+    /// top of: transforming a column that has NULLs needs a way to carry
+    /// those NULL positions into the new column. [`Self::with_shared_pool`]
+    /// has no `null_mask` parameter at all, so those operations used to
+    /// hardcode `null_mask: None` on their output -- meaning a source-NULL
+    /// cell (represented as a `String::new()` placeholder so the pool has
+    /// *something* to store) silently read back as a real, non-NULL empty
+    /// string instead of NULL.
+    pub fn with_shared_pool_and_nulls(
+        data: Vec<String>,
+        pool: Arc<SimpleUnifiedStringPool>,
+        nulls: Vec<bool>,
+    ) -> Result<Self> {
+        let string_ids = pool.add_strings(&data)?;
+        let null_mask = if nulls.iter().any(|&is_null| is_null) {
+            Some(crate::column::common::utils::create_bitmask(&nulls))
+        } else {
+            None
+        };
+
+        Ok(Self {
+            pool,
+            string_ids: string_ids.into(),
+            null_mask,
+            name: None,
+        })
+    }
+
     /// Create a zero-copy string column with name
     pub fn with_name(data: Vec<String>, name: impl Into<String>) -> Result<Self> {
         let mut column = Self::new(data)?;
@@ -239,6 +271,33 @@ impl SimpleZeroCopyStringColumn {
         self.pool.stats()
     }
 
+    /// Fallible counterpart of [`ColumnTrait::clone_column`].
+    ///
+    /// `clone_column` must return a bare `Column` (that's the trait's
+    /// signature), so it cannot propagate a lookup failure -- see its
+    /// implementation below for how it now handles that without corrupting
+    /// row count. This method exists for callers that *can* handle a
+    /// `Result` and would rather see the real error (a mismatched
+    /// `string_ids`/`pool` pairing, only reachable via
+    /// [`Self::with_string_ids`], is the only way `get` can fail here).
+    pub fn try_clone_column(&self) -> Result<Column> {
+        let strings = self.to_strings()?;
+        let nulls: Vec<bool> = strings.iter().map(|s| s.is_none()).collect();
+        let string_values: Vec<String> =
+            strings.into_iter().map(|s| s.unwrap_or_default()).collect();
+
+        if nulls.iter().any(|&is_null| is_null) {
+            Ok(Column::String(crate::column::StringColumn::with_nulls(
+                string_values,
+                nulls,
+            )))
+        } else {
+            Ok(Column::String(crate::column::StringColumn::new(
+                string_values,
+            )))
+        }
+    }
+
     /// Create a new column with the same pool but different string IDs
     pub fn with_string_ids(&self, string_ids: Vec<u32>) -> Self {
         Self {
@@ -251,28 +310,59 @@ impl SimpleZeroCopyStringColumn {
 
     /// Case conversion with minimal allocation
     pub fn to_lowercase_optimized(&self) -> Result<SimpleZeroCopyStringColumn> {
+        let mut nulls = Vec::with_capacity(self.string_ids.len());
         let new_strings = self.map_views(|view_opt| match view_opt {
-            Some(view) => view
-                .as_str()
-                .unwrap_or_else(|_| String::new())
-                .to_lowercase(),
-            None => String::new(),
+            Some(view) => match view.as_str() {
+                Ok(s) => {
+                    nulls.push(false);
+                    s.to_lowercase()
+                }
+                Err(_) => {
+                    // A pool lookup/UTF-8 failure is an error, not a
+                    // legitimate empty string -- report it as NULL rather
+                    // than fabricating a non-NULL "".
+                    nulls.push(true);
+                    String::new()
+                }
+            },
+            None => {
+                nulls.push(true);
+                String::new()
+            }
         })?;
 
-        SimpleZeroCopyStringColumn::with_shared_pool(new_strings, Arc::clone(&self.pool))
+        SimpleZeroCopyStringColumn::with_shared_pool_and_nulls(
+            new_strings,
+            Arc::clone(&self.pool),
+            nulls,
+        )
     }
 
     /// Case conversion with minimal allocation
     pub fn to_uppercase_optimized(&self) -> Result<SimpleZeroCopyStringColumn> {
+        let mut nulls = Vec::with_capacity(self.string_ids.len());
         let new_strings = self.map_views(|view_opt| match view_opt {
-            Some(view) => view
-                .as_str()
-                .unwrap_or_else(|_| String::new())
-                .to_uppercase(),
-            None => String::new(),
+            Some(view) => match view.as_str() {
+                Ok(s) => {
+                    nulls.push(false);
+                    s.to_uppercase()
+                }
+                Err(_) => {
+                    nulls.push(true);
+                    String::new()
+                }
+            },
+            None => {
+                nulls.push(true);
+                String::new()
+            }
         })?;
 
-        SimpleZeroCopyStringColumn::with_shared_pool(new_strings, Arc::clone(&self.pool))
+        SimpleZeroCopyStringColumn::with_shared_pool_and_nulls(
+            new_strings,
+            Arc::clone(&self.pool),
+            nulls,
+        )
     }
 
     /// Concatenate strings with another column (zero-copy where possible)
@@ -289,11 +379,18 @@ impl SimpleZeroCopyStringColumn {
         }
 
         let mut new_strings = Vec::with_capacity(self.string_ids.len());
+        let mut nulls = Vec::with_capacity(self.string_ids.len());
 
         for i in 0..self.string_ids.len() {
             let left = self.get_view(i)?;
             let right = other.get_view(i)?;
 
+            // Match pandas `Series.str.cat(other, sep=..)` with its default
+            // `na_rep=None`: the result is NULL wherever EITHER operand is
+            // NULL. The previous implementation instead coalesced a
+            // single-sided NULL to the non-NULL side's raw value, which
+            // silently hid the missingness from the caller instead of
+            // propagating it.
             match (left, right) {
                 (Some(left_view), Some(right_view)) => {
                     let concatenated = format!(
@@ -303,20 +400,20 @@ impl SimpleZeroCopyStringColumn {
                         right_view.as_str()?
                     );
                     new_strings.push(concatenated);
+                    nulls.push(false);
                 }
-                (Some(left_view), None) => {
-                    new_strings.push(left_view.as_str()?);
-                }
-                (None, Some(right_view)) => {
-                    new_strings.push(right_view.as_str()?);
-                }
-                (None, None) => {
-                    new_strings.push(String::new()); // Empty string for NULL + NULL
+                _ => {
+                    new_strings.push(String::new());
+                    nulls.push(true);
                 }
             }
         }
 
-        SimpleZeroCopyStringColumn::with_shared_pool(new_strings, Arc::clone(&self.pool))
+        SimpleZeroCopyStringColumn::with_shared_pool_and_nulls(
+            new_strings,
+            Arc::clone(&self.pool),
+            nulls,
+        )
     }
 }
 
@@ -338,13 +435,42 @@ impl ColumnTrait for SimpleZeroCopyStringColumn {
     }
 
     fn clone_column(&self) -> Column {
-        // Convert to regular StringColumn for compatibility
-        let strings = self.to_strings().unwrap_or_default();
-        let string_values: Vec<String> = strings
-            .into_iter()
-            .map(|opt| opt.unwrap_or_default())
-            .collect();
-        Column::String(crate::column::StringColumn::new(string_values))
+        // Convert to regular StringColumn for compatibility.
+        //
+        // This used to call `self.to_strings().unwrap_or_default()`:
+        // `to_strings` returns ONE `Result` wrapping the whole row vector,
+        // so a single failed per-row pool lookup made the WHOLE conversion
+        // fail, and `unwrap_or_default()` silently turned that `Err` into
+        // an *empty* `Vec` -- collapsing an N-row column to 0 rows instead
+        // of surfacing (or even just isolating) the failure. Iterating
+        // per-cell instead means one bad cell degrades to a NULL in that
+        // one cell, preserving `len() == self.len()` unconditionally. It
+        // also carries this column's own NULLs through, which the old
+        // `StringColumn::new(..)`-only path dropped entirely.
+        let mut string_values = Vec::with_capacity(self.string_ids.len());
+        let mut nulls = Vec::with_capacity(self.string_ids.len());
+
+        for i in 0..self.string_ids.len() {
+            match self.get(i) {
+                Ok(Some(s)) => {
+                    string_values.push(s);
+                    nulls.push(false);
+                }
+                Ok(None) | Err(_) => {
+                    string_values.push(String::new());
+                    nulls.push(true);
+                }
+            }
+        }
+
+        if nulls.iter().any(|&is_null| is_null) {
+            Column::String(crate::column::StringColumn::with_nulls(
+                string_values,
+                nulls,
+            ))
+        } else {
+            Column::String(crate::column::StringColumn::new(string_values))
+        }
     }
 
     fn as_any(&self) -> &dyn Any {
@@ -373,6 +499,7 @@ impl SimpleZeroCopyStringOps for SimpleZeroCopyStringColumn {
 
     fn substring_views(&self, start: usize, end: usize) -> Result<SimpleZeroCopyStringColumn> {
         let mut new_strings = Vec::with_capacity(self.string_ids.len());
+        let mut nulls = Vec::with_capacity(self.string_ids.len());
 
         for i in 0..self.string_ids.len() {
             if let Some(view) = self.get_view(i)? {
@@ -384,14 +511,25 @@ impl SimpleZeroCopyStringOps for SimpleZeroCopyStringColumn {
                     let substring = view.substring(actual_start, actual_end)?;
                     new_strings.push(substring.as_str()?);
                 } else {
+                    // Slicing past the end (or an empty range) is a
+                    // legitimate empty string, not a missing value --
+                    // matches pandas `str.slice`.
                     new_strings.push(String::new());
                 }
+                nulls.push(false);
             } else {
+                // Source row was NULL -- keep it NULL in the derived
+                // column instead of turning it into a real empty string.
                 new_strings.push(String::new());
+                nulls.push(true);
             }
         }
 
-        SimpleZeroCopyStringColumn::with_shared_pool(new_strings, Arc::clone(&self.pool))
+        SimpleZeroCopyStringColumn::with_shared_pool_and_nulls(
+            new_strings,
+            Arc::clone(&self.pool),
+            nulls,
+        )
     }
 }
 
@@ -734,5 +872,103 @@ mod tests {
                 .expect("operation should succeed"),
             "test"
         );
+    }
+
+    #[test]
+    fn null_mask_survives_case_conversion() {
+        let data = vec!["Hello".to_string(), "World".to_string(), "Test".to_string()];
+        let nulls = vec![false, true, false]; // "World" is NULL
+        let column =
+            SimpleZeroCopyStringColumn::with_nulls(data, nulls).expect("operation should succeed");
+
+        let lower = column
+            .to_lowercase_optimized()
+            .expect("operation should succeed");
+        assert_eq!(lower.get(0).expect("ok"), Some("hello".to_string()));
+        assert_eq!(
+            lower.get(1).expect("ok"),
+            None,
+            "NULL must stay NULL, not become an empty string"
+        );
+        assert_eq!(lower.get(2).expect("ok"), Some("test".to_string()));
+
+        let upper = column
+            .to_uppercase_optimized()
+            .expect("operation should succeed");
+        assert_eq!(upper.get(0).expect("ok"), Some("HELLO".to_string()));
+        assert_eq!(upper.get(1).expect("ok"), None);
+        assert_eq!(upper.get(2).expect("ok"), Some("TEST".to_string()));
+    }
+
+    #[test]
+    fn concat_with_propagates_null_like_pandas_str_cat() {
+        let left = SimpleZeroCopyStringColumn::with_nulls(
+            vec!["a".to_string(), "b".to_string(), "c".to_string()],
+            vec![false, true, false],
+        )
+        .expect("ok");
+        let right = SimpleZeroCopyStringColumn::with_nulls(
+            vec!["x".to_string(), "y".to_string(), "z".to_string()],
+            vec![false, false, true],
+        )
+        .expect("ok");
+
+        let result = left.concat_with(&right, "-").expect("ok");
+
+        assert_eq!(result.get(0).expect("ok"), Some("a-x".to_string()));
+        assert_eq!(result.get(1).expect("ok"), None, "left NULL must propagate");
+        assert_eq!(
+            result.get(2).expect("ok"),
+            None,
+            "right NULL must propagate"
+        );
+    }
+
+    #[test]
+    fn substring_views_carries_null_but_keeps_legitimate_empty_strings() {
+        let column = SimpleZeroCopyStringColumn::with_nulls(
+            vec!["hello".to_string(), "hi".to_string(), "world".to_string()],
+            vec![false, true, false],
+        )
+        .expect("ok");
+
+        // Slice past the end of "hi" (len 2): a legitimate empty string,
+        // not NULL.
+        let sliced = column.substring_views(10, 20).expect("ok");
+        assert_eq!(
+            sliced.get(0).expect("ok"),
+            Some(String::new()),
+            "out-of-range slice is an empty string, not NULL"
+        );
+        assert_eq!(
+            sliced.get(1).expect("ok"),
+            None,
+            "a NULL source row must stay NULL, not become an empty string"
+        );
+        assert_eq!(sliced.get(2).expect("ok"), Some(String::new()));
+    }
+
+    #[test]
+    fn clone_column_preserves_row_count_and_nulls() {
+        let data = vec!["a".to_string(), "b".to_string(), "c".to_string()];
+        let nulls = vec![false, true, false];
+        let column =
+            SimpleZeroCopyStringColumn::with_nulls(data, nulls).expect("operation should succeed");
+
+        let cloned = column.clone_column();
+        assert_eq!(cloned.len(), 3, "clone_column must never change row count");
+
+        if let Column::String(string_col) = &cloned {
+            assert_eq!(string_col.get(0).expect("ok"), Some("a"));
+            assert_eq!(string_col.get(1).expect("ok"), None);
+            assert_eq!(string_col.get(2).expect("ok"), Some("c"));
+        } else {
+            panic!("clone_column of a string column must produce Column::String");
+        }
+
+        let via_try = column
+            .try_clone_column()
+            .expect("no lookup failure expected here");
+        assert_eq!(via_try.len(), 3);
     }
 }

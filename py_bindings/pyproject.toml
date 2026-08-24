@@ -4,8 +4,14 @@ build-backend = "maturin"
 
 [project]
 name = "pandrs"
-version = "0.4.0"
+version = "0.4.1"
+description = "Rust-powered DataFrame library for Python with pandas-like API"
+readme = "README.md"
+license = "Apache-2.0"
 requires-python = ">=3.8"
+authors = [
+    { name = "COOLJAPAN OU (Team KitaSan)", email = "contact@cooljapan.tech" },
+]
 classifiers = [
     "Programming Language :: Rust",
     "Programming Language :: Python :: Implementation :: CPython",
@@ -13,10 +19,11 @@ classifiers = [
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Scientific/Engineering :: Information Analysis",
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
-description = "Rust-powered DataFrame library for Python with pandas-like API"
 dependencies = [
     "numpy>=1.20.0",
     "pandas>=1.3.0",
@@ -27,3 +34,6 @@ Repository = "https://github.com/cool-japan/pandrs"
 
 [tool.maturin]
 features = ["pyo3/extension-module"]
+# Ship the pure-Python shim package (compat/jupyter/benchmark helpers) that
+# wraps the compiled extension.
+python-source = "python"

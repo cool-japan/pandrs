@@ -4,7 +4,7 @@
 //! for temporal data analysis.
 
 use crate::core::error::{Error, Result};
-use chrono::{DateTime, Duration, NaiveDateTime, Utc};
+use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;

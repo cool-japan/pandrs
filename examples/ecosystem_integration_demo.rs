@@ -125,7 +125,7 @@ fn arrow_integration_demo(df: &DataFrame) -> Result<()> {
         println!("    ✓ DataFrame recreated with {} rows", df2.row_count());
 
         println!("\n  ⚡ Using Arrow compute kernels...");
-        let result = df.compute_arrow(ArrowOperation::Sum("score".to_string()))?;
+        let _result = df.compute_arrow(ArrowOperation::Sum("score".to_string()))?;
         println!("    ✓ Computed sum using Arrow kernels");
 
         println!("\n  📦 Batch processing demonstration...");

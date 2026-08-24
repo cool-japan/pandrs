@@ -5,10 +5,9 @@
 
 use rayon::prelude::*;
 use scirs2_core::ndarray::{Array, Array1, Array2, Axis};
-use std::sync::Arc;
 
 use crate::error::{Error, Result};
-use crate::gpu::{GpuConfig, GpuError, GpuManager, GpuOperationType};
+use crate::gpu::{GpuManager, GpuOperationType};
 use crate::optimized::dataframe::OptimizedDataFrame;
 use crate::DataFrame;
 use crate::Series;
@@ -119,7 +118,7 @@ impl GpuMatrix {
                     Err(e) => {
                         // If configured to fallback to CPU, do so
                         if manager.context().config().fallback_to_cpu {
-                            println!("Warning: GPU matrix multiplication failed ({}). Falling back to CPU.", e);
+                            log::debug!("Warning: GPU matrix multiplication failed ({}). Falling back to CPU.", e);
                         } else {
                             return Err(e.into());
                         }
@@ -173,7 +172,10 @@ impl GpuMatrix {
                     Err(e) => {
                         // If configured to fallback to CPU, do so
                         if manager.context().config().fallback_to_cpu {
-                            println!("Warning: GPU addition failed ({}). Falling back to CPU.", e);
+                            log::debug!(
+                                "Warning: GPU addition failed ({}). Falling back to CPU.",
+                                e
+                            );
                         } else {
                             return Err(e.into());
                         }
@@ -201,7 +203,7 @@ impl GpuMatrix {
                     Err(e) => {
                         // If configured to fallback to CPU, do so
                         if manager.context().config().fallback_to_cpu {
-                            println!(
+                            log::debug!(
                                 "Warning: GPU subtraction failed ({}). Falling back to CPU.",
                                 e
                             );
@@ -232,7 +234,7 @@ impl GpuMatrix {
                     Err(e) => {
                         // If configured to fallback to CPU, do so
                         if manager.context().config().fallback_to_cpu {
-                            println!(
+                            log::debug!(
                                 "Warning: GPU multiplication failed ({}). Falling back to CPU.",
                                 e
                             );
@@ -263,7 +265,10 @@ impl GpuMatrix {
                     Err(e) => {
                         // If configured to fallback to CPU, do so
                         if manager.context().config().fallback_to_cpu {
-                            println!("Warning: GPU division failed ({}). Falling back to CPU.", e);
+                            log::debug!(
+                                "Warning: GPU division failed ({}). Falling back to CPU.",
+                                e
+                            );
                         } else {
                             return Err(e.into());
                         }
@@ -272,8 +277,15 @@ impl GpuMatrix {
             }
         }
 
-        // Fallback to CPU implementation
-        self.elementwise_operation_cpu(other, |a, b| if b != 0.0 { a / b } else { f64::NAN })
+        // Fallback to CPU implementation. Plain IEEE-754 division: a nonzero
+        // numerator over zero is +-infinity (not NaN), and 0.0 / 0.0 is NaN;
+        // the previous `if b != 0.0 { a / b } else { f64::NAN }` collapsed
+        // both cases to NaN, discarding the sign/magnitude information a
+        // real division-by-zero carries and diverging from the plain `/`
+        // used by every other numeric path in the crate (and from the CUDA
+        // division kernel text that used to live in `cuda.rs`, which itself
+        // forced NaN on any zero divisor regardless of the numerator).
+        self.elementwise_operation_cpu(other, |a, b| a / b)
     }
 
     /// Sum of all elements (with possible GPU acceleration)
@@ -290,7 +302,7 @@ impl GpuMatrix {
                     Err(e) => {
                         // If configured to fallback to CPU, do so
                         if manager.context().config().fallback_to_cpu {
-                            println!("Warning: GPU sum failed ({}). Falling back to CPU.", e);
+                            log::debug!("Warning: GPU sum failed ({}). Falling back to CPU.", e);
                         } else {
                             return Err(e.into());
                         }
@@ -330,7 +342,7 @@ impl GpuMatrix {
                     Err(e) => {
                         // If configured to fallback to CPU, do so
                         if manager.context().config().fallback_to_cpu {
-                            println!("Warning: GPU sort failed ({}). Falling back to CPU.", e);
+                            log::debug!("Warning: GPU sort failed ({}). Falling back to CPU.", e);
                         } else {
                             return Err(e.into());
                         }
@@ -340,7 +352,6 @@ impl GpuMatrix {
         }
 
         // Fallback to CPU implementation using rayon for parallelism
-        let shape = self.data.dim();
         let mut result = self.data.clone();
 
         // Sort each row in parallel
@@ -349,7 +360,18 @@ impl GpuMatrix {
             .par_bridge()
             .for_each(|mut row| {
                 let mut row_vec: Vec<f64> = row.iter().cloned().collect();
-                row_vec.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+                // `total_cmp` gives a real total order over all `f64` values
+                // (NaNs sort as greatest, matching IEEE 754-2019's
+                // `totalOrder` predicate) instead of mapping every NaN
+                // comparison to `Equal`. The latter is not transitive (it
+                // can report `x < NaN`, `NaN == NaN`, and `NaN < x` for the
+                // same `x`), and Rust's sort implementations (pattern-
+                // defeating quicksort, in use since the 1.81 stable-sort
+                // rewrite) detect that kind of inconsistency at runtime and
+                // panic with "user-provided comparison function does not
+                // correctly implement a total order" instead of silently
+                // producing a badly-ordered result.
+                row_vec.sort_by(|a, b| a.total_cmp(b));
 
                 for (i, val) in row_vec.iter().enumerate() {
                     row[i] = *val;
@@ -369,13 +391,20 @@ where
     T: Clone + Copy + Into<f64> + std::fmt::Debug,
 {
     fn gpu_accelerate(&self) -> Result<Self> {
-        // If the series is large enough, use GPU acceleration
-        if self.len() < 10_000 {
-            return Ok(self.clone());
-        }
-
-        // Actual acceleration happens when operations are performed
-        Ok(self.clone())
+        // There is no real GPU kernel behind this entry point (see the
+        // module-level honesty notes throughout `crate::gpu`): GPU
+        // acceleration for element-wise/matrix operations happens per-call
+        // in `GpuMatrix`/`GpuVector`, not as a one-shot transformation of a
+        // `Series`. Returning `Ok(self.clone())` here — the same value
+        // regardless of `is_gpu_acceleratable()` — presented a full clone of
+        // the data as the result of "acceleration" when nothing was
+        // accelerated (and nothing was even attempted); report that
+        // honestly instead of paying for a clone that accomplishes nothing.
+        Err(Error::NotImplemented(
+            "GPU acceleration for Series not implemented (no real CUDA kernel); use GpuVector \
+             for real (CPU-fallback) per-operation dispatch"
+                .into(),
+        ))
     }
 
     fn is_gpu_acceleratable(&self) -> bool {
@@ -387,8 +416,14 @@ where
 /// Add GPU acceleration to DataFrame
 impl GpuAccelerated for DataFrame {
     fn gpu_accelerate(&self) -> Result<Self> {
-        // For now, just return a clone - actual acceleration happens when operations are performed
-        Ok(self.clone())
+        // See `Series::gpu_accelerate` above: no real GPU kernel exists to
+        // run here, so this reports that honestly instead of returning an
+        // unmodified deep copy under an "acceleration" label.
+        Err(Error::NotImplemented(
+            "GPU acceleration for DataFrame not implemented (no real CUDA kernel); use \
+             GpuMatrix for real (CPU-fallback) per-operation dispatch"
+                .into(),
+        ))
     }
 
     fn is_gpu_acceleratable(&self) -> bool {
@@ -409,8 +444,14 @@ impl GpuAccelerated for DataFrame {
 /// Add GPU acceleration to OptimizedDataFrame
 impl GpuAccelerated for OptimizedDataFrame {
     fn gpu_accelerate(&self) -> Result<Self> {
-        // For now, just return a clone - actual acceleration happens when operations are performed
-        Ok(self.clone())
+        // See `Series::gpu_accelerate` above: no real GPU kernel exists to
+        // run here, so this reports that honestly instead of returning an
+        // unmodified deep copy under an "acceleration" label.
+        Err(Error::NotImplemented(
+            "GPU acceleration for OptimizedDataFrame not implemented (no real CUDA kernel); use \
+             GpuMatrix for real (CPU-fallback) per-operation dispatch"
+                .into(),
+        ))
     }
 
     fn is_gpu_acceleratable(&self) -> bool {
@@ -460,7 +501,7 @@ impl GpuVector {
                     Err(e) => {
                         // If configured to fallback to CPU, do so
                         if manager.context().config().fallback_to_cpu {
-                            println!(
+                            log::debug!(
                                 "Warning: GPU dot product failed ({}). Falling back to CPU.",
                                 e
                             );
@@ -521,7 +562,7 @@ impl GpuVector {
                     Err(e) => {
                         // If configured to fallback to CPU, do so
                         if manager.context().config().fallback_to_cpu {
-                            println!(
+                            log::debug!(
                                 "Warning: GPU vector addition failed ({}). Falling back to CPU.",
                                 e
                             );

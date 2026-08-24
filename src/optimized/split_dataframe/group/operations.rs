@@ -1,15 +1,140 @@
 //! Transform, filter, and convenience methods for GroupBy operations
 
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use rayon::prelude::*;
 
 use super::super::core::OptimizedDataFrame;
-use super::types::{AggregateFn, AggregateOp, CustomAggregation, GroupBy};
+use super::types::{AggregateOp, CustomAggregation, GroupBy};
 use crate::column::{BooleanColumn, Column, ColumnTrait, Float64Column, Int64Column, StringColumn};
-use crate::error::Result;
-use crate::lock_safe;
+use crate::error::{Error, Result};
+
+/// Vertically concatenate transformed group frames.
+///
+/// The first frame defines the schema; every other frame must agree on column
+/// count and column types. NULL values are carried through the concatenation
+/// (the data vector keeps a placeholder slot for each missing entry so that the
+/// null mask stays aligned with the values).
+fn concat_group_frames(frames: &[OptimizedDataFrame]) -> Result<OptimizedDataFrame> {
+    let Some(template) = frames.first() else {
+        return Ok(OptimizedDataFrame::new());
+    };
+
+    let mut result = OptimizedDataFrame::new();
+
+    for (col_idx, template_col) in template.columns.iter().enumerate() {
+        let col_name = template
+            .column_names
+            .get(col_idx)
+            .ok_or_else(|| {
+                Error::InvalidOperation(format!(
+                    "transformed group has {} columns but only {} column names",
+                    template.columns.len(),
+                    template.column_names.len()
+                ))
+            })?
+            .clone();
+
+        // Collect every frame's column, requiring a matching type.
+        let mut columns = Vec::with_capacity(frames.len());
+        for frame in frames {
+            let column = frame.columns.get(col_idx).ok_or_else(|| {
+                Error::InvalidOperation(format!(
+                    "transformed group is missing column '{}'",
+                    col_name
+                ))
+            })?;
+            if column.column_type() != template_col.column_type() {
+                return Err(Error::InvalidOperation(format!(
+                    "transformed groups disagree on the type of column '{}': {:?} vs {:?}",
+                    col_name,
+                    template_col.column_type(),
+                    column.column_type()
+                )));
+            }
+            columns.push(column);
+        }
+
+        let column = match template_col {
+            Column::Int64(_) => {
+                let mut values = Vec::new();
+                let mut nulls = Vec::new();
+                for column in &columns {
+                    if let Column::Int64(col) = column {
+                        for i in 0..col.len() {
+                            let value = col.get(i)?;
+                            values.push(value.unwrap_or_default());
+                            nulls.push(value.is_none());
+                        }
+                    }
+                }
+                if nulls.iter().any(|&is_null| is_null) {
+                    Column::Int64(Int64Column::with_nulls(values, nulls))
+                } else {
+                    Column::Int64(Int64Column::new(values))
+                }
+            }
+            Column::Float64(_) => {
+                let mut values = Vec::new();
+                let mut nulls = Vec::new();
+                for column in &columns {
+                    if let Column::Float64(col) = column {
+                        for i in 0..col.len() {
+                            let value = col.get(i)?;
+                            values.push(value.unwrap_or_default());
+                            nulls.push(value.is_none());
+                        }
+                    }
+                }
+                if nulls.iter().any(|&is_null| is_null) {
+                    Column::Float64(Float64Column::with_nulls(values, nulls))
+                } else {
+                    Column::Float64(Float64Column::new(values))
+                }
+            }
+            Column::String(_) => {
+                let mut values = Vec::new();
+                let mut nulls = Vec::new();
+                for column in &columns {
+                    if let Column::String(col) = column {
+                        for i in 0..col.len() {
+                            let value = col.get(i)?;
+                            values.push(value.unwrap_or_default().to_string());
+                            nulls.push(value.is_none());
+                        }
+                    }
+                }
+                if nulls.iter().any(|&is_null| is_null) {
+                    Column::String(StringColumn::with_nulls(values, nulls))
+                } else {
+                    Column::String(StringColumn::new(values))
+                }
+            }
+            Column::Boolean(_) => {
+                let mut values = Vec::new();
+                let mut nulls = Vec::new();
+                for column in &columns {
+                    if let Column::Boolean(col) = column {
+                        for i in 0..col.len() {
+                            let value = col.get(i)?;
+                            values.push(value.unwrap_or_default());
+                            nulls.push(value.is_none());
+                        }
+                    }
+                }
+                if nulls.iter().any(|&is_null| is_null) {
+                    Column::Boolean(BooleanColumn::with_nulls(values, nulls))
+                } else {
+                    Column::Boolean(BooleanColumn::new(values))
+                }
+            }
+        };
+
+        result.add_column(col_name, column)?;
+    }
+
+    Ok(result)
+}
 
 impl<'a> GroupBy<'a> {
     /// Apply a custom aggregation function to a column in parallel
@@ -44,6 +169,9 @@ impl<'a> GroupBy<'a> {
 
     /// Filter groups based on a predicate function
     ///
+    /// Surviving rows are returned in their original row order, as pandas'
+    /// `DataFrameGroupBy.filter` does.
+    ///
     /// # Arguments
     /// * `filter_fn` - Function that determines if a group should be included
     ///
@@ -58,7 +186,7 @@ impl<'a> GroupBy<'a> {
         // Collect indices of groups that pass the filter
         let mut filtered_indices = Vec::new();
 
-        for (_, row_indices) in &self.groups {
+        for (_, row_indices) in self.ordered_groups() {
             // Create a DataFrame for this group
             let group_df = self.df.filter_by_indices(row_indices)?;
 
@@ -67,6 +195,9 @@ impl<'a> GroupBy<'a> {
                 filtered_indices.extend(row_indices.iter().copied());
             }
         }
+
+        // Restore the original row order (group order must not leak into the result)
+        filtered_indices.sort_unstable();
 
         // Create a new DataFrame with the filtered rows
         self.df.filter_by_indices(&filtered_indices)
@@ -92,43 +223,36 @@ impl<'a> GroupBy<'a> {
             return self.filter(move |df| filter_fn(df));
         }
 
-        // Create group keys and indices lists
-        let mut group_keys = Vec::with_capacity(self.groups.len());
-        let mut row_indices_list = Vec::with_capacity(self.groups.len());
+        let ordered = self.ordered_groups();
 
-        for (key, indices) in &self.groups {
-            group_keys.push(key.clone());
-            row_indices_list.push(indices.clone());
+        // Process groups in parallel; failures propagate instead of silently
+        // dropping the group's rows from the result.
+        let kept: Vec<Option<&Vec<usize>>> = ordered
+            .par_iter()
+            .map(|&(_, row_indices)| {
+                let group_df = self.df.filter_by_indices(row_indices)?;
+                Ok(if filter_fn(&group_df) {
+                    Some(row_indices)
+                } else {
+                    None
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        let mut filtered_indices: Vec<usize> = Vec::new();
+        for row_indices in kept.into_iter().flatten() {
+            filtered_indices.extend(row_indices.iter().copied());
         }
-
-        // Process groups in parallel to identify those that pass the filter
-        let filtered_indices = Mutex::new(Vec::new());
-
-        group_keys
-            .into_par_iter()
-            .zip(row_indices_list.into_par_iter())
-            .for_each(|(_, row_indices)| {
-                // Create a DataFrame for this group
-                if let Ok(group_df) = self.df.filter_by_indices(&row_indices) {
-                    // Apply the filter function to determine if this group passes
-                    if filter_fn(&group_df) {
-                        if let Ok(mut indices) =
-                            lock_safe!(filtered_indices, "group operations filtered indices lock")
-                        {
-                            indices.extend(row_indices.iter().copied());
-                        }
-                    }
-                }
-            });
+        filtered_indices.sort_unstable();
 
         // Create a new DataFrame with the filtered rows
-        let indices = filtered_indices
-            .into_inner()
-            .expect("operation should succeed");
-        self.df.filter_by_indices(&indices)
+        self.df.filter_by_indices(&filtered_indices)
     }
 
     /// Transform each group with a given function
+    ///
+    /// Groups are processed in ascending key order, so the concatenated result
+    /// is reproducible instead of depending on hash-map iteration order.
     ///
     /// # Arguments
     /// * `transform_fn` - Function that transforms each group
@@ -141,137 +265,14 @@ impl<'a> GroupBy<'a> {
     {
         let transform_fn = Arc::new(transform_fn);
 
-        // Collect all transformed DataFrames first
-        let mut transformed_dfs = Vec::new();
-
-        // Apply transformation to each group
-        for (_, row_indices) in &self.groups {
-            // Create a DataFrame for this group
+        // Apply transformation to each group, in deterministic key order
+        let mut transformed_dfs = Vec::with_capacity(self.groups.len());
+        for (_, row_indices) in self.ordered_groups() {
             let group_df = self.df.filter_by_indices(row_indices)?;
-
-            // Apply the transformation function
-            let transformed = transform_fn(&group_df)?;
-            transformed_dfs.push(transformed);
+            transformed_dfs.push(transform_fn(&group_df)?);
         }
 
-        // If no groups, return empty DataFrame
-        if transformed_dfs.is_empty() {
-            return Ok(OptimizedDataFrame::new());
-        }
-
-        // Use the first transformed DataFrame as template for column structure
-        let template = &transformed_dfs[0];
-        let mut result = OptimizedDataFrame::new();
-
-        // Collect data for each column
-        for (col_idx, template_col) in template.columns.iter().enumerate() {
-            let col_name = &template.column_names[col_idx];
-
-            match template_col {
-                Column::Int64(_) => {
-                    let mut all_data = Vec::new();
-                    for df in &transformed_dfs {
-                        if let Some(Column::Int64(col)) = df.columns.get(col_idx) {
-                            for i in 0..col.len() {
-                                all_data.push(col.get(i).unwrap_or(None));
-                            }
-                        }
-                    }
-                    let values: Vec<i64> = all_data.iter().filter_map(|&x| x).collect();
-                    let nulls: Vec<bool> = all_data.iter().map(|x| x.is_none()).collect();
-
-                    if nulls.iter().any(|&is_null| is_null) {
-                        result.add_column(
-                            col_name.clone(),
-                            Column::Int64(Int64Column::with_nulls(values, nulls)),
-                        )?;
-                    } else {
-                        result.add_column(
-                            col_name.clone(),
-                            Column::Int64(Int64Column::new(values)),
-                        )?;
-                    }
-                }
-                Column::Float64(_) => {
-                    let mut all_data = Vec::new();
-                    for df in &transformed_dfs {
-                        if let Some(Column::Float64(col)) = df.columns.get(col_idx) {
-                            for i in 0..col.len() {
-                                all_data.push(col.get(i).unwrap_or(None));
-                            }
-                        }
-                    }
-                    let values: Vec<f64> = all_data.iter().filter_map(|&x| x).collect();
-                    let nulls: Vec<bool> = all_data.iter().map(|x| x.is_none()).collect();
-
-                    if nulls.iter().any(|&is_null| is_null) {
-                        result.add_column(
-                            col_name.clone(),
-                            Column::Float64(Float64Column::with_nulls(values, nulls)),
-                        )?;
-                    } else {
-                        result.add_column(
-                            col_name.clone(),
-                            Column::Float64(Float64Column::new(values)),
-                        )?;
-                    }
-                }
-                Column::String(_) => {
-                    let mut all_data = Vec::new();
-                    for df in &transformed_dfs {
-                        if let Some(Column::String(col)) = df.columns.get(col_idx) {
-                            for i in 0..col.len() {
-                                all_data.push(col.get(i).unwrap_or(None));
-                            }
-                        }
-                    }
-                    let values: Vec<String> = all_data
-                        .iter()
-                        .filter_map(|x| x.as_ref())
-                        .map(|s| s.to_string())
-                        .collect();
-                    let nulls: Vec<bool> = all_data.iter().map(|x| x.is_none()).collect();
-
-                    if nulls.iter().any(|&is_null| is_null) {
-                        result.add_column(
-                            col_name.clone(),
-                            Column::String(StringColumn::with_nulls(values, nulls)),
-                        )?;
-                    } else {
-                        result.add_column(
-                            col_name.clone(),
-                            Column::String(StringColumn::new(values)),
-                        )?;
-                    }
-                }
-                Column::Boolean(_) => {
-                    let mut all_data = Vec::new();
-                    for df in &transformed_dfs {
-                        if let Some(Column::Boolean(col)) = df.columns.get(col_idx) {
-                            for i in 0..col.len() {
-                                all_data.push(col.get(i).unwrap_or(None));
-                            }
-                        }
-                    }
-                    let values: Vec<bool> = all_data.iter().filter_map(|&x| x).collect();
-                    let nulls: Vec<bool> = all_data.iter().map(|x| x.is_none()).collect();
-
-                    if nulls.iter().any(|&is_null| is_null) {
-                        result.add_column(
-                            col_name.clone(),
-                            Column::Boolean(BooleanColumn::with_nulls(values, nulls)),
-                        )?;
-                    } else {
-                        result.add_column(
-                            col_name.clone(),
-                            Column::Boolean(BooleanColumn::new(values)),
-                        )?;
-                    }
-                }
-            }
-        }
-
-        Ok(result)
+        concat_group_frames(&transformed_dfs)
     }
 
     /// Transform each group with a given function in parallel
@@ -294,150 +295,19 @@ impl<'a> GroupBy<'a> {
             return self.transform(move |df| transform_fn(df));
         }
 
-        // Create group indices lists
-        let mut row_indices_list = Vec::with_capacity(self.groups.len());
-        for (_, indices) in &self.groups {
-            row_indices_list.push(indices.clone());
-        }
+        let ordered = self.ordered_groups();
 
-        // First, transform the first group to get the structure of the result
-        if row_indices_list.is_empty() {
-            return Ok(OptimizedDataFrame::new());
-        }
-
-        let first_group_df = self.df.filter_by_indices(&row_indices_list[0])?;
-        let first_transformed = transform_fn(&first_group_df)?;
-
-        // Process all groups in parallel to get transformed results
-        let results: Result<Vec<OptimizedDataFrame>> = row_indices_list
-            .into_par_iter()
-            .map(|row_indices| {
-                let group_df = self.df.filter_by_indices(&row_indices)?;
+        // Each group is transformed exactly once and the results stay in group
+        // order, so the concatenation matches the serial implementation.
+        let transformed_dfs: Vec<OptimizedDataFrame> = ordered
+            .par_iter()
+            .map(|&(_, row_indices)| {
+                let group_df = self.df.filter_by_indices(row_indices)?;
                 transform_fn(&group_df)
             })
-            .collect();
+            .collect::<Result<Vec<_>>>()?;
 
-        let mut all_transformed = results?;
-        all_transformed.insert(0, first_transformed);
-
-        // If no transformed DataFrames, return empty
-        if all_transformed.is_empty() {
-            return Ok(OptimizedDataFrame::new());
-        }
-
-        // Use the first DataFrame as template
-        let template = &all_transformed[0];
-        let mut result = OptimizedDataFrame::new();
-
-        // Collect data for each column
-        for (col_idx, template_col) in template.columns.iter().enumerate() {
-            let col_name = &template.column_names[col_idx];
-
-            match template_col {
-                Column::Int64(_) => {
-                    let mut all_data = Vec::new();
-                    for df in &all_transformed {
-                        if let Some(Column::Int64(col)) = df.columns.get(col_idx) {
-                            for i in 0..col.len() {
-                                all_data.push(col.get(i).unwrap_or(None));
-                            }
-                        }
-                    }
-                    let values: Vec<i64> = all_data.iter().filter_map(|&x| x).collect();
-                    let nulls: Vec<bool> = all_data.iter().map(|x| x.is_none()).collect();
-
-                    if nulls.iter().any(|&is_null| is_null) {
-                        result.add_column(
-                            col_name.clone(),
-                            Column::Int64(Int64Column::with_nulls(values, nulls)),
-                        )?;
-                    } else {
-                        result.add_column(
-                            col_name.clone(),
-                            Column::Int64(Int64Column::new(values)),
-                        )?;
-                    }
-                }
-                Column::Float64(_) => {
-                    let mut all_data = Vec::new();
-                    for df in &all_transformed {
-                        if let Some(Column::Float64(col)) = df.columns.get(col_idx) {
-                            for i in 0..col.len() {
-                                all_data.push(col.get(i).unwrap_or(None));
-                            }
-                        }
-                    }
-                    let values: Vec<f64> = all_data.iter().filter_map(|&x| x).collect();
-                    let nulls: Vec<bool> = all_data.iter().map(|x| x.is_none()).collect();
-
-                    if nulls.iter().any(|&is_null| is_null) {
-                        result.add_column(
-                            col_name.clone(),
-                            Column::Float64(Float64Column::with_nulls(values, nulls)),
-                        )?;
-                    } else {
-                        result.add_column(
-                            col_name.clone(),
-                            Column::Float64(Float64Column::new(values)),
-                        )?;
-                    }
-                }
-                Column::String(_) => {
-                    let mut all_data = Vec::new();
-                    for df in &all_transformed {
-                        if let Some(Column::String(col)) = df.columns.get(col_idx) {
-                            for i in 0..col.len() {
-                                all_data.push(col.get(i).unwrap_or(None));
-                            }
-                        }
-                    }
-                    let values: Vec<String> = all_data
-                        .iter()
-                        .filter_map(|x| x.as_ref())
-                        .map(|s| s.to_string())
-                        .collect();
-                    let nulls: Vec<bool> = all_data.iter().map(|x| x.is_none()).collect();
-
-                    if nulls.iter().any(|&is_null| is_null) {
-                        result.add_column(
-                            col_name.clone(),
-                            Column::String(StringColumn::with_nulls(values, nulls)),
-                        )?;
-                    } else {
-                        result.add_column(
-                            col_name.clone(),
-                            Column::String(StringColumn::new(values)),
-                        )?;
-                    }
-                }
-                Column::Boolean(_) => {
-                    let mut all_data = Vec::new();
-                    for df in &all_transformed {
-                        if let Some(Column::Boolean(col)) = df.columns.get(col_idx) {
-                            for i in 0..col.len() {
-                                all_data.push(col.get(i).unwrap_or(None));
-                            }
-                        }
-                    }
-                    let values: Vec<bool> = all_data.iter().filter_map(|&x| x).collect();
-                    let nulls: Vec<bool> = all_data.iter().map(|x| x.is_none()).collect();
-
-                    if nulls.iter().any(|&is_null| is_null) {
-                        result.add_column(
-                            col_name.clone(),
-                            Column::Boolean(BooleanColumn::with_nulls(values, nulls)),
-                        )?;
-                    } else {
-                        result.add_column(
-                            col_name.clone(),
-                            Column::Boolean(BooleanColumn::new(values)),
-                        )?;
-                    }
-                }
-            }
-        }
-
-        Ok(result)
+        concat_group_frames(&transformed_dfs)
     }
 
     /// Aggregation shortcut method: Sum

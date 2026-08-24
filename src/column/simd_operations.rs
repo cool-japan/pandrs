@@ -217,14 +217,41 @@ impl SIMDFloat64Ops for Float64Column {
     }
 
     fn simd_compare_scalar(&self, scalar: f64, op: ComparisonOp) -> Result<Vec<bool>> {
-        let scalar_vec = vec![scalar; self.len()];
-        let mut result = vec![false; self.len()];
-        simd_compare_f64(&self.data, &scalar_vec, op, &mut result)?;
+        // Compare directly against the broadcast scalar instead of
+        // materializing a `vec![scalar; len]` just to reuse the two-array
+        // compare function -- that allocated (and wrote) an entire
+        // column-length buffer purely to hold `len()` copies of one f64.
+        // The comparison rule per `op` mirrors `simd_compare_f64`'s own
+        // portable fallback (same epsilon-based float equality), so this
+        // is architecture-independent by construction rather than
+        // inheriting the exact-vs-epsilon divergence that function has
+        // between its AVX2 path and its scalar fallback (F11).
+        let mut result: Vec<bool> = self
+            .data
+            .iter()
+            .map(|&v| compare_f64(v, scalar, op))
+            .collect();
 
         // Handle null values
         apply_null_mask_to_comparison(&mut result, &self.null_mask, &None);
 
         Ok(result)
+    }
+}
+
+/// Compare a single `f64` pair the same way [`simd_compare_f64`]'s portable
+/// fallback does (epsilon-based equality), used to broadcast a scalar
+/// comparison across a column without allocating a same-length vector of
+/// scalar copies.
+#[inline]
+fn compare_f64(value: f64, scalar: f64, op: ComparisonOp) -> bool {
+    match op {
+        ComparisonOp::Equal => (value - scalar).abs() < f64::EPSILON,
+        ComparisonOp::NotEqual => (value - scalar).abs() >= f64::EPSILON,
+        ComparisonOp::LessThan => value < scalar,
+        ComparisonOp::LessThanEqual => value <= scalar,
+        ComparisonOp::GreaterThan => value > scalar,
+        ComparisonOp::GreaterThanEqual => value >= scalar,
     }
 }
 
@@ -328,9 +355,13 @@ impl SIMDInt64Ops for Int64Column {
     }
 
     fn simd_compare_scalar(&self, scalar: i64, op: ComparisonOp) -> Result<Vec<bool>> {
-        let scalar_vec = vec![scalar; self.len()];
-        let mut result = vec![false; self.len()];
-        simd_compare_i64(&self.data, &scalar_vec, op, &mut result)?;
+        // See the f64 `simd_compare_scalar` above: compare directly against
+        // the broadcast scalar instead of allocating a `vec![scalar; len]`.
+        let mut result: Vec<bool> = self
+            .data
+            .iter()
+            .map(|&v| compare_i64(v, scalar, op))
+            .collect();
 
         apply_null_mask_to_comparison(&mut result, &self.null_mask, &None);
 
@@ -345,6 +376,22 @@ impl SIMDInt64Ops for Int64Column {
             null_mask: self.null_mask.clone(),
             name: None,
         })
+    }
+}
+
+/// Compare a single `i64` pair the same way [`simd_compare_i64`] does
+/// (plain exact comparison -- integers have no epsilon concern), used to
+/// broadcast a scalar comparison across a column without allocating a
+/// same-length vector of scalar copies.
+#[inline]
+fn compare_i64(value: i64, scalar: i64, op: ComparisonOp) -> bool {
+    match op {
+        ComparisonOp::Equal => value == scalar,
+        ComparisonOp::NotEqual => value != scalar,
+        ComparisonOp::LessThan => value < scalar,
+        ComparisonOp::LessThanEqual => value <= scalar,
+        ComparisonOp::GreaterThan => value > scalar,
+        ComparisonOp::GreaterThanEqual => value >= scalar,
     }
 }
 

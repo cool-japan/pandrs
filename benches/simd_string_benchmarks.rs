@@ -10,6 +10,7 @@ use pandrs::optimized::jit::simd_string::{
 };
 
 /// Generate test strings of various sizes
+#[allow(dead_code)]
 fn generate_test_strings(count: usize, len: usize) -> Vec<String> {
     (0..count)
         .map(|i| {
@@ -287,6 +288,7 @@ fn bench_batch_operations(c: &mut Criterion) {
 }
 
 /// Print SIMD feature detection info
+#[allow(dead_code)]
 fn print_simd_info() {
     let stats = SimdStringStats::new();
     println!("\n=== SIMD String Operations Info ===");

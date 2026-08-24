@@ -1,19 +1,23 @@
-//! Multi-GPU support for distributed computation
+//! Multi-GPU coordination scaffolding
 //!
-//! This module provides functionality to distribute computations across multiple GPU devices
-//! for improved performance and memory capacity.
+//! This module provides the structure for distributing computations across
+//! multiple GPU devices (data/model/pipeline-parallel splitting, result
+//! collection, and load-balancing bookkeeping).
+//!
+//! HONESTY NOTE: cudarc 0.19.x does not expose the per-device kernels needed to
+//! actually run these computations on the GPU, so the numerical work (e.g.
+//! `matmul_on_device`) currently executes on the **CPU**, and there is no real
+//! peer-to-peer transfer or device synchronization. The matrix splitting and
+//! result collection are real CPU operations; the device-level steps are
+//! documented honestly as not-yet-implemented rather than being faked.
 
-use scirs2_core::ndarray::{s, Array1, Array2, Axis};
+use scirs2_core::ndarray::{s, Array2};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::error::{Error, Result};
-use crate::gpu::operations::{GpuMatrix, GpuVector};
+use crate::gpu::operations::GpuMatrix;
 use crate::gpu::{GpuConfig, GpuDeviceStatus, GpuError, GpuManager};
-use crate::lock_safe;
-
-#[cfg(cuda_available)]
-use cudarc::driver::CudaContext as CudarcContext;
 
 /// Multi-GPU configuration
 #[derive(Debug, Clone)]
@@ -22,7 +26,14 @@ pub struct MultiGpuConfig {
     pub device_ids: Vec<i32>,
     /// Strategy for distributing work across devices
     pub distribution_strategy: DistributionStrategy,
-    /// Whether to enable peer-to-peer memory access between devices
+    /// Whether to enable peer-to-peer memory access between devices.
+    ///
+    /// Currently inert: [`MultiGpuManager::is_p2p_available`] always reports
+    /// `false` (see [`MultiGpuManager::check_p2p_support`]) regardless of
+    /// this flag, because there is no real device-to-device transfer path
+    /// in this crate to enable in the first place (the compute path runs on
+    /// the CPU; see the module-level honesty note above). This field is
+    /// kept for forward compatibility with a real P2P implementation.
     pub enable_p2p: bool,
     /// Memory limit per device (in bytes)
     pub memory_limit_per_device: usize,
@@ -53,6 +64,7 @@ pub enum DistributionStrategy {
 }
 
 /// Multi-GPU manager for coordinating operations across multiple devices
+#[derive(Clone)]
 pub struct MultiGpuManager {
     /// Configuration
     config: MultiGpuConfig,
@@ -67,6 +79,12 @@ pub struct MultiGpuManager {
 impl MultiGpuManager {
     /// Create a new multi-GPU manager
     pub fn new(config: MultiGpuConfig) -> Result<Self> {
+        if config.device_ids.is_empty() {
+            return Err(Error::InvalidValue(
+                "MultiGpuConfig::device_ids must list at least one device".to_string(),
+            ));
+        }
+
         let mut device_managers = HashMap::new();
         let mut device_statuses = HashMap::new();
 
@@ -96,30 +114,26 @@ impl MultiGpuManager {
         })
     }
 
-    /// Check if peer-to-peer memory access is supported between devices
-    fn check_p2p_support(device_ids: &[i32]) -> bool {
-        #[cfg(cuda_available)]
-        {
-            // Check if all device pairs support P2P
-            for &id1 in device_ids {
-                for &id2 in device_ids {
-                    if id1 != id2 {
-                        // In a real implementation, would check cuDeviceCanAccessPeer
-                        // For now, assume P2P is available
-                    }
-                }
-            }
-            true
-        }
-        #[cfg(not(cuda_available))]
-        {
-            false
-        }
+    /// Check whether peer-to-peer memory access is supported between the
+    /// configured devices.
+    ///
+    /// A real implementation would query `cuDeviceCanAccessPeer` for each device
+    /// pair. That is not implemented, and P2P is never actually used (the compute
+    /// path runs on the CPU), so this conservatively reports `false` rather than
+    /// fabricating P2P availability.
+    fn check_p2p_support(_device_ids: &[i32]) -> bool {
+        false
     }
 
     /// Get the number of available devices
     pub fn device_count(&self) -> usize {
         self.config.device_ids.len()
+    }
+
+    /// Whether peer-to-peer transfers are available between the configured
+    /// devices, as reported by [`Self::check_p2p_support`].
+    pub fn is_p2p_available(&self) -> bool {
+        self.p2p_available
     }
 
     /// Get device status for all devices
@@ -141,7 +155,6 @@ impl MultiGpuManager {
     fn distribute_data_parallel(&self, matrix: &GpuMatrix) -> Result<Vec<(i32, GpuMatrix)>> {
         let num_devices = self.device_count();
         let rows = matrix.data.shape()[0];
-        let cols = matrix.data.shape()[1];
 
         let rows_per_device = (rows + num_devices - 1) / num_devices; // Ceiling division
         let mut distributed = Vec::new();
@@ -166,7 +179,6 @@ impl MultiGpuManager {
     /// Model parallel distribution - split columns across devices
     fn distribute_model_parallel(&self, matrix: &GpuMatrix) -> Result<Vec<(i32, GpuMatrix)>> {
         let num_devices = self.device_count();
-        let rows = matrix.data.shape()[0];
         let cols = matrix.data.shape()[1];
 
         let cols_per_device = (cols + num_devices - 1) / num_devices;
@@ -244,10 +256,21 @@ impl MultiGpuManager {
             )));
         }
 
-        // Concatenate along axis 0 (rows)
-        let first_shape = matrices[0].shape();
+        // Concatenate along axis 0 (rows): every chunk must agree on the
+        // column count, or the `slice_mut(..).assign(..)` below would panic
+        // partway through instead of reporting a clear dimension error.
+        let cols = matrices[0].shape()[1];
+        for (i, matrix) in matrices.iter().enumerate() {
+            if matrix.shape()[1] != cols {
+                return Err(Error::DimensionMismatch(format!(
+                    "Data-parallel result chunk {} has {} columns, expected {} (from chunk 0)",
+                    i,
+                    matrix.shape()[1],
+                    cols
+                )));
+            }
+        }
         let total_rows: usize = matrices.iter().map(|m| m.shape()[0]).sum();
-        let cols = first_shape[1];
 
         let mut result = Array2::zeros((total_rows, cols));
         let mut current_row = 0;
@@ -284,9 +307,20 @@ impl MultiGpuManager {
             )));
         }
 
-        // Concatenate along axis 1 (columns)
-        let first_shape = matrices[0].shape();
-        let rows = first_shape[0];
+        // Concatenate along axis 1 (columns): every chunk must agree on the
+        // row count, or the `slice_mut(..).assign(..)` below would panic
+        // partway through instead of reporting a clear dimension error.
+        let rows = matrices[0].shape()[0];
+        for (i, matrix) in matrices.iter().enumerate() {
+            if matrix.shape()[0] != rows {
+                return Err(Error::DimensionMismatch(format!(
+                    "Model-parallel result chunk {} has {} rows, expected {} (from chunk 0)",
+                    i,
+                    matrix.shape()[0],
+                    rows
+                )));
+            }
+        }
         let total_cols: usize = matrices.iter().map(|m| m.shape()[1]).sum();
 
         let mut result = Array2::zeros((rows, total_cols));
@@ -325,6 +359,28 @@ impl MultiGpuManager {
 
     /// Perform distributed matrix multiplication
     pub fn distributed_matmul(&self, a: &GpuMatrix, b: &GpuMatrix) -> Result<GpuMatrix> {
+        if a.data.shape()[1] != b.data.shape()[0] {
+            return Err(Error::DimensionMismatch(format!(
+                "Incompatible dimensions for matrix multiplication: {:?} and {:?}",
+                a.data.shape(),
+                b.data.shape()
+            )));
+        }
+
+        // Model-parallel splits A by columns (the contraction dimension), so
+        // it needs a matching row-split of B and a *sum* of partial
+        // products — a fundamentally different combination step than the
+        // "each device computes independent full rows/columns, then
+        // concatenate" pattern the other strategies share. Route it to its
+        // own implementation rather than forcing it through
+        // `distribute_matrix`/`collect_results` (which only ever split and
+        // recombine `a`, leaving every device holding the same *entire* `b`
+        // — dimension-mismatched against an A-chunk with fewer columns than
+        // `b` has rows, and provably wrong for any other device count).
+        if self.config.distribution_strategy == DistributionStrategy::ModelParallel {
+            return self.distributed_matmul_model_parallel(a, b);
+        }
+
         // Distribute matrix A across devices
         let distributed_a = self.distribute_matrix(a)?;
 
@@ -332,7 +388,7 @@ impl MultiGpuManager {
         let mut distributed_results = Vec::new();
 
         for (device_id, a_chunk) in distributed_a {
-            if let Some(manager) = self.device_managers.get(&device_id) {
+            if self.device_managers.contains_key(&device_id) {
                 // For data parallel, each device multiplies its chunk of A with full B
                 // In a real implementation, this would be done on the specific GPU device
                 let result_chunk = self.matmul_on_device(&a_chunk, b, device_id)?;
@@ -344,14 +400,63 @@ impl MultiGpuManager {
         self.collect_results(distributed_results)
     }
 
-    /// Perform matrix multiplication on a specific device
-    fn matmul_on_device(&self, a: &GpuMatrix, b: &GpuMatrix, device_id: i32) -> Result<GpuMatrix> {
-        // In a real implementation, this would:
-        // 1. Transfer matrices to the specific GPU device
-        // 2. Perform the multiplication using device-specific CUDA context
-        // 3. Return the result
+    /// Model-parallel matrix multiplication.
+    ///
+    /// `A` (`m x k`) is split into column blocks `A_1 .. A_d` (one per
+    /// device) via [`Self::distribute_model_parallel`]; `B` (`k x n`) is
+    /// split here into the *matching* row blocks `B_1 .. B_d`, so each
+    /// device computes a full-shape (`m x n`) **partial** product `A_i ·
+    /// B_i`. The final result is the element-wise **sum** of those partial
+    /// products (`A · B = sum_i A_i · B_i`), not a concatenation — the
+    /// previous version handed every device the entire, un-split `B` and
+    /// then concatenated the (dimension-mismatched, when more than one
+    /// device was configured) results along columns, which both panicked
+    /// inside `ndarray`'s `dot` for `device_ids.len() > 1` and, had it not
+    /// panicked, would not have reconstructed `A · B` anyway.
+    fn distributed_matmul_model_parallel(&self, a: &GpuMatrix, b: &GpuMatrix) -> Result<GpuMatrix> {
+        let distributed_a = self.distribute_model_parallel(a)?;
 
-        // For now, perform CPU multiplication as fallback
+        let mut col_offset = 0usize;
+        let mut partial_sum: Option<Array2<f64>> = None;
+
+        for (device_id, a_chunk) in distributed_a {
+            let chunk_cols = a_chunk.data.shape()[1];
+            let b_chunk = GpuMatrix {
+                data: b
+                    .data
+                    .slice(s![col_offset..col_offset + chunk_cols, ..])
+                    .to_owned(),
+                on_gpu: false,
+            };
+            col_offset += chunk_cols;
+
+            let partial = self.matmul_on_device(&a_chunk, &b_chunk, device_id)?;
+            partial_sum = Some(match partial_sum {
+                Some(acc) => acc + &partial.data,
+                None => partial.data,
+            });
+        }
+
+        let data = partial_sum.ok_or_else(|| {
+            Error::from(GpuError::KernelExecutionError(
+                "No devices available for model-parallel matmul".to_string(),
+            ))
+        })?;
+
+        Ok(GpuMatrix {
+            data,
+            on_gpu: false,
+        })
+    }
+
+    /// Multiply two matrices for the given device id.
+    ///
+    /// A real implementation would transfer the operands to the specified GPU
+    /// device and run the multiplication with that device's CUDA context.
+    /// cudarc 0.19.x exposes no such path here, so the multiplication is
+    /// performed on the **CPU** (the result is correct; `on_gpu` is `false`).
+    fn matmul_on_device(&self, a: &GpuMatrix, b: &GpuMatrix, device_id: i32) -> Result<GpuMatrix> {
+        let _ = device_id; // per-device routing is not implemented; compute on CPU
         let result_data = a.data.dot(&b.data);
         Ok(GpuMatrix {
             data: result_data,
@@ -359,17 +464,14 @@ impl MultiGpuManager {
         })
     }
 
-    /// Synchronize all devices
+    /// Synchronize all devices.
+    ///
+    /// Currently a no-op: the multi-GPU compute path runs on the CPU (see
+    /// `matmul_on_device`), so there is no outstanding device work to
+    /// synchronize. A real implementation would call `cuDeviceSynchronize` (or
+    /// the cudarc equivalent) per device. This returns `Ok(())` to reflect that
+    /// there is nothing to wait on, not that a device sync was performed.
     pub fn synchronize_all(&self) -> Result<()> {
-        #[cfg(cuda_available)]
-        {
-            for &device_id in &self.config.device_ids {
-                if let Some(manager) = self.device_managers.get(&device_id) {
-                    // In a real implementation, would call cuDeviceSynchronize
-                    // or similar for each device
-                }
-            }
-        }
         Ok(())
     }
 
@@ -399,6 +501,16 @@ impl MultiGpuManager {
         let mut high_util_devices = Vec::new();
 
         for (&device_id, &(used, total)) in &memory_usage {
+            // `total == 0` means the device's memory status was never
+            // populated (`GpuDeviceStatus::total_memory` is `None`, e.g. no
+            // real GPU detected), not "0% utilized" or "100% utilized" —
+            // `0.0 / 0.0` is NaN, which compares `false` to both `< 0.3` and
+            // `> 0.8`, so such devices were already silently excluded from
+            // both buckets; make that explicit instead of relying on NaN's
+            // comparison behavior to do it implicitly.
+            if total == 0 {
+                continue;
+            }
             let utilization = used as f64 / total as f64;
             if utilization < 0.3 {
                 low_util_devices.push(device_id);
@@ -419,45 +531,53 @@ impl MultiGpuManager {
     }
 }
 
-/// Global multi-GPU manager
-static MULTI_GPU_MANAGER: OnceLock<Mutex<MultiGpuManager>> = OnceLock::new();
+/// The global multi-GPU manager. Holding the `Arc` itself in the `OnceLock`
+/// (rather than the bare `MultiGpuManager`) is what lets
+/// `get_multi_gpu_manager` hand out the *same* shared instance below.
+static MULTI_GPU_MANAGER: OnceLock<Arc<Mutex<MultiGpuManager>>> = OnceLock::new();
 
 /// Initialize global multi-GPU manager
 pub fn init_multi_gpu(config: MultiGpuConfig) -> Result<()> {
     let manager = MultiGpuManager::new(config)?;
 
-    MULTI_GPU_MANAGER.set(Mutex::new(manager)).map_err(|_| {
-        Error::InvalidOperation("Multi-GPU manager already initialized".to_string())
-    })?;
+    MULTI_GPU_MANAGER
+        .set(Arc::new(Mutex::new(manager)))
+        .map_err(|_| {
+            Error::InvalidOperation("Multi-GPU manager already initialized".to_string())
+        })?;
 
     Ok(())
 }
 
-/// Get the global multi-GPU manager
+/// Get the global multi-GPU manager.
+///
+/// Returns the *same* `Arc` on every call (constructing it with the default
+/// configuration on first use if [`init_multi_gpu`] was never called
+/// explicitly), not a snapshot clone of the manager's current state. The
+/// previous version reconstructed a brand new `MultiGpuManager` — via a
+/// hand-rolled `Clone` impl that re-ran device enumeration and could panic
+/// via `.expect(..)` if even a single-device fallback construction failed —
+/// wrapped in a brand new `Arc<Mutex<_>>` on every call, so any mutation a
+/// caller made through the returned handle (e.g. [`MultiGpuManager::balance_load`],
+/// which takes `&mut self`) was invisible to every other caller: there was
+/// no shared global state at all, only independent throwaway copies.
+/// `MultiGpuManager` is a plain `#[derive(Clone)]` now (a cheap, infallible
+/// `Arc`-clone of its `GpuManager`s), so nothing here needs that fallback
+/// path any more.
 pub fn get_multi_gpu_manager() -> Result<Arc<Mutex<MultiGpuManager>>> {
-    match MULTI_GPU_MANAGER.get() {
-        Some(manager) => Ok(Arc::new(Mutex::new(
-            lock_safe!(manager, "multi gpu manager lock")?.clone(),
-        ))),
-        None => {
-            // Initialize with default config
-            init_multi_gpu(MultiGpuConfig::default())?;
-            get_multi_gpu_manager()
-        }
+    if let Some(manager) = MULTI_GPU_MANAGER.get() {
+        return Ok(manager.clone());
     }
-}
 
-impl Clone for MultiGpuManager {
-    fn clone(&self) -> Self {
-        // Create a new manager with the same configuration
-        Self::new(self.config.clone()).unwrap_or_else(|_| {
-            // Fallback to single device if cloning fails
-            let fallback_config = MultiGpuConfig {
-                device_ids: vec![0],
-                ..self.config.clone()
-            };
-            Self::new(fallback_config).expect("operation should succeed")
-        })
+    // Construct a candidate without holding any lock (construction does
+    // real device-enumeration work and is fallible), then publish it
+    // atomically. If another thread wins the race, use its published
+    // instance instead of ours so callers never end up split across two
+    // different "global" managers.
+    let candidate = Arc::new(Mutex::new(MultiGpuManager::new(MultiGpuConfig::default())?));
+    match MULTI_GPU_MANAGER.set(candidate.clone()) {
+        Ok(()) => Ok(candidate),
+        Err(_) => Ok(MULTI_GPU_MANAGER.get().cloned().unwrap_or(candidate)),
     }
 }
 

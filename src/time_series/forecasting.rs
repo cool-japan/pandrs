@@ -4,9 +4,9 @@
 //! including ARIMA, exponential smoothing, moving averages, and trend-based methods.
 
 use crate::core::error::{Error, Result};
+use crate::time_series::advanced_forecasting::SarimaForecaster;
 use crate::time_series::core::{DateTimeIndex, Frequency, TimeSeries, TimeSeriesData};
-use crate::time_series::decomposition::{DecompositionMethod, SeasonalDecomposition};
-use chrono::{DateTime, Utc};
+use crate::time_series::stats::normal_critical_value;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -75,6 +75,7 @@ pub struct SimpleMovingAverageForecaster {
     fitted_values: Option<Vec<f64>>,
     last_values: Option<Vec<f64>>,
     index: Option<DateTimeIndex>,
+    residual_std: Option<f64>,
 }
 
 impl SimpleMovingAverageForecaster {
@@ -85,6 +86,7 @@ impl SimpleMovingAverageForecaster {
             fitted_values: None,
             last_values: None,
             index: None,
+            residual_std: None,
         }
     }
 }
@@ -114,9 +116,32 @@ impl Forecaster for SimpleMovingAverageForecaster {
             .filter_map(|idx| ts.values.get_f64(idx))
             .collect();
 
+        // Compute the real in-sample residual standard deviation from the
+        // one-step fitted values (the NaN warm-up region is skipped).
+        let residuals: Vec<f64> = (0..ts.len())
+            .filter_map(|i| {
+                let actual = ts.values.get_f64(i)?;
+                let predicted = fitted[i];
+                if actual.is_finite() && predicted.is_finite() {
+                    Some(actual - predicted)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        let residual_std = if residuals.len() > 1 {
+            let mean = residuals.iter().sum::<f64>() / residuals.len() as f64;
+            let var = residuals.iter().map(|r| (r - mean).powi(2)).sum::<f64>()
+                / (residuals.len() - 1) as f64;
+            var.sqrt()
+        } else {
+            0.0
+        };
+
         self.fitted_values = Some(fitted);
         self.last_values = Some(last_values);
         self.index = Some(ts.index.clone());
+        self.residual_std = Some(residual_std);
 
         Ok(())
     }
@@ -136,7 +161,7 @@ impl Forecaster for SimpleMovingAverageForecaster {
 
         // Calculate prediction intervals (assuming normal distribution)
         let residual_std = self.calculate_residual_std()?;
-        let z_score = self.get_z_score(confidence_level);
+        let z_score = normal_critical_value(confidence_level)?;
         let margin = z_score * residual_std;
 
         // Create forecast dates
@@ -212,19 +237,9 @@ impl Forecaster for SimpleMovingAverageForecaster {
 
 impl SimpleMovingAverageForecaster {
     fn calculate_residual_std(&self) -> Result<f64> {
-        // Simplified residual calculation for demonstration
-        // In practice, this would use actual residuals from fitting
-        Ok(1.0) // Default standard deviation
-    }
-
-    fn get_z_score(&self, confidence_level: f64) -> f64 {
-        // Approximate z-scores for common confidence levels
-        match (confidence_level * 100.0) as i32 {
-            90 => 1.645,
-            95 => 1.96,
-            99 => 2.576,
-            _ => 1.96, // Default to 95%
-        }
+        // Real in-sample residual standard deviation computed during `fit`.
+        self.residual_std
+            .ok_or_else(|| Error::InvalidOperation("Model not fitted".to_string()))
     }
 }
 
@@ -334,7 +349,7 @@ impl Forecaster for LinearTrendForecaster {
         let mut forecast_values = Vec::new();
         let start_x = index.len() as f64;
 
-        let z_score = self.get_z_score(confidence_level);
+        let z_score = normal_critical_value(confidence_level)?;
 
         for i in 1..=periods {
             forecast_dates.push(last_date + duration * i as i32);
@@ -410,16 +425,7 @@ impl Forecaster for LinearTrendForecaster {
     }
 }
 
-impl LinearTrendForecaster {
-    fn get_z_score(&self, confidence_level: f64) -> f64 {
-        match (confidence_level * 100.0) as i32 {
-            90 => 1.645,
-            95 => 1.96,
-            99 => 2.576,
-            _ => 1.96,
-        }
-    }
-}
+impl LinearTrendForecaster {}
 
 /// Exponential Smoothing Forecaster
 #[derive(Debug, Clone)]
@@ -531,14 +537,14 @@ impl Forecaster for ExponentialSmoothingForecaster {
                 // Simple exponential smoothing
                 forecast_values = vec![level; periods];
             }
-            (Some(beta), None, None) => {
+            (Some(_beta), None, None) => {
                 // Double exponential smoothing
                 let trend = self.trend.unwrap_or(0.0);
                 for h in 1..=periods {
                     forecast_values.push(level + h as f64 * trend);
                 }
             }
-            (Some(beta), Some(gamma), Some(seasonal_periods)) => {
+            (Some(_beta), Some(_gamma), Some(seasonal_periods)) => {
                 // Triple exponential smoothing
                 let trend = self.trend.unwrap_or(0.0);
                 let seasonal = self.seasonal.as_ref().ok_or_else(|| {
@@ -568,7 +574,7 @@ impl Forecaster for ExponentialSmoothingForecaster {
 
         // Calculate prediction intervals
         let residual_std = self.residual_std.unwrap_or(1.0);
-        let z_score = self.get_z_score(confidence_level);
+        let z_score = normal_critical_value(confidence_level)?;
         let margin = z_score * residual_std;
 
         let lower_values: Vec<f64> = forecast_values.iter().map(|v| v - margin).collect();
@@ -781,30 +787,21 @@ impl ExponentialSmoothingForecaster {
             _ => "Exponential Smoothing".to_string(),
         }
     }
-
-    fn get_z_score(&self, confidence_level: f64) -> f64 {
-        match (confidence_level * 100.0) as i32 {
-            90 => 1.645,
-            95 => 1.96,
-            99 => 2.576,
-            _ => 1.96,
-        }
-    }
 }
 
-/// ARIMA Forecaster (simplified implementation)
+/// ARIMA(p, d, q) forecaster.
+///
+/// Model coefficients are **estimated from the data**, not hardcoded: this type
+/// delegates to the non-seasonal configuration of [`SarimaForecaster`], which
+/// uses the Levinson-Durbin recursion (Yule-Walker) for the AR coefficients and
+/// autocovariance-based estimation for the MA coefficients. ARIMA(p,d,q) is
+/// exactly SARIMA(p,d,q)(0,0,0) with no seasonal part.
 #[derive(Debug, Clone)]
 pub struct ArimaForecaster {
     p: usize, // AR order
     d: usize, // Differencing order
     q: usize, // MA order
-    ar_params: Option<Vec<f64>>,
-    ma_params: Option<Vec<f64>>,
-    fitted_values: Option<Vec<f64>>,
-    residuals: Option<Vec<f64>>,
-    index: Option<DateTimeIndex>,
-    differenced_series: Option<Vec<f64>>,
-    residual_std: Option<f64>,
+    inner: SarimaForecaster,
 }
 
 impl ArimaForecaster {
@@ -814,13 +811,7 @@ impl ArimaForecaster {
             p,
             d,
             q,
-            ar_params: None,
-            ma_params: None,
-            fitted_values: None,
-            residuals: None,
-            index: None,
-            differenced_series: None,
-            residual_std: None,
+            inner: SarimaForecaster::arima(p, d, q),
         }
     }
 }
@@ -833,180 +824,18 @@ impl Forecaster for ArimaForecaster {
             ));
         }
 
-        // This is a simplified ARIMA implementation
-        // In practice, this would involve maximum likelihood estimation
-
-        // Step 1: Difference the series
-        let mut series = ts.clone();
-        for _ in 0..self.d {
-            series = series.diff(1)?;
-        }
-
-        let differenced_values: Vec<f64> = (self.d..series.len())
-            .filter_map(|i| series.values.get_f64(i))
-            .collect();
-
-        // Step 2: Fit AR and MA parameters (simplified)
-        let ar_params = vec![0.5; self.p]; // Simplified AR parameters
-        let ma_params = vec![0.3; self.q]; // Simplified MA parameters
-
-        // Step 3: Calculate fitted values and residuals
-        let mut fitted = Vec::new();
-        let mut residuals = Vec::new();
-
-        for i in 0..differenced_values.len() {
-            let mut forecast = 0.0;
-
-            // AR component
-            for j in 0..self.p {
-                if i >= j + 1 {
-                    forecast += ar_params[j] * differenced_values[i - j - 1];
-                }
-            }
-
-            // MA component (simplified)
-            for j in 0..self.q {
-                if i >= j + 1 && j < residuals.len() {
-                    forecast += ma_params[j] * residuals[residuals.len() - j - 1];
-                }
-            }
-
-            fitted.push(forecast);
-            residuals.push(differenced_values[i] - forecast);
-        }
-
-        let residual_std =
-            (residuals.iter().map(|r| r * r).sum::<f64>() / residuals.len() as f64).sqrt();
-
-        self.ar_params = Some(ar_params);
-        self.ma_params = Some(ma_params);
-        self.fitted_values = Some(fitted);
-        self.residuals = Some(residuals);
-        self.index = Some(ts.index.clone());
-        self.differenced_series = Some(differenced_values);
-        self.residual_std = Some(residual_std);
-
-        Ok(())
+        // Delegate to the SARIMA engine, which estimates the AR coefficients via
+        // the Levinson-Durbin recursion and the MA coefficients from the residual
+        // autocovariances — no hardcoded parameters.
+        self.inner.fit(ts)
     }
 
     fn forecast(&self, periods: usize, confidence_level: f64) -> Result<ForecastResult> {
-        let ar_params = self
-            .ar_params
-            .as_ref()
-            .ok_or_else(|| Error::InvalidOperation("Model not fitted".to_string()))?;
-        let ma_params = self
-            .ma_params
-            .as_ref()
-            .ok_or_else(|| Error::InvalidOperation("Model not fitted".to_string()))?;
-        let index = self
-            .index
-            .as_ref()
-            .ok_or_else(|| Error::InvalidOperation("Model not fitted".to_string()))?;
-        let differenced = self
-            .differenced_series
-            .as_ref()
-            .ok_or_else(|| Error::InvalidOperation("Model not fitted".to_string()))?;
-        let residuals = self
-            .residuals
-            .as_ref()
-            .ok_or_else(|| Error::InvalidOperation("Model not fitted".to_string()))?;
-
-        // Generate forecasts (simplified)
-        let mut forecasts = Vec::new();
-        let mut last_values = differenced
-            .iter()
-            .rev()
-            .take(self.p)
-            .cloned()
-            .collect::<Vec<_>>();
-        last_values.reverse();
-        let mut last_residuals = residuals
-            .iter()
-            .rev()
-            .take(self.q)
-            .cloned()
-            .collect::<Vec<_>>();
-        last_residuals.reverse();
-
-        for _ in 0..periods {
-            let mut forecast = 0.0;
-
-            // AR component
-            for j in 0..self.p {
-                if j < last_values.len() {
-                    forecast += ar_params[j] * last_values[last_values.len() - 1 - j];
-                }
-            }
-
-            // MA component
-            for j in 0..self.q {
-                if j < last_residuals.len() {
-                    forecast += ma_params[j] * last_residuals[last_residuals.len() - 1 - j];
-                }
-            }
-
-            forecasts.push(forecast);
-
-            // Update for next iteration
-            last_values.push(forecast);
-            if last_values.len() > self.p {
-                last_values.remove(0);
-            }
-
-            last_residuals.push(0.0); // Assume zero residual for future
-            if last_residuals.len() > self.q {
-                last_residuals.remove(0);
-            }
-        }
-
-        // Create forecast dates
-        let last_date = *index
-            .end()
-            .ok_or_else(|| Error::InvalidInput("Time series index has no end date".to_string()))?;
-        let frequency = index.frequency.clone().unwrap_or(Frequency::Daily);
-        let duration = frequency.to_duration();
-
-        let mut forecast_dates = Vec::new();
-        for i in 1..=periods {
-            forecast_dates.push(last_date + duration * i as i32);
-        }
-
-        // Calculate prediction intervals
-        let residual_std = self.residual_std.unwrap_or(1.0);
-        let z_score = self.get_z_score(confidence_level);
-        let margin = z_score * residual_std;
-
-        let lower_values: Vec<f64> = forecasts.iter().map(|v| v - margin).collect();
-        let upper_values: Vec<f64> = forecasts.iter().map(|v| v + margin).collect();
-
-        let forecast_index = DateTimeIndex::with_frequency(forecast_dates, frequency);
-
-        let forecast_ts =
-            TimeSeries::new(forecast_index.clone(), TimeSeriesData::from_vec(forecasts))?;
-        let lower_ci_ts = TimeSeries::new(
-            forecast_index.clone(),
-            TimeSeriesData::from_vec(lower_values),
-        )?;
-        let upper_ci_ts = TimeSeries::new(forecast_index, TimeSeriesData::from_vec(upper_values))?;
-
-        Ok(ForecastResult {
-            forecast: forecast_ts,
-            lower_ci: lower_ci_ts,
-            upper_ci: upper_ci_ts,
-            method: format!("ARIMA({},{},{})", self.p, self.d, self.q),
-            parameters: self.parameters(),
-            metrics: ForecastMetrics {
-                mae: None,
-                mse: None,
-                rmse: None,
-                mape: None,
-                smape: None,
-                aic: None,
-                bic: None,
-                log_likelihood: None,
-            },
-            confidence_level,
-        })
+        let mut result = self.inner.forecast(periods, confidence_level)?;
+        // Re-label the method/parameters as ARIMA (the inner model reports
+        // "SARIMA" with seasonal orders that are all zero here).
+        result.method = format!("ARIMA({},{},{})", self.p, self.d, self.q);
+        Ok(result)
     }
 
     fn name(&self) -> &str {
@@ -1022,27 +851,7 @@ impl Forecaster for ArimaForecaster {
     }
 
     fn fit_metrics(&self, ts: &TimeSeries) -> Result<ForecastMetrics> {
-        let fitted = self
-            .fitted_values
-            .as_ref()
-            .ok_or_else(|| Error::InvalidOperation("Model not fitted".to_string()))?;
-
-        // For ARIMA, we need to account for differencing
-        let mut original_fitted = vec![f64::NAN; self.d];
-        original_fitted.extend(fitted.iter());
-
-        calculate_forecast_metrics(ts, &original_fitted)
-    }
-}
-
-impl ArimaForecaster {
-    fn get_z_score(&self, confidence_level: f64) -> f64 {
-        match (confidence_level * 100.0) as i32 {
-            90 => 1.645,
-            95 => 1.96,
-            99 => 2.576,
-            _ => 1.96,
-        }
+        self.inner.fit_metrics(ts)
     }
 }
 

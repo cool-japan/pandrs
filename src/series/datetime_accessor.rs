@@ -1,6 +1,6 @@
 use crate::core::error::Error as PandrsError;
 use crate::series::base::Series;
-use chrono::{DateTime, Datelike, NaiveDate, NaiveDateTime, TimeZone, Timelike, Utc};
+use chrono::{DateTime, Datelike, NaiveDate, NaiveDateTime, Timelike, Utc};
 use chrono_tz::Tz;
 
 /// DateTime accessor for Series containing datetime data
@@ -8,6 +8,115 @@ use chrono_tz::Tz;
 #[derive(Clone)]
 pub struct DateTimeAccessor {
     series: Series<NaiveDateTime>,
+}
+
+/// Build the "unknown frequency" error shared by [`DateTimeAccessor::floor`],
+/// [`DateTimeAccessor::ceil`], and [`DateTimeAccessor::round`] -- these
+/// previously fell back to silently returning the input unchanged for any
+/// frequency string they didn't recognize (e.g. a typo like `"Hr"`), which
+/// looks identical to a correctly-processed row with no way to tell the
+/// two apart.
+fn unknown_freq_err(freq: &str) -> PandrsError {
+    PandrsError::InvalidValue(format!(
+        "Unknown datetime frequency '{}'. Supported: 'D'/'day', 'H'/'hour', \
+         'T'/'min'/'minute', 'S'/'second', '{{n}}min' (e.g. \"15min\"), '{{n}}S' (e.g. \"30S\")",
+        freq
+    ))
+}
+
+/// Truncate `dt` down to the start of the `freq` bucket it falls in.
+///
+/// Field-based (zeroes out the sub-frequency calendar fields) rather than
+/// epoch/raw-timestamp arithmetic, so this is correct for any
+/// `NaiveDateTime` -- including ones before 1970 -- without having to
+/// separately reason about which direction integer division truncates a
+/// negative epoch timestamp.
+fn floor_to_freq(dt: &NaiveDateTime, freq: &str) -> Result<NaiveDateTime, PandrsError> {
+    match freq {
+        "D" | "day" => Ok(dt.date().and_hms_opt(0, 0, 0).unwrap_or(*dt)),
+        "H" | "hour" => Ok(dt.date().and_hms_opt(dt.hour(), 0, 0).unwrap_or(*dt)),
+        "T" | "min" | "minute" => Ok(dt
+            .date()
+            .and_hms_opt(dt.hour(), dt.minute(), 0)
+            .unwrap_or(*dt)),
+        "S" | "second" => Ok(dt
+            .date()
+            .and_hms_opt(dt.hour(), dt.minute(), dt.second())
+            .unwrap_or(*dt)),
+        // Specific minute intervals like "15min", "30min".
+        freq_str if freq_str.ends_with("min") => {
+            let n = freq_str
+                .trim_end_matches("min")
+                .parse::<u32>()
+                .ok()
+                .filter(|&n| n > 0)
+                .ok_or_else(|| unknown_freq_err(freq))?;
+            let rounded_minute = (dt.minute() / n) * n;
+            Ok(dt
+                .date()
+                .and_hms_opt(dt.hour(), rounded_minute, 0)
+                .unwrap_or(*dt))
+        }
+        // Specific second intervals like "30S", "15S".
+        freq_str if freq_str.ends_with('S') => {
+            let n = freq_str
+                .trim_end_matches('S')
+                .parse::<u32>()
+                .ok()
+                .filter(|&n| n > 0)
+                .ok_or_else(|| unknown_freq_err(freq))?;
+            let rounded_second = (dt.second() / n) * n;
+            Ok(dt
+                .date()
+                .and_hms_opt(dt.hour(), dt.minute(), rounded_second)
+                .unwrap_or(*dt))
+        }
+        _ => Err(unknown_freq_err(freq)),
+    }
+}
+
+/// The fixed duration of one `freq` bucket, paired with [`floor_to_freq`]
+/// to build `ceil`/`round` (the bucket after `floored` is
+/// `floored + freq_period(freq)`).
+fn freq_period(freq: &str) -> Result<chrono::Duration, PandrsError> {
+    match freq {
+        "D" | "day" => Ok(chrono::Duration::days(1)),
+        "H" | "hour" => Ok(chrono::Duration::hours(1)),
+        "T" | "min" | "minute" => Ok(chrono::Duration::minutes(1)),
+        "S" | "second" => Ok(chrono::Duration::seconds(1)),
+        freq_str if freq_str.ends_with("min") => freq_str
+            .trim_end_matches("min")
+            .parse::<i64>()
+            .ok()
+            .filter(|&n| n > 0)
+            .map(chrono::Duration::minutes)
+            .ok_or_else(|| unknown_freq_err(freq)),
+        freq_str if freq_str.ends_with('S') => freq_str
+            .trim_end_matches('S')
+            .parse::<i64>()
+            .ok()
+            .filter(|&n| n > 0)
+            .map(chrono::Duration::seconds)
+            .ok_or_else(|| unknown_freq_err(freq)),
+        _ => Err(unknown_freq_err(freq)),
+    }
+}
+
+/// Round `dt` to the nearest multiple of `freq`; a value exactly halfway
+/// between two boundaries rounds up, to the later one.
+fn round_to_freq(dt: &NaiveDateTime, freq: &str) -> Result<NaiveDateTime, PandrsError> {
+    let floored = floor_to_freq(dt, freq)?;
+    if floored == *dt {
+        return Ok(floored);
+    }
+    let ceiled = floored + freq_period(freq)?;
+    let down_delta = *dt - floored;
+    let up_delta = ceiled - *dt;
+    if up_delta <= down_delta {
+        Ok(ceiled)
+    } else {
+        Ok(floored)
+    }
 }
 
 impl DateTimeAccessor {
@@ -187,10 +296,9 @@ impl DateTimeAccessor {
             .map_err(|e| PandrsError::Type(format!("Failed to create series: {:?}", e)))
     }
 
-    /// Round datetime to specified frequency
+    /// Round datetime *down* to the specified frequency (truncate).
     ///
-    /// # Arguments
-    /// * `freq` - Frequency string: "D"/"day", "H"/"hour", "T"/"min"/"minute", "S"/"second", "15min", "30S", etc.
+    /// See [`DateTimeAccessor::round`] for the supported `freq` strings.
     ///
     /// # Examples
     /// ```
@@ -198,7 +306,75 @@ impl DateTimeAccessor {
     /// use chrono::{NaiveDate, Timelike};
     /// let data = vec![NaiveDate::from_ymd_opt(2023, 12, 25).expect("operation should succeed").and_hms_opt(14, 30, 45).expect("operation should succeed")];
     /// let series = Series::new(data, None).expect("operation should succeed");
+    /// let floored = series.dt().expect("operation should succeed").floor("H").expect("operation should succeed");
+    /// assert_eq!(floored.values()[0].hour(), 14);
+    /// assert_eq!(floored.values()[0].minute(), 0);
+    /// ```
+    pub fn floor(&self, freq: &str) -> Result<Series<NaiveDateTime>, PandrsError> {
+        let floored: Vec<NaiveDateTime> = self
+            .series
+            .values()
+            .iter()
+            .map(|dt| floor_to_freq(dt, freq))
+            .collect::<Result<_, PandrsError>>()?;
+
+        Series::new(floored, self.series.name().cloned())
+            .map_err(|e| PandrsError::Type(format!("Failed to create series: {:?}", e)))
+    }
+
+    /// Round datetime *up* to the specified frequency.
+    ///
+    /// See [`DateTimeAccessor::round`] for the supported `freq` strings.
+    /// Values already exactly on a frequency boundary are left unchanged
+    /// (not bumped to the *next* boundary).
+    ///
+    /// # Examples
+    /// ```
+    /// use pandrs::Series;
+    /// use chrono::{NaiveDate, Timelike};
+    /// let data = vec![NaiveDate::from_ymd_opt(2023, 12, 25).expect("operation should succeed").and_hms_opt(14, 30, 45).expect("operation should succeed")];
+    /// let series = Series::new(data, None).expect("operation should succeed");
+    /// let ceiled = series.dt().expect("operation should succeed").ceil("H").expect("operation should succeed");
+    /// assert_eq!(ceiled.values()[0].hour(), 15);
+    /// assert_eq!(ceiled.values()[0].minute(), 0);
+    /// ```
+    pub fn ceil(&self, freq: &str) -> Result<Series<NaiveDateTime>, PandrsError> {
+        let ceiled: Vec<NaiveDateTime> = self
+            .series
+            .values()
+            .iter()
+            .map(|dt| {
+                let floored = floor_to_freq(dt, freq)?;
+                if floored == *dt {
+                    Ok(floored)
+                } else {
+                    Ok(floored + freq_period(freq)?)
+                }
+            })
+            .collect::<Result<_, PandrsError>>()?;
+
+        Series::new(ceiled, self.series.name().cloned())
+            .map_err(|e| PandrsError::Type(format!("Failed to create series: {:?}", e)))
+    }
+
+    /// Round datetime to the *nearest* multiple of the specified frequency
+    /// (round-half-up: a value exactly halfway between two boundaries
+    /// rounds to the later one).
+    ///
+    /// # Arguments
+    /// * `freq` - Frequency string: "D"/"day", "H"/"hour", "T"/"min"/"minute", "S"/"second", "{n}min" (e.g. "15min"), "{n}S" (e.g. "30S").
+    ///
+    /// Returns an error for an unrecognized `freq` rather than silently
+    /// returning the input unchanged.
+    ///
+    /// # Examples
+    /// ```
+    /// use pandrs::Series;
+    /// use chrono::{NaiveDate, Timelike};
+    /// let data = vec![NaiveDate::from_ymd_opt(2023, 12, 25).expect("operation should succeed").and_hms_opt(14, 20, 0).expect("operation should succeed")];
+    /// let series = Series::new(data, None).expect("operation should succeed");
     /// let rounded = series.dt().expect("operation should succeed").round("H").expect("operation should succeed");
+    /// // 14:20 is closer to 14:00 than to 15:00, so it rounds down.
     /// assert_eq!(rounded.values()[0].hour(), 14);
     /// assert_eq!(rounded.values()[0].minute(), 0);
     /// ```
@@ -207,44 +383,8 @@ impl DateTimeAccessor {
             .series
             .values()
             .iter()
-            .map(|dt| {
-                match freq {
-                    "D" | "day" => dt.date().and_hms_opt(0, 0, 0).unwrap_or(*dt),
-                    "H" | "hour" => dt.date().and_hms_opt(dt.hour(), 0, 0).unwrap_or(*dt),
-                    "T" | "min" | "minute" => dt
-                        .date()
-                        .and_hms_opt(dt.hour(), dt.minute(), 0)
-                        .unwrap_or(*dt),
-                    "S" | "second" => dt
-                        .date()
-                        .and_hms_opt(dt.hour(), dt.minute(), dt.second())
-                        .unwrap_or(*dt),
-                    // Support for specific minute intervals like "15min", "30min"
-                    freq_str if freq_str.ends_with("min") => {
-                        if let Ok(minutes) = freq_str.trim_end_matches("min").parse::<u32>() {
-                            let rounded_minute = (dt.minute() / minutes) * minutes;
-                            dt.date()
-                                .and_hms_opt(dt.hour(), rounded_minute, 0)
-                                .unwrap_or(*dt)
-                        } else {
-                            *dt
-                        }
-                    }
-                    // Support for specific second intervals like "30S", "15S"
-                    freq_str if freq_str.ends_with("S") => {
-                        if let Ok(seconds) = freq_str.trim_end_matches("S").parse::<u32>() {
-                            let rounded_second = (dt.second() / seconds) * seconds;
-                            dt.date()
-                                .and_hms_opt(dt.hour(), dt.minute(), rounded_second)
-                                .unwrap_or(*dt)
-                        } else {
-                            *dt
-                        }
-                    }
-                    _ => *dt, // Unknown frequency, return original
-                }
-            })
-            .collect();
+            .map(|dt| round_to_freq(dt, freq))
+            .collect::<Result<_, PandrsError>>()?;
 
         Series::new(rounded, self.series.name().cloned())
             .map_err(|e| PandrsError::Type(format!("Failed to create series: {:?}", e)))

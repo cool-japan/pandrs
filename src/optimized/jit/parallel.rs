@@ -3,10 +3,7 @@
 //! This module provides parallel implementations of common aggregation operations.
 
 use super::config::ParallelConfig;
-use super::core::{JitCompilable, JitFunction};
-use super::{JitError, JitResult};
 use rayon::prelude::*;
-use std::sync::Arc;
 
 /// A parallel JIT function that can execute operations across multiple threads
 pub struct ParallelJitFunction<F, T, R> {
@@ -348,6 +345,11 @@ pub mod immediate {
 
 #[cfg(test)]
 mod tests {
+    // `1.4142135623730951` below is the asserted expected value of `std([1..=5])`
+    // (which equals sqrt(2)), i.e. test-fixture data, not a use of `SQRT_2`; the
+    // `approx_constant` correctness lint is silenced for the test module rather
+    // than rewriting the asserted value.
+    #![allow(clippy::approx_constant)]
     use super::*;
 
     #[test]

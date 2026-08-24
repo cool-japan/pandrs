@@ -2,11 +2,8 @@
 
 #[cfg(feature = "distributed")]
 use pandrs::distributed::expr::{
-    ColumnMeta, ColumnProjection, Expr, ExprDataType, ExprSchema, ExprValidator, InferredType,
-    UdfDefinition,
+    ColumnMeta, ColumnProjection, Expr, ExprDataType, ExprSchema, ExprValidator,
 };
-#[cfg(feature = "distributed")]
-use pandrs::distributed::DistributedContext;
 #[cfg(feature = "distributed")]
 use pandrs::error::Result;
 

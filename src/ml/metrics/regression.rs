@@ -1,9 +1,6 @@
 //! Regression model evaluation metrics
 
 use crate::error::{Error, Result};
-use crate::optimized::OptimizedDataFrame;
-use crate::series::Series;
-use std::cmp::Ordering;
 
 #[cfg(test)]
 mod tests {

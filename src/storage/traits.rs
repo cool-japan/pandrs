@@ -4,9 +4,9 @@
 //! It enables pluggable storage backends with performance-based selection.
 
 use crate::core::error::{Error, Result};
-use std::any::Any;
 use std::collections::HashMap;
 use std::ops::Range;
+use std::sync::Mutex;
 
 /// Configuration for storage engines
 #[derive(Debug, Clone)]
@@ -107,11 +107,16 @@ impl DataChunk {
         Self { data, metadata }
     }
 
-    /// Create test data chunk
+    /// Create a chunk of `size` zero bytes, described honestly as one
+    /// single-byte column of `size` rows.
+    ///
+    /// Intended for tests, benchmarks and examples. It used to claim
+    /// `size / 8` rows on an invented "8 bytes per row" assumption, which made
+    /// every consumer's row accounting wrong for any other element width.
     pub fn new_test_data(size: usize) -> Self {
         let data = vec![0u8; size];
         let metadata = ChunkMetadata {
-            row_count: size / 8, // Assume 8 bytes per row
+            row_count: size,
             column_count: 1,
             compression: CompressionPreference::None,
             uncompressed_size: size,
@@ -123,6 +128,101 @@ impl DataChunk {
     /// Get chunk size in bytes
     pub fn size(&self) -> usize {
         self.data.len()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Bridges between the engine layer (this module) and the strategy layer
+// (`crate::storage::unified_memory`).
+//
+// The two layers keep separate enums because the strategy layer models states
+// the engine layer does not (`Speed::VerySlow`, `Efficiency::Outstanding`,
+// `DurabilityLevel::HighDurability`, ...). Rather than duplicate the mapping
+// logic at every call site, the faithful conversions live here once.
+// ---------------------------------------------------------------------------
+
+use crate::storage::unified_memory as unified;
+
+impl From<Speed> for unified::Speed {
+    fn from(speed: Speed) -> Self {
+        match speed {
+            Speed::Slow => unified::Speed::Slow,
+            Speed::Medium => unified::Speed::Medium,
+            Speed::Fast => unified::Speed::Fast,
+            Speed::VeryFast => unified::Speed::VeryFast,
+        }
+    }
+}
+
+impl From<Efficiency> for unified::Efficiency {
+    fn from(efficiency: Efficiency) -> Self {
+        match efficiency {
+            Efficiency::Poor => unified::Efficiency::Poor,
+            Efficiency::Fair => unified::Efficiency::Fair,
+            Efficiency::Good => unified::Efficiency::Good,
+            Efficiency::Excellent => unified::Efficiency::Excellent,
+        }
+    }
+}
+
+impl From<AccessPattern> for unified::AccessPattern {
+    fn from(pattern: AccessPattern) -> Self {
+        match pattern {
+            AccessPattern::Sequential => unified::AccessPattern::Sequential,
+            AccessPattern::Random => unified::AccessPattern::Random,
+            AccessPattern::Streaming => unified::AccessPattern::Streaming,
+            AccessPattern::Columnar => unified::AccessPattern::Columnar,
+            // The engine layer's read/write skew has no direct counterpart in
+            // the strategy layer's locality vocabulary; both describe workloads
+            // dominated by repeated access to the same working set.
+            AccessPattern::ReadHeavy => unified::AccessPattern::HighLocality,
+            AccessPattern::WriteHeavy => unified::AccessPattern::LowLocality,
+        }
+    }
+}
+
+impl From<DurabilityLevel> for unified::DurabilityLevel {
+    fn from(level: DurabilityLevel) -> Self {
+        match level {
+            DurabilityLevel::Temporary => unified::DurabilityLevel::Temporary,
+            DurabilityLevel::Cached => unified::DurabilityLevel::Session,
+            DurabilityLevel::Persistent => unified::DurabilityLevel::Durable,
+        }
+    }
+}
+
+impl From<unified::DurabilityLevel> for DurabilityLevel {
+    fn from(level: unified::DurabilityLevel) -> Self {
+        match level {
+            unified::DurabilityLevel::Temporary => DurabilityLevel::Temporary,
+            unified::DurabilityLevel::Session => DurabilityLevel::Cached,
+            // The engine layer has no replication tier; both durable levels
+            // map onto its strongest guarantee (fsync on write).
+            unified::DurabilityLevel::Durable | unified::DurabilityLevel::HighDurability => {
+                DurabilityLevel::Persistent
+            }
+        }
+    }
+}
+
+impl From<CompressionPreference> for unified::CompressionPreference {
+    fn from(preference: CompressionPreference) -> Self {
+        match preference {
+            CompressionPreference::None => unified::CompressionPreference::None,
+            CompressionPreference::Auto => unified::CompressionPreference::Auto,
+            CompressionPreference::Fast => unified::CompressionPreference::Fast,
+            CompressionPreference::Best => unified::CompressionPreference::High,
+        }
+    }
+}
+
+impl From<PerformancePriority> for unified::PerformancePriority {
+    fn from(priority: PerformancePriority) -> Self {
+        match priority {
+            PerformancePriority::Speed => unified::PerformancePriority::Speed,
+            PerformancePriority::Memory => unified::PerformancePriority::Memory,
+            PerformancePriority::Balanced => unified::PerformancePriority::Balanced,
+        }
     }
 }
 
@@ -343,7 +443,7 @@ pub struct StorageHandle {
 pub enum StorageHandleInner {
     ColumnStore(crate::storage::column_store::ColumnStoreHandle),
     MemoryMapped(MemoryMappedHandle),
-    DiskStorage(DiskStorageHandle),
+    DiskStorage(crate::storage::disk::DiskStorageHandle),
     StringPool(StringPoolHandle),
 }
 
@@ -399,12 +499,19 @@ pub use handles::*;
 pub struct UnifiedStorageManager {
     /// Column store engine
     column_store: Option<crate::storage::ColumnStore>,
+    /// File-backed engine, created on first use under [`Self::disk_root`]
+    disk_storage: Option<crate::storage::disk::DiskStorage>,
+    /// Directory the disk engine is rooted at
+    disk_root: std::path::PathBuf,
     /// Storage strategy for engine selection
     strategy: Box<dyn StorageStrategy>,
     /// Active storage handles
     handles: HashMap<StorageHandleId, StorageHandle>,
-    /// Performance monitor for optimization
-    monitor: PerformanceMonitor,
+    /// Performance monitor fed by every read and write.
+    ///
+    /// Behind a `Mutex` because `read_chunk` takes `&self`; the field used to be
+    /// a plain `PerformanceMonitor` that nothing ever wrote to.
+    monitor: Mutex<PerformanceMonitor>,
     /// Next handle ID
     next_handle_id: StorageHandleId,
 }
@@ -494,14 +601,64 @@ impl Default for PerformanceMonitor {
 }
 
 impl UnifiedStorageManager {
-    /// Create a new unified storage manager
+    /// Create a new unified storage manager.
+    ///
+    /// The file-backed engine is rooted at a process-specific directory under
+    /// [`std::env::temp_dir`]; use [`UnifiedStorageManager::with_disk_root`] to
+    /// place it somewhere durable.
     pub fn new() -> Self {
+        static NEXT_ROOT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(1);
+        let root = std::env::temp_dir().join(format!(
+            "pandrs_unified_storage_{}_{}",
+            std::process::id(),
+            NEXT_ROOT.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+        ));
+        Self::with_disk_root(root)
+    }
+
+    /// Create a manager whose file-backed engine lives under `disk_root`.
+    pub fn with_disk_root<P: Into<std::path::PathBuf>>(disk_root: P) -> Self {
         Self {
             column_store: Some(crate::storage::ColumnStore::new()),
+            disk_storage: None,
+            disk_root: disk_root.into(),
             strategy: Box::new(DefaultStorageStrategy::new()),
             handles: HashMap::new(),
-            monitor: PerformanceMonitor::new(),
+            monitor: Mutex::new(PerformanceMonitor::new()),
             next_handle_id: 1,
+        }
+    }
+
+    /// The file-backed engine, created on first use.
+    fn disk_engine(&mut self) -> Result<&mut crate::storage::disk::DiskStorage> {
+        if self.disk_storage.is_none() {
+            self.disk_storage = Some(crate::storage::disk::DiskStorage::new(&self.disk_root)?);
+        }
+        self.disk_storage.as_mut().ok_or_else(|| {
+            Error::InvalidOperation("Disk storage engine is unavailable".to_string())
+        })
+    }
+
+    /// Metrics observed for `engine_id`, or `None` if it has served no
+    /// operation yet.
+    pub fn engine_metrics(&self, engine_id: StorageEngineId) -> Option<EngineMetrics> {
+        self.monitor
+            .lock()
+            .ok()
+            .and_then(|monitor| monitor.get_metrics(engine_id).cloned())
+    }
+
+    /// Record one completed operation, ignoring a poisoned monitor lock rather
+    /// than failing the storage operation that already succeeded.
+    fn record(
+        &self,
+        engine_id: StorageEngineId,
+        operation: &Operation,
+        latency: std::time::Duration,
+    ) {
+        match self.monitor.lock() {
+            Ok(mut monitor) => monitor.record_operation(engine_id, operation, latency),
+            Err(_) => log::warn!("Storage performance monitor lock is poisoned; sample dropped"),
         }
     }
 
@@ -525,9 +682,19 @@ impl UnifiedStorageManager {
                     ));
                 }
             }
+            StorageEngineId::DiskStorage => {
+                let config = requirements.config.clone();
+                let handle = self.disk_engine()?.create_storage(&config)?;
+                StorageHandleInner::DiskStorage(handle)
+            }
+            // `MemoryMapped` maps an *existing* file read-only (see
+            // `storage::memory_mapped`) and `StringPool`/`Hybrid` are reached
+            // through `storage::unified_manager`, so neither can back a
+            // create-then-write request here.
             _ => {
                 return Err(Error::NotImplemented(format!(
-                    "Storage engine {:?}",
+                    "Storage engine {:?} cannot create writable storage; use \
+                     storage::unified_manager::UnifiedMemoryManager for it",
                     engine_id
                 )));
             }
@@ -560,21 +727,42 @@ impl UnifiedStorageManager {
             Error::InvalidOperation("Invalid handle ID for read_chunk".to_string())
         })?;
 
-        match (&handle.engine_id, &handle.inner_handle) {
+        let started = std::time::Instant::now();
+        let result = match (&handle.engine_id, &handle.inner_handle) {
             (StorageEngineId::ColumnStore, StorageHandleInner::ColumnStore(cs_handle)) => {
                 if let Some(ref engine) = self.column_store {
-                    engine.read_chunk(cs_handle, range)
+                    engine.read_chunk(cs_handle, range.clone())
                 } else {
                     Err(Error::InvalidOperation(
                         "Column store not available for read_chunk".to_string(),
                     ))
                 }
             }
+            (StorageEngineId::DiskStorage, StorageHandleInner::DiskStorage(disk_handle)) => {
+                match self.disk_storage {
+                    Some(ref engine) => engine.read_chunk(disk_handle, range.clone()),
+                    None => Err(Error::InvalidOperation(
+                        "Disk storage engine not initialised for read_chunk".to_string(),
+                    )),
+                }
+            }
             _ => Err(Error::NotImplemented(format!(
                 "Engine {:?}",
                 handle.engine_id
             ))),
+        };
+
+        if let Ok(ref chunk) = result {
+            self.record(
+                handle.engine_id,
+                &Operation::Read {
+                    size: chunk.data.len(),
+                    range,
+                },
+                started.elapsed(),
+            );
         }
+        result
     }
 
     /// Write chunk to storage
@@ -583,6 +771,10 @@ impl UnifiedStorageManager {
             Error::InvalidOperation("Invalid handle ID for write_chunk".to_string())
         })?;
 
+        let engine_id = handle.engine_id;
+        let written = chunk.data.len();
+        let compressed = chunk.metadata.compression != CompressionPreference::None;
+        let started = std::time::Instant::now();
         let result = match (&handle.engine_id, &handle.inner_handle) {
             (StorageEngineId::ColumnStore, StorageHandleInner::ColumnStore(cs_handle)) => {
                 if let Some(ref mut engine) = self.column_store {
@@ -593,6 +785,14 @@ impl UnifiedStorageManager {
                     ))
                 }
             }
+            (StorageEngineId::DiskStorage, StorageHandleInner::DiskStorage(disk_handle)) => {
+                match self.disk_storage {
+                    Some(ref mut engine) => engine.write_chunk(disk_handle, chunk),
+                    None => Err(Error::InvalidOperation(
+                        "Disk storage engine not initialised for write_chunk".to_string(),
+                    )),
+                }
+            }
             _ => Err(Error::NotImplemented(format!(
                 "Engine {:?}",
                 handle.engine_id
@@ -601,6 +801,14 @@ impl UnifiedStorageManager {
 
         // Update handle metadata on success
         if result.is_ok() {
+            self.record(
+                engine_id,
+                &Operation::Write {
+                    size: written,
+                    compressed,
+                },
+                started.elapsed(),
+            );
             if let Some(handle) = self.handles.get_mut(&handle_id) {
                 handle.metadata.last_modified = std::time::SystemTime::now();
                 handle.metadata.access_count += 1;
@@ -622,7 +830,12 @@ impl DefaultStorageStrategy {
     pub fn new() -> Self {
         let mut preferences = HashMap::new();
         preferences.insert(AccessPattern::Sequential, StorageEngineId::ColumnStore);
-        preferences.insert(AccessPattern::Random, StorageEngineId::MemoryMapped);
+        // Random access used to be routed to `MemoryMapped`, which maps an
+        // *existing* file read-only and therefore cannot serve
+        // `create_storage`: every random-access request failed with
+        // `NotImplemented`. The in-memory column store is the fastest engine
+        // here that can actually be created and written.
+        preferences.insert(AccessPattern::Random, StorageEngineId::ColumnStore);
         preferences.insert(AccessPattern::ReadHeavy, StorageEngineId::ColumnStore);
         preferences.insert(AccessPattern::WriteHeavy, StorageEngineId::DiskStorage);
         preferences.insert(AccessPattern::Streaming, StorageEngineId::DiskStorage);

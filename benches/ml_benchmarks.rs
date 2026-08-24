@@ -47,6 +47,7 @@ fn create_classification_dataset(n_samples: usize, n_features: usize) -> DataFra
 }
 
 /// Create a synthetic regression dataset
+#[allow(dead_code)]
 fn create_regression_dataset(n_samples: usize, n_features: usize) -> DataFrame {
     let mut df = DataFrame::new();
 

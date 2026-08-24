@@ -49,12 +49,22 @@ pub(crate) fn linear_regression_impl(
         // Direct f64 column
         y_series.values().to_vec()
     } else if let Ok(y_series) = df.get_column::<String>(y_column) {
-        // String column that needs parsing
+        // String column that needs parsing. An unparseable cell is a data
+        // error, not a `0.0` observation — silently coercing it to `0.0`
+        // (the previous `.unwrap_or(0.0)`) would inject a fabricated data
+        // point into the regression rather than reporting the bad input.
         y_series
             .values()
             .iter()
-            .map(|s| s.parse::<f64>().unwrap_or(0.0))
-            .collect()
+            .map(|s| {
+                s.parse::<f64>().map_err(|_| {
+                    Error::InvalidValue(format!(
+                        "Column '{}': cannot parse '{}' as a number",
+                        y_column, s
+                    ))
+                })
+            })
+            .collect::<Result<Vec<f64>>>()?
     } else {
         return Err(Error::ColumnNotFound(y_column.to_string()));
     };
@@ -74,12 +84,21 @@ pub(crate) fn linear_regression_impl(
             // Direct f64 column
             x_series.values().to_vec()
         } else if let Ok(x_series) = df.get_column::<String>(x_col) {
-            // String column that needs parsing
+            // String column that needs parsing — see the `y_values` branch
+            // above for why an unparseable cell must be an error, not a
+            // silent `0.0`.
             x_series
                 .values()
                 .iter()
-                .map(|s| s.parse::<f64>().unwrap_or(0.0))
-                .collect()
+                .map(|s| {
+                    s.parse::<f64>().map_err(|_| {
+                        Error::InvalidValue(format!(
+                            "Column '{}': cannot parse '{}' as a number",
+                            x_col, s
+                        ))
+                    })
+                })
+                .collect::<Result<Vec<f64>>>()?
         } else {
             return Err(Error::ColumnNotFound(x_col.to_string()));
         };
@@ -146,9 +165,21 @@ pub(crate) fn linear_regression_impl(
 
     let r_squared = 1.0 - ss_residual / ss_total;
 
-    // Adjusted R²
+    // Adjusted R² needs the residual degrees of freedom `n - p - 1`. `n`
+    // and `p` are `usize`, so an under-determined model (`n <= p`) used to
+    // underflow this subtraction *before* any check ran — panicking in a
+    // debug build, or silently wrapping to a huge `usize` (and corrupting
+    // `adj_r_squared` with it) in release. Validate it explicitly instead,
+    // once, and reuse the same validated value everywhere below rather than
+    // the previous three independent (and, for two of them, unguarded)
+    // re-derivations of the same quantity.
     let p = x_columns.len();
-    let adj_r_squared = 1.0 - (1.0 - r_squared) * (n - 1) as f64 / (n - p - 1) as f64;
+    let resid_df = n.checked_sub(p + 1).filter(|&d| d > 0).ok_or_else(|| {
+        Error::InsufficientData(
+            "Degrees of freedom is 0 or negative. More data points needed.".into(),
+        )
+    })?;
+    let adj_r_squared = 1.0 - (1.0 - r_squared) * (n - 1) as f64 / resid_df as f64;
 
     // Calculate p-values (simplified)
     // Actual implementation should use t-distribution PDF
@@ -157,11 +188,13 @@ pub(crate) fn linear_regression_impl(
     // Calculate standard errors
     let std_errors = calculate_std_errors(&xt_x_inv, ss_residual, n, p)?;
 
-    // Calculate t-values and p-values for each coefficient
+    // Calculate t-values and p-values for each coefficient using the Student-t
+    // distribution at the residual degrees of freedom (the previous normal
+    // approximation was anti-conservative, e.g. p=0.026 where 0.05 was correct).
+    let resid_df = resid_df as f64;
     for i in 0..p_values.len() {
         let t_value = coefficients[i] / std_errors[i];
-        // Two-tailed t-test p-value (simplified calculation)
-        p_values[i] = 2.0 * (1.0 - normal_cdf(t_value.abs()));
+        p_values[i] = crate::stats::special::student_t_two_sided_p(t_value, resid_df);
     }
 
     Ok(LinearRegressionResult {
@@ -211,25 +244,6 @@ fn vec_multiply_transpose(a: &[Vec<f64>], y: &[f64]) -> Vec<f64> {
     }
 
     result
-}
-
-/// Calculate normal distribution CDF
-fn normal_cdf(z: f64) -> f64 {
-    // Approximation calculation for standard normal distribution CDF (Abramowitz and Stegun)
-    const A1: f64 = 0.254829592;
-    const A2: f64 = -0.284496736;
-    const A3: f64 = 1.421413741;
-    const A4: f64 = -1.453152027;
-    const A5: f64 = 1.061405429;
-    const P: f64 = 0.3275911;
-
-    let sign = if z < 0.0 { -1.0 } else { 1.0 };
-    let x = z.abs() / (2.0_f64).sqrt();
-
-    let t = 1.0 / (1.0 + P * x);
-    let y = 1.0 - (((((A5 * t + A4) * t) + A3) * t + A2) * t + A1) * t * (-x * x).exp();
-
-    0.5 * (1.0 + sign * y)
 }
 
 /// Calculate matrix inverse (Gauss-Jordan method)
@@ -329,13 +343,16 @@ fn calculate_std_errors(
     n: usize,
     p: usize,
 ) -> Result<Vec<f64>> {
-    // Root mean square error (RMSE)
-    let df = n - p - 1; // Degrees of freedom
-    if df <= 0 {
-        return Err(Error::InsufficientData(
+    // Degrees of freedom, guarded against the same `n <= p` underflow as
+    // the `resid_df` computation in `linear_regression_impl` — independent
+    // defense-in-depth here since `n - p - 1` (both `usize`) would
+    // otherwise underflow *before* reaching a bounds check, exactly like
+    // the bug this mirrors.
+    let df = n.checked_sub(p + 1).filter(|&d| d > 0).ok_or_else(|| {
+        Error::InsufficientData(
             "Degrees of freedom is 0 or negative. More data points needed.".into(),
-        ));
-    }
+        )
+    })?;
 
     let mse = ss_residual / df as f64;
 

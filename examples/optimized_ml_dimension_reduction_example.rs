@@ -10,7 +10,6 @@ use pandrs::error::Result;
 #[cfg(all(cuda_available, feature = "optimized"))]
 use pandrs::ml::dimension::{PCA, TSNE};
 #[cfg(all(cuda_available, feature = "optimized"))]
-use pandrs::ml::Transformer;
 #[cfg(all(cuda_available, feature = "optimized"))]
 use pandrs::{DataFrame, Series};
 
@@ -48,6 +47,7 @@ fn main() -> Result<()> {
 }
 
 #[cfg(all(cuda_available, feature = "optimized"))]
+#[allow(clippy::result_large_err)]
 fn create_sample_data() -> Result<DataFrame> {
     let mut df = DataFrame::new();
 

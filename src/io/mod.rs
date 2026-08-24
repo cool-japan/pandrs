@@ -1,10 +1,23 @@
 /// CSV (Comma-Separated Values) file format support.
 ///
-/// Read and write CSV files with customizable options:
-/// - Custom delimiters
-/// - Header row handling
-/// - Type inference
-/// - Missing value handling
+/// Read and write CSV files:
+/// - Header row handling (`has_header` flag); headerless files get
+///   synthetic `column_0`, `column_1`, ... names, and the first data row is
+///   preserved (not consumed while inferring the column count).
+/// - `read_csv` always returns `String` columns, matching
+///   `DataFrame::from_csv`'s documented contract. For per-column
+///   numeric/boolean type inference (`Int64`, `Float64`, `Bool`, falling
+///   back to `String`), use `csv::read_csv_typed` instead.
+/// - Missing values are preserved rather than replaced with a fabricated
+///   placeholder: an empty string for `String` columns, or `NaN` for an
+///   inferred `Float64` column that has some missing cells (`read_csv_typed`
+///   never infers `Int64`/`Bool` for a column with missing cells, since
+///   neither type has a way to represent "missing").
+/// - A UTF-8 byte-order mark at the start of the file is stripped
+///   automatically.
+/// - A data row whose field count doesn't match the header is a
+///   descriptive error, not silently-truncated or zero-padded data.
+/// - Custom delimiters are not currently supported; the comma is fixed.
 ///
 /// # Examples
 ///
@@ -27,11 +40,13 @@ pub mod csv;
 
 /// Excel file format support (requires `excel` feature).
 ///
-/// Read and write Microsoft Excel files (.xlsx, .xls) with:
+/// Reads and writes the modern `.xlsx` (OOXML) format through a Pure Rust
+/// implementation:
 /// - Multiple sheet support
-/// - Cell formatting
-/// - Formula evaluation
-/// - Named ranges
+/// - Cell values and basic types
+///
+/// The legacy binary `.xls` format is not supported. Formulas, cell
+/// formatting, and named ranges are not preserved on read or write.
 ///
 /// # Examples
 ///
@@ -65,10 +80,19 @@ pub mod format_traits;
 /// JSON (JavaScript Object Notation) file format support.
 ///
 /// Read and write JSON files with:
-/// - Records orientation
-/// - Columns orientation
-/// - Split orientation
+/// - Records orientation (`[{"col": value, ...}, ...]`)
+/// - Columns orientation (`{"col": [value, ...], ...}`)
 /// - Pretty printing
+///
+/// `write_json` serialises each column using its real DataFrame element
+/// type: `i64`/`f64` columns become JSON numbers (a non-finite float
+/// becomes JSON `null`, matching pandas' own `to_json` convention), `bool`
+/// columns become JSON booleans, and everything else becomes JSON strings.
+/// `read_json`, conversely, always returns `String` columns -- every JSON
+/// value (numbers and booleans included) is converted to its text form,
+/// and `null` or a missing key becomes an empty string -- there is
+/// currently no read-side type inference for JSON, unlike
+/// `csv::read_csv_typed` for CSV.
 ///
 /// # Examples
 ///
@@ -128,7 +152,7 @@ pub mod parquet;
 pub mod streaming;
 
 // Re-export commonly used functions
-pub use csv::{read_csv, write_csv};
+pub use csv::{read_csv, read_csv_typed, write_csv};
 #[cfg(feature = "excel")]
 pub use excel::{
     analyze_excel_file, get_sheet_info, get_workbook_info, list_sheet_names, optimize_excel_file,

@@ -37,8 +37,6 @@ pub use dashboard::*;
 pub use metrics::*;
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant, SystemTime};
 
 /// Metric types for categorization
@@ -247,31 +245,53 @@ pub struct OperationRecord {
     pub error: Option<String>,
 }
 
-/// System resource snapshot
+/// System resource snapshot.
+///
+/// Every field that requires a platform-specific query is `Option`-wrapped
+/// and genuinely `None` where pandrs has no dependency-free way to obtain
+/// it, rather than a `0`/`0.0` placeholder that would be indistinguishable
+/// from a real "nothing in use" reading. See [`Dashboard::resource_snapshot`]
+/// for exactly what is queried on which platform.
+///
+/// [`Dashboard::resource_snapshot`]: crate::analytics::dashboard::Dashboard::resource_snapshot
 #[derive(Debug, Clone)]
 pub struct ResourceSnapshot {
-    /// Memory used in bytes
-    pub memory_used: usize,
-    /// Memory available in bytes
-    pub memory_available: usize,
-    /// CPU usage percentage (0-100)
-    pub cpu_usage: f64,
-    /// Active thread count
+    /// Resident set size (RSS) of this process, in bytes. `None` where not
+    /// queryable without a platform-specific dependency (see
+    /// [`Dashboard::resource_snapshot`]).
+    ///
+    /// [`Dashboard::resource_snapshot`]: crate::analytics::dashboard::Dashboard::resource_snapshot
+    pub memory_used: Option<usize>,
+    /// System-wide memory available for new allocations, in bytes. `None`
+    /// where not queryable without a platform-specific dependency.
+    pub memory_available: Option<usize>,
+    /// CPU usage percentage (0-100). Always `None`: an honest reading needs
+    /// either two samples separated by a time interval, or a
+    /// platform-specific syscall (e.g. converting `/proc/self/stat` clock
+    /// ticks via `sysconf(_SC_CLK_TCK)` on Linux) whose tick rate isn't
+    /// guaranteed -- hardcoding it risks a confidently wrong percentage,
+    /// which is worse than reporting the gap honestly.
+    pub cpu_usage: Option<f64>,
+    /// Available CPU parallelism, from `std::thread::available_parallelism()`.
+    ///
+    /// This is the number of hardware threads the OS reports as usable, NOT
+    /// a live count of threads this process currently has running.
     pub thread_count: usize,
-    /// Open file handles
-    pub open_files: usize,
-    /// Timestamp
+    /// Number of open file descriptors held by this process. `None` where
+    /// not queryable without a platform-specific dependency.
+    pub open_files: Option<usize>,
+    /// Timestamp when this snapshot was taken.
     pub timestamp: SystemTime,
 }
 
 impl Default for ResourceSnapshot {
     fn default() -> Self {
         Self {
-            memory_used: 0,
-            memory_available: 0,
-            cpu_usage: 0.0,
+            memory_used: None,
+            memory_available: None,
+            cpu_usage: None,
             thread_count: 0,
-            open_files: 0,
+            open_files: None,
             timestamp: SystemTime::now(),
         }
     }

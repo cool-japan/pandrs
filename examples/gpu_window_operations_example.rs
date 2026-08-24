@@ -83,6 +83,7 @@ fn main() -> Result<()> {
 }
 
 #[cfg(all(cuda_available, feature = "optimized"))]
+#[allow(clippy::result_large_err)]
 fn create_sample_data() -> Result<DataFrame> {
     let mut df = DataFrame::new();
 

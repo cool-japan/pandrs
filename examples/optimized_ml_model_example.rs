@@ -15,8 +15,6 @@ use pandrs::ml::models::{LinearRegression, LogisticRegression};
 #[cfg(feature = "optimized")]
 use pandrs::OptimizedDataFrame;
 #[cfg(feature = "optimized")]
-use scirs2_core::random::Rng;
-#[cfg(feature = "optimized")]
 use scirs2_core::random::RngExt;
 
 #[cfg(not(feature = "optimized"))]

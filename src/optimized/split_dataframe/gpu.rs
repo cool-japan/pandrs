@@ -3,20 +3,28 @@
 //! This module provides GPU acceleration capabilities for the OptimizedDataFrame
 //! implementation, enabling high-performance computation for large datasets.
 
-use scirs2_core::ndarray::{Array1, Array2};
-use std::sync::Arc;
+use scirs2_core::ndarray::Array2;
 
 use crate::column::Column;
 use crate::error::{Error, Result};
-use crate::gpu::operations::{GpuAccelerated, GpuMatrix, GpuVector};
-use crate::gpu::{get_gpu_manager, GpuError, GpuManager};
-use crate::optimized::split_dataframe::core::{ColumnView, OptimizedDataFrame};
+use crate::gpu::get_gpu_manager;
+use crate::gpu::operations::{GpuAccelerated, GpuMatrix};
+use crate::optimized::split_dataframe::core::OptimizedDataFrame;
 
 impl GpuAccelerated for OptimizedDataFrame {
     fn gpu_accelerate(&self) -> Result<Self> {
-        // For the actual DataFrame, we just return a clone since GPU
-        // acceleration is applied at operation time, not on the structure itself
-        Ok(self.clone())
+        // There is no real GPU kernel behind this entry point (see
+        // `crate::gpu`'s module-level honesty notes): GPU dispatch happens
+        // per-operation, in `matrix_multiply`/`corr_matrix` below, not as a
+        // one-shot transform of the whole frame. Returning `Ok(self.clone())`
+        // presented a full deep copy of the data as the result of
+        // "acceleration" when nothing was accelerated (or even attempted);
+        // report that honestly instead.
+        Err(Error::NotImplemented(
+            "GPU acceleration for OptimizedDataFrame not implemented (no real CUDA kernel); use \
+             matrix_multiply/corr_matrix for real (CPU-fallback) per-operation dispatch"
+                .into(),
+        ))
     }
 
     fn is_gpu_acceleratable(&self) -> bool {
@@ -59,7 +67,17 @@ impl OptimizedDataFrame {
         }
     }
 
-    /// Convert selected columns to a matrix
+    /// Convert selected columns to a matrix.
+    ///
+    /// A null/missing cell becomes `f64::NAN`, not `0.0`: silently treating
+    /// "missing" as "zero" would fabricate a data point that was never
+    /// observed and bias every downstream sum/mean/dot-product that touches
+    /// it. `NaN` instead poisons exactly the computations that depend on the
+    /// missing cell (per IEEE 754 propagation), which is the honest
+    /// behavior — the caller can see something is missing rather than
+    /// silently getting a slightly-wrong number back. `col.get` errors
+    /// (distinct from a null value) are propagated via `?` rather than also
+    /// being folded into a default.
     fn to_matrix(&self, columns: &[&str]) -> Result<Array2<f64>> {
         let n_rows = self.row_count();
         let n_cols = columns.len();
@@ -71,20 +89,22 @@ impl OptimizedDataFrame {
             match &col_view.column {
                 Column::Float64(col) => {
                     for row_idx in 0..n_rows {
-                        matrix[[row_idx, col_idx]] =
-                            col.get(row_idx).unwrap_or(Some(0.0)).unwrap_or(0.0);
+                        matrix[[row_idx, col_idx]] = col.get(row_idx)?.unwrap_or(f64::NAN);
                     }
                 }
                 Column::Int64(col) => {
                     for row_idx in 0..n_rows {
                         matrix[[row_idx, col_idx]] =
-                            col.get(row_idx).unwrap_or(Some(0)).unwrap_or(0) as f64;
+                            col.get(row_idx)?.map(|v| v as f64).unwrap_or(f64::NAN);
                     }
                 }
                 Column::Boolean(col) => {
                     for row_idx in 0..n_rows {
-                        let val = col.get(row_idx).unwrap_or(Some(false)).unwrap_or(false);
-                        matrix[[row_idx, col_idx]] = if val { 1.0 } else { 0.0 };
+                        matrix[[row_idx, col_idx]] = match col.get(row_idx)? {
+                            Some(true) => 1.0,
+                            Some(false) => 0.0,
+                            None => f64::NAN,
+                        };
                     }
                 }
                 Column::String(_) => {
@@ -111,8 +131,6 @@ impl OptimizedDataFrame {
 
         if use_gpu {
             // Use GPU acceleration
-            let gpu_data = GpuMatrix::new(data_matrix.clone());
-
             // Center the columns (subtract mean)
             let mut centered_data = data_matrix.clone();
             for col_idx in 0..n_cols {
@@ -138,7 +156,20 @@ impl OptimizedDataFrame {
                         let cov_ij = cov_matrix[[i, j]];
                         let var_i = cov_matrix[[i, i]];
                         let var_j = cov_matrix[[j, j]];
-                        corr_matrix[[i, j]] = cov_ij / (var_i.sqrt() * var_j.sqrt());
+                        let denominator = var_i.sqrt() * var_j.sqrt();
+                        // A constant column has zero variance, making the
+                        // correlation with any other column mathematically
+                        // undefined (0/0). Report it as 0 (no linear
+                        // relationship can be observed), matching the
+                        // zero-variance convention used everywhere else in
+                        // the crate (`stats::descriptive::pearson_correlation`,
+                        // `gpu::advanced_ops::correlation_with_pvalues`)
+                        // rather than leaving it as an unguarded NaN.
+                        corr_matrix[[i, j]] = if denominator > 1e-10 {
+                            cov_ij / denominator
+                        } else {
+                            0.0
+                        };
                     }
                 }
             }
@@ -185,8 +216,16 @@ fn compute_corr_matrix_cpu(data_matrix: &Array2<f64>) -> Result<Array2<f64>> {
                 var_j_sum += x_j * x_j;
             }
 
-            // Calculate correlation coefficient
-            let corr_ij = cov_sum / (var_i_sum.sqrt() * var_j_sum.sqrt());
+            // Calculate correlation coefficient. A constant column (zero
+            // variance) makes this mathematically undefined (0/0); report 0
+            // rather than an unguarded NaN, matching the zero-variance
+            // convention used everywhere else in the crate.
+            let denominator = var_i_sum.sqrt() * var_j_sum.sqrt();
+            let corr_ij = if denominator > 1e-10 {
+                cov_sum / denominator
+            } else {
+                0.0
+            };
 
             // Store in correlation matrix (symmetric)
             corr_matrix[[i, j]] = corr_ij;

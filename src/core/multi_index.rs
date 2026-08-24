@@ -1,9 +1,7 @@
 use std::collections::HashMap;
 use std::fmt;
-use std::sync::Arc;
 
 use crate::core::error::{Error, Result};
-use crate::core::index::{Index, IndexTrait};
 
 /// A multi-level index (hierarchical index)
 #[derive(Clone)]
@@ -15,6 +13,7 @@ pub struct MultiIndex {
     // Labels for each row (tuples of level indices)
     labels: Vec<Vec<usize>>,
     // Map from label tuples to positions
+    #[allow(dead_code)] // reserved for future use
     label_map: HashMap<Vec<String>, usize>,
 }
 

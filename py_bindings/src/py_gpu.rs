@@ -8,11 +8,13 @@ use numpy::{IntoPyArray, PyArray1, PyArray2, PyArrayMethods};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList, PyListMethods, PyModule, PyModuleMethods};
-use std::collections::HashMap;
 
 use crate::py_optimized::PyOptimizedDataFrame;
 
-#[pyclass(name = "GpuConfig")]
+// `init_gpu_with_config` below takes a bare `PyGpuConfig` parameter, which relies
+// on the (formerly implicit, now opt-in) `FromPyObject` impl for `Clone`-able
+// `#[pyclass]` types to extract it from a Python `GpuConfig` argument.
+#[pyclass(name = "GpuConfig", from_py_object)]
 #[derive(Clone)]
 /// Configuration for GPU acceleration
 pub struct PyGpuConfig {
@@ -93,7 +95,10 @@ impl From<PyGpuConfig> for ::pandrs::gpu::GpuConfig {
     }
 }
 
-#[pyclass(name = "GpuDeviceStatus")]
+// Only ever used as a return type (never a bare `#[pyfunction]`/`#[pymethods]`
+// parameter), so `FromPyObject` is never needed; opt out of the deprecated
+// implicit by-value blanket impl for `Clone`-able `#[pyclass]` types.
+#[pyclass(name = "GpuDeviceStatus", skip_from_py_object)]
 #[derive(Clone)]
 /// Status of GPU device
 pub struct PyGpuDeviceStatus {
@@ -278,158 +283,238 @@ impl PyGpuMatrix {
     }
 
     /// Convert to NumPy array
-    fn to_numpy<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray2<f64>> {
+    fn to_numpy<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyArray2<f64>>> {
         // Bridge back through Vec<f64>: self.matrix.data is a ndarray 0.17 Array2,
         // but into_pyarray (from numpy 0.25) is only implemented for ndarray 0.16
         // types.  Reconstruct as a local (0.16) Array2 before calling into_pyarray.
         let (flat, nrows, ncols) = self.matrix.to_raw_parts();
-        let arr = Array2::from_shape_vec((nrows, ncols), flat)
-            .expect("to_raw_parts guarantees shape consistency with the stored data");
-        arr.into_pyarray(py)
+        let arr = Array2::from_shape_vec((nrows, ncols), flat).map_err(|e| {
+            pyo3::exceptions::PyRuntimeError::new_err(format!(
+                "Failed to reconstruct numpy array from GPU matrix: {}",
+                e
+            ))
+        })?;
+        Ok(arr.into_pyarray(py))
+    }
+}
+
+/// Private helper methods for PyOptimizedDataFrame (not exposed to Python).
+impl PyOptimizedDataFrame {
+    fn to_standard_df(&self) -> PyResult<::pandrs::dataframe::DataFrame> {
+        ::pandrs::optimized::standard_dataframe(&self.inner)
+            .map_err(|e| PyValueError::new_err(format!("Conversion failed: {}", e)))
     }
 }
 
 /// Add GPU acceleration methods to PyOptimizedDataFrame
 #[pymethods]
 impl PyOptimizedDataFrame {
-    /// Enable GPU acceleration for this DataFrame
+    /// Enable GPU acceleration for this DataFrame.
+    ///
+    /// Returns a clone of this DataFrame. In pandrs, GPU acceleration is applied
+    /// lazily per-operation (e.g. in matrix ops) rather than eagerly at the
+    /// DataFrame level; cloning here preserves the same optimized layout.
     fn gpu_accelerate(&self) -> PyResult<Self> {
-        // For now, just return a copy since gpu_accelerate isn't implemented
-        // TODO: Implement GPU acceleration when the underlying API is available
         Ok(PyOptimizedDataFrame {
             inner: self.inner.clone(),
         })
     }
 
-    /// Compute correlation matrix with GPU acceleration
+    /// Compute correlation matrix using Pearson correlation, with listwise
+    /// deletion of rows that have a null in any of the requested columns.
     fn gpu_corr<'py>(
         &self,
         py: Python<'py>,
         columns: &Bound<'py, PyList>,
     ) -> PyResult<Bound<'py, PyArray2<f64>>> {
-        // Convert Python list to Rust vector of strings
         let columns: Vec<String> = columns
             .iter()
             .map(|item| item.extract::<String>())
             .collect::<Result<Vec<String>, _>>()?;
 
-        // For now, return a dummy correlation matrix
-        // TODO: Implement GPU correlation when the underlying API is available
-        let n_cols = columns.len();
-        let mut corr_data = vec![0.0; n_cols * n_cols];
+        let n = columns.len();
 
-        // Set diagonal to 1.0 (perfect correlation with self)
-        for i in 0..n_cols {
-            corr_data[i * n_cols + i] = 1.0;
+        // Extract each column's values, preserving null positions as `None`
+        // (rather than dropping them immediately) so the shared
+        // listwise-deletion helper below can align rows *across* columns
+        // correctly. The previous version collected only the non-null
+        // values of each column independently
+        // (`.filter_map(|i| float_col.get(i).ok().flatten())`), which drops
+        // nulls one column at a time: whenever two columns didn't have
+        // nulls at exactly the same row positions, the surviving values
+        // ended up misaligned and the reported correlation silently
+        // measured the relationship between the wrong pairs of numbers.
+        let mut col_data: Vec<Vec<Option<f64>>> = Vec::with_capacity(n);
+        for col_name in &columns {
+            let view = self.inner.column(col_name).map_err(|e| {
+                PyValueError::new_err(format!("Column '{}' not found: {}", col_name, e))
+            })?;
+            let vals: Vec<Option<f64>> = if let Some(float_col) = view.as_float64() {
+                (0..self.inner.row_count())
+                    .map(|i| float_col.get(i).ok().flatten())
+                    .collect()
+            } else if let Some(int_col) = view.as_int64() {
+                (0..self.inner.row_count())
+                    .map(|i| int_col.get(i).ok().flatten().map(|v| v as f64))
+                    .collect()
+            } else {
+                return Err(PyValueError::new_err(format!(
+                    "Column '{}' is not numeric",
+                    col_name
+                )));
+            };
+            col_data.push(vals);
         }
 
-        let corr_matrix = Array2::from_shape_vec((n_cols, n_cols), corr_data).map_err(|e| {
+        let corr_matrix =
+            ::pandrs::gpu::cpu_math::correlation_matrix_listwise(&col_data).map_err(|e| {
+                PyValueError::new_err(format!("Failed to compute correlation matrix: {}", e))
+            })?;
+
+        // Bridge across the ndarray-version boundary via a flat row-major
+        // `Vec<f64>`, the same pattern `GpuMatrix::to_raw_parts` uses: the
+        // root crate's `correlation_matrix_listwise` returns a
+        // `scirs2_core::ndarray::Array2` (ndarray 0.17), while this crate's
+        // `into_pyarray` needs the locally-linked `ndarray` 0.16 `Array2`.
+        let flat: Vec<f64> = corr_matrix.iter().cloned().collect();
+        let corr_matrix = Array2::from_shape_vec((n, n), flat).map_err(|e| {
             PyValueError::new_err(format!("Failed to create correlation matrix: {}", e))
         })?;
 
         Ok(corr_matrix.into_pyarray(py))
     }
 
-    /// Perform PCA with GPU acceleration
+    /// Perform PCA using the pandrs ML implementation
     fn gpu_pca<'py>(
         &self,
         py: Python<'py>,
         columns: &Bound<'py, PyList>,
         n_components: usize,
     ) -> PyResult<(PyOptimizedDataFrame, Bound<'py, PyArray1<f64>>)> {
-        // Convert Python list to Rust vector of strings
-        let _columns: Vec<String> = columns
+        use ::pandrs::ml::UnsupervisedModel;
+
+        let requested_cols: Vec<String> = columns
             .iter()
             .map(|item| item.extract::<String>())
             .collect::<Result<Vec<String>, _>>()?;
 
-        // For now, return dummy PCA results
-        // TODO: Implement GPU PCA when the underlying API is available
-        let mut result_df = ::pandrs::OptimizedDataFrame::new();
-
-        // Add dummy principal components
-        for i in 0..n_components {
-            let col_name = format!("PC{}", i + 1);
-            let col_data: Vec<f64> = vec![0.0; self.inner.row_count()];
-            result_df
-                .add_column(
-                    col_name,
-                    ::pandrs::column::Column::Float64(::pandrs::column::Float64Column::new(
-                        col_data,
-                    )),
-                )
-                .map_err(|e| PyValueError::new_err(format!("Failed to add PCA column: {}", e)))?;
+        // Convert the inner OptimizedDataFrame to a standard DataFrame,
+        // then build a subset containing only the requested columns.
+        let full_std = self.to_standard_df()?;
+        let mut subset = ::pandrs::dataframe::DataFrame::new();
+        for col_name in &requested_cols {
+            let col = full_std
+                .get_column::<f64>(col_name)
+                .map_err(|e| PyValueError::new_err(format!("Column '{}': {}", col_name, e)))?;
+            let series =
+                ::pandrs::series::Series::new(col.values().to_vec(), Some(col_name.clone()))
+                    .map_err(|e| PyValueError::new_err(format!("Series error: {}", e)))?;
+            subset
+                .add_column(col_name.clone(), series)
+                .map_err(|e| PyValueError::new_err(format!("Add column error: {}", e)))?;
         }
 
-        // Return dummy explained variance
-        let explained_variance = vec![0.0; n_components];
+        let mut pca = ::pandrs::ml::PCA::new(n_components, false);
+        pca.fit(&subset)
+            .map_err(|e| PyValueError::new_err(format!("PCA fit failed: {}", e)))?;
+        let transformed = pca
+            .transform(&subset)
+            .map_err(|e| PyValueError::new_err(format!("PCA transform failed: {}", e)))?;
+
+        // Convert transformed DataFrame back to OptimizedDataFrame.
+        // NOTE: PCA column names are "PC_1", "PC_2", etc. (underscore-separated).
+        let result_opt = ::pandrs::optimized::optimize_dataframe(&transformed)
+            .map_err(|e| PyValueError::new_err(format!("Optimize failed: {}", e)))?;
+
+        let ratios = pca
+            .explained_variance_ratio
+            .unwrap_or_else(|| vec![0.0; n_components]);
 
         Ok((
-            PyOptimizedDataFrame { inner: result_df },
-            Array1::from_vec(explained_variance).into_pyarray(py),
+            PyOptimizedDataFrame { inner: result_opt },
+            Array1::from_vec(ratios).into_pyarray(py),
         ))
     }
 
-    /// Perform k-means clustering with GPU acceleration
+    /// Perform k-means clustering using the pandrs ML implementation
     fn gpu_kmeans<'py>(
         &self,
         py: Python<'py>,
         columns: &Bound<'py, PyList>,
         k: usize,
-        _max_iter: usize,
+        max_iter: usize,
     ) -> PyResult<(Bound<'py, PyArray2<f64>>, Bound<'py, PyArray1<usize>>, f64)> {
-        // Convert Python list to Rust vector of strings
-        let columns: Vec<String> = columns
+        use ::pandrs::ml::UnsupervisedModel;
+
+        let cols_vec: Vec<String> = columns
             .iter()
             .map(|item| item.extract::<String>())
             .collect::<Result<Vec<String>, _>>()?;
 
-        // For now, return dummy k-means results
-        // TODO: Implement GPU k-means when the underlying API is available
-        let n_rows = self.inner.row_count();
-        let n_cols = columns.len();
+        let n_features = cols_vec.len();
 
-        // Create dummy centroids
-        let centroids = Array2::zeros((k, n_cols));
+        // Build standard DataFrame from the full inner frame.
+        let full_std = self.to_standard_df()?;
 
-        // Create dummy labels (assign all points to cluster 0)
-        let labels = Array1::zeros(n_rows);
+        let mut km = ::pandrs::ml::KMeans::new(k)
+            .max_iter(max_iter)
+            .with_columns(cols_vec);
 
-        // Dummy inertia
-        let inertia = 0.0;
+        km.fit(&full_std)
+            .map_err(|e| PyValueError::new_err(format!("KMeans fit failed: {}", e)))?;
 
-        Ok((centroids.into_pyarray(py), labels.into_pyarray(py), inertia))
+        let centroids_nested = km
+            .centroids
+            .ok_or_else(|| PyValueError::new_err("KMeans did not produce centroids"))?;
+        let labels = km
+            .labels
+            .ok_or_else(|| PyValueError::new_err("KMeans did not produce labels"))?;
+        let inertia = km.inertia.unwrap_or(0.0);
+
+        // Flatten centroids to row-major Vec<f64>.
+        let flat_centroids: Vec<f64> = centroids_nested.into_iter().flatten().collect();
+        let centroids_arr = Array2::from_shape_vec((k, n_features), flat_centroids)
+            .map_err(|e| PyValueError::new_err(format!("Centroids shape error: {}", e)))?;
+
+        Ok((
+            centroids_arr.into_pyarray(py),
+            Array1::from_vec(labels).into_pyarray(py),
+            inertia,
+        ))
     }
 
-    /// Perform linear regression with GPU acceleration
+    /// Perform linear regression using the pandrs OptimizedDataFrame implementation
     fn gpu_linear_regression<'py>(
         &self,
         py: Python<'py>,
-        _y_column: &str,
+        y_column: &str,
         x_columns: &Bound<'py, PyList>,
     ) -> PyResult<Bound<'py, PyDict>> {
-        // Convert Python list to Rust vector of strings
-        let x_columns: Vec<String> = x_columns
+        let x_col_names: Vec<String> = x_columns
             .iter()
             .map(|item| item.extract::<String>())
             .collect::<Result<Vec<String>, _>>()?;
 
-        // For now, return dummy linear regression results
-        // TODO: Implement GPU linear regression when the underlying API is available
+        let x_refs: Vec<&str> = x_col_names.iter().map(|s| s.as_str()).collect();
+
+        let result = self
+            .inner
+            .linear_regression(y_column, &x_refs)
+            .map_err(|e| PyValueError::new_err(format!("Linear regression failed: {}", e)))?;
+
         let result_dict = PyDict::new(py);
+        result_dict.set_item("intercept", result.intercept)?;
 
-        result_dict.set_item("intercept", 0.0)?;
-
+        // Map column names to their coefficients (parallel to x_refs order).
         let coefficients = PyDict::new(py);
-        for col in x_columns.iter() {
-            coefficients.set_item(col, 0.0)?;
+        for (col_name, &coeff) in x_col_names.iter().zip(result.coefficients.iter()) {
+            coefficients.set_item(col_name, coeff)?;
         }
         result_dict.set_item("coefficients", &coefficients)?;
-
-        result_dict.set_item("r_squared", 0.0)?;
-        result_dict.set_item("adj_r_squared", 0.0)?;
-        result_dict.set_item("fitted_values", Vec::<f64>::new())?;
-        result_dict.set_item("residuals", Vec::<f64>::new())?;
+        result_dict.set_item("r_squared", result.r_squared)?;
+        result_dict.set_item("adj_r_squared", result.adj_r_squared)?;
+        result_dict.set_item("fitted_values", result.fitted_values)?;
+        result_dict.set_item("residuals", result.residuals)?;
 
         Ok(result_dict)
     }
@@ -449,4 +534,72 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_submodule(&gpu)?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    /// Test that pearson_correlation produces 1.0 on the diagonal
+    /// and a symmetric matrix for two perfectly correlated columns.
+    #[test]
+    fn test_pearson_correlation_properties() {
+        let col_a: Vec<f64> = (0..10).map(|i| i as f64).collect();
+        let col_b: Vec<f64> = (0..10).map(|i| (i * 2) as f64).collect();
+
+        // Diagonal must be 1.0 (self-correlation).
+        let self_corr = ::pandrs::stats::descriptive::pearson_correlation(&col_a, &col_a)
+            .expect("self correlation");
+        assert!((self_corr - 1.0).abs() < 1e-10, "self-corr = {}", self_corr);
+
+        // col_a and col_b are perfectly linearly correlated -> r = 1.0.
+        let cross = ::pandrs::stats::descriptive::pearson_correlation(&col_a, &col_b)
+            .expect("cross correlation");
+        assert!((cross - 1.0).abs() < 1e-10, "cross-corr = {}", cross);
+
+        // Symmetry: pearson(a,b) == pearson(b,a).
+        let rev = ::pandrs::stats::descriptive::pearson_correlation(&col_b, &col_a)
+            .expect("rev correlation");
+        assert!(
+            (cross - rev).abs() < 1e-15,
+            "not symmetric: {} vs {}",
+            cross,
+            rev
+        );
+    }
+
+    /// Test that linear_regression recovers intercept=1.0, slope=2.0 for y=2x+1.
+    #[test]
+    fn test_linear_regression_recovery() {
+        use ::pandrs::column::{Column, Float64Column};
+        use ::pandrs::OptimizedDataFrame;
+
+        let x_vals: Vec<f64> = (0..10).map(|i| i as f64).collect();
+        let y_vals: Vec<f64> = x_vals.iter().map(|&x| 2.0 * x + 1.0).collect();
+
+        let mut df = OptimizedDataFrame::new();
+        df.add_column("x".to_string(), Column::Float64(Float64Column::new(x_vals)))
+            .expect("add x");
+        df.add_column("y".to_string(), Column::Float64(Float64Column::new(y_vals)))
+            .expect("add y");
+
+        let result = df
+            .linear_regression("y", &["x"])
+            .expect("linear_regression");
+
+        assert!(
+            (result.intercept - 1.0).abs() < 1e-6,
+            "intercept = {}",
+            result.intercept
+        );
+        assert_eq!(result.coefficients.len(), 1);
+        assert!(
+            (result.coefficients[0] - 2.0).abs() < 1e-6,
+            "slope = {}",
+            result.coefficients[0]
+        );
+        assert!(
+            (result.r_squared - 1.0).abs() < 1e-6,
+            "r_squared = {}",
+            result.r_squared
+        );
+    }
 }

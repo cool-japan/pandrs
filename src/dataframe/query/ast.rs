@@ -8,6 +8,8 @@
 pub enum Token {
     /// Column identifier
     Identifier(String),
+    /// Context variable reference written as `@name`
+    Variable(String),
     /// Numeric literal
     Number(f64),
     /// String literal
@@ -46,8 +48,14 @@ pub enum Token {
 /// Expression AST node types
 #[derive(Debug, Clone)]
 pub enum Expr {
-    /// Column reference
+    /// Column reference.
+    ///
+    /// An identifier that does not name a column is resolved against the query
+    /// context's variables before it is reported as an unknown column.
     Column(String),
+    /// Explicit context-variable reference (`@name`), which never resolves to a
+    /// column.
+    Variable(String),
     /// Literal values
     Literal(LiteralValue),
     /// Binary operations

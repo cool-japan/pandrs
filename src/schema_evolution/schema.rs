@@ -139,7 +139,19 @@ impl SchemaDataType {
         matches!(self, SchemaDataType::Int64 | SchemaDataType::Float64)
     }
 
-    /// Check if this type can be cast to another type
+    /// Check if this type is *statically* castable to another type.
+    ///
+    /// This is a type-level compatibility table used by
+    /// [`super::migrator::SchemaMigrator::check_compatibility`] to describe
+    /// what kind of conversion a migration would need to perform -- it does
+    /// **not** guarantee every individual value will convert successfully.
+    /// `String -> Int64` returning `true` here means "there exists a
+    /// reasonable conversion", not "every string in this column parses as
+    /// an integer"; [`super::migrator::SchemaMigrator::apply_migration`]
+    /// performs the actual per-value conversion and returns a real
+    /// `Error::Cast` for any value that doesn't parse, rather than silently
+    /// coercing it (e.g. to zero) just because the schema-level check above
+    /// said the types were compatible.
     pub fn can_cast_to(&self, target: &SchemaDataType) -> bool {
         match (self, target) {
             // Same type always works

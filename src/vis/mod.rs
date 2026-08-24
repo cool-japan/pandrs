@@ -56,5 +56,6 @@ pub use self::svg::dataframe_ext::{SvgPlotType, SvgVisualize};
 pub use self::svg::engine::{DrawStyle, PathBuilder, SvgCanvas, SvgDefs, SvgGroup, Transform};
 
 // For backward compatibility, re-export the backward-compatible functionality
+#[cfg(feature = "visualization")]
 #[allow(deprecated)]
 pub use backward_compat::*;

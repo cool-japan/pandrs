@@ -1,12 +1,29 @@
-//! SIMD-Optimized Statistical Operations
+//! SIMD-Accelerated Statistical Operations
 //!
-//! This module provides SIMD-accelerated implementations of statistical functions
-//! including variance, standard deviation, covariance, correlation, and more.
+//! SIMD implementations of statistical functions (variance, standard deviation,
+//! covariance, correlation, skewness, kurtosis, dot product, L2 norm, cosine
+//! similarity, weighted mean). Each public entry point dispatches at runtime to
+//! an AVX2 kernel or an SSE2 kernel on `x86_64`, and to the scalar reference
+//! (`scalar_variance_f64` etc.) everywhere else. The AVX2 kernels carry
+//! `#[target_feature(enable = "avx2")]` so their intrinsics inline (SSE2 is the
+//! `x86_64` baseline and needs no attribute).
 //!
-//! # Performance
+//! # Numerical note
 //!
-//! These implementations achieve 2-8x speedups over scalar implementations
-//! for large datasets by utilizing AVX2/SSE2 SIMD instructions.
+//! `variance`/`covariance`/`correlation` use a **two-pass** algorithm for
+//! stability. Because the vector kernels reduce in tree order while the scalar
+//! reference reduces sequentially, the SIMD and scalar results agree to a tight
+//! relative tolerance rather than bit-for-bit (floating-point addition is not
+//! associative). The regression tests assert closeness, not bit-equality.
+//!
+//! # Wiring status (honest)
+//!
+//! These functions are public API (re-exported at `optimized::jit`) but are
+//! **not yet called from the main DataFrame statistics path**: the live scalar
+//! `var`/`std` live in `optimized::split_dataframe::group::operations`, which is
+//! outside this module's scope to edit. Routing that path's `var`/`std` through
+//! `simd_variance_f64` is the remaining wire-up. Until then this module is
+//! reachable only as direct public API and via `benches/`.
 
 /// SIMD-optimized variance calculation for f64 values
 /// Uses a two-pass algorithm for numerical stability
@@ -300,6 +317,7 @@ fn scalar_kurtosis_f64(data: &[f64]) -> f64 {
 // ============================================================================
 
 #[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
 unsafe fn simd_variance_f64_avx2(data: &[f64], ddof: usize) -> f64 {
     use std::arch::x86_64::*;
 
@@ -353,10 +371,10 @@ unsafe fn simd_variance_f64_avx2(data: &[f64], ddof: usize) -> f64 {
 }
 
 #[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
 unsafe fn simd_dot_product_f64_avx2(a: &[f64], b: &[f64]) -> f64 {
     use std::arch::x86_64::*;
 
-    let len = a.len();
     let mut sum_vec = _mm256_setzero_pd();
 
     let chunks_a = a.chunks_exact(4);
@@ -383,6 +401,7 @@ unsafe fn simd_dot_product_f64_avx2(a: &[f64], b: &[f64]) -> f64 {
 }
 
 #[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
 unsafe fn simd_covariance_f64_avx2(x: &[f64], y: &[f64], ddof: usize) -> f64 {
     use std::arch::x86_64::*;
 
@@ -449,6 +468,7 @@ unsafe fn simd_covariance_f64_avx2(x: &[f64], y: &[f64], ddof: usize) -> f64 {
 }
 
 #[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
 unsafe fn simd_correlation_f64_avx2(x: &[f64], y: &[f64]) -> f64 {
     use std::arch::x86_64::*;
 
@@ -530,6 +550,7 @@ unsafe fn simd_correlation_f64_avx2(x: &[f64], y: &[f64]) -> f64 {
 }
 
 #[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
 unsafe fn simd_skewness_f64_avx2(data: &[f64]) -> f64 {
     use std::arch::x86_64::*;
 
@@ -596,6 +617,7 @@ unsafe fn simd_skewness_f64_avx2(data: &[f64]) -> f64 {
 }
 
 #[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
 unsafe fn simd_kurtosis_f64_avx2(data: &[f64]) -> f64 {
     use std::arch::x86_64::*;
 
@@ -663,6 +685,7 @@ unsafe fn simd_kurtosis_f64_avx2(data: &[f64]) -> f64 {
 }
 
 #[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
 unsafe fn simd_sum_of_squares_f64_avx2(data: &[f64], mean: f64) -> f64 {
     use std::arch::x86_64::*;
 
@@ -689,6 +712,7 @@ unsafe fn simd_sum_of_squares_f64_avx2(data: &[f64], mean: f64) -> f64 {
 }
 
 #[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
 unsafe fn simd_weighted_mean_f64_avx2(data: &[f64], weights: &[f64]) -> f64 {
     use std::arch::x86_64::*;
 

@@ -1,19 +1,35 @@
-// Storage engines module
+//! Storage engines module.
+//!
+//! # Two type layers, on purpose
+//!
+//! PandRS exposes two related-but-distinct storage vocabularies:
+//!
+//! * [`traits`](crate::storage::traits) — the *engine* layer ([`StorageEngine`](crate::storage::StorageEngine)): concrete, byte-range
+//!   addressed engines such as [`ColumnStore`] and [`disk::DiskStorage`](crate::storage::disk::DiskStorage).
+//! * [`unified_memory`](crate::storage::unified_memory) — the *strategy* layer
+//!   ([`unified_memory::StorageStrategy`](crate::storage::unified_memory::StorageStrategy)): pluggable, row-addressed strategies
+//!   driven by [`unified_manager::UnifiedMemoryManager`](crate::storage::unified_manager::UnifiedMemoryManager).
+//!
+//! The two layers deliberately keep separate enums (the strategy layer has
+//! richer variants — e.g. `Speed::VerySlow`, `DurabilityLevel::HighDurability`
+//! — that the engine layer does not model), so they are re-exported side by
+//! side with `Unified*` aliases rather than merged. Where a faithful mapping
+//! exists, `From` conversions bridge them; see [`traits`](crate::storage::traits).
 pub mod adaptive_string_pool;
 pub mod arena;
+pub mod checksum;
 pub mod column_store;
 pub mod disk;
 pub mod hybrid_large_scale;
 pub mod memory_mapped;
 pub mod ml_strategy_selector;
+pub mod simple_unified_string_pool;
 pub mod string_pool;
 pub mod traits;
 pub mod unified_column_store;
 pub mod unified_manager;
 pub mod unified_memory;
 pub mod zero_copy;
-// pub mod unified_string_pool; // Temporarily disabled due to Send/Sync issues
-pub mod simple_unified_string_pool;
 
 // Re-exports for storage engines
 pub use column_store::ColumnStore;
@@ -30,10 +46,11 @@ pub use traits::{
 
 // Re-exports for unified memory management
 pub use unified_memory::{
-    AccessPattern as UnifiedAccessPattern, AtomicMemoryStats, ChunkRange, CompactionResult,
-    CompressionPreference as UnifiedCompressionPreference, CompressionType, ConcurrencyLevel,
-    DataCharacteristics, DataChunk as UnifiedDataChunk, DurabilityLevel as UnifiedDurabilityLevel,
-    Efficiency, IoPattern, ParallelScalability, PerformancePriority as UnifiedPerformancePriority,
+    AccessPattern as UnifiedAccessPattern, AtomicMemoryStats, ChunkLayout, ChunkRange,
+    CompactionResult, CompressionPreference as UnifiedCompressionPreference, CompressionType,
+    ConcurrencyLevel, DataCharacteristics, DataChunk as UnifiedDataChunk,
+    DurabilityLevel as UnifiedDurabilityLevel, Efficiency, IoPattern, ParallelScalability,
+    PerformancePriority as UnifiedPerformancePriority,
     PerformanceProfile as UnifiedPerformanceProfile, PerformanceTracker, QueryOptimization,
     ResourceCost, Speed, StorageConfig as UnifiedStorageConfig,
     StorageHandle as UnifiedStorageHandle, StorageId, StorageMetadata,
@@ -50,7 +67,7 @@ pub use unified_manager::{
 // Re-exports for ML-based strategy selection
 pub use ml_strategy_selector::{
     AdaptiveUnifiedMemoryManager, MLStrategySelector, ModelStats, PerformancePrediction,
-    TrainingExample, WorkloadFeatures,
+    SharedMlSelector, TrainingExample, WorkloadFeatures,
 };
 
 // Re-exports for zero-copy operations
@@ -81,11 +98,14 @@ pub use hybrid_large_scale::{
     TierStorageInfo, TierStorageType, TieredDataEntry, TieringReport,
 };
 
-// Re-exports for unified zero-copy string pool (temporarily disabled)
-// pub use unified_string_pool::{
-//     UnifiedStringPool, UnifiedStringPoolConfig, UnifiedStringView, StringMetadata,
-//     UnifiedStringPoolStats,
-// };
+// NOTE: the old `unified_string_pool` module (never compiled, "temporarily
+// disabled due to Send/Sync issues") was removed in 0.4.1. It wrote through a
+// pointer derived from a shared reference, took its two locks in inconsistent
+// order (the real cause of the Send/Sync problem) and truncated offsets to
+// u32. `simple_unified_string_pool` below is the supported, compiled
+// replacement. The equally-orphaned `intelligent_memory_mapped` simulation was
+// removed at the same time; `memory_mapped` now provides real mmap access by
+// delegating to `zero_copy::MemoryMappedView`.
 
 // Re-exports for simplified unified zero-copy string pool
 pub use simple_unified_string_pool::{

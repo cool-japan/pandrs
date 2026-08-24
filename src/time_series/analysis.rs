@@ -5,9 +5,14 @@
 //! autocorrelation analysis.
 
 use crate::core::error::{Error, Result};
+use crate::stats::special::{chi2_sf, ln_gamma, normal_sf, student_t_ppf};
 use crate::time_series::core::TimeSeries;
+use crate::time_series::stats::{
+    kpss_critical_values, kpss_p_value_from_table, newey_west_long_run_variance,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+#[cfg(test)]
 use std::f64::consts::PI;
 
 /// Trend analysis result
@@ -143,9 +148,12 @@ impl TrendAnalysis {
 
         let strength = r_squared.max(mann_kendall_tau.abs());
 
-        // Calculate confidence interval for slope (simplified)
+        // 95% confidence interval for the OLS slope. The critical value is the
+        // Student-t quantile at `n − 2` degrees of freedom, not the normal
+        // `1.96`: with `n = 5` the correct multiplier is 3.182, so the interval
+        // this used to report was 38% too narrow.
         let slope_std_error = Self::slope_standard_error(&values, slope, intercept)?;
-        let t_critical = 1.96; // For 95% confidence
+        let t_critical = student_t_ppf(0.975, (values.len() as f64) - 2.0);
         let slope_ci = (
             slope - t_critical * slope_std_error,
             slope + t_critical * slope_std_error,
@@ -172,7 +180,7 @@ impl TrendAnalysis {
         let sum_y = values.iter().sum::<f64>();
         let sum_xy = x_values.iter().zip(values).map(|(x, y)| x * y).sum::<f64>();
         let sum_x2 = x_values.iter().map(|x| x * x).sum::<f64>();
-        let sum_y2 = values.iter().map(|y| y * y).sum::<f64>();
+        let _sum_y2 = values.iter().map(|y| y * y).sum::<f64>();
 
         let slope = (n * sum_xy - sum_x * sum_y) / (n * sum_x2 - sum_x * sum_x);
         let intercept = (sum_y - slope * sum_x) / n;
@@ -227,7 +235,12 @@ impl TrendAnalysis {
             0.0
         };
 
-        let p_value = 2.0 * (1.0 - Self::standard_normal_cdf(z.abs()));
+        // Two-sided normal tail from `crate::stats::special`, the crate's
+        // single special-function module. Computing it as `1 − Φ(|z|)` with a
+        // local 7-digit `erf` approximation (the previous behaviour) both
+        // duplicated the approximation and cancelled catastrophically in the
+        // tail; `normal_sf` is the survival function directly.
+        let p_value = (2.0 * normal_sf(z.abs())).clamp(0.0, 1.0);
 
         Ok((tau, p_value))
     }
@@ -245,7 +258,7 @@ impl TrendAnalysis {
             }
         }
 
-        slopes.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        slopes.sort_by(|a, b| a.total_cmp(b));
 
         // Median slope
         let median_idx = slopes.len() / 2;
@@ -279,29 +292,6 @@ impl TrendAnalysis {
 
         let slope_se = (rss / ((n - 2.0) * sxx)).sqrt();
         Ok(slope_se)
-    }
-
-    /// Standard normal CDF (simplified approximation)
-    fn standard_normal_cdf(x: f64) -> f64 {
-        0.5 * (1.0 + Self::erf(x / 2.0_f64.sqrt()))
-    }
-
-    /// Error function approximation
-    fn erf(x: f64) -> f64 {
-        let a1 = 0.254829592;
-        let a2 = -0.284496736;
-        let a3 = 1.421413741;
-        let a4 = -1.453152027;
-        let a5 = 1.061405429;
-        let p = 0.3275911;
-
-        let sign = if x < 0.0 { -1.0 } else { 1.0 };
-        let x = x.abs();
-
-        let t = 1.0 / (1.0 + p * x);
-        let y = 1.0 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * (-x * x).exp();
-
-        sign * y
     }
 }
 
@@ -477,7 +467,7 @@ impl SeasonalityAnalysis {
         }
 
         // Sort peaks by correlation strength
-        peaks.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        peaks.sort_by(|a, b| b.1.total_cmp(&a.1));
 
         // Return the strongest peak
         if let Some((peak_lag, peak_corr)) = peaks.first() {
@@ -563,7 +553,7 @@ impl SeasonalityAnalysis {
             .iter()
             .map(|(&period, &strength)| (period, strength))
             .collect();
-        periods.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        periods.sort_by(|a, b| b.1.total_cmp(&a.1));
 
         // Find the fundamental period (smallest period that explains the seasonality)
         for &(candidate_period, candidate_strength) in &periods {
@@ -611,28 +601,8 @@ impl StationarityTest {
 
         let lags = lags.unwrap_or(((values.len() as f64).cbrt() * 12.0 / 100.0) as usize);
 
-        // Create differenced series
-        let mut y = Vec::new();
-        let mut x = Vec::new();
-        let mut delta_y = Vec::new();
-
-        for i in 1..values.len() {
-            delta_y.push(values[i] - values[i - 1]);
-        }
-
-        for i in lags..delta_y.len() {
-            y.push(delta_y[i]);
-            x.push(values[i]); // lagged level
-
-            // Add lagged differences
-            for lag in 1..=lags {
-                if i >= lag {
-                    x.push(delta_y[i - lag]);
-                }
-            }
-        }
-
-        // Simplified ADF calculation (in practice would use regression)
+        // Run the actual ADF regression and take the t-statistic on the lagged
+        // level coefficient (see `calculate_adf_statistic`).
         let test_statistic = Self::calculate_adf_statistic(&values, lags)?;
 
         // Critical values (MacKinnon, 1996)
@@ -668,6 +638,10 @@ impl StationarityTest {
             ));
         }
 
+        // Critical values first, so an invalid trend specification is rejected
+        // before any arithmetic (shared table with `time_series::stats`).
+        let (c1, c5, c10) = kpss_critical_values(trend)?;
+
         // Detrend the series
         let detrended = match trend {
             "constant" => Self::detrend_constant(&values)?,
@@ -686,32 +660,40 @@ impl StationarityTest {
             partial_sums[i] = partial_sums[i - 1] + detrended[i];
         }
 
-        // Calculate long-run variance
-        let long_run_var = Self::calculate_long_run_variance(&detrended)?;
+        // Long-run variance via the shared Bartlett-kernel Newey-West
+        // estimator with the Schwert lag rule `l = ⌊4·(n/100)^{1/4}⌋`. The
+        // local helper this replaced returned the plain contemporaneous
+        // variance `Σê²/n` — the *short*-run variance — so the denominator
+        // ignored exactly the serial correlation the KPSS statistic exists to
+        // correct for, inflating the statistic for any persistent series and
+        // rejecting stationarity far too often.
+        let n_obs = detrended.len();
+        let bandwidth = (4.0 * (n_obs as f64 / 100.0).powf(0.25)).floor() as usize;
+        let long_run_var = newey_west_long_run_variance(&detrended, bandwidth);
 
         // KPSS statistic
         let n = values.len() as f64;
         let sum_of_squares: f64 = partial_sums.iter().map(|x| x * x).sum();
-        let test_statistic = sum_of_squares / (n * n * long_run_var);
+        let test_statistic = if long_run_var > 0.0 {
+            sum_of_squares / (n * n * long_run_var)
+        } else {
+            f64::NAN
+        };
 
-        // Critical values for KPSS test
         let mut critical_values = HashMap::new();
-        match trend {
-            "constant" => {
-                critical_values.insert("1%".to_string(), 0.739);
-                critical_values.insert("5%".to_string(), 0.463);
-                critical_values.insert("10%".to_string(), 0.347);
-            }
-            "linear" => {
-                critical_values.insert("1%".to_string(), 0.216);
-                critical_values.insert("5%".to_string(), 0.146);
-                critical_values.insert("10%".to_string(), 0.119);
-            }
-            _ => {}
-        }
+        critical_values.insert("1%".to_string(), c1);
+        critical_values.insert("5%".to_string(), c5);
+        critical_values.insert("10%".to_string(), c10);
 
-        let p_value = Self::calculate_kpss_p_value(test_statistic, trend)?;
-        let is_stationary = test_statistic < critical_values["5%"];
+        // Interpolated table p-value (shared with `time_series::stats`),
+        // replacing a three-level `0.01 / 0.05 / 0.10` step ladder that could
+        // never report anything in between.
+        let p_value = if test_statistic.is_finite() {
+            kpss_p_value_from_table(test_statistic, c10, c5, c1)
+        } else {
+            f64::NAN
+        };
+        let is_stationary = test_statistic < c5;
 
         Ok(super::analysis::StationarityTest {
             test_statistic,
@@ -719,71 +701,91 @@ impl StationarityTest {
             critical_values,
             is_stationary,
             test_type: "KPSS".to_string(),
-            lags: None,
+            lags: Some(bandwidth),
             trend: Some(trend.to_string()),
         })
     }
 
-    /// Calculate ADF test statistic (simplified)
+    /// Calculate the Augmented Dickey-Fuller test statistic.
+    ///
+    /// Runs the OLS regression
+    ///   Δyₜ = α + β·yₜ₋₁ + Σⱼ γⱼ·Δyₜ₋ⱼ + εₜ   (constant, no trend)
+    /// and returns the t-statistic on the lagged-level coefficient β. Under the
+    /// unit-root null β = 0; a stationary series gives β < 0 and a strongly
+    /// negative t-statistic. This is the genuine ADF regression — the previous
+    /// implementation built the design matrix and then discarded it, returning a
+    /// one-sample t-test of the differenced mean instead.
     fn calculate_adf_statistic(values: &[f64], lags: usize) -> Result<f64> {
-        // Simplified calculation - in practice this would involve regression
-        let mut diff_values = Vec::new();
-        for i in 1..values.len() {
-            diff_values.push(values[i] - values[i - 1]);
+        let n = values.len();
+
+        // First differences Δyₜ; `dy[k] = values[k+1] - values[k]`.
+        let dy: Vec<f64> = (1..n).map(|i| values[i] - values[i - 1]).collect();
+
+        // Build the regression design matrix. For each usable time index `t`
+        // (the earliest is `lags + 1`, so all lagged differences exist), the
+        // row is [1, yₜ₋₁, Δyₜ₋₁, …, Δyₜ₋ₗ] and the response is Δyₜ.
+        let n_regressors = 2 + lags; // constant + lagged level + `lags` diffs
+        let mut x_rows: Vec<Vec<f64>> = Vec::new();
+        let mut response: Vec<f64> = Vec::new();
+
+        for t in (lags + 1)..n {
+            let mut row = Vec::with_capacity(n_regressors);
+            row.push(1.0); // constant
+            row.push(values[t - 1]); // lagged level yₜ₋₁
+            for j in 1..=lags {
+                row.push(dy[t - 1 - j]); // Δyₜ₋ⱼ
+            }
+            x_rows.push(row);
+            response.push(dy[t - 1]); // Δyₜ
         }
 
-        let mean_diff = diff_values.iter().sum::<f64>() / diff_values.len() as f64;
-        let var_diff = diff_values
-            .iter()
-            .map(|x| (x - mean_diff).powi(2))
-            .sum::<f64>()
-            / diff_values.len() as f64;
+        if x_rows.len() <= n_regressors {
+            return Err(Error::InvalidInput(
+                "Insufficient observations to estimate the ADF regression".to_string(),
+            ));
+        }
 
-        let std_diff = var_diff.sqrt();
-        let t_stat = mean_diff / (std_diff / (diff_values.len() as f64).sqrt());
+        let (coefficients, std_errors) = ols_with_std_errors(&x_rows, &response)
+            .ok_or_else(|| Error::InvalidInput("ADF regression matrix is singular".to_string()))?;
 
-        Ok(t_stat)
+        // The lagged level is the second regressor (index 1).
+        let beta = coefficients[1];
+        let se = std_errors[1];
+        if !se.is_finite() || se <= 0.0 {
+            return Err(Error::InvalidInput(
+                "ADF regression produced a degenerate standard error".to_string(),
+            ));
+        }
+
+        Ok(beta / se)
     }
 
-    /// Calculate ADF p-value (simplified)
+    /// Approximate ADF p-value.
+    ///
+    /// The Dickey-Fuller statistic does not follow a standard distribution and
+    /// has no elementary closed form, so this returns an **approximate** p-value
+    /// by monotone interpolation of the MacKinnon constant-only critical-value
+    /// surface (1% = −3.43, 5% = −2.86, 10% = −2.57). It is intended for
+    /// reporting significance bands, not as an exact tail probability; the
+    /// stationarity verdict itself uses the tabulated critical values directly.
     fn calculate_adf_p_value(test_statistic: f64) -> Result<f64> {
-        // Simplified p-value calculation
-        let p_value = if test_statistic < -3.43 {
-            0.01
-        } else if test_statistic < -2.86 {
-            0.05
-        } else if test_statistic < -2.57 {
-            0.10
+        let anchors = [(-3.43_f64, 0.01_f64), (-2.86, 0.05), (-2.57, 0.10)];
+
+        let p = if test_statistic <= anchors[0].0 {
+            let slope = (anchors[1].1 - anchors[0].1) / (anchors[1].0 - anchors[0].0);
+            (anchors[0].1 + slope * (test_statistic - anchors[0].0)).clamp(0.0001, 0.01)
+        } else if test_statistic <= anchors[1].0 {
+            let t = (test_statistic - anchors[0].0) / (anchors[1].0 - anchors[0].0);
+            anchors[0].1 + t * (anchors[1].1 - anchors[0].1)
+        } else if test_statistic <= anchors[2].0 {
+            let t = (test_statistic - anchors[1].0) / (anchors[2].0 - anchors[1].0);
+            anchors[1].1 + t * (anchors[2].1 - anchors[1].1)
         } else {
-            0.15
+            let slope = (anchors[2].1 - anchors[1].1) / (anchors[2].0 - anchors[1].0);
+            (anchors[2].1 + slope * (test_statistic - anchors[2].0)).clamp(0.10, 0.999)
         };
 
-        Ok(p_value)
-    }
-
-    /// Calculate KPSS p-value (simplified)
-    fn calculate_kpss_p_value(test_statistic: f64, trend: &str) -> Result<f64> {
-        let critical_1 = match trend {
-            "constant" => 0.739,
-            "linear" => 0.216,
-            _ => 0.5,
-        };
-
-        let critical_5 = match trend {
-            "constant" => 0.463,
-            "linear" => 0.146,
-            _ => 0.3,
-        };
-
-        let p_value = if test_statistic > critical_1 {
-            0.01
-        } else if test_statistic > critical_5 {
-            0.05
-        } else {
-            0.10
-        };
-
-        Ok(p_value)
+        Ok(p)
     }
 
     /// Detrend with constant
@@ -812,15 +814,6 @@ impl StationarityTest {
             .collect();
 
         Ok(detrended)
-    }
-
-    /// Calculate long-run variance for KPSS
-    fn calculate_long_run_variance(residuals: &[f64]) -> Result<f64> {
-        let n = residuals.len();
-        let variance = residuals.iter().map(|x| x * x).sum::<f64>() / n as f64;
-
-        // Simplified - should include autocovariances
-        Ok(variance)
     }
 }
 
@@ -852,8 +845,9 @@ impl AutocorrelationAnalysis {
         // Calculate PACF
         let pacf = Self::calculate_pacf(&values, max_lags)?;
 
-        // Calculate confidence intervals
-        let acf_confidence_intervals = Self::calculate_acf_confidence_intervals(&values, max_lags)?;
+        // Calculate confidence intervals (Bartlett bands, built from the ACF
+        // just computed)
+        let acf_confidence_intervals = Self::calculate_acf_confidence_intervals(&acf, &values)?;
 
         // Ljung-Box test
         let (ljung_box_statistic, ljung_box_p_value) = Self::ljung_box_test(&values, max_lags)?;
@@ -914,43 +908,69 @@ impl AutocorrelationAnalysis {
             acf.push(Self::calculate_autocorrelation(values, lag)?);
         }
 
-        // Calculate PACF using Yule-Walker equations (simplified)
+        // Durbin-Levinson recursion. `phi` holds the AR coefficients of the
+        // order-(k-1) fit; `v` is the running prediction-error variance ratio.
+        // The partial autocorrelation at lag k is the reflection coefficient
+        // phi_kk, and `v` is updated as v_k = v_{k-1} * (1 - phi_kk^2). This is
+        // the correct recursion — the previous code held the denominator at the
+        // constant 1.0, giving wrong PACF values for every lag >= 2.
+        let mut phi = vec![0.0_f64; max_lags + 1];
+        let mut v = 1.0_f64;
+
         for k in 1..=max_lags {
-            if k == 1 {
-                pacf.push(acf[1]);
-            } else {
-                // Solve Yule-Walker equations for partial autocorrelation
-                let mut numerator = acf[k];
-                let denominator = 1.0;
-
-                for j in 1..k {
-                    numerator -= pacf[j] * acf[k - j];
-                }
-
-                if denominator != 0.0 {
-                    pacf.push(numerator / denominator);
-                } else {
-                    pacf.push(0.0);
-                }
+            let mut numerator = acf[k];
+            for j in 1..k {
+                numerator -= phi[j] * acf[k - j];
             }
+
+            let phi_kk = if v.abs() > 1e-12 { numerator / v } else { 0.0 };
+            pacf.push(phi_kk);
+
+            // Update the AR coefficients for order k from those of order k-1.
+            let prev: Vec<f64> = phi[1..k].to_vec();
+            phi[k] = phi_kk;
+            for j in 1..k {
+                phi[j] = prev[j - 1] - phi_kk * prev[k - 1 - j];
+            }
+
+            v *= 1.0 - phi_kk * phi_kk;
         }
 
         Ok(pacf)
     }
 
-    /// Calculate confidence intervals for ACF
-    fn calculate_acf_confidence_intervals(
-        values: &[f64],
-        max_lags: usize,
-    ) -> Result<Vec<(f64, f64)>> {
+    /// 95% confidence bands for the ACF using **Bartlett's formula**.
+    ///
+    /// Under the null that the process is MA(k−1) — i.e. that all
+    /// autocorrelations beyond lag `k−1` vanish — the large-sample standard
+    /// error of `r_k` is
+    ///
+    /// ```text
+    /// se(r_k) = √( (1 + 2·Σ_{j=1}^{k−1} r_j²) / n )
+    /// ```
+    ///
+    /// so the bands widen as earlier lags show correlation. The flat
+    /// `±1.96/√n` bands this replaced are Bartlett's formula specialized to
+    /// *white noise* (every `r_j = 0`); applied to a series that is visibly
+    /// autocorrelated at short lags they are far too narrow at long lags and
+    /// flag spurious significance.
+    ///
+    /// `acf[0] = r_0 = 1` has no sampling error, so its band is `(0, 0)`.
+    fn calculate_acf_confidence_intervals(acf: &[f64], values: &[f64]) -> Result<Vec<(f64, f64)>> {
         let n = values.len() as f64;
-        let mut intervals = Vec::new();
+        let z = 1.959_963_984_540_054_f64; // Φ⁻¹(0.975)
+        let mut intervals = Vec::with_capacity(acf.len());
 
-        for lag in 0..=max_lags {
-            let se = if lag == 0 { 0.0 } else { (1.0 / n).sqrt() };
-
-            let margin = 1.96 * se; // 95% confidence interval
-            intervals.push((-margin, margin));
+        let mut running = 0.0; // Σ_{j=1}^{k−1} r_j²
+        for (lag, &r) in acf.iter().enumerate() {
+            if lag == 0 {
+                intervals.push((0.0, 0.0));
+            } else {
+                let se = ((1.0 + 2.0 * running) / n).sqrt();
+                let margin = z * se;
+                intervals.push((-margin, margin));
+                running += r * r;
+            }
         }
 
         Ok(intervals)
@@ -968,14 +988,9 @@ impl AutocorrelationAnalysis {
 
         lb_statistic *= n * (n + 2.0);
 
-        // P-value calculation (simplified)
-        let p_value = if lb_statistic > 20.0 {
-            0.01
-        } else if lb_statistic > 15.0 {
-            0.05
-        } else {
-            0.10
-        };
+        // Under H0 (white noise) the Ljung-Box statistic is asymptotically
+        // chi-squared with `max_lags` degrees of freedom.
+        let p_value = chi2_sf(lb_statistic, max_lags as f64);
 
         Ok((lb_statistic, p_value))
     }
@@ -1031,7 +1046,24 @@ impl ChangePointDetection {
         })
     }
 
-    /// Detect change points using Bayesian change point detection (simplified)
+    /// Detect change points with **Bayesian Online Changepoint Detection**
+    /// (Adams & MacKay, 2007).
+    ///
+    /// `prior_scale` is the constant changepoint **hazard rate** — the prior
+    /// probability that any given observation begins a new regime; the default
+    /// `0.01` corresponds to an expected run length of 100 observations. It
+    /// must lie strictly between 0 and 1.
+    ///
+    /// `scores[t]` is the posterior probability `P(r_t = 0 | x_{1:t})` that the
+    /// run length collapsed at `t`; `change_points` lists the indices where
+    /// that probability exceeds `0.5`, and `significance_levels` carries the
+    /// probabilities themselves. See
+    /// `bocpd_changepoint_probabilities` for the model and for what the
+    /// previous non-Bayesian implementation actually computed.
+    ///
+    /// # Errors
+    /// Returns [`Error::InvalidInput`] for series shorter than 10 points or a
+    /// `prior_scale` outside `(0, 1)`.
     pub fn bayesian_detection(
         ts: &TimeSeries,
         prior_scale: Option<f64>,
@@ -1047,41 +1079,306 @@ impl ChangePointDetection {
             ));
         }
 
-        let prior_scale = prior_scale.unwrap_or(0.01);
-
-        // Simplified Bayesian change point detection
-        let mut scores = Vec::new();
-        let mut change_points = Vec::new();
-        let mut significance_levels = Vec::new();
-
-        for i in 2..(values.len() - 2) {
-            let before_mean = values[..i].iter().sum::<f64>() / i as f64;
-            let after_mean = values[i..].iter().sum::<f64>() / (values.len() - i) as f64;
-
-            let score = (before_mean - after_mean).abs();
-            scores.push(score);
-
-            if score > prior_scale * 10.0 {
-                // Simplified threshold
-                change_points.push(i);
-                significance_levels.push(score / (prior_scale * 10.0));
-            }
+        let hazard = prior_scale.unwrap_or(0.01);
+        if !(hazard > 0.0 && hazard < 1.0) {
+            return Err(Error::InvalidInput(format!(
+                "prior_scale is the constant changepoint hazard rate and must lie strictly \
+                 between 0 and 1, got {hazard}"
+            )));
         }
 
-        // Pad scores to match original length
-        let mut full_scores = vec![0.0; values.len()];
-        for (i, score) in scores.iter().enumerate() {
-            full_scores[i + 2] = *score;
+        let scores = bocpd_changepoint_probabilities(&values, hazard);
+
+        // A run-length-zero posterior above 0.5 means the model believes, on
+        // balance, that this observation started a new regime.
+        const THRESHOLD: f64 = 0.5;
+        let mut change_points = Vec::new();
+        let mut significance_levels = Vec::new();
+        for (i, &score) in scores.iter().enumerate() {
+            if i > 0 && score > THRESHOLD {
+                change_points.push(i);
+                significance_levels.push(score);
+            }
         }
 
         Ok(super::analysis::ChangePointDetection {
             change_points,
-            scores: full_scores,
-            method: "Bayesian".to_string(),
-            threshold: prior_scale * 10.0,
+            scores,
+            method: "BOCPD (Adams & MacKay 2007, Normal-Inverse-Gamma)".to_string(),
+            threshold: THRESHOLD,
             significance_levels,
         })
     }
+}
+
+/// Bayesian Online Changepoint Detection (Adams & MacKay, 2007) with a
+/// Normal-Inverse-Gamma conjugate prior on the (unknown mean, unknown variance)
+/// Gaussian observation model and a constant hazard rate.
+///
+/// Returns, for each index `t`, the posterior probability that a changepoint
+/// occurred at `t`, evaluated with **one step of lookahead**:
+/// `P(r_{t+1} = 1 | x_{1:t+1})` — the probability that, having also seen
+/// `x_{t+1}`, the current run is exactly one observation old and therefore
+/// began at `t`.
+///
+/// The purely filtered quantity `P(r_t = 0 | x_{1:t})` is *not* usable as a
+/// detector: at time `t` every run-length hypothesis is multiplied by the same
+/// predictive `π(x_t | r)`, so the changepoint and growth branches differ only
+/// by the hazard ratio and `P(r_t = 0)` never rises much above `H` however
+/// dramatic the shift. One observation later the hypothesis "the run started at
+/// `t`" has already absorbed `x_t` into its posterior and predicts `x_{t+1}`
+/// far better than every older hypothesis, so the mass concentrates. Index `0`
+/// scores `0.0` — the series has to start somewhere, and that is not a detected
+/// change — and the final index falls back to its filtered `P(r_t = 0)`.
+///
+/// The whole recursion runs in log-space with log-sum-exp normalization, so it
+/// stays numerically stable for long series where the joint run-length
+/// probabilities underflow.
+///
+/// This replaces a "Bayesian detection" that was `|mean(x[..i]) − mean(x[i..])|
+/// > prior_scale · 10`: an absolute mean-shift threshold with no prior, no
+/// likelihood, no posterior and no scale invariance (its default threshold of
+/// `0.1` fired on every point of any series measured in units bigger than a
+/// tenth). Nothing about it was Bayesian.
+///
+/// ### Model
+/// Within a run, `xₜ ~ N(μ, σ²)` with `(μ, σ²) ~ NIG(μ₀, κ₀, α₀, β₀)`, whose
+/// posterior predictive is a Student-t:
+///
+/// ```text
+/// xₜ | run of length r  ~  t_{2α}( μ, β(κ+1) / (α κ) )
+/// ```
+///
+/// The prior is set empirically from the series (`μ₀ = mean`, `β₀` from its
+/// variance) with weak counts `κ₀ = 1`, `α₀ = 1`, which makes the detector
+/// scale-invariant.
+fn bocpd_changepoint_probabilities(values: &[f64], hazard: f64) -> Vec<f64> {
+    let n = values.len();
+    let nf = n as f64;
+
+    // Empirical, weakly-informative NIG prior.
+    let mean0 = values.iter().sum::<f64>() / nf;
+    let var0 = values.iter().map(|v| (v - mean0).powi(2)).sum::<f64>() / nf;
+    let kappa0 = 1.0_f64;
+    let alpha0 = 1.0_f64;
+    let beta0 = if var0 > 0.0 { var0 } else { 1.0 };
+
+    // Sufficient statistics indexed by run length: entry `r` describes the
+    // hypothesis "the current run has length r".
+    let mut mu = vec![mean0];
+    let mut kappa = vec![kappa0];
+    let mut alpha = vec![alpha0];
+    let mut beta = vec![beta0];
+
+    // log P(r_t = r, x_{1:t}); starts as the point mass at r = 0.
+    let mut log_joint = vec![0.0_f64];
+
+    let log_hazard = hazard.ln();
+    let log_survive = (1.0 - hazard).ln();
+
+    // Filtered posteriors we need for the lag-1 smoothed detector:
+    // `p_reset[t] = P(r_t = 0 | x_{1:t})` and `p_len1[t] = P(r_t = 1 | x_{1:t})`.
+    let mut p_reset = Vec::with_capacity(n);
+    let mut p_len1 = Vec::with_capacity(n);
+
+    for &x in values {
+        let run_count = log_joint.len();
+
+        // Predictive log-likelihood of x under each run-length hypothesis.
+        let mut log_predictive = Vec::with_capacity(run_count);
+        for r in 0..run_count {
+            let df = 2.0 * alpha[r];
+            let scale_sq = beta[r] * (kappa[r] + 1.0) / (alpha[r] * kappa[r]);
+            log_predictive.push(student_t_log_pdf(x, mu[r], scale_sq, df));
+        }
+
+        // Growth: the run continues (r -> r+1); Changepoint: it resets to 0.
+        let mut new_log_joint = vec![f64::NEG_INFINITY; run_count + 1];
+        let mut log_reset_terms = Vec::with_capacity(run_count);
+        for r in 0..run_count {
+            new_log_joint[r + 1] = log_joint[r] + log_predictive[r] + log_survive;
+            log_reset_terms.push(log_joint[r] + log_predictive[r] + log_hazard);
+        }
+        new_log_joint[0] = log_sum_exp(&log_reset_terms);
+
+        // Normalize to a posterior over run lengths.
+        let log_evidence = log_sum_exp(&new_log_joint);
+        for value in new_log_joint.iter_mut() {
+            *value -= log_evidence;
+        }
+
+        p_reset.push(new_log_joint[0].exp());
+        p_len1.push(new_log_joint.get(1).map_or(0.0, |v| v.exp()));
+
+        // Conjugate NIG updates, shifted by one because hypothesis `r+1` at the
+        // next step descends from hypothesis `r` at this one.
+        let mut new_mu = vec![mean0];
+        let mut new_kappa = vec![kappa0];
+        let mut new_alpha = vec![alpha0];
+        let mut new_beta = vec![beta0];
+        for r in 0..run_count {
+            let k = kappa[r];
+            let m = mu[r];
+            new_mu.push((k * m + x) / (k + 1.0));
+            new_kappa.push(k + 1.0);
+            new_alpha.push(alpha[r] + 0.5);
+            new_beta.push(beta[r] + k * (x - m) * (x - m) / (2.0 * (k + 1.0)));
+        }
+
+        mu = new_mu;
+        kappa = new_kappa;
+        alpha = new_alpha;
+        beta = new_beta;
+        log_joint = new_log_joint;
+    }
+
+    (0..n)
+        .map(|t| {
+            if t == 0 {
+                0.0
+            } else if t + 1 < n {
+                p_len1[t + 1]
+            } else {
+                p_reset[t]
+            }
+        })
+        .collect()
+}
+
+/// Log density of a Student-t with `df` degrees of freedom, location `loc` and
+/// **squared** scale `scale_sq`.
+fn student_t_log_pdf(x: f64, loc: f64, scale_sq: f64, df: f64) -> f64 {
+    if !(scale_sq > 0.0) || !(df > 0.0) {
+        return f64::NEG_INFINITY;
+    }
+    let z_sq = (x - loc) * (x - loc) / scale_sq;
+    ln_gamma((df + 1.0) / 2.0)
+        - ln_gamma(df / 2.0)
+        - 0.5 * (df * std::f64::consts::PI * scale_sq).ln()
+        - (df + 1.0) / 2.0 * (1.0 + z_sq / df).ln()
+}
+
+/// Numerically stable `ln Σ exp(xᵢ)`.
+fn log_sum_exp(values: &[f64]) -> f64 {
+    let max = values
+        .iter()
+        .copied()
+        .filter(|v| v.is_finite())
+        .fold(f64::NEG_INFINITY, f64::max);
+    if !max.is_finite() {
+        return f64::NEG_INFINITY;
+    }
+    max + values.iter().map(|v| (v - max).exp()).sum::<f64>().ln()
+}
+
+/// Ordinary least squares via the normal equations.
+///
+/// Solves `y = X·b` and returns `(coefficients, standard_errors)`, where the
+/// standard errors come from `σ̂² · diag((XᵀX)⁻¹)` with `σ̂² = RSS / (n − k)`.
+/// Returns `None` when the system is under-determined (`n ≤ k`) or `XᵀX` is
+/// singular. Used by the Augmented Dickey-Fuller regression.
+pub(crate) fn ols_with_std_errors(x: &[Vec<f64>], y: &[f64]) -> Option<(Vec<f64>, Vec<f64>)> {
+    let n = x.len();
+    if n == 0 || y.len() != n {
+        return None;
+    }
+    let k = x[0].len();
+    if n <= k {
+        return None;
+    }
+
+    // Normal equations: XᵀX (k×k) and Xᵀy (k).
+    let mut xtx = vec![vec![0.0_f64; k]; k];
+    let mut xty = vec![0.0_f64; k];
+    for (row, &yi) in x.iter().zip(y.iter()) {
+        for a in 0..k {
+            xty[a] += row[a] * yi;
+            for b in 0..k {
+                xtx[a][b] += row[a] * row[b];
+            }
+        }
+    }
+
+    let inv = invert_matrix(&xtx)?;
+
+    // b = (XᵀX)⁻¹ Xᵀy.
+    let mut beta = vec![0.0_f64; k];
+    for a in 0..k {
+        for c in 0..k {
+            beta[a] += inv[a][c] * xty[c];
+        }
+    }
+
+    // Residual sum of squares.
+    let mut rss = 0.0_f64;
+    for (row, &yi) in x.iter().zip(y.iter()) {
+        let mut pred = 0.0;
+        for a in 0..k {
+            pred += row[a] * beta[a];
+        }
+        let e = yi - pred;
+        rss += e * e;
+    }
+
+    let dof = (n - k) as f64;
+    let sigma2 = rss / dof;
+
+    let mut se = vec![0.0_f64; k];
+    for a in 0..k {
+        let var = sigma2 * inv[a][a];
+        se[a] = if var > 0.0 { var.sqrt() } else { f64::NAN };
+    }
+
+    Some((beta, se))
+}
+
+/// Invert a square matrix by Gauss-Jordan elimination with partial pivoting.
+/// Returns `None` if the matrix is (numerically) singular.
+fn invert_matrix(m: &[Vec<f64>]) -> Option<Vec<Vec<f64>>> {
+    let n = m.len();
+    let mut a: Vec<Vec<f64>> = m.to_vec();
+    let mut inv = vec![vec![0.0_f64; n]; n];
+    for (i, row) in inv.iter_mut().enumerate() {
+        row[i] = 1.0;
+    }
+
+    for col in 0..n {
+        // Partial pivot: largest magnitude in this column.
+        let mut pivot = col;
+        let mut max_abs = a[col][col].abs();
+        for r in (col + 1)..n {
+            let v = a[r][col].abs();
+            if v > max_abs {
+                max_abs = v;
+                pivot = r;
+            }
+        }
+        if max_abs < 1e-12 {
+            return None;
+        }
+        a.swap(col, pivot);
+        inv.swap(col, pivot);
+
+        let diag = a[col][col];
+        for j in 0..n {
+            a[col][j] /= diag;
+            inv[col][j] /= diag;
+        }
+
+        for r in 0..n {
+            if r != col {
+                let factor = a[r][col];
+                if factor != 0.0 {
+                    for j in 0..n {
+                        a[r][j] -= factor * a[col][j];
+                        inv[r][j] -= factor * inv[col][j];
+                    }
+                }
+            }
+        }
+    }
+
+    Some(inv)
 }
 
 #[cfg(test)]
@@ -1181,6 +1478,32 @@ mod tests {
         assert_eq!(result.lags.len(), 21);
         assert!(result.acf[0] == 1.0); // ACF at lag 0 should be 1
         assert!(result.pacf[0] == 1.0); // PACF at lag 0 should be 1
+    }
+
+    #[test]
+    fn test_pacf_durbin_levinson_lag2_closed_form() {
+        // The Durbin-Levinson recursion must reproduce the known closed form for
+        // the lag-2 partial autocorrelation,
+        //   φ₂₂ = (r₂ − r₁²) / (1 − r₁²),
+        // which the previous (denominator == 1.0) implementation got wrong.
+        let ts = create_seasonal_series();
+        let result =
+            AutocorrelationAnalysis::analyze(&ts, Some(6)).expect("operation should succeed");
+
+        let r1 = result.acf[1];
+        let r2 = result.acf[2];
+        let expected = (r2 - r1 * r1) / (1.0 - r1 * r1);
+
+        assert!(
+            (result.pacf[1] - r1).abs() < 1e-12,
+            "PACF lag 1 must equal ACF lag 1"
+        );
+        assert!(
+            (result.pacf[2] - expected).abs() < 1e-9,
+            "PACF lag 2 ({}) should match the closed form ({})",
+            result.pacf[2],
+            expected
+        );
     }
 
     #[test]

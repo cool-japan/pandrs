@@ -1,14 +1,9 @@
 //! Data operations functionality for OptimizedDataFrame
 
-use rayon::prelude::*;
-use std::collections::HashMap;
-
-use super::core::{ColumnView, OptimizedDataFrame};
-use crate::column::{
-    BooleanColumn, Column, ColumnTrait, ColumnType, Float64Column, Int64Column, StringColumn,
-};
+use super::core::OptimizedDataFrame;
+use super::select::{take_column, take_rows};
+use crate::column::{BooleanColumn, Column, ColumnType, Float64Column, Int64Column, StringColumn};
 use crate::error::{Error, Result};
-use crate::index::{DataFrameIndex, Index, IndexTrait};
 
 impl OptimizedDataFrame {
     /// Select columns (as a new DataFrame)
@@ -34,195 +29,30 @@ impl OptimizedDataFrame {
     }
 
     /// Filter rows (as a new DataFrame)
+    ///
+    /// Delegates to [`OptimizedDataFrame::filter_rows`] so that both entry
+    /// points share one implementation (NULL values and index labels of the
+    /// surviving rows are preserved).
     pub fn filter(&self, condition_column: &str) -> Result<Self> {
-        // Get condition column
-        let column_idx = self
-            .column_indices
-            .get(condition_column)
-            .ok_or_else(|| Error::ColumnNotFound(condition_column.to_string()))?;
-
-        let condition = &self.columns[*column_idx];
-
-        // Verify that the condition column is Boolean type
-        if let Column::Boolean(bool_col) = condition {
-            // Collect indices of rows where the value is true
-            let mut indices = Vec::new();
-            for i in 0..bool_col.len() {
-                if let Ok(Some(true)) = bool_col.get(i) {
-                    indices.push(i);
-                }
-            }
-
-            // Create a new DataFrame
-            let mut result = Self::new();
-
-            // Filter each column
-            for (i, name) in self.column_names.iter().enumerate() {
-                let column = &self.columns[i];
-
-                let filtered_column = match column {
-                    Column::Int64(col) => {
-                        let mut filtered_data = Vec::with_capacity(indices.len());
-                        for &idx in &indices {
-                            if let Ok(Some(val)) = col.get(idx) {
-                                filtered_data.push(val);
-                            } else {
-                                filtered_data.push(0); // Default value
-                            }
-                        }
-                        Column::Int64(Int64Column::new(filtered_data))
-                    }
-                    Column::Float64(col) => {
-                        let mut filtered_data = Vec::with_capacity(indices.len());
-                        for &idx in &indices {
-                            if let Ok(Some(val)) = col.get(idx) {
-                                filtered_data.push(val);
-                            } else {
-                                filtered_data.push(0.0); // Default value
-                            }
-                        }
-                        Column::Float64(Float64Column::new(filtered_data))
-                    }
-                    Column::String(col) => {
-                        let mut filtered_data = Vec::with_capacity(indices.len());
-                        for &idx in &indices {
-                            if let Ok(Some(val)) = col.get(idx) {
-                                filtered_data.push(val.to_string());
-                            } else {
-                                filtered_data.push(String::new()); // Default value
-                            }
-                        }
-                        Column::String(StringColumn::new(filtered_data))
-                    }
-                    Column::Boolean(col) => {
-                        let mut filtered_data = Vec::with_capacity(indices.len());
-                        for &idx in &indices {
-                            if let Ok(Some(val)) = col.get(idx) {
-                                filtered_data.push(val);
-                            } else {
-                                filtered_data.push(false); // Default value
-                            }
-                        }
-                        Column::Boolean(BooleanColumn::new(filtered_data))
-                    }
-                };
-
-                result.add_column(name.clone(), filtered_column)?;
-            }
-
-            Ok(result)
-        } else {
-            Err(Error::ColumnTypeMismatch {
-                name: condition_column.to_string(),
-                expected: ColumnType::Boolean,
-                found: condition.column_type(),
-            })
-        }
+        self.filter_rows(condition_column)
     }
 
     /// Filter by specified row indices (internal helper)
+    ///
+    /// Delegates to the canonical row-materialization routine, which preserves
+    /// NULL values and re-selects the index labels of the selected rows.
     pub(crate) fn filter_by_indices(&self, indices: &[usize]) -> Result<Self> {
-        let mut result = Self::new();
-
-        // Filter each column
-        for (i, name) in self.column_names.iter().enumerate() {
-            let column = &self.columns[i];
-
-            let filtered_column = match column {
-                Column::Int64(col) => {
-                    let filtered_data: Vec<i64> = indices
-                        .iter()
-                        .filter_map(|&idx| {
-                            if idx < col.len() {
-                                if let Ok(Some(val)) = col.get(idx) {
-                                    Some(val)
-                                } else {
-                                    Some(0) // Default value
-                                }
-                            } else {
-                                None
-                            }
-                        })
-                        .collect();
-                    Column::Int64(Int64Column::new(filtered_data))
-                }
-                Column::Float64(col) => {
-                    let filtered_data: Vec<f64> = indices
-                        .iter()
-                        .filter_map(|&idx| {
-                            if idx < col.len() {
-                                if let Ok(Some(val)) = col.get(idx) {
-                                    Some(val)
-                                } else {
-                                    Some(0.0) // Default value
-                                }
-                            } else {
-                                None
-                            }
-                        })
-                        .collect();
-                    Column::Float64(Float64Column::new(filtered_data))
-                }
-                Column::String(col) => {
-                    let filtered_data: Vec<String> = indices
-                        .iter()
-                        .filter_map(|&idx| {
-                            if idx < col.len() {
-                                if let Ok(Some(val)) = col.get(idx) {
-                                    Some(val.to_string())
-                                } else {
-                                    Some(String::new()) // Default value
-                                }
-                            } else {
-                                None
-                            }
-                        })
-                        .collect();
-                    Column::String(StringColumn::new(filtered_data))
-                }
-                Column::Boolean(col) => {
-                    let filtered_data: Vec<bool> = indices
-                        .iter()
-                        .filter_map(|&idx| {
-                            if idx < col.len() {
-                                if let Ok(Some(val)) = col.get(idx) {
-                                    Some(val)
-                                } else {
-                                    Some(false) // Default value
-                                }
-                            } else {
-                                None
-                            }
-                        })
-                        .collect();
-                    Column::Boolean(BooleanColumn::new(filtered_data))
-                }
-            };
-
-            result.add_column(name.clone(), filtered_column)?;
-        }
-
-        // Copy index
-        if let Some(ref idx) = self.index {
-            result.index = Some(idx.clone());
-        }
-
-        Ok(result)
+        take_rows(self, indices)
     }
 
     /// Get the first n rows
     pub fn head(&self, n: usize) -> Result<Self> {
-        let n = std::cmp::min(n, self.row_count);
-        let indices: Vec<usize> = (0..n).collect();
-        self.filter_by_indices(&indices)
+        self.head_rows(n)
     }
 
     /// Get the last n rows
     pub fn tail(&self, n: usize) -> Result<Self> {
-        let n = std::cmp::min(n, self.row_count);
-        let start = self.row_count.saturating_sub(n);
-        let indices: Vec<usize> = (start..self.row_count).collect();
-        self.filter_by_indices(&indices)
+        self.tail_rows(n)
     }
 
     /// Convert DataFrame to "long format" (melt operation)
@@ -270,20 +100,6 @@ impl OptimizedDataFrame {
         // Precompute the size of the result (performance optimization)
         let result_rows = self.row_count * value_vars.len();
 
-        // Extract data for ID columns
-        let mut id_columns = Vec::with_capacity(id_vars.len());
-        for &id_col in id_vars {
-            let idx = self.column_indices[id_col];
-            id_columns.push((id_col, &self.columns[idx]));
-        }
-
-        // Extract data for value columns
-        let mut value_columns = Vec::with_capacity(value_vars.len());
-        for &val_col in &value_vars {
-            let idx = self.column_indices[val_col];
-            value_columns.push((val_col, &self.columns[idx]));
-        }
-
         // Create the result DataFrame
         let mut result = Self::new();
 
@@ -299,145 +115,73 @@ impl OptimizedDataFrame {
             Column::String(StringColumn::new(var_col_data)),
         )?;
 
-        // Replicate and add ID columns
-        for &(id_col_name, col) in &id_columns {
-            match col {
-                Column::Int64(int_col) => {
-                    // Integer column
-                    let mut repeated_data = Vec::with_capacity(result_rows);
-                    for _ in 0..value_vars.len() {
-                        for i in 0..self.row_count {
-                            if let Ok(Some(val)) = int_col.get(i) {
-                                repeated_data.push(val);
-                            } else {
-                                // Use default value for NULLs
-                                repeated_data.push(0);
-                            }
-                        }
-                    }
-                    result.add_column(
-                        id_col_name.to_string(),
-                        Column::Int64(Int64Column::new(repeated_data)),
-                    )?;
-                }
-                Column::Float64(float_col) => {
-                    // Float column
-                    let mut repeated_data = Vec::with_capacity(result_rows);
-                    for _ in 0..value_vars.len() {
-                        for i in 0..self.row_count {
-                            if let Ok(Some(val)) = float_col.get(i) {
-                                repeated_data.push(val);
-                            } else {
-                                // Use default value for NULLs
-                                repeated_data.push(0.0);
-                            }
-                        }
-                    }
-                    result.add_column(
-                        id_col_name.to_string(),
-                        Column::Float64(Float64Column::new(repeated_data)),
-                    )?;
-                }
-                Column::String(str_col) => {
-                    // String column
-                    let mut repeated_data = Vec::with_capacity(result_rows);
-                    for _ in 0..value_vars.len() {
-                        for i in 0..self.row_count {
-                            if let Ok(Some(val)) = str_col.get(i) {
-                                repeated_data.push(val.to_string());
-                            } else {
-                                // Use default value for NULLs
-                                repeated_data.push(String::new());
-                            }
-                        }
-                    }
-                    result.add_column(
-                        id_col_name.to_string(),
-                        Column::String(StringColumn::new(repeated_data)),
-                    )?;
-                }
-                Column::Boolean(bool_col) => {
-                    // Boolean column
-                    let mut repeated_data = Vec::with_capacity(result_rows);
-                    for _ in 0..value_vars.len() {
-                        for i in 0..self.row_count {
-                            if let Ok(Some(val)) = bool_col.get(i) {
-                                repeated_data.push(val);
-                            } else {
-                                // Use default value for NULLs
-                                repeated_data.push(false);
-                            }
-                        }
-                    }
-                    result.add_column(
-                        id_col_name.to_string(),
-                        Column::Boolean(BooleanColumn::new(repeated_data)),
-                    )?;
-                }
-            }
+        // Replicate and add ID columns. The replication is a plain row
+        // selection, so it reuses the canonical (NULL preserving) routine.
+        let mut repeated_positions = Vec::with_capacity(result_rows);
+        for _ in 0..value_vars.len() {
+            repeated_positions.extend(0..self.row_count);
         }
 
-        // Create value columns (optimized for each type)
-        // To optimize, collect all values as strings first
-        let mut all_values = Vec::with_capacity(result_rows);
+        for &id_col_name in id_vars {
+            let idx = self
+                .column_indices
+                .get(id_col_name)
+                .ok_or_else(|| Error::ColumnNotFound(id_col_name.to_string()))?;
+            let replicated = take_column(&self.columns[*idx], &repeated_positions);
+            result.add_column(id_col_name.to_string(), replicated)?;
+        }
 
-        for (_, col) in value_columns {
-            match col {
+        // Collect the values of every value column as text. Missing values stay
+        // missing (`None`) instead of being turned into empty strings, which
+        // would later be parsed back as 0.
+        let mut all_values: Vec<Option<String>> = Vec::with_capacity(result_rows);
+
+        for val_col in &value_vars {
+            let idx = self
+                .column_indices
+                .get(*val_col)
+                .ok_or_else(|| Error::ColumnNotFound((*val_col).to_string()))?;
+
+            match &self.columns[*idx] {
                 Column::Int64(int_col) => {
                     for i in 0..self.row_count {
-                        if let Ok(Some(val)) = int_col.get(i) {
-                            all_values.push(val.to_string());
-                        } else {
-                            all_values.push(String::new());
-                        }
+                        all_values.push(int_col.get(i).ok().flatten().map(|v| v.to_string()));
                     }
                 }
                 Column::Float64(float_col) => {
                     for i in 0..self.row_count {
-                        if let Ok(Some(val)) = float_col.get(i) {
-                            all_values.push(val.to_string());
-                        } else {
-                            all_values.push(String::new());
-                        }
+                        all_values.push(float_col.get(i).ok().flatten().map(|v| v.to_string()));
                     }
                 }
                 Column::String(str_col) => {
                     for i in 0..self.row_count {
-                        if let Ok(Some(val)) = str_col.get(i) {
-                            all_values.push(val.to_string());
-                        } else {
-                            all_values.push(String::new());
-                        }
+                        all_values.push(str_col.get(i).ok().flatten().map(|v| v.to_string()));
                     }
                 }
                 Column::Boolean(bool_col) => {
                     for i in 0..self.row_count {
-                        if let Ok(Some(val)) = bool_col.get(i) {
-                            all_values.push(val.to_string());
-                        } else {
-                            all_values.push(String::new());
-                        }
+                        all_values.push(bool_col.get(i).ok().flatten().map(|v| v.to_string()));
                     }
                 }
             }
         }
 
-        // Determine the appropriate type and add data
-        let is_all_int = all_values
-            .iter()
-            .all(|s| s.parse::<i64>().is_ok() || s.is_empty());
+        // Determine the appropriate type from the values that are actually
+        // present (NULLs must not influence type inference).
+        let nulls: Vec<bool> = all_values.iter().map(|v| v.is_none()).collect();
+        let present: Vec<&String> = all_values.iter().flatten().collect();
 
-        let is_all_float = !is_all_int
-            && all_values
-                .iter()
-                .all(|s| s.parse::<f64>().is_ok() || s.is_empty());
+        let is_all_int = !present.is_empty() && present.iter().all(|s| s.parse::<i64>().is_ok());
+
+        let is_all_float =
+            !is_all_int && !present.is_empty() && present.iter().all(|s| s.parse::<f64>().is_ok());
 
         let is_all_bool = !is_all_int
             && !is_all_float
-            && all_values.iter().all(|s| {
+            && !present.is_empty()
+            && present.iter().all(|s| {
                 let lower = s.to_lowercase();
-                lower.is_empty()
-                    || lower == "true"
+                lower == "true"
                     || lower == "false"
                     || lower == "1"
                     || lower == "0"
@@ -449,38 +193,50 @@ impl OptimizedDataFrame {
         if is_all_int {
             let int_values: Vec<i64> = all_values
                 .iter()
-                .map(|s| s.parse::<i64>().unwrap_or(0))
+                .map(|s| s.as_ref().and_then(|s| s.parse::<i64>().ok()).unwrap_or(0))
                 .collect();
             result.add_column(
                 value_name.to_string(),
-                Column::Int64(Int64Column::new(int_values)),
+                Column::Int64(Int64Column::with_nulls(int_values, nulls)),
             )?;
         } else if is_all_float {
             let float_values: Vec<f64> = all_values
                 .iter()
-                .map(|s| s.parse::<f64>().unwrap_or(0.0))
+                .map(|s| {
+                    s.as_ref()
+                        .and_then(|s| s.parse::<f64>().ok())
+                        .unwrap_or(0.0)
+                })
                 .collect();
             result.add_column(
                 value_name.to_string(),
-                Column::Float64(Float64Column::new(float_values)),
+                Column::Float64(Float64Column::with_nulls(float_values, nulls)),
             )?;
         } else if is_all_bool {
             let bool_values: Vec<bool> = all_values
                 .iter()
                 .map(|s| {
-                    let lower = s.to_lowercase();
-                    lower == "true" || lower == "1" || lower == "yes"
+                    s.as_ref()
+                        .map(|s| {
+                            let lower = s.to_lowercase();
+                            lower == "true" || lower == "1" || lower == "yes"
+                        })
+                        .unwrap_or(false)
                 })
                 .collect();
             result.add_column(
                 value_name.to_string(),
-                Column::Boolean(BooleanColumn::new(bool_values)),
+                Column::Boolean(BooleanColumn::with_nulls(bool_values, nulls)),
             )?;
         } else {
             // Default to string type
+            let str_values: Vec<String> = all_values
+                .into_iter()
+                .map(|s| s.unwrap_or_default())
+                .collect();
             result.add_column(
                 value_name.to_string(),
-                Column::String(StringColumn::new(all_values)),
+                Column::String(StringColumn::with_nulls(str_values, nulls)),
             )?;
         }
 
@@ -488,6 +244,12 @@ impl OptimizedDataFrame {
     }
 
     /// Concatenate DataFrames vertically
+    ///
+    /// Columns that exist in only one of the two frames are filled with NULL
+    /// (never with `0`/`""`/`false`) for the rows coming from the other frame.
+    /// The resulting column order is the deterministic union of both schemas:
+    /// the columns of `self` in their original order, followed by the columns
+    /// that only `other` has.
     ///
     /// # Arguments
     /// * `other` - DataFrame to concatenate
@@ -506,465 +268,202 @@ impl OptimizedDataFrame {
         // Create the result DataFrame
         let mut result = Self::new();
 
-        // Create a set of all column names
-        let mut all_columns = std::collections::HashSet::new();
-
-        for name in &self.column_names {
-            all_columns.insert(name.clone());
-        }
-
+        // Ordered union of the column names of both frames (a HashSet would
+        // make the resulting schema order non-deterministic).
+        let mut all_columns: Vec<&String> = self.column_names.iter().collect();
         for name in &other.column_names {
-            all_columns.insert(name.clone());
+            if !self.column_indices.contains_key(name) {
+                all_columns.push(name);
+            }
         }
 
-        // Prepare new column data
         for col_name in all_columns {
-            let self_has_column = self.column_indices.contains_key(&col_name);
-            let other_has_column = other.column_indices.contains_key(&col_name);
+            let self_col = self
+                .column_indices
+                .get(col_name)
+                .map(|&idx| &self.columns[idx]);
+            let other_col = other
+                .column_indices
+                .get(col_name)
+                .map(|&idx| &other.columns[idx]);
 
-            // If both DataFrames have the column
-            if self_has_column && other_has_column {
-                let self_col_idx = self.column_indices[&col_name];
-                let other_col_idx = other.column_indices[&col_name];
+            let combined = concat_column_segments(
+                self_col,
+                self.row_count,
+                other_col,
+                other.row_count,
+                col_name,
+            )?;
 
-                let self_col = &self.columns[self_col_idx];
-                let other_col = &other.columns[other_col_idx];
-
-                // Concatenate columns of the same type
-                if self_col.column_type() == other_col.column_type() {
-                    match (self_col, other_col) {
-                        (Column::Int64(self_int), Column::Int64(other_int)) => {
-                            let mut combined_data =
-                                Vec::with_capacity(self_int.len() + other_int.len());
-
-                            // Add self data
-                            for i in 0..self_int.len() {
-                                if let Ok(Some(val)) = self_int.get(i) {
-                                    combined_data.push(val);
-                                } else {
-                                    combined_data.push(0); // Default value
-                                }
-                            }
-
-                            // Add other data
-                            for i in 0..other_int.len() {
-                                if let Ok(Some(val)) = other_int.get(i) {
-                                    combined_data.push(val);
-                                } else {
-                                    combined_data.push(0); // Default value
-                                }
-                            }
-
-                            result.add_column(
-                                col_name,
-                                Column::Int64(Int64Column::new(combined_data)),
-                            )?;
-                        }
-                        (Column::Float64(self_float), Column::Float64(other_float)) => {
-                            let mut combined_data =
-                                Vec::with_capacity(self_float.len() + other_float.len());
-
-                            // Add self data
-                            for i in 0..self_float.len() {
-                                if let Ok(Some(val)) = self_float.get(i) {
-                                    combined_data.push(val);
-                                } else {
-                                    combined_data.push(0.0); // Default value
-                                }
-                            }
-
-                            // Add other data
-                            for i in 0..other_float.len() {
-                                if let Ok(Some(val)) = other_float.get(i) {
-                                    combined_data.push(val);
-                                } else {
-                                    combined_data.push(0.0); // Default value
-                                }
-                            }
-
-                            result.add_column(
-                                col_name,
-                                Column::Float64(Float64Column::new(combined_data)),
-                            )?;
-                        }
-                        (Column::String(self_str), Column::String(other_str)) => {
-                            let mut combined_data =
-                                Vec::with_capacity(self_str.len() + other_str.len());
-
-                            // Add self data
-                            for i in 0..self_str.len() {
-                                if let Ok(Some(val)) = self_str.get(i) {
-                                    combined_data.push(val.to_string());
-                                } else {
-                                    combined_data.push(String::new()); // Default value
-                                }
-                            }
-
-                            // Add other data
-                            for i in 0..other_str.len() {
-                                if let Ok(Some(val)) = other_str.get(i) {
-                                    combined_data.push(val.to_string());
-                                } else {
-                                    combined_data.push(String::new()); // Default value
-                                }
-                            }
-
-                            result.add_column(
-                                col_name,
-                                Column::String(StringColumn::new(combined_data)),
-                            )?;
-                        }
-                        (Column::Boolean(self_bool), Column::Boolean(other_bool)) => {
-                            let mut combined_data =
-                                Vec::with_capacity(self_bool.len() + other_bool.len());
-
-                            // Add self data
-                            for i in 0..self_bool.len() {
-                                if let Ok(Some(val)) = self_bool.get(i) {
-                                    combined_data.push(val);
-                                } else {
-                                    combined_data.push(false); // Default value
-                                }
-                            }
-
-                            // Add other data
-                            for i in 0..other_bool.len() {
-                                if let Ok(Some(val)) = other_bool.get(i) {
-                                    combined_data.push(val);
-                                } else {
-                                    combined_data.push(false); // Default value
-                                }
-                            }
-
-                            result.add_column(
-                                col_name,
-                                Column::Boolean(BooleanColumn::new(combined_data)),
-                            )?;
-                        }
-                        _ => {
-                            // Concatenate as strings if types do not match
-                            let mut combined_data =
-                                Vec::with_capacity(self.row_count + other.row_count);
-
-                            // Add self data
-                            for i in 0..self.row_count {
-                                let value = match self_col {
-                                    Column::Int64(col) => col
-                                        .get(i)
-                                        .ok()
-                                        .flatten()
-                                        .map(|v| v.to_string())
-                                        .unwrap_or_default(),
-                                    Column::Float64(col) => col
-                                        .get(i)
-                                        .ok()
-                                        .flatten()
-                                        .map(|v| v.to_string())
-                                        .unwrap_or_default(),
-                                    Column::String(col) => col
-                                        .get(i)
-                                        .ok()
-                                        .flatten()
-                                        .map(|v| v.to_string())
-                                        .unwrap_or_default(),
-                                    Column::Boolean(col) => col
-                                        .get(i)
-                                        .ok()
-                                        .flatten()
-                                        .map(|v| v.to_string())
-                                        .unwrap_or_default(),
-                                };
-                                combined_data.push(value);
-                            }
-
-                            // Add other data
-                            for i in 0..other.row_count {
-                                let value = match other_col {
-                                    Column::Int64(col) => col
-                                        .get(i)
-                                        .ok()
-                                        .flatten()
-                                        .map(|v| v.to_string())
-                                        .unwrap_or_default(),
-                                    Column::Float64(col) => col
-                                        .get(i)
-                                        .ok()
-                                        .flatten()
-                                        .map(|v| v.to_string())
-                                        .unwrap_or_default(),
-                                    Column::String(col) => col
-                                        .get(i)
-                                        .ok()
-                                        .flatten()
-                                        .map(|v| v.to_string())
-                                        .unwrap_or_default(),
-                                    Column::Boolean(col) => col
-                                        .get(i)
-                                        .ok()
-                                        .flatten()
-                                        .map(|v| v.to_string())
-                                        .unwrap_or_default(),
-                                };
-                                combined_data.push(value);
-                            }
-
-                            result.add_column(
-                                col_name,
-                                Column::String(StringColumn::new(combined_data)),
-                            )?;
-                        }
-                    }
-                }
-                // Concatenate as strings if types do not match
-                else {
-                    let mut combined_data = Vec::with_capacity(self.row_count + other.row_count);
-
-                    // Add self data
-                    for i in 0..self.row_count {
-                        let value = match self_col {
-                            Column::Int64(col) => col
-                                .get(i)
-                                .ok()
-                                .flatten()
-                                .map(|v| v.to_string())
-                                .unwrap_or_default(),
-                            Column::Float64(col) => col
-                                .get(i)
-                                .ok()
-                                .flatten()
-                                .map(|v| v.to_string())
-                                .unwrap_or_default(),
-                            Column::String(col) => col
-                                .get(i)
-                                .ok()
-                                .flatten()
-                                .map(|v| v.to_string())
-                                .unwrap_or_default(),
-                            Column::Boolean(col) => col
-                                .get(i)
-                                .ok()
-                                .flatten()
-                                .map(|v| v.to_string())
-                                .unwrap_or_default(),
-                        };
-                        combined_data.push(value);
-                    }
-
-                    // Add other data
-                    for i in 0..other.row_count {
-                        let value = match other_col {
-                            Column::Int64(col) => col
-                                .get(i)
-                                .ok()
-                                .flatten()
-                                .map(|v| v.to_string())
-                                .unwrap_or_default(),
-                            Column::Float64(col) => col
-                                .get(i)
-                                .ok()
-                                .flatten()
-                                .map(|v| v.to_string())
-                                .unwrap_or_default(),
-                            Column::String(col) => col
-                                .get(i)
-                                .ok()
-                                .flatten()
-                                .map(|v| v.to_string())
-                                .unwrap_or_default(),
-                            Column::Boolean(col) => col
-                                .get(i)
-                                .ok()
-                                .flatten()
-                                .map(|v| v.to_string())
-                                .unwrap_or_default(),
-                        };
-                        combined_data.push(value);
-                    }
-
-                    result
-                        .add_column(col_name, Column::String(StringColumn::new(combined_data)))?;
-                }
-            }
-            // If the column exists in only one DataFrame
-            else {
-                let total_rows = self.row_count + other.row_count;
-
-                if self_has_column {
-                    let col_idx = self.column_indices[&col_name];
-                    let column = &self.columns[col_idx];
-
-                    match column {
-                        Column::Int64(int_col) => {
-                            let mut combined_data = Vec::with_capacity(total_rows);
-
-                            // Add self data
-                            for i in 0..int_col.len() {
-                                if let Ok(Some(val)) = int_col.get(i) {
-                                    combined_data.push(val);
-                                } else {
-                                    combined_data.push(0); // Default value
-                                }
-                            }
-
-                            // Fill missing data with default values
-                            combined_data.resize(total_rows, 0);
-
-                            result.add_column(
-                                col_name,
-                                Column::Int64(Int64Column::new(combined_data)),
-                            )?;
-                        }
-                        Column::Float64(float_col) => {
-                            let mut combined_data = Vec::with_capacity(total_rows);
-
-                            // Add self data
-                            for i in 0..float_col.len() {
-                                if let Ok(Some(val)) = float_col.get(i) {
-                                    combined_data.push(val);
-                                } else {
-                                    combined_data.push(0.0); // Default value
-                                }
-                            }
-
-                            // Fill missing data with default values
-                            combined_data.resize(total_rows, 0.0);
-
-                            result.add_column(
-                                col_name,
-                                Column::Float64(Float64Column::new(combined_data)),
-                            )?;
-                        }
-                        Column::String(str_col) => {
-                            let mut combined_data = Vec::with_capacity(total_rows);
-
-                            // Add self data
-                            for i in 0..str_col.len() {
-                                if let Ok(Some(val)) = str_col.get(i) {
-                                    combined_data.push(val.to_string());
-                                } else {
-                                    combined_data.push(String::new()); // Default value
-                                }
-                            }
-
-                            // Fill missing data with default values
-                            combined_data.resize(total_rows, String::new());
-
-                            result.add_column(
-                                col_name,
-                                Column::String(StringColumn::new(combined_data)),
-                            )?;
-                        }
-                        Column::Boolean(bool_col) => {
-                            let mut combined_data = Vec::with_capacity(total_rows);
-
-                            // Add self data
-                            for i in 0..bool_col.len() {
-                                if let Ok(Some(val)) = bool_col.get(i) {
-                                    combined_data.push(val);
-                                } else {
-                                    combined_data.push(false); // Default value
-                                }
-                            }
-
-                            // Fill missing data with default values
-                            combined_data.resize(total_rows, false);
-
-                            result.add_column(
-                                col_name,
-                                Column::Boolean(BooleanColumn::new(combined_data)),
-                            )?;
-                        }
-                    }
-                } else if other_has_column {
-                    let col_idx = other.column_indices[&col_name];
-                    let column = &other.columns[col_idx];
-
-                    match column {
-                        Column::Int64(int_col) => {
-                            let mut combined_data = Vec::with_capacity(total_rows);
-
-                            // Fill missing data with default values
-                            combined_data.resize(self.row_count, 0);
-
-                            // Add other data
-                            for i in 0..int_col.len() {
-                                if let Ok(Some(val)) = int_col.get(i) {
-                                    combined_data.push(val);
-                                } else {
-                                    combined_data.push(0); // Default value
-                                }
-                            }
-
-                            result.add_column(
-                                col_name,
-                                Column::Int64(Int64Column::new(combined_data)),
-                            )?;
-                        }
-                        Column::Float64(float_col) => {
-                            let mut combined_data = Vec::with_capacity(total_rows);
-
-                            // Fill missing data with default values
-                            combined_data.resize(self.row_count, 0.0);
-
-                            // Add other data
-                            for i in 0..float_col.len() {
-                                if let Ok(Some(val)) = float_col.get(i) {
-                                    combined_data.push(val);
-                                } else {
-                                    combined_data.push(0.0); // Default value
-                                }
-                            }
-
-                            result.add_column(
-                                col_name,
-                                Column::Float64(Float64Column::new(combined_data)),
-                            )?;
-                        }
-                        Column::String(str_col) => {
-                            let mut combined_data = Vec::with_capacity(total_rows);
-
-                            // Fill missing data with default values
-                            combined_data.resize(self.row_count, String::new());
-
-                            // Add other data
-                            for i in 0..str_col.len() {
-                                if let Ok(Some(val)) = str_col.get(i) {
-                                    combined_data.push(val.to_string());
-                                } else {
-                                    combined_data.push(String::new()); // Default value
-                                }
-                            }
-
-                            result.add_column(
-                                col_name,
-                                Column::String(StringColumn::new(combined_data)),
-                            )?;
-                        }
-                        Column::Boolean(bool_col) => {
-                            let mut combined_data = Vec::with_capacity(total_rows);
-
-                            // Fill missing data with default values
-                            combined_data.resize(self.row_count, false);
-
-                            // Add other data
-                            for i in 0..bool_col.len() {
-                                if let Ok(Some(val)) = bool_col.get(i) {
-                                    combined_data.push(val);
-                                } else {
-                                    combined_data.push(false); // Default value
-                                }
-                            }
-
-                            result.add_column(
-                                col_name,
-                                Column::Boolean(BooleanColumn::new(combined_data)),
-                            )?;
-                        }
-                    }
-                }
-            }
+            result.add_column(col_name.clone(), combined)?;
         }
 
         Ok(result)
+    }
+}
+
+/// Concatenate the rows of two (optional) columns into a single column.
+///
+/// A missing column contributes NULLs for its whole segment, and a missing
+/// value inside a present column stays NULL. Both segments are built to exactly
+/// `left_rows` / `right_rows` entries so that every output column of an append
+/// has the same length even if a source column was shorter than its frame.
+fn concat_column_segments(
+    left: Option<&Column>,
+    left_rows: usize,
+    right: Option<&Column>,
+    right_rows: usize,
+    column_name: &str,
+) -> Result<Column> {
+    let total = left_rows + right_rows;
+
+    let output_type = match (left, right) {
+        (Some(l), Some(r)) => {
+            if l.column_type() == r.column_type() {
+                l.column_type()
+            } else {
+                // Types do not match: fall back to a textual representation.
+                ColumnType::String
+            }
+        }
+        (Some(l), None) => l.column_type(),
+        (None, Some(r)) => r.column_type(),
+        (None, None) => {
+            return Err(Error::ColumnNotFound(column_name.to_string()));
+        }
+    };
+
+    // The textual arm below also covers the mixed-type case: it renders any
+    // column type and keeps missing values missing.
+    let column = match output_type {
+        ColumnType::Int64 => {
+            let mut values = Vec::with_capacity(total);
+            let mut nulls = Vec::with_capacity(total);
+            push_int_segment(&mut values, &mut nulls, left, left_rows);
+            push_int_segment(&mut values, &mut nulls, right, right_rows);
+            Column::Int64(Int64Column::with_nulls(values, nulls))
+        }
+        ColumnType::Float64 => {
+            let mut values = Vec::with_capacity(total);
+            let mut nulls = Vec::with_capacity(total);
+            push_float_segment(&mut values, &mut nulls, left, left_rows);
+            push_float_segment(&mut values, &mut nulls, right, right_rows);
+            Column::Float64(Float64Column::with_nulls(values, nulls))
+        }
+        ColumnType::String => {
+            let mut values = Vec::with_capacity(total);
+            let mut nulls = Vec::with_capacity(total);
+            push_text_segment(&mut values, &mut nulls, left, left_rows);
+            push_text_segment(&mut values, &mut nulls, right, right_rows);
+            Column::String(StringColumn::with_nulls(values, nulls))
+        }
+        ColumnType::Boolean => {
+            let mut values = Vec::with_capacity(total);
+            let mut nulls = Vec::with_capacity(total);
+            push_bool_segment(&mut values, &mut nulls, left, left_rows);
+            push_bool_segment(&mut values, &mut nulls, right, right_rows);
+            Column::Boolean(BooleanColumn::with_nulls(values, nulls))
+        }
+    };
+
+    Ok(column)
+}
+
+fn push_int_segment(
+    values: &mut Vec<i64>,
+    nulls: &mut Vec<bool>,
+    column: Option<&Column>,
+    rows: usize,
+) {
+    for i in 0..rows {
+        let value = match column {
+            Some(Column::Int64(col)) => col.get(i).ok().flatten(),
+            _ => None,
+        };
+        match value {
+            Some(value) => {
+                values.push(value);
+                nulls.push(false);
+            }
+            None => {
+                values.push(0);
+                nulls.push(true);
+            }
+        }
+    }
+}
+
+fn push_float_segment(
+    values: &mut Vec<f64>,
+    nulls: &mut Vec<bool>,
+    column: Option<&Column>,
+    rows: usize,
+) {
+    for i in 0..rows {
+        let value = match column {
+            Some(Column::Float64(col)) => col.get(i).ok().flatten(),
+            _ => None,
+        };
+        match value {
+            Some(value) => {
+                values.push(value);
+                nulls.push(false);
+            }
+            None => {
+                values.push(0.0);
+                nulls.push(true);
+            }
+        }
+    }
+}
+
+fn push_bool_segment(
+    values: &mut Vec<bool>,
+    nulls: &mut Vec<bool>,
+    column: Option<&Column>,
+    rows: usize,
+) {
+    for i in 0..rows {
+        let value = match column {
+            Some(Column::Boolean(col)) => col.get(i).ok().flatten(),
+            _ => None,
+        };
+        match value {
+            Some(value) => {
+                values.push(value);
+                nulls.push(false);
+            }
+            None => {
+                values.push(false);
+                nulls.push(true);
+            }
+        }
+    }
+}
+
+fn push_text_segment(
+    values: &mut Vec<String>,
+    nulls: &mut Vec<bool>,
+    column: Option<&Column>,
+    rows: usize,
+) {
+    for i in 0..rows {
+        let value = match column {
+            Some(Column::Int64(col)) => col.get(i).ok().flatten().map(|v| v.to_string()),
+            Some(Column::Float64(col)) => col.get(i).ok().flatten().map(|v| v.to_string()),
+            Some(Column::String(col)) => col.get(i).ok().flatten().map(|v| v.to_string()),
+            Some(Column::Boolean(col)) => col.get(i).ok().flatten().map(|v| v.to_string()),
+            None => None,
+        };
+        match value {
+            Some(value) => {
+                values.push(value);
+                nulls.push(false);
+            }
+            None => {
+                values.push(String::new());
+                nulls.push(true);
+            }
+        }
     }
 }

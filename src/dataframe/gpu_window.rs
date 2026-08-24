@@ -1,11 +1,16 @@
-//! GPU-accelerated window operations for DataFrame
+//! Window operations for DataFrame with a GPU-dispatch path
 //!
-//! This module provides GPU acceleration for window operations using CUDA, significantly
-//! improving performance for large-scale window calculations. It integrates with the existing
-//! JIT window operations and provides seamless fallback to CPU when GPU acceleration is not
-//! beneficial or available.
+//! This module provides the scaffolding for GPU-accelerated window operations
+//! and integrates with the existing JIT window operations, including a seamless
+//! fallback to CPU.
 //!
-//! GPU acceleration is particularly effective for:
+//! IMPORTANT (honesty note): cudarc 0.19.x does not expose the kernels needed to
+//! implement these window operations on the device, so the `gpu_*` window
+//! functions below currently compute their results on the **CPU**. The
+//! `GpuWindowStats` counters therefore track the GPU-dispatch decisions and the
+//! real wall-clock timing of that path; they never report a fabricated
+//! GPU-vs-CPU speedup. The structure remains so that real CUDA kernels can be
+//! slotted in later for:
 //! - Large datasets (> 50,000 elements)
 //! - Computationally intensive operations (std, var, quantiles)
 //! - Repeated operations on similar data patterns
@@ -17,20 +22,22 @@ use std::time::Instant;
 
 use crate::core::error::{Error, Result};
 use crate::dataframe::base::DataFrame;
-use crate::dataframe::enhanced_window::{
-    DataFrameEWM, DataFrameExpanding, DataFrameRolling, DataFrameWindowExt,
-};
 use crate::dataframe::jit_window::{
-    JitDataFrameWindowExt, JitWindowContext, JitWindowStats, WindowFunctionKey, WindowOpType,
+    JitWindowContext, JitWindowStats, WindowFunctionKey, WindowOpType,
 };
-use crate::gpu::{get_gpu_manager, GpuConfig, GpuError, GpuManager};
+use crate::gpu::{get_gpu_manager, GpuManager};
 use crate::lock_safe;
 use crate::series::Series;
 
-/// GPU-specific window operation statistics
+/// Statistics for the GPU-dispatch window-operation path.
+///
+/// NOTE: the "GPU" window kernels in this module currently execute on the CPU
+/// (no real CUDA kernel is implemented). These counters therefore track how
+/// often the GPU-dispatch path was taken and its real wall-clock timing; they do
+/// not report a fabricated GPU-vs-CPU speedup.
 #[derive(Debug, Clone, Default)]
 pub struct GpuWindowStats {
-    /// Number of operations executed on GPU
+    /// Number of operations routed through the GPU-dispatch path
     pub gpu_executions: u64,
     /// Number of operations that fell back to CPU
     pub cpu_fallbacks: u64,
@@ -38,12 +45,10 @@ pub struct GpuWindowStats {
     pub total_gpu_memory_allocated: u64,
     /// Total data transfer time (nanoseconds)
     pub total_transfer_time_ns: u64,
-    /// Total GPU kernel execution time (nanoseconds)
+    /// Total wall-clock execution time of the GPU-dispatch path (nanoseconds)
     pub total_kernel_time_ns: u64,
     /// GPU memory transfer efficiency (bytes/ns)
     pub transfer_efficiency: f64,
-    /// Average GPU speedup vs CPU (ratio)
-    pub average_gpu_speedup: f64,
     /// Number of successful GPU memory allocations
     pub successful_allocations: u64,
     /// Number of failed GPU memory allocations
@@ -56,19 +61,14 @@ impl GpuWindowStats {
         Self::default()
     }
 
-    /// Record a successful GPU execution
-    pub fn record_gpu_execution(&mut self, kernel_time_ns: u64, speedup_ratio: f64) {
+    /// Record one execution routed through the GPU-dispatch path.
+    ///
+    /// `execution_time_ns` is the real measured wall-clock time. No GPU-vs-CPU
+    /// speedup is recorded: the window kernels currently run on the CPU, so any
+    /// speedup figure would be fabricated.
+    pub fn record_gpu_execution(&mut self, execution_time_ns: u64) {
         self.gpu_executions += 1;
-        self.total_kernel_time_ns += kernel_time_ns;
-
-        // Update average speedup using running average
-        if self.gpu_executions == 1 {
-            self.average_gpu_speedup = speedup_ratio;
-        } else {
-            self.average_gpu_speedup =
-                (self.average_gpu_speedup * (self.gpu_executions - 1) as f64 + speedup_ratio)
-                    / self.gpu_executions as f64;
-        }
+        self.total_kernel_time_ns += execution_time_ns;
     }
 
     /// Record a CPU fallback
@@ -258,9 +258,10 @@ impl GpuWindowContext {
             Ok(gpu_result) => {
                 let execution_time = start_time.elapsed().as_nanos() as u64;
 
-                // Record successful GPU execution
+                // Record the GPU-dispatch path execution with its real measured
+                // wall-clock time (no fabricated speedup).
                 let mut stats = lock_safe!(self.gpu_stats, "gpu window stats lock")?;
-                stats.record_gpu_execution(execution_time, 2.5); // Estimate 2.5x speedup
+                stats.record_gpu_execution(execution_time);
                 stats.record_memory_allocation(total_memory_required as u64, true);
 
                 Ok(gpu_result)
@@ -276,36 +277,31 @@ impl GpuWindowContext {
 
     /// GPU-accelerated rolling mean implementation
     fn gpu_rolling_mean(&self, data: &[f64], window_size: usize) -> Result<Vec<f64>> {
+        if window_size == 0 {
+            // `window_size - 1` below would underflow `usize` and panic.
+            return Ok(vec![f64::NAN; data.len()]);
+        }
+
         #[cfg(cuda_available)]
         {
-            // In a real CUDA implementation, this would:
-            // 1. Allocate GPU memory for input and output
-            // 2. Transfer data to GPU
-            // 3. Launch CUDA kernel for parallel rolling mean calculation
-            // 4. Transfer results back to CPU
-
+            // A real CUDA implementation would allocate device memory, transfer
+            // the data, launch a parallel rolling-mean kernel, and copy the
+            // result back. cudarc 0.19.x exposes no such kernel here, so the
+            // result is computed on the CPU below (correct, just not on-device).
+            //
+            // No transfer/allocation stats are recorded here (the previous
+            // version recorded a fabricated H2D+D2H byte count derived from
+            // `data.len()` even though the computation above never touches
+            // the device at all — exactly the "fabricated speedup/metric"
+            // this module's own honesty note disclaims).
             let mut result = vec![f64::NAN; data.len()];
 
-            // Simulate GPU calculation (in real implementation, this would be a CUDA kernel)
             for i in window_size - 1..data.len() {
-                let window_start = if i >= window_size - 1 {
-                    i - window_size + 1
-                } else {
-                    0
-                };
+                let window_start = i + 1 - window_size;
                 let window_end = i + 1;
                 let window_data = &data[window_start..window_end];
                 result[i] = window_data.iter().sum::<f64>() / window_data.len() as f64;
             }
-
-            // Record memory allocation and transfer
-            let transfer_start = Instant::now();
-            let data_bytes = data.len() * std::mem::size_of::<f64>();
-            let mut stats = lock_safe!(self.gpu_stats, "gpu window stats lock")?;
-            stats.record_data_transfer(
-                transfer_start.elapsed().as_nanos() as u64,
-                data_bytes as u64 * 2,
-            ); // Input + output
 
             Ok(result)
         }
@@ -315,11 +311,7 @@ impl GpuWindowContext {
             // CPU fallback implementation
             let mut result = vec![f64::NAN; data.len()];
             for i in window_size - 1..data.len() {
-                let window_start = if i >= window_size - 1 {
-                    i - window_size + 1
-                } else {
-                    0
-                };
+                let window_start = i + 1 - window_size;
                 let window_end = i + 1;
                 let window_data = &data[window_start..window_end];
                 result[i] = window_data.iter().sum::<f64>() / window_data.len() as f64;
@@ -330,6 +322,11 @@ impl GpuWindowContext {
 
     /// GPU-accelerated rolling sum implementation
     fn gpu_rolling_sum(&self, data: &[f64], window_size: usize) -> Result<Vec<f64>> {
+        if window_size == 0 {
+            // `window_size - 1` below would underflow `usize` and panic.
+            return Ok(vec![f64::NAN; data.len()]);
+        }
+
         #[cfg(cuda_available)]
         {
             let mut result = vec![f64::NAN; data.len()];
@@ -342,11 +339,7 @@ impl GpuWindowContext {
                 }
 
                 for i in window_size - 1..data.len() {
-                    let window_start = if i >= window_size - 1 {
-                        i - window_size + 1
-                    } else {
-                        0
-                    };
+                    let window_start = i + 1 - window_size;
                     result[i] = cumsum[i + 1] - cumsum[window_start];
                 }
             }
@@ -358,11 +351,7 @@ impl GpuWindowContext {
         {
             let mut result = vec![f64::NAN; data.len()];
             for i in window_size - 1..data.len() {
-                let window_start = if i >= window_size - 1 {
-                    i - window_size + 1
-                } else {
-                    0
-                };
+                let window_start = i + 1 - window_size;
                 let window_end = i + 1;
                 result[i] = data[window_start..window_end].iter().sum::<f64>();
             }
@@ -370,7 +359,16 @@ impl GpuWindowContext {
         }
     }
 
-    /// GPU-accelerated rolling standard deviation implementation
+    /// GPU-accelerated rolling standard deviation implementation.
+    ///
+    /// NOTE: always uses `ddof = 1` (sample standard deviation); unlike
+    /// [`GpuDataFrameRolling::std`]'s CPU/JIT-fallback path
+    /// (`GpuDataFrameRolling::cpu_rolling_std`), this GPU-dispatch path has
+    /// no way to receive a caller-specified `ddof` (the
+    /// `WindowFunctionKey`/`execute_gpu_operation` dispatch this is reached
+    /// through carries no such parameter). Only reachable for datasets at
+    /// least `GpuWindowContext::should_use_gpu`'s size threshold, and — per
+    /// this module's honesty note — computes on the CPU regardless.
     fn gpu_rolling_std(&self, data: &[f64], window_size: usize) -> Result<Vec<f64>> {
         let variance = self.gpu_rolling_var(data, window_size)?;
         Ok(variance
@@ -379,19 +377,23 @@ impl GpuWindowContext {
             .collect())
     }
 
-    /// GPU-accelerated rolling variance implementation
+    /// GPU-accelerated rolling variance implementation.
+    ///
+    /// NOTE: always uses `ddof = 1`; see the caveat on
+    /// [`Self::gpu_rolling_std`].
     fn gpu_rolling_var(&self, data: &[f64], window_size: usize) -> Result<Vec<f64>> {
+        if window_size == 0 {
+            // `window_size - 1` below would underflow `usize` and panic.
+            return Ok(vec![f64::NAN; data.len()]);
+        }
+
         #[cfg(cuda_available)]
         {
             let mut result = vec![f64::NAN; data.len()];
 
             // Two-pass algorithm for numerical stability
             for i in window_size - 1..data.len() {
-                let window_start = if i >= window_size - 1 {
-                    i - window_size + 1
-                } else {
-                    0
-                };
+                let window_start = i + 1 - window_size;
                 let window_end = i + 1;
                 let window_data = &data[window_start..window_end];
 
@@ -417,11 +419,7 @@ impl GpuWindowContext {
         {
             let mut result = vec![f64::NAN; data.len()];
             for i in window_size - 1..data.len() {
-                let window_start = if i >= window_size - 1 {
-                    i - window_size + 1
-                } else {
-                    0
-                };
+                let window_start = i + 1 - window_size;
                 let window_end = i + 1;
                 let window_data = &data[window_start..window_end];
 
@@ -560,18 +558,16 @@ impl GpuWindowContext {
     pub fn gpu_summary(&self) -> Result<String> {
         let stats = lock_safe!(self.gpu_stats, "gpu window stats lock")?;
         Ok(format!(
-            "GPU Window Operations Summary:\n\
-             • GPU Executions: {}\n\
+            "GPU Window Operations Summary (kernels currently execute on CPU):\n\
+             • GPU-dispatch Executions: {}\n\
              • CPU Fallbacks: {}\n\
-             • GPU Usage Ratio: {:.2}%\n\
-             • Average GPU Speedup: {:.2}x\n\
+             • GPU-dispatch Ratio: {:.2}%\n\
              • Memory Allocation Success Rate: {:.2}%\n\
              • Total GPU Memory Used: {:.2} MB\n\
              • Transfer Efficiency: {:.2} GB/s",
             stats.gpu_executions,
             stats.cpu_fallbacks,
             stats.gpu_usage_ratio() * 100.0,
-            stats.average_gpu_speedup,
             stats.allocation_success_rate() * 100.0,
             stats.total_gpu_memory_allocated as f64 / (1024.0 * 1024.0),
             stats.transfer_efficiency * 1e9 / (1024.0 * 1024.0 * 1024.0)
@@ -643,36 +639,49 @@ impl<'a> GpuDataFrameRolling<'a> {
 
     /// Execute GPU-enhanced rolling mean
     pub fn mean(self) -> Result<DataFrame> {
-        self.execute_rolling_operation(WindowOpType::RollingMean)
+        self.execute_rolling_operation(WindowOpType::RollingMean, 1)
     }
 
     /// Execute GPU-enhanced rolling sum
     pub fn sum(self) -> Result<DataFrame> {
-        self.execute_rolling_operation(WindowOpType::RollingSum)
+        self.execute_rolling_operation(WindowOpType::RollingSum, 1)
     }
 
-    /// Execute GPU-enhanced rolling standard deviation
-    pub fn std(self, _ddof: usize) -> Result<DataFrame> {
-        self.execute_rolling_operation(WindowOpType::RollingStd)
+    /// Execute GPU-enhanced rolling standard deviation.
+    ///
+    /// `ddof` (delta degrees of freedom) is honored on the CPU/JIT-fallback
+    /// path (`ddof = 1` for the sample standard deviation, `ddof = 0` for
+    /// the population standard deviation) — the previous version accepted
+    /// `ddof` but silently ignored it (`_ddof`), always computing `ddof =
+    /// 1` regardless of what was requested. The GPU-dispatch path (only
+    /// reachable for datasets at least [`GpuWindowContext::should_use_gpu`]'s
+    /// threshold in size, and identical CPU computation under the hood; see
+    /// this module's honesty note) still hardcodes `ddof = 1`; see
+    /// [`GpuWindowContext::gpu_rolling_var`].
+    pub fn std(self, ddof: usize) -> Result<DataFrame> {
+        self.execute_rolling_operation(WindowOpType::RollingStd, ddof)
     }
 
-    /// Execute GPU-enhanced rolling variance
-    pub fn var(self, _ddof: usize) -> Result<DataFrame> {
-        self.execute_rolling_operation(WindowOpType::RollingVar)
+    /// Execute GPU-enhanced rolling variance. See [`Self::std`] for the
+    /// `ddof` caveat on the GPU-dispatch path.
+    pub fn var(self, ddof: usize) -> Result<DataFrame> {
+        self.execute_rolling_operation(WindowOpType::RollingVar, ddof)
     }
 
     /// Execute GPU-enhanced rolling minimum
     pub fn min(self) -> Result<DataFrame> {
-        self.execute_rolling_operation(WindowOpType::RollingMin)
+        self.execute_rolling_operation(WindowOpType::RollingMin, 1)
     }
 
     /// Execute GPU-enhanced rolling maximum
     pub fn max(self) -> Result<DataFrame> {
-        self.execute_rolling_operation(WindowOpType::RollingMax)
+        self.execute_rolling_operation(WindowOpType::RollingMax, 1)
     }
 
-    /// Execute a rolling operation with GPU acceleration when beneficial
-    fn execute_rolling_operation(self, op_type: WindowOpType) -> Result<DataFrame> {
+    /// Execute a rolling operation with GPU acceleration when beneficial.
+    /// `ddof` is only consulted for `RollingVar`/`RollingStd` on the
+    /// CPU/JIT-fallback path; other operations ignore it.
+    fn execute_rolling_operation(self, op_type: WindowOpType, ddof: usize) -> Result<DataFrame> {
         let mut result_df = DataFrame::new();
 
         // Determine which columns to process
@@ -682,11 +691,12 @@ impl<'a> GpuDataFrameRolling<'a> {
             // Get numeric columns
             self.dataframe
                 .column_names()
-                .into_iter()
+                .iter()
                 .filter(|col_name| {
                     // Try to get as f64 to check if numeric
                     self.dataframe.get_column::<f64>(col_name).is_ok()
                 })
+                .map(|s| s.clone())
                 .collect()
         };
 
@@ -713,19 +723,22 @@ impl<'a> GpuDataFrameRolling<'a> {
                         Ok(gpu_result) => gpu_result,
                         Err(_) => {
                             // Fallback to JIT implementation
-                            self.fallback_to_jit_operation(&op_type, data)?
+                            self.fallback_to_jit_operation(&op_type, data, ddof)?
                         }
                     }
                 } else {
                     // Use JIT or standard implementation based on threshold
-                    self.fallback_to_jit_operation(&op_type, data)?
+                    self.fallback_to_jit_operation(&op_type, data, ddof)?
                 };
 
-                // Create result series
-                let result_series = Series::new(
-                    processed_data.into_iter().map(|v| v.to_string()).collect(),
-                    Some(col_name.clone()),
-                )?;
+                // Create result series. `processed_data` is already
+                // `Vec<f64>`: stringifying it (the previous
+                // `.map(|v| v.to_string())`) turned every numeric window
+                // result -- including `.mean()`, whose whole job is to
+                // produce a number -- into a `Series<String>`, silently
+                // breaking any further numeric use (arithmetic, plotting,
+                // more window ops) of the result.
+                let result_series = Series::new(processed_data, Some(col_name.clone()))?;
 
                 result_df.add_column(col_name, result_series)?;
             }
@@ -735,14 +748,21 @@ impl<'a> GpuDataFrameRolling<'a> {
     }
 
     /// Fallback to JIT implementation when GPU is not suitable
-    fn fallback_to_jit_operation(&self, op_type: &WindowOpType, data: &[f64]) -> Result<Vec<f64>> {
+    fn fallback_to_jit_operation(
+        &self,
+        op_type: &WindowOpType,
+        data: &[f64],
+        ddof: usize,
+    ) -> Result<Vec<f64>> {
         // This would integrate with the existing JIT window operations
         // For now, implement a simple CPU version
         match op_type {
             WindowOpType::RollingMean => self.cpu_rolling_mean(data),
             WindowOpType::RollingSum => self.cpu_rolling_sum(data),
-            WindowOpType::RollingStd => self.cpu_rolling_std(data),
-            WindowOpType::RollingVar => self.cpu_rolling_var(data),
+            WindowOpType::RollingStd => self.cpu_rolling_std(data, ddof),
+            WindowOpType::RollingVar => self.cpu_rolling_var(data, ddof),
+            WindowOpType::RollingMin => self.cpu_rolling_min(data),
+            WindowOpType::RollingMax => self.cpu_rolling_max(data),
             _ => Err(Error::InvalidOperation(format!(
                 "Fallback not implemented for {:?}",
                 op_type
@@ -781,17 +801,26 @@ impl<'a> GpuDataFrameRolling<'a> {
         Ok(result)
     }
 
-    /// CPU implementation of rolling standard deviation
-    fn cpu_rolling_std(&self, data: &[f64]) -> Result<Vec<f64>> {
-        let variance = self.cpu_rolling_var(data)?;
+    /// CPU implementation of rolling standard deviation. `ddof` (delta
+    /// degrees of freedom) is forwarded to [`Self::cpu_rolling_var`]; see
+    /// its doc comment.
+    fn cpu_rolling_std(&self, data: &[f64], ddof: usize) -> Result<Vec<f64>> {
+        let variance = self.cpu_rolling_var(data, ddof)?;
         Ok(variance
             .into_iter()
             .map(|v| if v.is_nan() { f64::NAN } else { v.sqrt() })
             .collect())
     }
 
-    /// CPU implementation of rolling variance
-    fn cpu_rolling_var(&self, data: &[f64]) -> Result<Vec<f64>> {
+    /// CPU implementation of rolling variance.
+    ///
+    /// `ddof` is the delta degrees of freedom (`1` for the sample variance,
+    /// `0` for the population variance) — this used to be silently ignored
+    /// (`std`/`var`'s public parameter was named `_ddof` and the divisor
+    /// here was hardcoded to `window_data.len() - 1`), so a caller
+    /// requesting the population variance (`ddof = 0`) got the sample
+    /// variance instead.
+    fn cpu_rolling_var(&self, data: &[f64], ddof: usize) -> Result<Vec<f64>> {
         let mut result = vec![f64::NAN; data.len()];
         if self.window_size == 0 || self.window_size > data.len() {
             return Ok(result);
@@ -802,16 +831,63 @@ impl<'a> GpuDataFrameRolling<'a> {
             let window_end = i + 1;
             let window_data = &data[window_start..window_end];
 
-            if window_data.len() <= 1 {
+            if window_data.len() <= ddof {
+                // Too few observations for this many degrees of freedom
+                // (e.g. `ddof = 1` needs at least 2 points): the divisor
+                // below would underflow `usize` (or, for `ddof = 0` and an
+                // empty window, divide by zero).
                 result[i] = f64::NAN;
                 continue;
             }
 
             let mean = window_data.iter().sum::<f64>() / window_data.len() as f64;
             let variance = window_data.iter().map(|x| (x - mean).powi(2)).sum::<f64>()
-                / (window_data.len() - 1) as f64;
+                / (window_data.len() - ddof) as f64;
 
             result[i] = variance;
+        }
+        Ok(result)
+    }
+
+    /// CPU implementation of rolling minimum.
+    ///
+    /// `GpuDataFrameRolling::min` (and the `RollingMin` GPU-dispatch case,
+    /// which always falls back here since `GpuWindowContext::
+    /// execute_gpu_operation` has no kernel for it either) used to have no
+    /// fallback case at all in `fallback_to_jit_operation`, so calling
+    /// `.min()` unconditionally returned `Err("Fallback not implemented for
+    /// RollingMin")` regardless of GPU availability.
+    fn cpu_rolling_min(&self, data: &[f64]) -> Result<Vec<f64>> {
+        let mut result = vec![f64::NAN; data.len()];
+        if self.window_size == 0 || self.window_size > data.len() {
+            return Ok(result);
+        }
+        for i in self.window_size - 1..data.len() {
+            let window_start = i + 1 - self.window_size;
+            let window_end = i + 1;
+            result[i] = data[window_start..window_end]
+                .iter()
+                .copied()
+                .fold(f64::INFINITY, f64::min);
+        }
+        Ok(result)
+    }
+
+    /// CPU implementation of rolling maximum. See `cpu_rolling_min` for why
+    /// this fallback needed to exist at all (`.max()` previously always
+    /// returned `Err`).
+    fn cpu_rolling_max(&self, data: &[f64]) -> Result<Vec<f64>> {
+        let mut result = vec![f64::NAN; data.len()];
+        if self.window_size == 0 || self.window_size > data.len() {
+            return Ok(result);
+        }
+        for i in self.window_size - 1..data.len() {
+            let window_start = i + 1 - self.window_size;
+            let window_end = i + 1;
+            result[i] = data[window_start..window_end]
+                .iter()
+                .copied()
+                .fold(f64::NEG_INFINITY, f64::max);
         }
         Ok(result)
     }
@@ -883,14 +959,14 @@ mod tests {
     fn test_gpu_stats_tracking() {
         let mut stats = GpuWindowStats::new();
 
-        // Test recording executions
-        stats.record_gpu_execution(1000, 2.0);
-        stats.record_gpu_execution(800, 3.0);
+        // Test recording executions (real wall-clock times; no fabricated speedup)
+        stats.record_gpu_execution(1000);
+        stats.record_gpu_execution(800);
         stats.record_cpu_fallback();
 
         assert_eq!(stats.gpu_executions, 2);
         assert_eq!(stats.cpu_fallbacks, 1);
         assert_eq!(stats.gpu_usage_ratio(), 2.0 / 3.0);
-        assert_eq!(stats.average_gpu_speedup, 2.5); // (2.0 + 3.0) / 2
+        assert_eq!(stats.total_kernel_time_ns, 1800);
     }
 }

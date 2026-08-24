@@ -1,8 +1,6 @@
 //! Implementation functions for PandasCompatExt - core operations (assign, filter, sort, aggregate, cumulative)
 
-use super::super::helpers::{aggregations, comparison_ops, math_ops, string_ops, window_ops};
 use super::super::merge as merge_mod;
-use super::super::trait_def::PandasCompatExt;
 use super::super::types::{Axis, CorrelationMatrix, DescribeStats, RankMethod, SeriesValue};
 use super::functions::select_rows_by_indices;
 use super::functions_3::{covariance, pearson_correlation};
@@ -150,21 +148,35 @@ pub(super) fn nsmallest(df: &DataFrame, n: usize, column: &str) -> Result<DataFr
 
 pub(super) fn idxmax(df: &DataFrame, column: &str) -> Result<Option<usize>> {
     let values = df.get_column_numeric_values(column)?;
-    let max_idx = values
-        .iter()
-        .enumerate()
-        .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(Ordering::Equal))
-        .map(|(i, _)| i);
+    // Skip NaN explicitly (matching `argmax`'s semantics and pandas'
+    // `idxmax(skipna=True)` default) instead of `max_by` with
+    // `partial_cmp().unwrap_or(Equal)`: that treats every NaN as "equal" to
+    // whatever it's compared against, and since `max_by` breaks ties by
+    // keeping the *last* candidate, a trailing NaN could silently win over
+    // the true maximum (e.g. `[5.0, NaN]` returned index 1, not 0).
+    let mut max_idx: Option<usize> = None;
+    let mut max_val = f64::NEG_INFINITY;
+    for (i, &v) in values.iter().enumerate() {
+        if !v.is_nan() && (max_idx.is_none() || v > max_val) {
+            max_val = v;
+            max_idx = Some(i);
+        }
+    }
     Ok(max_idx)
 }
 
 pub(super) fn idxmin(df: &DataFrame, column: &str) -> Result<Option<usize>> {
     let values = df.get_column_numeric_values(column)?;
-    let min_idx = values
-        .iter()
-        .enumerate()
-        .min_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(Ordering::Equal))
-        .map(|(i, _)| i);
+    // See `idxmax`: skip NaN explicitly rather than relying on
+    // `partial_cmp().unwrap_or(Equal)`, which can hand the result to a NaN.
+    let mut min_idx: Option<usize> = None;
+    let mut min_val = f64::INFINITY;
+    for (i, &v) in values.iter().enumerate() {
+        if !v.is_nan() && (min_idx.is_none() || v < min_val) {
+            min_val = v;
+            min_idx = Some(i);
+        }
+    }
     Ok(min_idx)
 }
 
@@ -253,25 +265,56 @@ pub(super) fn transpose(df: &DataFrame) -> Result<DataFrame> {
         .iter()
         .map(|col| df.get_column_string_values(col).unwrap_or_default())
         .collect();
-    for i in 0..n_rows {
-        let col_name = format!("row_{}", i);
+
+    // The source row index becomes the transposed frame's column names
+    // (matching pandas' `df.T`, where the row index becomes the column
+    // index) when the source actually carries an explicit index; otherwise
+    // fall back to the previous positional "row_N" naming.
+    let row_labels = df
+        .get_index()
+        .string_values()
+        .filter(|labels| labels.len() == n_rows);
+    let new_col_names: Vec<String> = match &row_labels {
+        Some(labels) => labels.clone(),
+        None => (0..n_rows).map(|i| format!("row_{}", i)).collect(),
+    };
+
+    for (i, new_col_name) in new_col_names.into_iter().enumerate() {
         let values: Vec<String> = all_values
             .iter()
             .map(|col_vals| col_vals.get(i).cloned().unwrap_or_default())
             .collect();
-        new_df.add_column(col_name.clone(), Series::new(values, Some(col_name))?)?;
+        new_df.add_column(
+            new_col_name.clone(),
+            Series::new(values, Some(new_col_name))?,
+        )?;
     }
+
+    // The source column names become the transposed frame's row index, so
+    // they survive the transpose instead of being discarded outright.
+    if let Ok(new_index) = crate::index::Index::<String>::new(col_names.to_vec()) {
+        new_df.set_index(new_index)?;
+    }
+
     Ok(new_df)
 }
 
 pub(super) fn cumsum(df: &DataFrame, column: &str) -> Result<Vec<f64>> {
     let values = df.get_column_numeric_values(column)?;
+    // A NaN must only blank out its own position (pandas `cumsum`
+    // skipna=True default): `cumsum += NaN` here previously poisoned the
+    // running total permanently, turning every subsequent cumulative sum
+    // into NaN instead of just the row that was actually missing.
     let mut cumsum = 0.0;
     let result: Vec<f64> = values
         .iter()
         .map(|&v| {
-            cumsum += v;
-            cumsum
+            if v.is_nan() {
+                f64::NAN
+            } else {
+                cumsum += v;
+                cumsum
+            }
         })
         .collect();
     Ok(result)
@@ -279,12 +322,18 @@ pub(super) fn cumsum(df: &DataFrame, column: &str) -> Result<Vec<f64>> {
 
 pub(super) fn cumprod(df: &DataFrame, column: &str) -> Result<Vec<f64>> {
     let values = df.get_column_numeric_values(column)?;
+    // See `cumsum`: keep NaN local to its own position instead of letting
+    // it poison every later cumulative product.
     let mut cumprod = 1.0;
     let result: Vec<f64> = values
         .iter()
         .map(|&v| {
-            cumprod *= v;
-            cumprod
+            if v.is_nan() {
+                f64::NAN
+            } else {
+                cumprod *= v;
+                cumprod
+            }
         })
         .collect();
     Ok(result)
@@ -292,12 +341,20 @@ pub(super) fn cumprod(df: &DataFrame, column: &str) -> Result<Vec<f64>> {
 
 pub(super) fn cummax(df: &DataFrame, column: &str) -> Result<Vec<f64>> {
     let values = df.get_column_numeric_values(column)?;
+    // `f64::max` ignores NaN (returns the other operand), which kept the
+    // running max moving correctly but then pushed that carried-forward
+    // value at the NaN's own row instead of NaN -- pandas' `cummax` leaves
+    // the NaN row as NaN while still tracking the max across it.
     let mut cummax = f64::NEG_INFINITY;
     let result: Vec<f64> = values
         .iter()
         .map(|&v| {
-            cummax = cummax.max(v);
-            cummax
+            if v.is_nan() {
+                f64::NAN
+            } else {
+                cummax = cummax.max(v);
+                cummax
+            }
         })
         .collect();
     Ok(result)
@@ -305,12 +362,18 @@ pub(super) fn cummax(df: &DataFrame, column: &str) -> Result<Vec<f64>> {
 
 pub(super) fn cummin(df: &DataFrame, column: &str) -> Result<Vec<f64>> {
     let values = df.get_column_numeric_values(column)?;
+    // See `cummax`: report NaN at the NaN's own row instead of silently
+    // filling it in with the running minimum.
     let mut cummin = f64::INFINITY;
     let result: Vec<f64> = values
         .iter()
         .map(|&v| {
-            cummin = cummin.min(v);
-            cummin
+            if v.is_nan() {
+                f64::NAN
+            } else {
+                cummin = cummin.min(v);
+                cummin
+            }
         })
         .collect();
     Ok(result)
@@ -336,18 +399,40 @@ pub(super) fn nunique(df: &DataFrame) -> Result<Vec<(String, usize)>> {
     let col_names = df.column_names();
     let mut results = Vec::new();
     for col_name in col_names {
-        let values = df.get_column_string_values(&col_name)?;
+        let values = df.get_column_string_values(col_name)?;
         let unique_values: HashSet<String> = values.into_iter().collect();
-        results.push((col_name, unique_values.len()));
+        results.push((col_name.clone(), unique_values.len()));
     }
     Ok(results)
 }
 
+/// Compute the DataFrame's real approximate memory footprint by summing each
+/// column's actual materialized data, rather than a placeholder formula
+/// unrelated to the column contents (the previous `cols*rows*8 + cols*64 +
+/// 256` charged every column -- string or numeric, wide or narrow -- the
+/// same flat rate and added constants with no basis in the data).
 pub(super) fn memory_usage(df: &DataFrame) -> usize {
-    let col_names = df.column_names();
-    let n_rows = df.row_count();
-    let base_size = col_names.len() * n_rows * 8;
-    base_size + col_names.len() * 64 + 256
+    let mut total = std::mem::size_of::<usize>(); // DataFrame's own row-count field
+    for col_name in df.column_names() {
+        // The column's own name/label storage.
+        total += col_name.len();
+        if df.is_numeric_column(col_name) {
+            // Every numeric element type this DataFrame stores (i64/f64,
+            // and the narrower i32/f32) is materialized as `f64` by the
+            // public accessor; 8 bytes/element matches the two widest --
+            // and, in this crate, most common -- numeric element types.
+            total += df.row_count() * std::mem::size_of::<f64>();
+        } else if let Ok(values) = df.get_column_string_values(col_name) {
+            // Real per-string byte length plus the `String` struct's own
+            // (pointer, length, capacity) footprint: an actual sum over
+            // the materialized data, not an estimate.
+            total += values
+                .iter()
+                .map(|s| s.len() + std::mem::size_of::<String>())
+                .sum::<usize>();
+        }
+    }
+    total
 }
 
 pub(super) fn value_counts(df: &DataFrame, column: &str) -> Result<Vec<(String, usize)>> {
@@ -379,20 +464,50 @@ pub(super) fn value_counts_numeric(df: &DataFrame, column: &str) -> Result<Vec<(
 }
 
 pub(super) fn describe(df: &DataFrame, column: &str) -> Result<DescribeStats> {
-    let values = df.get_column_numeric_values(column)?;
-    if values.is_empty() {
+    let raw_values = df.get_column_numeric_values(column)?;
+    if raw_values.is_empty() {
         return Err(Error::Empty("Cannot describe empty column".to_string()));
     }
+    // pandas' `describe()` counts and summarizes only non-null values
+    // (skipna=True); the previous implementation folded any NaN straight
+    // into the running sum, turning `mean`/`std`/every percentile into NaN
+    // from a single missing value anywhere in the column.
+    let values: Vec<f64> = raw_values.into_iter().filter(|v| !v.is_nan()).collect();
     let count = values.len();
+    if count == 0 {
+        // All-NaN column: pandas reports count=0 and NaN for the rest
+        // rather than erroring (an *empty* column, handled above, is the
+        // only case that raises).
+        return Ok(DescribeStats {
+            count: 0,
+            mean: f64::NAN,
+            std: f64::NAN,
+            min: f64::NAN,
+            q25: f64::NAN,
+            q50: f64::NAN,
+            q75: f64::NAN,
+            max: f64::NAN,
+        });
+    }
     let sum: f64 = values.iter().sum();
     let mean = sum / count as f64;
-    let variance: f64 = values.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / count as f64;
-    let std = variance.sqrt();
+    // Sample standard deviation (ddof=1), pandas' default -- undefined
+    // (NaN) for a single observation rather than reporting a spurious 0.
+    let std = if count < 2 {
+        f64::NAN
+    } else {
+        let variance: f64 =
+            values.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / (count - 1) as f64;
+        variance.sqrt()
+    };
     let mut sorted = values.clone();
-    sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(Ordering::Equal));
+    sorted.sort_by(|a, b| a.total_cmp(b));
     let min = sorted[0];
     let max = sorted[count - 1];
     let percentile = |p: f64| -> f64 {
+        if count == 1 {
+            return sorted[0];
+        }
         let idx = p / 100.0 * (count - 1) as f64;
         let lower = idx.floor() as usize;
         let upper = idx.ceil() as usize;
@@ -421,16 +536,21 @@ where
 {
     match axis {
         Axis::Rows => {
-            let col_names = df.column_names();
+            // Materialize each numeric column once up front instead of
+            // re-fetching (and re-downcasting) every column on every row --
+            // the previous version called `get_column_numeric_values`
+            // inside the row loop, making this O(rows * cols) column
+            // materializations instead of O(cols).
+            let numeric_cols: Vec<Vec<f64>> = df
+                .column_names()
+                .iter()
+                .filter_map(|col| df.get_column_numeric_values(col).ok())
+                .collect();
             let mut result = Vec::with_capacity(df.row_count());
             for i in 0..df.row_count() {
-                let row_values: Vec<f64> = col_names
+                let row_values: Vec<f64> = numeric_cols
                     .iter()
-                    .filter_map(|col| {
-                        df.get_column_numeric_values(col)
-                            .ok()
-                            .and_then(|vals| vals.get(i).copied())
-                    })
+                    .filter_map(|vals| vals.get(i).copied())
                     .collect();
                 result.push(func(&row_values));
             }
@@ -460,9 +580,9 @@ pub(super) fn corr(df: &DataFrame) -> Result<CorrelationMatrix> {
     let mut columns_data: Vec<Vec<f64>> = Vec::new();
     let mut valid_columns: Vec<String> = Vec::new();
     for col_name in col_names {
-        if let Ok(values) = df.get_column_numeric_values(&col_name) {
+        if let Ok(values) = df.get_column_numeric_values(col_name) {
             columns_data.push(values);
-            valid_columns.push(col_name);
+            valid_columns.push(col_name.clone());
         }
     }
     if columns_data.is_empty() {
@@ -490,9 +610,9 @@ pub(super) fn cov(df: &DataFrame) -> Result<CorrelationMatrix> {
     let mut columns_data: Vec<Vec<f64>> = Vec::new();
     let mut valid_columns: Vec<String> = Vec::new();
     for col_name in col_names {
-        if let Ok(values) = df.get_column_numeric_values(&col_name) {
+        if let Ok(values) = df.get_column_numeric_values(col_name) {
             columns_data.push(values);
-            valid_columns.push(col_name);
+            valid_columns.push(col_name.clone());
         }
     }
     if columns_data.is_empty() {
@@ -569,7 +689,7 @@ pub(super) fn replace(
         .collect();
     let mut new_df = DataFrame::new();
     for col_name in df.column_names() {
-        if &col_name == column {
+        if col_name == column {
             new_df.add_column(
                 col_name.clone(),
                 Series::new(replaced.clone(), Some(col_name.clone()))?,
@@ -614,7 +734,7 @@ pub(super) fn replace_numeric(
         .collect();
     let mut new_df = DataFrame::new();
     for col_name in df.column_names() {
-        if &col_name == column {
+        if col_name == column {
             new_df.add_column(
                 col_name.clone(),
                 Series::new(replaced.clone(), Some(col_name.clone()))?,
@@ -637,8 +757,8 @@ pub(super) fn replace_numeric(
 }
 
 pub(super) fn sample(df: &DataFrame, n: usize, replace: bool) -> Result<DataFrame> {
+    use scirs2_core::random::RngExt;
     use scirs2_core::random::SliceRandom;
-    use scirs2_core::random::{Rng, RngExt};
     let n_rows = df.row_count();
     if n_rows == 0 {
         return Ok(DataFrame::new());
@@ -687,7 +807,7 @@ pub(super) fn rename_columns(
 ) -> Result<DataFrame> {
     let mut new_df = DataFrame::new();
     for col_name in df.column_names() {
-        let new_name = mapper.get(&col_name).unwrap_or(&col_name);
+        let new_name = mapper.get(col_name.as_str()).unwrap_or(col_name);
         if let Ok(values) = df.get_column_numeric_values(&col_name) {
             new_df.add_column(
                 new_name.clone(),
@@ -708,7 +828,7 @@ pub(super) fn abs(df: &DataFrame, column: &str) -> Result<DataFrame> {
     let abs_values: Vec<f64> = values.iter().map(|&v| v.abs()).collect();
     let mut new_df = DataFrame::new();
     for col_name in df.column_names() {
-        if &col_name == column {
+        if col_name == column {
             new_df.add_column(
                 col_name.clone(),
                 Series::new(abs_values.clone(), Some(col_name.clone()))?,
@@ -733,7 +853,7 @@ pub(super) fn round(df: &DataFrame, column: &str, decimals: i32) -> Result<DataF
         .collect();
     let mut new_df = DataFrame::new();
     for col_name in df.column_names() {
-        if &col_name == column {
+        if col_name == column {
             new_df.add_column(
                 col_name.clone(),
                 Series::new(rounded.clone(), Some(col_name.clone()))?,
@@ -816,7 +936,7 @@ pub(super) fn fillna(df: &DataFrame, column: &str, value: f64) -> Result<DataFra
         .collect();
     let mut new_df = DataFrame::new();
     for col_name in df.column_names() {
-        if &col_name == column {
+        if col_name == column {
             new_df.add_column(
                 col_name.clone(),
                 Series::new(filled.clone(), Some(col_name.clone()))?,
@@ -870,7 +990,7 @@ pub(super) fn fillna_method(df: &DataFrame, column: &str, method: &str) -> Resul
     };
     let mut new_df = DataFrame::new();
     for col_name in df.column_names() {
-        if &col_name == column {
+        if col_name == column {
             new_df.add_column(
                 col_name.clone(),
                 Series::new(filled.clone(), Some(col_name.clone()))?,
@@ -909,7 +1029,7 @@ pub(super) fn interpolate(df: &DataFrame, column: &str) -> Result<DataFrame> {
     }
     let mut new_df = DataFrame::new();
     for col_name in df.column_names() {
-        if &col_name == column {
+        if col_name == column {
             new_df.add_column(
                 col_name.clone(),
                 Series::new(interpolated.clone(), Some(col_name.clone()))?,
@@ -944,7 +1064,7 @@ pub(super) fn sum_all(df: &DataFrame) -> Result<Vec<(String, f64)>> {
     for col_name in df.column_names() {
         if let Ok(values) = df.get_column_numeric_values(&col_name) {
             let sum: f64 = values.iter().filter(|v| !v.is_nan()).sum();
-            results.push((col_name, sum));
+            results.push((col_name.clone(), sum));
         }
     }
     Ok(results)
@@ -957,7 +1077,7 @@ pub(super) fn mean_all(df: &DataFrame) -> Result<Vec<(String, f64)>> {
             let valid_values: Vec<f64> = values.iter().filter(|v| !v.is_nan()).copied().collect();
             if !valid_values.is_empty() {
                 let mean = valid_values.iter().sum::<f64>() / valid_values.len() as f64;
-                results.push((col_name, mean));
+                results.push((col_name.clone(), mean));
             }
         }
     }
@@ -973,7 +1093,7 @@ pub(super) fn std_all(df: &DataFrame) -> Result<Vec<(String, f64)>> {
                 let mean = valid_values.iter().sum::<f64>() / valid_values.len() as f64;
                 let variance: f64 = valid_values.iter().map(|v| (v - mean).powi(2)).sum::<f64>()
                     / (valid_values.len() - 1) as f64;
-                results.push((col_name, variance.sqrt()));
+                results.push((col_name.clone(), variance.sqrt()));
             }
         }
     }
@@ -989,7 +1109,7 @@ pub(super) fn var_all(df: &DataFrame) -> Result<Vec<(String, f64)>> {
                 let mean = valid_values.iter().sum::<f64>() / valid_values.len() as f64;
                 let variance: f64 = valid_values.iter().map(|v| (v - mean).powi(2)).sum::<f64>()
                     / (valid_values.len() - 1) as f64;
-                results.push((col_name, variance));
+                results.push((col_name.clone(), variance));
             }
         }
     }
@@ -1003,7 +1123,7 @@ pub(super) fn min_all(df: &DataFrame) -> Result<Vec<(String, f64)>> {
             let valid_values: Vec<f64> = values.iter().filter(|v| !v.is_nan()).copied().collect();
             if !valid_values.is_empty() {
                 let min = valid_values.iter().cloned().fold(f64::INFINITY, f64::min);
-                results.push((col_name, min));
+                results.push((col_name.clone(), min));
             }
         }
     }
@@ -1020,27 +1140,81 @@ pub(super) fn max_all(df: &DataFrame) -> Result<Vec<(String, f64)>> {
                     .iter()
                     .cloned()
                     .fold(f64::NEG_INFINITY, f64::max);
-                results.push((col_name, max));
+                results.push((col_name.clone(), max));
             }
         }
     }
     Ok(results)
 }
 
-pub(super) fn sort_values(df: &DataFrame, column: &str, ascending: bool) -> Result<DataFrame> {
-    let values = df.get_column_numeric_values(column)?;
-    let mut indexed_values: Vec<(usize, f64)> =
-        values.iter().enumerate().map(|(i, &v)| (i, v)).collect();
-    indexed_values.sort_by(|a, b| {
-        let cmp = a.1.partial_cmp(&b.1).unwrap_or(Ordering::Equal);
-        if ascending {
-            cmp
+/// A single column's materialized values, tagged by the DataFrame's actual
+/// stored dtype (via [`DataFrame::is_numeric_column`], a concrete-type
+/// downcast -- not "does this parse as a number", which is what the old
+/// numeric-first-then-string dispatch effectively tested). Object columns
+/// whose text happens to look numeric (e.g. `"007"`) must sort lexically,
+/// not as floats.
+enum SortColumn {
+    Numeric(Vec<f64>),
+    Text(Vec<String>),
+}
+
+impl SortColumn {
+    fn extract(df: &DataFrame, column: &str) -> Result<Self> {
+        if df.is_numeric_column(column) {
+            Ok(SortColumn::Numeric(df.get_column_numeric_values(column)?))
         } else {
-            cmp.reverse()
+            Ok(SortColumn::Text(df.get_column_string_values(column)?))
         }
-    });
-    let sorted_indices: Vec<usize> = indexed_values.iter().map(|(i, _)| *i).collect();
-    select_rows_by_indices(df, &sorted_indices)
+    }
+
+    /// Total-order comparison of rows `i` and `j`. Numeric NaNs always sort
+    /// last regardless of `ascending`, matching pandas' `na_position="last"`
+    /// default; `f64::total_cmp` (rather than `partial_cmp().unwrap_or(Equal)`)
+    /// keeps the non-NaN case a real total order so the overall sort can't
+    /// produce non-transitive garbage or panic.
+    fn compare(&self, i: usize, j: usize, ascending: bool) -> Ordering {
+        // NB: `ascending` only flips the *value* comparison, never the
+        // NaN-vs-non-NaN placement -- NaN must sort last in both
+        // directions. Reversing the whole `Ordering` (including the NaN
+        // branches) would have put NaN *first* under `ascending: false`.
+        match self {
+            SortColumn::Numeric(vals) => {
+                let vi = vals.get(i).copied().unwrap_or(f64::NAN);
+                let vj = vals.get(j).copied().unwrap_or(f64::NAN);
+                match (vi.is_nan(), vj.is_nan()) {
+                    (true, true) => Ordering::Equal,
+                    (true, false) => Ordering::Greater,
+                    (false, true) => Ordering::Less,
+                    (false, false) => {
+                        let cmp = vi.total_cmp(&vj);
+                        if ascending {
+                            cmp
+                        } else {
+                            cmp.reverse()
+                        }
+                    }
+                }
+            }
+            SortColumn::Text(vals) => {
+                let vi = vals.get(i).map(|s| s.as_str()).unwrap_or("");
+                let vj = vals.get(j).map(|s| s.as_str()).unwrap_or("");
+                let cmp = vi.cmp(vj);
+                if ascending {
+                    cmp
+                } else {
+                    cmp.reverse()
+                }
+            }
+        }
+    }
+}
+
+pub(super) fn sort_values(df: &DataFrame, column: &str, ascending: bool) -> Result<DataFrame> {
+    let col = SortColumn::extract(df, column)?;
+    let n_rows = df.row_count();
+    let mut indices: Vec<usize> = (0..n_rows).collect();
+    indices.sort_by(|&i, &j| col.compare(i, j, ascending));
+    select_rows_by_indices(df, &indices)
 }
 
 pub(super) fn sort_by_columns(
@@ -1056,19 +1230,15 @@ pub(super) fn sort_by_columns(
     if columns.is_empty() {
         return Ok(df.clone());
     }
-    let mut column_values: Vec<Vec<f64>> = Vec::new();
+    let mut column_values: Vec<SortColumn> = Vec::with_capacity(columns.len());
     for &col in columns {
-        column_values.push(df.get_column_numeric_values(col)?);
+        column_values.push(SortColumn::extract(df, col)?);
     }
     let n_rows = df.row_count();
     let mut indices: Vec<usize> = (0..n_rows).collect();
     indices.sort_by(|&i, &j| {
-        for (col_idx, (&col_name, &asc)) in columns.iter().zip(ascending.iter()).enumerate() {
-            let vals = &column_values[col_idx];
-            let vi = vals.get(i).copied().unwrap_or(f64::NAN);
-            let vj = vals.get(j).copied().unwrap_or(f64::NAN);
-            let cmp = vi.partial_cmp(&vj).unwrap_or(Ordering::Equal);
-            let ord_cmp = if asc { cmp } else { cmp.reverse() };
+        for (col, &asc) in column_values.iter().zip(ascending.iter()) {
+            let ord_cmp = col.compare(i, j, asc);
             if ord_cmp != Ordering::Equal {
                 return ord_cmp;
             }
@@ -1107,7 +1277,7 @@ pub(super) fn where_cond(
         .collect();
     let mut new_df = DataFrame::new();
     for col_name in df.column_names() {
-        if &col_name == column {
+        if col_name == column {
             new_df.add_column(
                 col_name.clone(),
                 Series::new(replaced.clone(), Some(col_name.clone()))?,
@@ -1140,7 +1310,7 @@ pub(super) fn mask(
         .collect();
     let mut new_df = DataFrame::new();
     for col_name in df.column_names() {
-        if &col_name == column {
+        if col_name == column {
             new_df.add_column(
                 col_name.clone(),
                 Series::new(replaced.clone(), Some(col_name.clone()))?,
@@ -1161,7 +1331,7 @@ pub(super) fn drop_duplicates(
 ) -> Result<DataFrame> {
     let columns_to_check: Vec<String> = match subset {
         Some(cols) => cols.iter().map(|s| s.to_string()).collect(),
-        None => df.column_names(),
+        None => df.column_names().to_vec(),
     };
     for col in &columns_to_check {
         if !df.contains_column(col) {
@@ -1172,15 +1342,36 @@ pub(super) fn drop_duplicates(
         }
     }
     let n_rows = df.row_count();
+    // Materialize each key column once (dispatched by concrete dtype via
+    // `is_numeric_column`, matching `duplicated`/`duplicated_rows`) instead
+    // of re-fetching it once per row per column, which was
+    // O(rows^2 * cols).
+    enum KeyColumn {
+        Numeric(Vec<f64>),
+        Text(Vec<String>),
+    }
+    let key_columns: Vec<KeyColumn> = columns_to_check
+        .iter()
+        .map(|col| {
+            if df.is_numeric_column(col) {
+                KeyColumn::Numeric(df.get_column_numeric_values(col).unwrap_or_default())
+            } else {
+                KeyColumn::Text(df.get_column_string_values(col).unwrap_or_default())
+            }
+        })
+        .collect();
     let mut row_keys: Vec<String> = Vec::with_capacity(n_rows);
     for row_idx in 0..n_rows {
-        let mut key_parts: Vec<String> = Vec::new();
-        for col in &columns_to_check {
-            if let Ok(values) = df.get_column_string_values(col) {
-                key_parts.push(values.get(row_idx).cloned().unwrap_or_default());
-            } else if let Ok(values) = df.get_column_numeric_values(col) {
-                let v = values.get(row_idx).copied().unwrap_or(f64::NAN);
-                key_parts.push(v.to_bits().to_string());
+        let mut key_parts: Vec<String> = Vec::with_capacity(key_columns.len());
+        for col in &key_columns {
+            match col {
+                KeyColumn::Text(values) => {
+                    key_parts.push(values.get(row_idx).cloned().unwrap_or_default());
+                }
+                KeyColumn::Numeric(values) => {
+                    let v = values.get(row_idx).copied().unwrap_or(f64::NAN);
+                    key_parts.push(v.to_bits().to_string());
+                }
             }
         }
         row_keys.push(key_parts.join("|||"));
@@ -1255,7 +1446,7 @@ pub(super) fn any_numeric(df: &DataFrame) -> Result<Vec<(String, bool)>> {
     for col_name in df.column_names() {
         if let Ok(values) = df.get_column_numeric_values(&col_name) {
             let has_any = values.iter().any(|&v| !v.is_nan() && v != 0.0);
-            results.push((col_name, has_any));
+            results.push((col_name.clone(), has_any));
         }
     }
     Ok(results)
@@ -1266,7 +1457,7 @@ pub(super) fn all_numeric(df: &DataFrame) -> Result<Vec<(String, bool)>> {
     for col_name in df.column_names() {
         if let Ok(values) = df.get_column_numeric_values(&col_name) {
             let all_true = values.iter().all(|&v| !v.is_nan() && v != 0.0);
-            results.push((col_name, all_true));
+            results.push((col_name.clone(), all_true));
         }
     }
     Ok(results)
@@ -1277,10 +1468,10 @@ pub(super) fn count_valid(df: &DataFrame) -> Result<Vec<(String, usize)>> {
     for col_name in df.column_names() {
         if let Ok(values) = df.get_column_numeric_values(&col_name) {
             let count = values.iter().filter(|v| !v.is_nan()).count();
-            results.push((col_name, count));
+            results.push((col_name.clone(), count));
         } else if let Ok(values) = df.get_column_string_values(&col_name) {
             let count = values.iter().filter(|v| !v.is_empty()).count();
-            results.push((col_name, count));
+            results.push((col_name.clone(), count));
         }
     }
     Ok(results)
@@ -1336,8 +1527,9 @@ pub(super) fn melt(
         None => {
             let id_set: std::collections::HashSet<&str> = id_vars.iter().copied().collect();
             df.column_names()
-                .into_iter()
+                .iter()
                 .filter(|c| !id_set.contains(c.as_str()))
+                .cloned()
                 .collect()
         }
     };

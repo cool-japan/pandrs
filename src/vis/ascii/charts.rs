@@ -62,15 +62,26 @@ impl Histogram {
     }
 
     fn compute_bins(data: &[f64], bins: usize) -> (Vec<f64>, Vec<usize>) {
-        if data.is_empty() || bins == 0 {
+        if bins == 0 {
             return (vec![], vec![]);
         }
 
-        let min = data.iter().cloned().fold(f64::INFINITY, f64::min);
-        let max = data.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        // NaN/±inf would otherwise land in a bin via a saturating
+        // float->usize cast (NaN and -inf both saturate to bin 0, +inf
+        // saturates past `bins - 1` and gets clamped into the last bin),
+        // silently misrepresenting them as ordinary extreme data points.
+        // Excluding them from both the min/max scan and the counting
+        // pass keeps the histogram honest about what it actually binned.
+        let finite: Vec<f64> = data.iter().copied().filter(|v| v.is_finite()).collect();
+        if finite.is_empty() {
+            return (vec![], vec![]);
+        }
+
+        let min = finite.iter().cloned().fold(f64::INFINITY, f64::min);
+        let max = finite.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
 
         if (max - min).abs() < f64::EPSILON {
-            return (vec![min, max], vec![data.len()]);
+            return (vec![min, max], vec![finite.len()]);
         }
 
         let bin_width = (max - min) / bins as f64;
@@ -81,7 +92,7 @@ impl Histogram {
             edges.push(min + i as f64 * bin_width);
         }
 
-        for &value in data {
+        for &value in &finite {
             let bin_idx = ((value - min) / bin_width).floor() as usize;
             let bin_idx = bin_idx.min(bins - 1);
             counts[bin_idx] += 1;
@@ -94,13 +105,6 @@ impl Histogram {
         match self.config.style {
             ChartStyle::Ascii => '#',
             ChartStyle::Unicode | ChartStyle::Braille => '█',
-        }
-    }
-
-    fn get_partial_chars(&self) -> &[char] {
-        match self.config.style {
-            ChartStyle::Ascii => &['#'],
-            ChartStyle::Unicode | ChartStyle::Braille => &['▏', '▎', '▍', '▌', '▋', '▊', '▉', '█'],
         }
     }
 }
@@ -276,11 +280,22 @@ impl Chart for BarChart {
 impl BarChart {
     fn render_horizontal(&self) -> String {
         let mut output = String::new();
+        // Clamped toward 0 (symmetric with `min_val`) so the zero
+        // baseline is always inside [min_val, max_val], even when every
+        // value is negative.
         let max_val = self
             .values
             .iter()
             .cloned()
-            .fold(f64::NEG_INFINITY, f64::max);
+            .fold(f64::NEG_INFINITY, f64::max)
+            .max(0.0);
+        let min_val = self
+            .values
+            .iter()
+            .cloned()
+            .fold(f64::INFINITY, f64::min)
+            .min(0.0);
+        let axis_range = max_val - min_val;
         let bar_width = self
             .config
             .base
@@ -297,32 +312,58 @@ impl BarChart {
             ));
         }
 
-        for (label, &value) in self.labels.iter().zip(self.values.iter()) {
-            let bar_len = if max_val > 0.0 {
-                (value / max_val * bar_width as f64).round() as usize
+        // Column of the zero baseline within the bar area. Previously
+        // bars were always drawn from column 0 (`value / max_val`,
+        // clamped to 0 for any negative value via the saturating
+        // float->usize cast), so a negative value rendered as an EMPTY
+        // bar while its printed `{:.2}` label still showed the true
+        // negative number — the chart directly contradicted its own
+        // label. Bars are now drawn relative to this baseline, with
+        // negative values extending left of it and positive values
+        // extending right, proportional to magnitude either way.
+        let col_for = |v: f64| -> usize {
+            if axis_range > 0.0 {
+                let pos = ((v.clamp(min_val, max_val) - min_val) / axis_range * bar_width as f64)
+                    .round() as usize;
+                pos.min(bar_width)
             } else {
                 0
+            }
+        };
+        let zero_col = col_for(0.0);
+
+        for (label, &value) in self.labels.iter().zip(self.values.iter()) {
+            let value_col = col_for(value);
+            let (bar_start, bar_end) = if value_col >= zero_col {
+                (zero_col, value_col)
+            } else {
+                (value_col, zero_col)
             };
 
-            let bar: String = std::iter::repeat(bar_char).take(bar_len).collect();
+            let mut bar = String::with_capacity(bar_width);
+            for i in 0..bar_width {
+                bar.push(if i >= bar_start && i < bar_end {
+                    bar_char
+                } else {
+                    ' '
+                });
+            }
             let truncated_label: String = label.chars().take(self.config.label_width).collect();
 
             if self.config.show_values {
                 output.push_str(&format!(
-                    "{:>label_width$} │{:<bar_width$}│ {:.2}\n",
+                    "{:>label_width$} │{}│ {:.2}\n",
                     truncated_label,
                     bar,
                     value,
                     label_width = self.config.label_width,
-                    bar_width = bar_width
                 ));
             } else {
                 output.push_str(&format!(
-                    "{:>label_width$} │{:<bar_width$}│\n",
+                    "{:>label_width$} │{}│\n",
                     truncated_label,
                     bar,
                     label_width = self.config.label_width,
-                    bar_width = bar_width
                 ));
             }
         }
@@ -332,12 +373,25 @@ impl BarChart {
 
     fn render_vertical(&self) -> String {
         let mut output = String::new();
+        // See render_horizontal: clamp both ends toward 0 so the axis
+        // always includes a zero baseline.
         let max_val = self
             .values
             .iter()
             .cloned()
-            .fold(f64::NEG_INFINITY, f64::max);
-        let height = self.config.base.height.min(20);
+            .fold(f64::NEG_INFINITY, f64::max)
+            .max(0.0);
+        let min_val = self
+            .values
+            .iter()
+            .cloned()
+            .fold(f64::INFINITY, f64::min)
+            .min(0.0);
+        let axis_range = max_val - min_val;
+        // At least 1 to avoid a zero-length scale divisor below; a
+        // `height: 0` config then degenerates to a single (empty) row
+        // instead of panicking.
+        let height = self.config.base.height.min(20).max(1);
         let bar_char = self.get_bar_char();
 
         // Title
@@ -349,23 +403,37 @@ impl BarChart {
             ));
         }
 
-        // Normalize values to height
-        let normalized: Vec<usize> = self
+        let scale = (height - 1) as f64;
+        let row_for = |v: f64| -> usize {
+            if axis_range > 0.0 {
+                ((v.clamp(min_val, max_val) - min_val) / axis_range * scale).round() as usize
+            } else {
+                0
+            }
+        };
+        let zero_row = row_for(0.0);
+
+        // Half-open [lo, hi) row range filled for each bar: above the
+        // baseline for positive values, below it for negative ones —
+        // see render_horizontal for why this replaces the old
+        // always-from-row-0 behavior that hid every negative bar.
+        let bars: Vec<(usize, usize)> = self
             .values
             .iter()
             .map(|&v| {
-                if max_val > 0.0 {
-                    (v / max_val * height as f64).round() as usize
+                let vr = row_for(v);
+                if v >= 0.0 {
+                    (zero_row, vr.max(zero_row))
                 } else {
-                    0
+                    (vr.min(zero_row), zero_row)
                 }
             })
             .collect();
 
         // Render from top to bottom
         for row in (0..height).rev() {
-            for &bar_height in &normalized {
-                if bar_height > row {
+            for &(lo, hi) in &bars {
+                if row >= lo && row < hi {
                     output.push_str(&format!(" {} ", bar_char));
                 } else {
                     output.push_str("   ");
@@ -453,7 +521,12 @@ impl Chart for LinePlot {
         }
 
         let mut output = String::new();
-        let height = self.config.base.height;
+        // `height - 1` is used below (as an f64 divisor) while computing
+        // sample rows even when `width == 0` skips the loop that uses
+        // it; a `height: 0` config previously underflowed that
+        // subtraction and panicked. Clamping to at least 1 renders a
+        // degenerate single-row chart instead.
+        let height = self.config.base.height.max(1);
         let width = self.config.base.width.min(self.values.len());
 
         let min_val = self.values.iter().cloned().fold(f64::INFINITY, f64::min);
@@ -577,8 +650,13 @@ impl Chart for ScatterPlot {
         }
 
         let len = self.x.len().min(self.y.len());
-        let height = self.config.base.height;
-        let width = self.config.base.width;
+        // Both dimensions feed a `dim - 1` divisor below while placing
+        // points; a `height: 0` or `width: 0` config previously
+        // underflowed that subtraction and panicked as soon as there
+        // was at least one point to place. Clamping to at least 1
+        // renders a degenerate single-row/column chart instead.
+        let height = self.config.base.height.max(1);
+        let width = self.config.base.width.max(1);
 
         let x_min = self.x.iter().cloned().fold(f64::INFINITY, f64::min);
         let x_max = self.x.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
@@ -634,11 +712,15 @@ impl Chart for ScatterPlot {
                 output.push('─');
             }
             output.push('\n');
+            // `width - 8` underflows (panicking) for any `width` under
+            // 8; a `ScatterPlotConfig` with a narrow custom width (e.g.
+            // 4) previously crashed here even though point-plotting
+            // above tolerated it fine.
             output.push_str(&format!(
                 "        {:<width$.1}{:>8.1}\n",
                 x_min,
                 x_max,
-                width = width - 8
+                width = width.saturating_sub(8)
             ));
         }
 

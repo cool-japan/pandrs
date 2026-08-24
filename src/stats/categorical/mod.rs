@@ -8,8 +8,8 @@ use std::fmt::Debug;
 use std::hash::Hash;
 
 use crate::dataframe::DataFrame;
-use crate::error::{Error, PandRSError, Result};
-use crate::series::{Categorical, CategoricalOrder, StringCategorical};
+use crate::error::{Error, Result};
+use crate::series::Categorical;
 use crate::stats::ChiSquareResult;
 
 /// ContingencyTable represents a cross-tabulation of categorical data
@@ -447,7 +447,7 @@ pub fn entropy<T>(cat: &Categorical<T>) -> Result<f64>
 where
     T: Debug + Clone + Eq + Hash + std::fmt::Display + Ord,
 {
-    let len = cat.len() as f64;
+    let _len = cat.len() as f64;
 
     // Count occurrences of each category
     let mut counts = vec![0; cat.categories().len()];

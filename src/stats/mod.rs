@@ -12,13 +12,14 @@ pub mod inference;
 pub mod regression;
 pub mod sampling;
 
-// Backward compatibility modules (temporarily disabled)
-// pub mod backward_compat;
-
 // Advanced statistical computing modules
 pub mod distributions;
 pub mod hypothesis;
 pub mod nonparametric;
+
+// Numerically-correct special functions (gamma / beta / distribution CDFs).
+// Single source of truth shared across stats and time_series.
+pub(crate) mod special;
 
 // GPU-accelerated statistical functions (conditionally compiled)
 #[cfg(cuda_available)]
@@ -26,10 +27,9 @@ pub mod gpu;
 
 // Re-export public types and functions
 use crate::dataframe::DataFrame;
-use crate::error::{Error, PandRSError, Result};
+use crate::error::{Error, Result};
 use std::collections::HashMap;
 use std::fmt::Debug;
-use std::hash::Hash;
 
 /// Structure holding descriptive statistics results
 #[derive(Debug, Clone)]
@@ -296,7 +296,10 @@ pub fn linear_regression(
 /// Perform random sampling
 ///
 /// # Description
-/// Gets a random sample of specified size.
+/// Gets a random sample of specified size. `seed`, when `Some`, makes the
+/// draw reproducible (the same seed always selects the same rows for a
+/// given `df`/`fraction`/`replace`); `None` draws a fresh system-entropy
+/// seed each call.
 ///
 /// # Example
 /// ```rust
@@ -304,11 +307,16 @@ pub fn linear_regression(
 /// use pandrs::dataframe::DataFrame;
 ///
 /// let df = DataFrame::new(); // DataFrame with data
-/// // Get a 10% random sample
-/// let sampled_df = stats::sample(&df, 0.1, true).expect("operation should succeed");
+/// // Get a 10% random sample, reproducibly
+/// let sampled_df = stats::sample(&df, 0.1, true, Some(42)).expect("operation should succeed");
 /// ```
-pub fn sample(df: &DataFrame, fraction: f64, replace: bool) -> Result<DataFrame> {
-    sampling::sample_impl(df, fraction, replace)
+pub fn sample(
+    df: &DataFrame,
+    fraction: f64,
+    replace: bool,
+    seed: Option<u64>,
+) -> Result<DataFrame> {
+    sampling::sample_impl(df, fraction, replace, seed)
 }
 
 /// Generate bootstrap samples
@@ -631,8 +639,11 @@ impl StatisticalAnalyzer {
         }
     }
 
-    /// Perform hypothesis test between two DataFrame columns
-    pub fn test_columns(
+    /// Perform a hypothesis test between two numeric DataFrame columns.
+    ///
+    /// Renamed from `test_columns` in 0.4.1 so the public API no longer looks
+    /// like a `#[test]` helper.
+    pub fn columns_ttest(
         &self,
         df: &DataFrame,
         col1: &str,

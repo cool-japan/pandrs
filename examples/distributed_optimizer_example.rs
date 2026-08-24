@@ -3,7 +3,7 @@
 #[cfg(feature = "distributed")]
 use pandrs::dataframe::DataFrame;
 #[cfg(feature = "distributed")]
-use pandrs::distributed::{DistributedConfig, DistributedContext, ToDistributed};
+use pandrs::distributed::{DistributedConfig, DistributedContext};
 #[cfg(feature = "distributed")]
 use pandrs::error::Result;
 #[cfg(feature = "distributed")]

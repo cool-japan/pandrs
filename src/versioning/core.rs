@@ -41,36 +41,71 @@ impl Display for VersionId {
     }
 }
 
-/// Generate a simple UUID v4 with guaranteed uniqueness
+/// Generate a UUID v4 (RFC 4122) string with guaranteed uniqueness.
+///
+/// When the `distributed` or `serving` feature is enabled, `uuid` (a real
+/// dependency in both) is linked in and this delegates to it directly.
+/// `pandrs` builds with `default = []`, though, so neither feature -- and
+/// therefore not the `uuid` crate -- is guaranteed to be present; the
+/// fallback below covers that case without adding a hard dependency this
+/// module can't declare (`Cargo.toml` is outside this pass's ownership).
+#[cfg(any(feature = "distributed", feature = "serving"))]
 fn uuid_v4() -> String {
+    uuid::Uuid::new_v4().to_string()
+}
+
+/// Fallback UUID v4 generator used when neither `distributed` nor `serving`
+/// is enabled (so the `uuid` crate isn't linked in).
+///
+/// Uniqueness is guaranteed by the atomic counter, exactly as before -- that
+/// part of the previous implementation was never the problem. What it fixes
+/// is the "randomness": the previous version derived its supposedly-random
+/// bits from `format!("{:?}", thread_id).len()`, the *length* of a debug
+/// string, which is a near-constant (almost always the same small integer)
+/// and therefore not variable at all. Here the same uniqueness-bearing salt
+/// (timestamp, counter, thread id) is hashed through
+/// `std::collections::hash_map::RandomState`, whose keys are seeded from the
+/// OS's own randomness the first time it's used in a process. That makes
+/// the output vary from run to run instead of being almost the same value
+/// every time -- but `RandomState` is explicitly not a CSPRNG (its std docs
+/// disclaim cryptographic use, and its per-`RandomState::new()` keys within
+/// one thread are cheaply related, not independently drawn), so this is not
+/// a substitute for the real `uuid` crate in any security-sensitive context;
+/// it exists only to give the no-feature build a non-degenerate identifier.
+/// Never panics: a clock read before `UNIX_EPOCH` degrades the timestamp
+/// input to `0` rather than aborting the caller, since uniqueness comes from
+/// the counter regardless.
+#[cfg(not(any(feature = "distributed", feature = "serving")))]
+fn uuid_v4() -> String {
+    use std::collections::hash_map::RandomState;
+    use std::hash::{BuildHasher, Hash, Hasher};
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    // Atomic counter ensures uniqueness even when called in the same nanosecond
     static COUNTER: AtomicU64 = AtomicU64::new(0);
 
-    let timestamp = SystemTime::now()
+    let timestamp_nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .expect("operation should succeed")
-        .as_nanos();
-
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
     let counter = COUNTER.fetch_add(1, Ordering::SeqCst);
+    let thread_tag = format!("{:?}", std::thread::current().id());
 
-    // Combine timestamp, counter, and thread ID for uniqueness
-    let thread_id = std::thread::current().id();
-    let thread_hash = format!("{:?}", thread_id).len() as u64;
+    let mut h1 = RandomState::new().build_hasher();
+    (timestamp_nanos, counter, &thread_tag).hash(&mut h1);
+    let hi = h1.finish();
 
-    let random_part: u64 = (timestamp as u64)
-        .wrapping_add(counter)
-        .wrapping_add(thread_hash.wrapping_mul(0x5851F42D4C957F2D));
+    let mut h2 = RandomState::new().build_hasher();
+    (&thread_tag, counter, timestamp_nanos, 0xA5u8).hash(&mut h2);
+    let lo = h2.finish();
 
     format!(
         "{:08x}-{:04x}-4{:03x}-{:04x}-{:012x}",
-        (random_part >> 32) as u32,
-        ((random_part >> 16) & 0xFFFF) as u16,
-        (random_part & 0x0FFF) as u16,
-        ((random_part >> 48) & 0x3FFF) as u16 | 0x8000,
-        (random_part ^ counter) & 0xFFFFFFFFFFFF
+        (hi >> 32) as u32,
+        ((hi >> 16) & 0xFFFF) as u16,
+        (hi & 0x0FFF) as u16,
+        ((lo >> 48) & 0x3FFF) as u16 | 0x8000,
+        lo & 0xFFFF_FFFF_FFFF
     )
 }
 
@@ -469,6 +504,32 @@ mod tests {
         let v1 = VersionId::new();
         let v2 = VersionId::new();
         assert_ne!(v1, v2);
+    }
+
+    #[test]
+    fn test_version_id_uniqueness_and_shape() {
+        // Structural shape (36 chars, dashes in the right places, version
+        // nibble '4', variant nibble one of 8/9/a/b) holds for both the
+        // real `uuid` crate and the fallback generator, so this test
+        // exercises whichever `uuid_v4` cfg arm is active.
+        let mut seen = std::collections::HashSet::new();
+        for _ in 0..2000 {
+            let id = VersionId::new();
+            let s = id.as_str();
+            assert_eq!(s.len(), 36, "unexpected UUID length: {}", s);
+            let bytes = s.as_bytes();
+            assert_eq!(bytes[8], b'-');
+            assert_eq!(bytes[13], b'-');
+            assert_eq!(bytes[14], b'4', "version nibble must be 4: {}", s);
+            assert_eq!(bytes[18], b'-');
+            assert!(
+                matches!(bytes[19], b'8' | b'9' | b'a' | b'b'),
+                "variant nibble must be 8/9/a/b: {}",
+                s
+            );
+            assert_eq!(bytes[23], b'-');
+            assert!(seen.insert(s.to_string()), "duplicate VersionId: {}", s);
+        }
     }
 
     #[test]

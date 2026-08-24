@@ -10,13 +10,12 @@
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 
-use chrono::{DateTime, Datelike, Duration, FixedOffset, NaiveDate, NaiveDateTime, Timelike, Utc};
+use chrono::{Datelike, Duration, NaiveDate, NaiveDateTime, Timelike};
 use chrono_tz::Tz;
 
 use crate::core::error::{Error, Result};
 use crate::dataframe::base::DataFrame;
 use crate::dataframe::indexing::AdvancedIndexingExt as DataFrameIndexingExt;
-use crate::series::base::Series;
 
 /// Trait for all index types
 pub trait Index: fmt::Debug + Clone {
@@ -475,7 +474,7 @@ impl PeriodIndex {
             let (period_end, label) = match frequency {
                 PeriodFrequency::Annual => {
                     let year = current.year();
-                    let period_start = NaiveDate::from_ymd_opt(year, 1, 1)
+                    let _period_start = NaiveDate::from_ymd_opt(year, 1, 1)
                         .ok_or_else(|| Error::InvalidValue("Invalid year".to_string()))?;
                     let period_end = NaiveDate::from_ymd_opt(year, 12, 31)
                         .ok_or_else(|| Error::InvalidValue("Invalid year".to_string()))?;
@@ -484,7 +483,7 @@ impl PeriodIndex {
                 PeriodFrequency::Quarterly => {
                     let year = current.year();
                     let quarter = ((current.month() - 1) / 3) + 1;
-                    let quarter_start_month = ((quarter - 1) * 3) + 1;
+                    let _quarter_start_month = ((quarter - 1) * 3) + 1;
                     let quarter_end_month = quarter * 3;
 
                     let period_end = NaiveDate::from_ymd_opt(

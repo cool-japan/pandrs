@@ -22,8 +22,11 @@
 //! - **Validate data** — check that a `DataFrame` conforms to a schema, producing
 //!   a detailed validation report.
 //! - **Infer schemas** — automatically derive a schema from an existing `DataFrame`.
-//! - **Check compatibility** — determine whether data can flow from one schema to
-//!   another without data loss or type errors.
+//! - **Check compatibility** — determine whether data can structurally flow from one
+//!   schema to another (required columns present, types castable). Columns dropped
+//!   between `from` and `to` don't block the flow, but they *are* data loss; they're
+//!   reported in [`CompatibilityReport::data_loss`] rather than conflated with
+//!   `non_breaking_changes`, which has no data-loss connotation.
 //! - **Serialize/deserialize** — save and load schemas and migrations as JSON or YAML.
 //!
 //! # Quick Start
@@ -60,6 +63,7 @@
 //! // Define a migration to v1.1
 //! let migration = Migration::new(
 //!     "m001",
+//!     "users",
 //!     SchemaVersion::new(1, 0, 0),
 //!     SchemaVersion::new(1, 1, 0),
 //!     "Add email column",

@@ -138,6 +138,15 @@ impl Sparkline {
         self.values
             .iter()
             .map(|&v| {
+                // A NaN sample's normalized position would otherwise
+                // collapse to 0.0 (see the module-level note on
+                // `f64::clamp`'s NaN handling), rendering identically to
+                // a real minimum value. Use a distinct gap character so
+                // missing/invalid data is visibly different from "the
+                // smallest value in the series".
+                if v.is_nan() {
+                    return ' ';
+                }
                 let normalized = ((v - min) / range).clamp(0.0, 1.0);
                 let idx = (normalized * 7.0).round() as usize;
                 Self::BLOCKS[idx.min(7)]
@@ -150,6 +159,9 @@ impl Sparkline {
         self.values
             .iter()
             .map(|&v| {
+                if v.is_nan() {
+                    return ' ';
+                }
                 let normalized = ((v - min) / range).clamp(0.0, 1.0);
                 let idx = (normalized * 3.0).round() as usize;
                 LINE_CHARS[idx.min(3)]
@@ -158,10 +170,20 @@ impl Sparkline {
     }
 
     fn render_dot(&self, min: f64, range: f64) -> String {
-        const DOT_CHARS: [char; 4] = ['⠁', '⠂', '⠄', '⠆'];
+        // Ordered low-to-high value mapping to bottom-to-top dot
+        // position within the braille cell (dot 7 = row 4/bottom-left,
+        // dot 3 = row 3, dot 2 = row 2, dot 1 = row 1/top-left). The
+        // previous ordering (`['⠁','⠂','⠄','⠆']`, i.e. dot1, dot2, dot3,
+        // dot2+3) put the *lowest* value at the *top* dot and higher
+        // values progressively lower, so a genuinely rising series
+        // rendered as a visually falling one.
+        const DOT_CHARS: [char; 4] = ['\u{2840}', '\u{2804}', '\u{2802}', '\u{2801}'];
         self.values
             .iter()
             .map(|&v| {
+                if v.is_nan() {
+                    return ' ';
+                }
                 let normalized = ((v - min) / range).clamp(0.0, 1.0);
                 let idx = (normalized * 3.0).round() as usize;
                 DOT_CHARS[idx.min(3)]
@@ -171,11 +193,13 @@ impl Sparkline {
 }
 
 /// Create sparklines for multiple series
+#[allow(dead_code)] // public API, not yet used internally
 pub struct MultiSparkline {
     /// Series data
     series: Vec<(String, Vec<f64>)>,
 }
 
+#[allow(dead_code)] // public API, not yet used internally
 impl MultiSparkline {
     /// Create new multi-sparkline
     pub fn new() -> Self {
@@ -218,11 +242,13 @@ impl Default for MultiSparkline {
 }
 
 /// Convenience function to create a sparkline string
+#[allow(dead_code)] // public API, not yet used internally
 pub fn sparkline(data: &[f64]) -> String {
     Sparkline::new(data).render()
 }
 
 /// Convenience function to create a sparkline with stats
+#[allow(dead_code)] // public API, not yet used internally
 pub fn sparkline_with_stats(data: &[f64]) -> String {
     Sparkline::new(data).to_string_with_stats()
 }

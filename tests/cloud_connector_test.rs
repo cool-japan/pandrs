@@ -6,8 +6,8 @@
 //! runtime when the required environment variables are absent.
 
 use pandrs::connectors::cloud::{
-    CloudConfig, CloudConnector, CloudConnectorFactory, CloudCredentials, CloudObject,
-    CloudProvider, FileFormat, GCSConnector, S3Connector,
+    CloudConfig, CloudConnector, CloudConnectorFactory, CloudCredentials, CloudProvider,
+    FileFormat, GCSConnector, S3Connector,
 };
 use pandrs::connectors::local::LocalConnector;
 use pandrs::dataframe::DataFrame;

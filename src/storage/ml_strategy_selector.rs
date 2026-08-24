@@ -153,12 +153,23 @@ pub struct TrainingExample {
     pub timestamp: Instant,
 }
 
-/// Simple linear regression model for performance prediction
+/// Log-linear regression model for performance prediction.
+///
+/// The model learns `ln(target)` from the (already log-transformed) feature
+/// vector. Predicting raw throughput — values around `1e9` — against those
+/// features with `lr = 0.01` and no normalisation diverged to `inf`/`NaN`
+/// within a handful of examples, and the old `prediction.max(1.0)` clamp then
+/// laundered the `NaN` into a plausible-looking `1.0`.
+///
+/// A model is seeded with a strategy-specific prior instead of all-zero
+/// weights, so an *untrained* model predicts that prior rather than the same
+/// clamped `1.0` for every strategy (which made the first candidate in the
+/// iteration order always win).
 #[derive(Debug, Clone)]
 pub struct LinearRegressionModel {
-    /// Model weights
+    /// Model weights (in log space)
     weights: Vec<f64>,
-    /// Bias term
+    /// Bias term (in log space)
     bias: f64,
     /// Number of training examples seen
     training_count: usize,
@@ -166,53 +177,112 @@ pub struct LinearRegressionModel {
     accuracy_metrics: AccuracyMetrics,
 }
 
+/// Largest log-space value a prediction may take before being clamped.
+const MAX_LOG_PREDICTION: f64 = 60.0;
+/// Largest single SGD step, in log space.
+const MAX_LOG_STEP: f64 = 0.5;
+
 impl LinearRegressionModel {
     pub fn new(feature_count: usize) -> Self {
+        Self::with_prior(feature_count, 1.0)
+    }
+
+    /// Create a model that predicts `prior` before any training.
+    pub fn with_prior(feature_count: usize, prior: f64) -> Self {
         Self {
             weights: vec![0.0; feature_count],
-            bias: 0.0,
+            bias: prior.max(f64::MIN_POSITIVE).ln(),
             training_count: 0,
             accuracy_metrics: AccuracyMetrics::new(),
         }
     }
 
-    /// Predict performance metrics
-    pub fn predict(&self, features: &[f64]) -> f64 {
+    /// Create a model that predicts `factor * exp(features[index])` before any
+    /// training — used for quantities that scale with the data size.
+    pub fn with_scaling_prior(feature_count: usize, index: usize, factor: f64) -> Self {
+        let mut model = Self::with_prior(feature_count, factor);
+        if index < model.weights.len() {
+            model.weights[index] = 1.0;
+        }
+        model
+    }
+
+    /// Raw linear output, in log space.
+    pub fn predict_log(&self, features: &[f64]) -> f64 {
         let mut prediction = self.bias;
         for (i, &feature) in features.iter().enumerate() {
             if i < self.weights.len() {
                 prediction += self.weights[i] * feature;
             }
         }
-        // Ensure non-negative predictions with a reasonable default minimum
-        prediction.max(1.0)
+        prediction
     }
 
-    /// Train the model with a new example
-    pub fn train(&mut self, features: &[f64], target: f64, learning_rate: f64) {
-        let prediction = self.predict(features);
-        let error = target - prediction;
+    /// Predict in the original (strictly positive) units.
+    pub fn predict(&self, features: &[f64]) -> f64 {
+        let log = self.predict_log(features);
+        if !log.is_finite() {
+            // Never launder a NaN into a plausible number: fall back to the
+            // model's prior.
+            return self
+                .bias
+                .clamp(-MAX_LOG_PREDICTION, MAX_LOG_PREDICTION)
+                .exp();
+        }
+        log.clamp(-MAX_LOG_PREDICTION, MAX_LOG_PREDICTION).exp()
+    }
 
-        // Update weights using gradient descent
+    /// Train the model with a new (strictly positive) observation.
+    pub fn train(&mut self, features: &[f64], target: f64, learning_rate: f64) {
+        if !target.is_finite() || target <= 0.0 {
+            return;
+        }
+        let log_target = target.ln();
+        let prediction_log = self.predict_log(features);
+        if !prediction_log.is_finite() || !log_target.is_finite() {
+            return;
+        }
+
+        let error = log_target - prediction_log;
+        // Gradient clipping: log-space residuals stay O(1), and clipping keeps a
+        // single outlier from blowing the weights up.
+        let step = (learning_rate * error).clamp(-MAX_LOG_STEP, MAX_LOG_STEP);
+
         for (i, &feature) in features.iter().enumerate() {
             if i < self.weights.len() {
-                self.weights[i] += learning_rate * error * feature;
+                let delta = step * feature;
+                if delta.is_finite() {
+                    self.weights[i] += delta;
+                }
             }
         }
-        self.bias += learning_rate * error;
+        self.bias += step;
 
         self.training_count += 1;
-        self.accuracy_metrics.update(prediction, target);
+        self.accuracy_metrics.update(
+            prediction_log
+                .clamp(-MAX_LOG_PREDICTION, MAX_LOG_PREDICTION)
+                .exp(),
+            target,
+        );
     }
 
-    /// Get model confidence based on training history
+    /// Number of training examples this model has seen.
+    pub fn training_count(&self) -> usize {
+        self.training_count
+    }
+
+    /// Get model confidence based on training history.
+    ///
+    /// Confidence is derived from the mean *relative* error, so it is
+    /// scale-free. The old formula was `1 - MAE` with the MAE measured in
+    /// bytes/second, which is always hugely negative and therefore always
+    /// clamped to the 0.1 floor.
     pub fn confidence(&self) -> f64 {
         if self.training_count < 10 {
-            0.1 // Low confidence with little training data
+            0.1
         } else {
-            (1.0 - self.accuracy_metrics.mean_absolute_error())
-                .max(0.1)
-                .min(0.95)
+            (1.0 - self.accuracy_metrics.mean_relative_error()).clamp(0.05, 0.95)
         }
     }
 }
@@ -237,27 +307,95 @@ impl AccuracyMetrics {
         }
     }
 
+    /// Record one prediction/observation pair as a **relative** error.
+    ///
+    /// Absolute errors were meaningless here: throughput is measured in
+    /// bytes/second, so an "error" of 1e6 is excellent for a 1e9 target and
+    /// catastrophic for a 1e6 one.
     pub fn update(&mut self, prediction: f64, actual: f64) {
-        let error = (prediction - actual).abs();
-        self.sum_absolute_error += error;
-        self.sum_squared_error += error * error;
+        if !prediction.is_finite() || !actual.is_finite() {
+            return;
+        }
+        let denominator = actual.abs().max(f64::MIN_POSITIVE);
+        let relative = ((prediction - actual).abs() / denominator).min(1e6);
+        self.sum_absolute_error += relative;
+        self.sum_squared_error += relative * relative;
         self.prediction_count += 1;
     }
 
-    pub fn mean_absolute_error(&self) -> f64 {
+    /// Mean relative error (0.0 = perfect).
+    pub fn mean_relative_error(&self) -> f64 {
         if self.prediction_count > 0 {
             self.sum_absolute_error / self.prediction_count as f64
         } else {
-            1.0 // High error when no data
+            1.0 // Treat "no data" as fully uncertain
         }
     }
 
-    pub fn root_mean_squared_error(&self) -> f64 {
+    /// Root mean squared relative error.
+    pub fn root_mean_squared_relative_error(&self) -> f64 {
         if self.prediction_count > 0 {
             (self.sum_squared_error / self.prediction_count as f64).sqrt()
         } else {
-            1.0 // High error when no data
+            1.0
         }
+    }
+
+    /// Number of observations recorded.
+    pub fn prediction_count(&self) -> usize {
+        self.prediction_count
+    }
+}
+
+/// Prior read throughput in bytes/second for an untrained model.
+///
+/// These are order-of-magnitude engineering estimates for the shipped backends,
+/// used only until real observations arrive; every prediction they produce is
+/// reported with the corresponding low confidence.
+fn prior_throughput(strategy: StorageType) -> f64 {
+    match strategy {
+        StorageType::InMemory => 8.0e9,
+        StorageType::ColumnStore => 4.0e9,
+        StorageType::StringPool => 2.0e9,
+        StorageType::MemoryMapped => 1.0e9,
+        StorageType::HybridLargeScale => 5.0e8,
+        StorageType::DiskBased => 2.0e8,
+    }
+}
+
+/// Prior read latency in milliseconds for an untrained model.
+fn prior_latency_ms(strategy: StorageType) -> f64 {
+    match strategy {
+        StorageType::InMemory => 0.001,
+        StorageType::ColumnStore => 0.005,
+        StorageType::StringPool => 0.005,
+        StorageType::MemoryMapped => 0.05,
+        StorageType::HybridLargeScale => 0.5,
+        StorageType::DiskBased => 2.0,
+    }
+}
+
+/// Prior resident-memory multiple of the stored data size.
+fn prior_memory_factor(strategy: StorageType) -> f64 {
+    match strategy {
+        StorageType::InMemory => 1.2,
+        StorageType::ColumnStore => 0.5,
+        StorageType::StringPool => 0.4,
+        StorageType::MemoryMapped => 0.1,
+        StorageType::HybridLargeScale => 0.05,
+        StorageType::DiskBased => 0.02,
+    }
+}
+
+/// Prior CPU cost, in percent of one core.
+fn prior_cpu_percent(strategy: StorageType) -> f64 {
+    match strategy {
+        StorageType::InMemory => 5.0,
+        StorageType::ColumnStore => 15.0,
+        StorageType::StringPool => 12.0,
+        StorageType::MemoryMapped => 8.0,
+        StorageType::HybridLargeScale => 20.0,
+        StorageType::DiskBased => 10.0,
     }
 }
 
@@ -277,7 +415,7 @@ pub struct MLStrategySelector {
     max_training_data: usize,
     /// Learning rate for model updates
     learning_rate: f64,
-    /// Performance monitor for gathering training data
+    /// Performance monitor the selector harvests training data from
     performance_monitor: Arc<Mutex<PerformanceMonitor>>,
 }
 
@@ -299,10 +437,31 @@ impl MLStrategySelector {
         let mut cpu_models = HashMap::new();
 
         for strategy in strategies {
-            throughput_models.insert(strategy, LinearRegressionModel::new(feature_count));
-            latency_models.insert(strategy, LinearRegressionModel::new(feature_count));
-            memory_models.insert(strategy, LinearRegressionModel::new(feature_count));
-            cpu_models.insert(strategy, LinearRegressionModel::new(feature_count));
+            // Seed each model with a strategy-specific prior so that an
+            // untrained selector still discriminates between backends.
+            throughput_models.insert(
+                strategy,
+                LinearRegressionModel::with_prior(feature_count, prior_throughput(strategy)),
+            );
+            latency_models.insert(
+                strategy,
+                LinearRegressionModel::with_prior(feature_count, prior_latency_ms(strategy)),
+            );
+            // Memory scales with the data size, which is feature 0 (already
+            // log-transformed), so a unit weight there reproduces
+            // `data_size * factor` exactly.
+            memory_models.insert(
+                strategy,
+                LinearRegressionModel::with_scaling_prior(
+                    feature_count,
+                    0,
+                    prior_memory_factor(strategy),
+                ),
+            );
+            cpu_models.insert(
+                strategy,
+                LinearRegressionModel::with_prior(feature_count, prior_cpu_percent(strategy)),
+            );
         }
 
         Self {
@@ -391,8 +550,9 @@ impl MLStrategySelector {
             }
         }
 
-        // Sort strategies by score for fallback list
-        strategy_scores.sort_by(|a, b| b.1.partial_cmp(&a.1).expect("operation should succeed"));
+        // Sort strategies by score for the fallback list. `total_cmp` orders
+        // NaN deterministically instead of panicking through `expect`.
+        strategy_scores.sort_by(|a, b| b.1.total_cmp(&a.1));
         let fallbacks: Vec<StorageType> = strategy_scores.iter()
             .skip(1) // Skip the best strategy
             .take(3) // Take top 3 alternatives
@@ -450,62 +610,93 @@ impl MLStrategySelector {
                 .drain(0..self.training_data.len() - self.max_training_data);
         }
 
-        // Train models
-        let features = example.features.to_vector();
-
-        if let Some(model) = self.throughput_models.get_mut(&example.strategy) {
-            model.train(
-                &features,
-                example.performance.throughput,
-                self.learning_rate,
-            );
-        }
-
-        if let Some(model) = self.latency_models.get_mut(&example.strategy) {
-            model.train(&features, example.performance.latency, self.learning_rate);
-        }
-
-        if let Some(model) = self.memory_models.get_mut(&example.strategy) {
-            model.train(
-                &features,
-                example.performance.memory_usage,
-                self.learning_rate,
-            );
-        }
-
-        if let Some(model) = self.cpu_models.get_mut(&example.strategy) {
-            model.train(&features, example.performance.cpu_usage, self.learning_rate);
-        }
+        self.fit_example(&example);
     }
 
-    /// Perform batch training on historical data
+    /// Harvest the metrics collected so far by the shared
+    /// [`PerformanceMonitor`] and turn them into training examples.
+    ///
+    /// The monitor used to be stored and never read, so the selector could only
+    /// learn from examples a caller pushed in by hand. Each call contributes at
+    /// most one example per strategy, built from that strategy's cumulative
+    /// counters, so repeated calls track the running average rather than
+    /// individual operations.
+    ///
+    /// Returns the number of examples added.
+    pub fn train_from_monitor(&mut self) -> usize {
+        let strategies: Vec<StorageType> = self.throughput_models.keys().copied().collect();
+        let samples: Vec<(StorageType, StrategyMetrics)> = match self.performance_monitor.lock() {
+            Ok(monitor) => strategies
+                .into_iter()
+                .filter_map(|strategy| {
+                    monitor
+                        .get_strategy_metrics(strategy)
+                        .map(|metrics| (strategy, metrics.clone()))
+                })
+                .collect(),
+            Err(_) => {
+                log::error!("Performance monitor lock is poisoned; no training data harvested");
+                return 0;
+            }
+        };
+
+        let before = self.training_data.len();
+        for (strategy, metrics) in samples {
+            self.record_performance(strategy, &metrics);
+        }
+        self.training_data.len().saturating_sub(before)
+    }
+
+    /// Re-fit every model from scratch on the retained history.
+    ///
+    /// The models are **reset to their priors first**. The old body re-applied
+    /// SGD to all 10k examples on top of the weights that per-example training
+    /// had already produced, so each batch pass double-counted the whole
+    /// history.
     pub fn batch_train(&mut self) {
-        for example in &self.training_data {
-            let features = example.features.to_vector();
+        let feature_count = 12;
+        for (&strategy, model) in self.throughput_models.iter_mut() {
+            *model = LinearRegressionModel::with_prior(feature_count, prior_throughput(strategy));
+        }
+        for (&strategy, model) in self.latency_models.iter_mut() {
+            *model = LinearRegressionModel::with_prior(feature_count, prior_latency_ms(strategy));
+        }
+        for (&strategy, model) in self.memory_models.iter_mut() {
+            *model = LinearRegressionModel::with_scaling_prior(
+                feature_count,
+                0,
+                prior_memory_factor(strategy),
+            );
+        }
+        for (&strategy, model) in self.cpu_models.iter_mut() {
+            *model = LinearRegressionModel::with_prior(feature_count, prior_cpu_percent(strategy));
+        }
 
-            if let Some(model) = self.throughput_models.get_mut(&example.strategy) {
-                model.train(
-                    &features,
-                    example.performance.throughput,
-                    self.learning_rate,
-                );
-            }
+        let examples = std::mem::take(&mut self.training_data);
+        for example in &examples {
+            self.fit_example(example);
+        }
+        self.training_data = examples;
+    }
 
-            if let Some(model) = self.latency_models.get_mut(&example.strategy) {
-                model.train(&features, example.performance.latency, self.learning_rate);
-            }
+    /// Apply one gradient step for every model of `example.strategy`.
+    fn fit_example(&mut self, example: &TrainingExample) {
+        let features = example.features.to_vector();
+        let learning_rate = self.learning_rate;
 
-            if let Some(model) = self.memory_models.get_mut(&example.strategy) {
-                model.train(
-                    &features,
-                    example.performance.memory_usage,
-                    self.learning_rate,
-                );
-            }
-
-            if let Some(model) = self.cpu_models.get_mut(&example.strategy) {
-                model.train(&features, example.performance.cpu_usage, self.learning_rate);
-            }
+        if let Some(model) = self.throughput_models.get_mut(&example.strategy) {
+            model.train(&features, example.performance.throughput, learning_rate);
+        }
+        if let Some(model) = self.latency_models.get_mut(&example.strategy) {
+            model.train(&features, example.performance.latency, learning_rate);
+        }
+        if let Some(model) = self.memory_models.get_mut(&example.strategy) {
+            model.train(&features, example.performance.memory_usage, learning_rate);
+        }
+        if let Some(model) = self.cpu_models.get_mut(&example.strategy) {
+            // `cpu_usage <= 0.0` means "not measured"; `train` skips it rather
+            // than fitting the model to a placeholder constant.
+            model.train(&features, example.performance.cpu_usage, learning_rate);
         }
     }
 
@@ -517,9 +708,9 @@ impl MLStrategySelector {
             stats.insert(
                 strategy,
                 ModelStats {
-                    training_examples: model.training_count,
+                    training_examples: model.training_count(),
                     confidence: model.confidence(),
-                    accuracy: 1.0 - model.accuracy_metrics.mean_absolute_error(),
+                    accuracy: (1.0 - model.accuracy_metrics.mean_relative_error()).max(0.0),
                 },
             );
         }
@@ -542,46 +733,109 @@ impl StrategySelector for MLStrategySelector {
     }
 
     fn record_performance(&mut self, strategy_type: StorageType, performance: &StrategyMetrics) {
-        // Extract features from current workload (simplified)
-        let mut features = WorkloadFeatures::new();
+        use crate::storage::unified_manager::OperationType;
 
-        // Estimate features from metrics
-        if let Some(read_time) =
-            performance.average_operation_time(crate::storage::unified_manager::OperationType::Read)
-        {
-            if let Some(write_time) = performance
-                .average_operation_time(crate::storage::unified_manager::OperationType::Write)
-            {
-                let total_time = read_time + write_time;
-                if total_time.as_nanos() > 0 {
-                    features.read_write_ratio =
-                        read_time.as_nanos() as f64 / total_time.as_nanos() as f64;
-                }
-            }
+        let read_ops = performance
+            .operation_counts
+            .get(&OperationType::Read)
+            .copied()
+            .unwrap_or(0);
+        let write_ops = performance
+            .operation_counts
+            .get(&OperationType::Write)
+            .copied()
+            .unwrap_or(0)
+            + performance
+                .operation_counts
+                .get(&OperationType::Append)
+                .copied()
+                .unwrap_or(0);
+        let total_ops = read_ops + write_ops;
+        let total_bytes: u64 = performance.bytes_processed.values().sum();
+        let total_time: Duration = performance.operation_times.values().sum();
+
+        // Real observed features rather than a struct of defaults with one
+        // field filled in.
+        let mut features = WorkloadFeatures::new();
+        if total_ops > 0 {
+            features.read_write_ratio = read_ops as f64 / total_ops as f64;
+            features.data_size = (total_bytes as f64 / total_ops as f64).max(1.0);
+            features.row_count = total_ops as f64;
+        }
+        if total_time.as_secs_f64() > 0.0 {
+            features.access_frequency = (total_ops as f64 / total_time.as_secs_f64()) * 3600.0;
+        }
+        features.concurrency_level = 1.0;
+
+        let read_latency_ms = performance
+            .average_operation_time(OperationType::Read)
+            .map(|d| d.as_secs_f64() * 1000.0);
+        let throughput = performance
+            .throughput(OperationType::Read)
+            .or_else(|| performance.throughput(OperationType::Write));
+
+        // Only record an example when there is something real to learn from.
+        let (Some(throughput), Some(latency)) = (throughput, read_latency_ms) else {
+            return;
+        };
+        if throughput <= 0.0 || latency <= 0.0 {
+            return;
         }
 
-        // Create performance prediction from observed metrics
         let prediction = PerformancePrediction {
-            throughput: performance
-                .throughput(crate::storage::unified_manager::OperationType::Read)
-                .unwrap_or(0.0),
-            latency: performance
-                .average_operation_time(crate::storage::unified_manager::OperationType::Read)
-                .unwrap_or(Duration::from_millis(1))
-                .as_millis() as f64,
-            memory_usage: performance.bytes_processed.values().sum::<u64>() as f64,
-            cpu_usage: 10.0, // Placeholder - would need actual CPU monitoring
-            confidence: 0.8,
+            throughput,
+            latency,
+            memory_usage: (total_bytes as f64).max(1.0),
+            // PandRS does not sample per-operation CPU time; 0.0 means
+            // "not measured" and the CPU model skips it rather than being
+            // trained on an invented 10%.
+            cpu_usage: 0.0,
+            // Confidence in this *observation*, scaled by how many operations it
+            // aggregates, instead of a hardcoded 0.8.
+            confidence: (total_ops as f64 / (total_ops as f64 + 20.0)).clamp(0.05, 0.95),
         };
 
-        let example = TrainingExample {
+        self.add_training_example(TrainingExample {
             features,
             strategy: strategy_type,
             performance: prediction,
             timestamp: Instant::now(),
-        };
+        });
+    }
+}
 
-        self.add_training_example(example);
+/// Shared handle to an [`MLStrategySelector`], usable as a
+/// [`StrategySelector`] inside a [`crate::storage::unified_manager::UnifiedMemoryManager`].
+pub struct SharedMlSelector {
+    inner: Arc<Mutex<MLStrategySelector>>,
+}
+
+impl SharedMlSelector {
+    pub fn new(inner: Arc<Mutex<MLStrategySelector>>) -> Self {
+        Self { inner }
+    }
+}
+
+impl StrategySelector for SharedMlSelector {
+    fn select_strategy(&self, requirements: &StorageRequirements) -> StrategySelection {
+        match self.inner.lock() {
+            Ok(selector) => selector.select_strategy(requirements),
+            Err(_) => {
+                log::error!("ML selector lock is poisoned; falling back to the in-memory strategy");
+                StrategySelection {
+                    primary: StorageType::InMemory,
+                    fallbacks: vec![StorageType::ColumnStore, StorageType::DiskBased],
+                    confidence: 0.0,
+                }
+            }
+        }
+    }
+
+    fn record_performance(&mut self, strategy_type: StorageType, performance: &StrategyMetrics) {
+        match self.inner.lock() {
+            Ok(mut selector) => selector.record_performance(strategy_type, performance),
+            Err(_) => log::error!("ML selector lock is poisoned; performance sample dropped"),
+        }
     }
 }
 
@@ -591,8 +845,6 @@ pub struct AdaptiveUnifiedMemoryManager {
     base_manager: crate::storage::unified_manager::UnifiedMemoryManager,
     /// ML-based strategy selector
     ml_selector: Arc<Mutex<MLStrategySelector>>,
-    /// Performance monitor
-    performance_monitor: Arc<Mutex<PerformanceMonitor>>,
     /// Adaptation interval
     adaptation_interval: Duration,
     /// Last adaptation time
@@ -601,58 +853,103 @@ pub struct AdaptiveUnifiedMemoryManager {
 
 impl AdaptiveUnifiedMemoryManager {
     pub fn new(config: crate::storage::unified_manager::MemoryConfig) -> Self {
-        let performance_monitor = Arc::new(Mutex::new(PerformanceMonitor::new()));
+        let mut base_manager = crate::storage::unified_manager::UnifiedMemoryManager::new(config);
+        // Share the *manager's own* monitor rather than a private one that
+        // nothing ever writes to, so `adapt` can learn from real traffic.
+        let performance_monitor = base_manager.monitor();
         let ml_selector = Arc::new(Mutex::new(MLStrategySelector::new(Arc::clone(
             &performance_monitor,
         ))));
-        let base_manager = crate::storage::unified_manager::UnifiedMemoryManager::new(config);
+        // Install the ML selector into the manager so its choice actually
+        // drives storage creation. Previously `create_storage_ml` computed a
+        // selection, printed it and threw it away.
+        base_manager.set_selector(Box::new(SharedMlSelector::new(Arc::clone(&ml_selector))));
 
+        debug_assert!(Arc::ptr_eq(&performance_monitor, &base_manager.monitor()));
         Self {
             base_manager,
             ml_selector,
-            performance_monitor,
             adaptation_interval: Duration::from_secs(300), // Adapt every 5 minutes
             last_adaptation: Instant::now(),
         }
     }
 
-    /// Trigger adaptive learning and model updates
-    pub fn adapt(&mut self) -> Result<()> {
-        if self.last_adaptation.elapsed() < self.adaptation_interval {
-            return Ok(());
-        }
-
-        if let Ok(mut selector) = self.ml_selector.lock() {
-            // Perform batch training on accumulated data
-            selector.batch_train();
-
-            // Log adaptation metrics
-            let stats = selector.get_model_stats();
-            for (strategy, stat) in stats {
-                println!(
-                    "Strategy {:?}: {} examples, {:.2} confidence, {:.2} accuracy",
-                    strategy, stat.training_examples, stat.confidence, stat.accuracy
-                );
-            }
-        }
-
-        self.last_adaptation = Instant::now();
-        Ok(())
+    /// Access the underlying manager (for reads, writes and deletes).
+    pub fn manager(&mut self) -> &mut crate::storage::unified_manager::UnifiedMemoryManager {
+        &mut self.base_manager
     }
 
-    /// Create storage with ML-optimized strategy selection
-    pub fn create_storage_ml(&mut self, config: &StorageConfig) -> Result<StorageHandle> {
-        // Use ML selector to choose strategy
-        if let Ok(selector) = self.ml_selector.lock() {
-            let selection = selector.select_strategy(&config.requirements);
-            println!(
-                "ML selected strategy: {:?} with confidence {:.2}",
-                selection.primary, selection.confidence
+    /// The monitor both this manager and its ML selector observe.
+    pub fn performance_monitor(&self) -> Arc<Mutex<PerformanceMonitor>> {
+        self.base_manager.monitor()
+    }
+
+    /// Trigger adaptive learning and model updates.
+    ///
+    /// Returns the per-strategy model statistics after re-fitting, so callers
+    /// can log or assert on them; the old body printed them to stdout from
+    /// library code.
+    pub fn adapt(&mut self) -> Result<HashMap<StorageType, ModelStats>> {
+        if self.last_adaptation.elapsed() < self.adaptation_interval {
+            return self.get_ml_stats();
+        }
+
+        let stats = {
+            let mut selector = self
+                .ml_selector
+                .lock()
+                .map_err(|_| Error::InvalidOperation("ML selector lock is poisoned".to_string()))?;
+            // Pull in whatever the manager has observed since the last pass
+            // before re-fitting.
+            selector.train_from_monitor();
+            selector.batch_train();
+            selector.get_model_stats()
+        };
+
+        for (strategy, stat) in &stats {
+            log::debug!(
+                "Strategy {:?}: {} examples, {:.2} confidence, {:.2} accuracy",
+                strategy,
+                stat.training_examples,
+                stat.confidence,
+                stat.accuracy
             );
         }
 
-        // Delegate to base manager
+        self.last_adaptation = Instant::now();
+        Ok(stats)
+    }
+
+    /// Create storage with ML-optimized strategy selection.
+    pub fn create_storage_ml(&mut self, config: &StorageConfig) -> Result<StorageHandle> {
+        // The manager's selector *is* the ML selector, so this really is an
+        // ML-driven creation rather than a logged no-op.
         self.base_manager.create_storage(config)
+    }
+
+    /// Strategy the ML selector would pick for `requirements`.
+    pub fn preview_selection(
+        &self,
+        requirements: &StorageRequirements,
+    ) -> Result<StrategySelection> {
+        let selector = self
+            .ml_selector
+            .lock()
+            .map_err(|_| Error::InvalidOperation("ML selector lock is poisoned".to_string()))?;
+        Ok(selector.select_best_strategy(requirements))
+    }
+
+    /// Feed observed metrics for `strategy_type` back into the ML models.
+    pub fn observe(&mut self, strategy_type: StorageType) -> Result<()> {
+        let metrics = self.base_manager.strategy_metrics(strategy_type)?;
+        if let Some(metrics) = metrics {
+            let mut selector = self
+                .ml_selector
+                .lock()
+                .map_err(|_| Error::InvalidOperation("ML selector lock is poisoned".to_string()))?;
+            selector.record_performance(strategy_type, &metrics);
+        }
+        Ok(())
     }
 
     /// Get ML selector statistics

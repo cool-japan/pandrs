@@ -1,9 +1,8 @@
 //! Implementation of ColumnView
 
 use super::core::ColumnView;
-use crate::column::{BooleanColumn, Column, ColumnType, Float64Column, Int64Column, StringColumn};
+use crate::column::{Column, ColumnType};
 use crate::error::{Error, Result};
-use std::any::Any;
 
 impl ColumnView {
     /// Get column type

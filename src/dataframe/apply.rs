@@ -57,7 +57,7 @@ impl ApplyExt for DataFrame {
             Axis::Column => {
                 let mut results = Vec::new();
 
-                for column_name in &self.column_names() {
+                for column_name in self.column_names() {
                     // Get column as string series
                     let string_values = self.get_column_string_values(column_name)?;
                     let series = Series::new(string_values, Some(column_name.to_string()))?;
@@ -72,14 +72,22 @@ impl ApplyExt for DataFrame {
             Axis::Row => {
                 let mut results = Vec::new();
 
-                for row_idx in 0..self.row_count() {
-                    let mut row_values = Vec::new();
+                // Materialize every column ONCE up front. Previously each
+                // column was re-fetched (full clone) inside the row loop →
+                // O(rows²·cols) time and allocations; now O(rows·cols).
+                let columns: Vec<Vec<String>> = self
+                    .column_names()
+                    .iter()
+                    .map(|name| self.get_column_string_values(name))
+                    .collect::<Result<Vec<_>>>()?;
 
-                    // Collect all values for this row
-                    for column_name in &self.column_names() {
-                        let string_values = self.get_column_string_values(column_name)?;
-                        if row_idx < string_values.len() {
-                            row_values.push(string_values[row_idx].clone());
+                for row_idx in 0..self.row_count() {
+                    let mut row_values = Vec::with_capacity(columns.len());
+
+                    // Collect all values for this row from the cached columns
+                    for column in &columns {
+                        if row_idx < column.len() {
+                            row_values.push(column[row_idx].clone());
                         }
                     }
 
@@ -100,7 +108,7 @@ impl ApplyExt for DataFrame {
     {
         let mut result = DataFrame::new();
 
-        for column_name in &self.column_names() {
+        for column_name in self.column_names() {
             // Get column values as strings
             let string_values = self.get_column_string_values(column_name)?;
 
@@ -121,7 +129,7 @@ impl ApplyExt for DataFrame {
     {
         let mut result = DataFrame::new();
 
-        for column_name in &self.column_names() {
+        for column_name in self.column_names() {
             // Get column values as strings
             let string_values = self.get_column_string_values(column_name)?;
 
@@ -151,7 +159,7 @@ impl ApplyExt for DataFrame {
     {
         let mut result = DataFrame::new();
 
-        for column_name in &self.column_names() {
+        for column_name in self.column_names() {
             // Get column values as strings
             let string_values = self.get_column_string_values(column_name)?;
 
@@ -178,7 +186,7 @@ impl ApplyExt for DataFrame {
     fn replace(&self, replace_map: &HashMap<String, String>) -> Result<DataFrame> {
         let mut result = DataFrame::new();
 
-        for column_name in &self.column_names() {
+        for column_name in self.column_names() {
             // Get column values as strings
             let string_values = self.get_column_string_values(column_name)?;
 
@@ -204,7 +212,7 @@ impl ApplyExt for DataFrame {
         let columns_to_check = if let Some(subset_cols) = subset {
             subset_cols.to_vec()
         } else {
-            self.column_names()
+            self.column_names().to_vec()
         };
 
         // Validate that all subset columns exist
@@ -214,12 +222,18 @@ impl ApplyExt for DataFrame {
             }
         }
 
-        // Build row representations for comparison
-        let mut row_data = Vec::new();
+        // Materialize each checked column ONCE, then build per-row keys. The
+        // column fetch was previously inside the row loop, re-allocating the
+        // whole column for every row → O(rows²·cols). Now O(rows·cols).
+        let columns: Vec<Vec<String>> = columns_to_check
+            .iter()
+            .map(|col_name| self.get_column_string_values(col_name))
+            .collect::<Result<Vec<_>>>()?;
+
+        let mut row_data = Vec::with_capacity(self.row_count());
         for row_idx in 0..self.row_count() {
-            let mut row_values = Vec::new();
-            for col_name in &columns_to_check {
-                let column_values = self.get_column_string_values(col_name)?;
+            let mut row_values = Vec::with_capacity(columns.len());
+            for column_values in &columns {
                 if row_idx < column_values.len() {
                     row_values.push(column_values[row_idx].clone());
                 }
@@ -280,7 +294,7 @@ impl ApplyExt for DataFrame {
         let columns_to_check = if let Some(subset_cols) = subset {
             subset_cols.to_vec()
         } else {
-            self.column_names()
+            self.column_names().to_vec()
         };
 
         // Validate that all subset columns exist
@@ -290,12 +304,18 @@ impl ApplyExt for DataFrame {
             }
         }
 
-        // Build row representations for comparison
-        let mut row_data = Vec::new();
+        // Materialize each checked column ONCE, then build per-row keys. The
+        // column fetch was previously inside the row loop, re-allocating the
+        // whole column for every row → O(rows²·cols). Now O(rows·cols).
+        let columns: Vec<Vec<String>> = columns_to_check
+            .iter()
+            .map(|col_name| self.get_column_string_values(col_name))
+            .collect::<Result<Vec<_>>>()?;
+
+        let mut row_data = Vec::with_capacity(self.row_count());
         for row_idx in 0..self.row_count() {
-            let mut row_values = Vec::new();
-            for col_name in &columns_to_check {
-                let column_values = self.get_column_string_values(col_name)?;
+            let mut row_values = Vec::with_capacity(columns.len());
+            for column_values in &columns {
                 if row_idx < column_values.len() {
                     row_values.push(column_values[row_idx].clone());
                 }
@@ -349,7 +369,7 @@ impl ApplyExt for DataFrame {
         // Create result DataFrame with selected rows
         let mut result = DataFrame::new();
 
-        for column_name in &self.column_names() {
+        for column_name in self.column_names() {
             let column_values = self.get_column_string_values(column_name)?;
             let filtered_values: Vec<String> = rows_to_keep
                 .iter()

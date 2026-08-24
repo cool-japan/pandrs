@@ -5,8 +5,8 @@
 //! memory.
 
 use std::collections::HashMap;
-use std::fs::{File, OpenOptions};
-use std::io::{self, BufRead, BufReader, BufWriter, Write};
+use std::fs::File;
+use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::path::{Path, PathBuf};
 
 use csv::{ReaderBuilder, WriterBuilder};
@@ -23,17 +23,54 @@ use crate::series::Series;
 /// Configuration for out-of-core processing.
 #[derive(Debug, Clone)]
 pub struct OutOfCoreConfig {
-    /// Number of data rows per chunk (not counting the CSV header).
+    /// Number of data rows per chunk (not counting the CSV header). This is
+    /// an upper bound: [`Self::effective_chunk_size`] may clamp it down to
+    /// respect `max_memory_bytes`.
     pub chunk_size: usize,
-    /// Maximum bytes of RAM to use at a time (informational; actual enforcement
-    /// is done by keeping only `chunk_size` rows in memory at once).
+    /// Maximum bytes of RAM to use for a single in-memory chunk.
+    ///
+    /// Enforced by [`Self::effective_chunk_size`], which clamps the
+    /// effective per-chunk row count (using a ~16-bytes/cell estimate,
+    /// matching `crate::large::estimate_dataframe_memory`) so that a chunk
+    /// of that many rows shouldn't exceed this budget. This is still only
+    /// an estimate, not a hard runtime guarantee -- actual peak usage
+    /// depends on real cell sizes (e.g. long strings), which aren't known
+    /// until the chunk is read.
     pub max_memory_bytes: usize,
     /// Directory where temporary chunk files are written.
     pub temp_dir: PathBuf,
     /// Whether to use gzip compression for temporary files.
+    ///
+    /// Not yet consulted by any code path in this crate: chunk/run files
+    /// are always written uncompressed. Kept as a config field so it's
+    /// available to wire up later without a breaking signature change;
+    /// setting it currently has no effect.
     pub compression: bool,
-    /// Number of chunks to process in parallel (via rayon).
+    /// Number of chunks to process in parallel, via a dedicated rayon
+    /// thread pool.
+    ///
+    /// Honored by [`OutOfCoreReader::map`]. `hash_join_out_of_core`
+    /// ([`crate::large::join`]) and `external_sort`
+    /// ([`crate::large::merge_sort`]) process chunks sequentially and do
+    /// not consult this field.
     pub parallelism: usize,
+}
+
+impl OutOfCoreConfig {
+    /// Row count to use for one in-memory chunk, given the column count of
+    /// the data being chunked, honoring `max_memory_bytes`.
+    ///
+    /// Clamps `chunk_size` down when the configured row count would, at a
+    /// rough ~16-bytes/cell estimate, push a single chunk's estimated
+    /// memory footprint past `max_memory_bytes`. Always returns at least 1
+    /// (a `chunk_size` or `max_memory_bytes` of 0 must still make forward
+    /// progress rather than reading zero rows per chunk forever).
+    pub fn effective_chunk_size(&self, num_columns: usize) -> usize {
+        const BYTES_PER_CELL_ESTIMATE: usize = 16;
+        let bytes_per_row = num_columns.max(1) * BYTES_PER_CELL_ESTIMATE;
+        let max_rows_by_memory = (self.max_memory_bytes / bytes_per_row).max(1);
+        self.chunk_size.min(max_rows_by_memory).max(1)
+    }
 }
 
 impl Default for OutOfCoreConfig {
@@ -106,7 +143,7 @@ fn read_chunk_file(path: &Path) -> Result<DataFrame> {
 
 /// Convert a DataFrame to CSV rows (excluding header row).
 fn dataframe_to_rows(df: &DataFrame) -> Result<(Vec<String>, Vec<Vec<String>>)> {
-    let col_names = df.column_names();
+    let col_names = df.column_names().to_vec();
     let row_count = df.row_count();
     let mut rows: Vec<Vec<String>> = Vec::with_capacity(row_count);
     for i in 0..row_count {
@@ -146,6 +183,7 @@ pub struct OutOfCoreReader {
     pub(crate) format: DataFormat,
     pub(crate) config: OutOfCoreConfig,
     /// Cached total row count (excluding header), filled lazily.
+    #[allow(dead_code)] // reserved for future use
     total_rows: Option<usize>,
 }
 
@@ -236,7 +274,7 @@ impl OutOfCoreReader {
             .map(|h| h.to_string())
             .collect();
 
-        let chunk_size = self.config.chunk_size;
+        let chunk_size = self.config.effective_chunk_size(headers.len());
         let mut rows: Vec<Vec<String>> = Vec::with_capacity(chunk_size);
 
         let flush_chunk = |rows: &mut Vec<Vec<String>>, headers: &[String]| -> Result<DataFrame> {
@@ -304,19 +342,35 @@ impl OutOfCoreReader {
             Ok(())
         })?;
 
-        // Process in parallel
+        // Process in parallel, on a thread pool sized to `config.parallelism`
+        // rather than the global rayon pool -- `parallelism` was previously
+        // declared but never consulted, so setting it (e.g. to cap CPU use)
+        // had no effect.
         let config = self.config.clone();
-        let results: Vec<Result<PathBuf>> = chunk_input_paths
-            .par_iter()
-            .enumerate()
-            .map(|(i, input_path)| {
-                let chunk_df = read_chunk_file(input_path)?;
-                let transformed = f(chunk_df)?;
-                let out_path = config.temp_dir.join(format!("pandrs_ooc_mapped_{}.csv", i));
-                write_dataframe_csv(&transformed, &out_path)?;
-                Ok(out_path)
-            })
-            .collect();
+        let parallelism = config.parallelism.max(1);
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(parallelism)
+            .build()
+            .map_err(|e| {
+                Error::Parallel(format!(
+                    "Failed to build a thread pool with {} threads: {}",
+                    parallelism, e
+                ))
+            })?;
+
+        let results: Vec<Result<PathBuf>> = pool.install(|| {
+            chunk_input_paths
+                .par_iter()
+                .enumerate()
+                .map(|(i, input_path)| {
+                    let chunk_df = read_chunk_file(input_path)?;
+                    let transformed = f(chunk_df)?;
+                    let out_path = config.temp_dir.join(format!("pandrs_ooc_mapped_{}.csv", i));
+                    write_dataframe_csv(&transformed, &out_path)?;
+                    Ok(out_path)
+                })
+                .collect()
+        });
 
         let mut output_chunks: Vec<PathBuf> = Vec::with_capacity(results.len());
         for r in results {
@@ -464,6 +518,7 @@ impl OutOfCoreReader {
 pub struct OutOfCoreWriter {
     /// Paths to temporary chunk CSV files.
     pub(crate) chunks: Vec<PathBuf>,
+    #[allow(dead_code)] // reserved for future use
     pub(crate) config: OutOfCoreConfig,
 }
 
@@ -541,7 +596,7 @@ pub(crate) fn concat_dataframes(dfs: Vec<DataFrame>) -> Result<DataFrame> {
         return Ok(DataFrame::new());
     }
 
-    let col_names = dfs[0].column_names();
+    let col_names: Vec<String> = dfs[0].column_names().to_vec();
     let total_rows: usize = dfs.iter().map(|df| df.row_count()).sum();
 
     // Build per-column data

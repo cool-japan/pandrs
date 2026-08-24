@@ -3,16 +3,16 @@
 [![Crate](https://img.shields.io/crates/v/pandrs.svg)](https://crates.io/crates/pandrs)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 [![Documentation](https://docs.rs/pandrs/badge.svg)](https://docs.rs/pandrs)
-![Tests](https://img.shields.io/badge/tests-1893%20passing-brightgreen.svg)
+![Tests](https://img.shields.io/badge/tests-2817%20passing-brightgreen.svg)
 
 A high-performance DataFrame library for Rust, providing pandas-like API with advanced features including SIMD optimization, parallel processing, and distributed computing capabilities.
 
-> **Version 0.4.0 - June 2026**: ML/stats correctness release — real PCA (Jacobi eigendecomposition), DBSCAN, AgglomerativeClustering, LogisticRegression (IRLS), IsolationForest, LOF, OneClassSVM, RocAuc, chi²/MI scores, RobustScaler, QuantileTransformer, PowerTransformer, real GridSearch/RandomizedSearch CV, learning/validation curves, real χ²-distributed p-values for Ljung-Box/Friedman/KW/Box-Pierce. **1893 tests passing** across feature sets.
+> **Version 0.4.1**: Code-honesty release — real CPU fallbacks for non-CUDA GPU paths, real Python GPU bindings (PCA, k-means, linear regression, correlation), real Shapiro-Wilk W coefficients (Royston AS R94), fixed Column::from_any data-loss bug, path-traversal security enforcement, DataFusion 53 optimizer rule translation, Series<T> idiomatic traits (Index, IntoIterator, FromIterator, Extend, Display), lint hygiene (removed orphaned backward_compat code). **2817 tests passing** (`cargo nextest run --features all-safe`); see [CHANGELOG.md](CHANGELOG.md) for the full list.
 
 ## Code Quality Highlights
 
-**Comprehensive Testing**: 1893 tests passing (nextest) + 118 doc tests with extensive coverage
-**Active Development**: Ongoing improvements to error handling and code quality (629 Rust files across src/, tests/, examples/, and benches/, 248,775 lines of code)
+**Comprehensive Testing**: 2817 tests passing via `cargo nextest run --features all-safe`, plus 110 doc tests (`cargo test --doc --features all-safe`)
+**Active Development**: Ongoing improvements to error handling and code quality across a large, actively-tested Rust codebase (run `tokei .` for current file/line counts — they change every release)
 **Production-Ready Error Handling**: Established error handling patterns with descriptive messages
 
 ## Overview
@@ -63,10 +63,8 @@ df.add_column(
 // Column-level numeric summary.
 let mean_salary = df.mean("salary")?;
 
-// GroupBy + named aggregations. Use the explicit trait path because
-// `DataFrame` also exposes an inherent `groupby(&str)` from the pivot
-// module which shadows the extension method.
-let grouped = GroupByExt::groupby(&df, &["department"])?.agg(vec![
+// GroupBy + named aggregations, via the `GroupByExt` trait imported above.
+let grouped = df.groupby(&["department"])?.agg(vec![
     NamedAgg::new("salary".to_string(), AggFunc::Mean, "salary_mean".to_string()),
     NamedAgg::new("salary".to_string(), AggFunc::Sum, "salary_sum".to_string()),
     NamedAgg::new("age".to_string(), AggFunc::Max, "age_max".to_string()),
@@ -84,12 +82,10 @@ let grouped = GroupByExt::groupby(&df, &["department"])?.agg(vec![
 
 ### Data Types
 
-- Numeric: `i32`, `i64`, `f32`, `f64`, `u32`, `u64`
-- String: UTF-8 encoded with automatic string pooling
-- Boolean: Native boolean support
-- DateTime: Timezone-aware datetime with nanosecond precision
+- **Columnar storage** (`OptimizedDataFrame`, recommended for performance): four primitive column types — `Int64`, `Float64`, `String` (with automatic string pooling), `Boolean`.
+- **Generic `Series<T>`** (traditional `DataFrame`): any `T: Clone + Debug + 'static`, so `i32`/`u32`/`u64`/`f32`/chrono datetimes/etc. all work through this path, without the columnar/string-pool optimizations.
 - Categorical: Efficient storage for repeated string values
-- Missing Values: First-class `NA` support across all types
+- Missing Values: First-class `NA` support (`NASeries` / `Option<T>`); see the note on `Series` vs `NASeries` in [docs/API_GUIDE.md](docs/API_GUIDE.md)
 
 ### Operations
 
@@ -122,9 +118,10 @@ let grouped = GroupByExt::groupby(&df, &["department"])?.agg(vec![
 ### Performance Optimizations
 
 #### SIMD Vectorization
-- Automatic SIMD optimization for numerical operations
-- Hand-tuned implementations for common operations
-- Support for AVX2 and AVX-512 instruction sets
+- `x86_64`: SSE2 baseline, with an `#[target_feature(enable = "avx2")]`-gated AVX2 kernel selected at runtime via `is_x86_feature_detected!`. Scalar (still auto-vectorizable by the compiler) is the fallback on every other target, including `aarch64` — this crate ships no NEON or AVX-512 path.
+- `OptimizedDataFrame` exposes four opt-in reduction methods on this fast path — `sum_simd`/`mean_simd`/`min_simd`/`max_simd` — but **only `sum` actually has a SIMD kernel**; `mean`/`min`/`max` there are scalar by design even though they're reachable through a `*_simd`-named method (their pandas `skipna` tie-break rules don't line up with a vector fold; see the module doc for why).
+- **Implemented, public, real kernels — not yet called from a main DataFrame path:** element-wise column ops (add/sub/mul/div/abs/sqrt/compare, via the `SIMDFloat64Ops`/`SIMDInt64Ops` column traits), extended statistics (variance/std/covariance/correlation/skewness/kurtosis/dot product/L2 norm/weighted mean, `optimized::jit::simd_stats`), and SIMD string operations (`optimized::jit::simd_string`). Normal DataFrame/`Series` arithmetic, `.var()`/`.std()`, and the `.str` accessor do not call these yet — use them directly, or see `benches/`.
+- See [`src/optimized/jit/simd.rs`](src/optimized/jit/simd.rs) and [`src/optimized/jit/simd_stats.rs`](src/optimized/jit/simd_stats.rs) module docs for the exact per-operation coverage and wiring status.
 
 #### Parallel Processing
 - Multi-threaded execution for large datasets
@@ -135,7 +132,6 @@ let grouped = GroupByExt::groupby(&df, &["department"])?.agg(vec![
 #### Memory Efficiency
 - Columnar storage format
 - String interning with global string pool
-- Copy-on-write semantics
 - Memory-mapped file support
 - Lazy evaluation for chain operations
 
@@ -145,14 +141,14 @@ let grouped = GroupByExt::groupby(&df, &["department"])?.agg(vec![
 - **CSV**: Fast parallel CSV reader/writer
 - **Parquet**: Apache Parquet with compression support
 - **JSON**: Both records and columnar JSON formats
-- **Excel**: XLSX/XLS read/write with multi-sheet support
-- **Arrow**: Zero-copy Arrow integration
+- **Excel**: XLSX (OOXML) read/write with multi-sheet support, Pure Rust (`excel` feature) — legacy binary `.xls` (BIFF) is not supported
+- **Arrow**: Arrow interoperability, data-copying (not zero-copy) (`arrow_integration` module, requires the `distributed` feature)
 
-#### Cloud Storage
+#### Cloud Storage (`cloud-storage` feature)
 - AWS S3
 - Google Cloud Storage
 - Azure Blob Storage
-- HTTP/HTTPS endpoints
+- MinIO (S3-compatible)
 
 ### Security Features
 
@@ -216,7 +212,6 @@ Advanced machine learning capabilities integrated with DataFrame operations:
 #### Time Series Forecasting
 - **ARIMA Models**: AutoRegressive Integrated Moving Average
 - **Exponential Smoothing**: Trend and seasonality modeling
-- **Prophet Integration**: Facebook's forecasting library support
 - **Feature Engineering**: Automatic lag features and date components
 
 #### Model Pipeline
@@ -235,7 +230,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-pandrs = "0.4.0"
+pandrs = "0.4.1"
 ```
 
 ### Feature Flags
@@ -244,7 +239,7 @@ Enable additional functionality with feature flags:
 
 ```toml
 [dependencies]
-pandrs = { version = "0.4.0", features = ["optimized"] }
+pandrs = { version = "0.4.1", features = ["optimized"] }
 ```
 
 Available features:
@@ -253,45 +248,64 @@ Available features:
   - `backward_compat`: Backward compatibility support
 - **Data formats:**
   - `parquet`: Parquet file support
-  - `excel`: Excel file support
+  - `excel`: Excel (XLSX) file support, Pure Rust
+  - `cloud-storage`: S3 / GCS / Azure Blob / MinIO backends
 - **Advanced features:**
   - `distributed`: Distributed computing with DataFusion
+  - `flight`: Arrow Flight RPC for distributed data transfer (implies `distributed`)
   - `visualization`: Plotting capabilities
   - `streaming`: Real-time data processing
   - `serving`: Model serving and deployment
+  - `resilience`: Retry / circuit-breaker patterns
   - `scirs2`: SciRS2 scientific computing integration
 - **Experimental:**
-  - `cuda`: GPU acceleration (requires CUDA toolkit)
+  - `cuda`: GPU acceleration (requires the CUDA toolkit)
   - `wasm`: WebAssembly compilation support
-  - `jit`: Just-in-time compilation
+  - `jit`: Just-in-time-style custom aggregations (see [docs/JIT_COMPILATION.md](docs/JIT_COMPILATION.md) for what this does and does not do today)
+- **Bundles** (combine several of the above for convenience — see `Cargo.toml` for the exact members): `test-core`, `test-safe`, `all-safe` (excludes CUDA/WASM/distributed), `stable`
 
-## Performance Benchmarks
+### Minimum Supported Rust Version (MSRV)
 
-Performance comparison with pandas (Python) and Polars (Rust):
+- **1.88** for the default feature set and `distributed`.
+- **1.89** for `cloud-storage`, `all-safe`, and `stable` (these pull in a
+  higher-floor transitive dependency — `crc-fast`, via `object_store`'s AWS
+  backend).
 
-| Operation | PandRS | Pandas | Polars | Speedup vs Pandas |
-|-----------|--------|--------|--------|-------------------|
-| CSV Read (1M rows) | 0.18s | 0.92s | 0.15s | 5.1x |
-| GroupBy Sum | 0.09s | 0.31s | 0.08s | 3.4x |
-| Join Operations | 0.21s | 0.87s | 0.19s | 4.1x |
-| String Operations | 0.14s | 1.23s | 0.16s | 8.8x |
-| Rolling Window | 0.11s | 0.43s | 0.12s | 3.9x |
+The workspace `rust-version` in `Cargo.toml` is pinned at the 1.88 floor;
+cargo enforces the higher per-dependency requirement automatically once a
+1.89-requiring feature is enabled, so building `all-safe` on an
+older-than-1.89 toolchain fails with a clear MSRV error at dependency
+resolution rather than a confusing compile error.
 
-*Benchmarks performed on AMD Ryzen 9 5950X, 64GB RAM, NVMe SSD*
+## Performance
+
+There is currently no reproducible, dated benchmark comparison against
+pandas/Polars published in this README — a previous table here was
+unverifiable (no commit/dataset/version pinned, and some rows had no
+matching benchmark at all) and has been removed rather than kept as
+unsubstantiated marketing numbers. To measure PandRS on your own workload,
+run `cargo bench` (see [BENCHMARKING.md](BENCHMARKING.md)). Note that
+`benches/pandas_comparison_benchmark.rs` benchmarks a Rust re-implementation
+of pandas-equivalent logic, not actual pandas; `benches/pandas_benchmark.py`
+and `benches/polars_benchmark.py` are separate standalone Python scripts
+that do run real pandas/Polars — run them independently and compare numbers
+yourself if you need a cross-library figure.
 
 ## Documentation
 
 - [API Documentation](https://docs.rs/pandrs)
-- [User Guide](https://github.com/cool-japan/pandrs/wiki)
-- [Examples](https://github.com/cool-japan/pandrs/tree/main/examples)
-- [Migration from Pandas](https://github.com/cool-japan/pandrs/wiki/Migration-Guide)
+- [User Guide](docs/USER_GUIDE.md)
+- [Examples](https://github.com/cool-japan/pandrs/tree/master/examples)
+- [Migration from Pandas](docs/PANDAS_MIGRATION.md)
 
 ## Examples
 
 The `examples/` directory contains comprehensive examples demonstrating all major features:
 
 ### Data Manipulation & Analysis
-- **Basic Operations**: `groupby_example.rs`, `transform_example.rs`, `pivot_example.rs`
+- **Basic Operations**: `transform_example.rs`, `pivot_example.rs`
+- **GroupBy (DataFrame + `GroupByExt`, matching the Quick Start above)**: `groupby_named_agg_demo.rs`, `hierarchical_groupby_example.rs`
+- **GroupBy (older `Series`-level `GroupBy` struct, a different/legacy API)**: `groupby_example.rs`
 - **Time Series**: `time_series_example.rs`, `time_series_forecasting_example.rs`, `datetime_accessor_example.rs`
 - **Window Operations**: `window_operations_example.rs`, `comprehensive_window_example.rs`, `dataframe_window_example.rs`
 - **Multi-Index**: `multi_index_example.rs`, `hierarchical_groupby_example.rs`, `nested_group_operations_example.rs`
@@ -360,7 +374,7 @@ df.add_column(
 )?;
 
 // Grouped aggregation with explicit named aggregations.
-let result = GroupByExt::groupby(&df, &["city", "occupation"])?.agg(vec![
+let result = df.groupby(&["city", "occupation"])?.agg(vec![
     NamedAgg::new("income".to_string(), AggFunc::Mean, "income_mean".to_string()),
     NamedAgg::new("income".to_string(), AggFunc::Median, "income_median".to_string()),
     NamedAgg::new("income".to_string(), AggFunc::Std, "income_std".to_string()),
@@ -459,8 +473,10 @@ cargo nextest run
 # Run benchmarks
 cargo criterion
 
-# Check code quality
-cargo clippy -- -D warnings
+# Check code quality (clippy::correctness/suspicious/perf are enforced;
+# style/complexity are intentionally allowed — see CONTRIBUTING.md for the
+# exact policy and the handful of narrowly-scoped, justified allows)
+cargo clippy --features all-safe -- -D warnings
 cargo fmt -- --check
 ```
 
@@ -489,7 +505,7 @@ PandRS is inspired by the excellent pandas library and incorporates ideas from:
 - [Pandas](https://pandas.pydata.org/) - API design and functionality
 - [Polars](https://www.pola.rs/) - Performance optimizations
 - [Apache Arrow](https://arrow.apache.org/) - Columnar format
-- [DataFusion](https://arrow.apache.org/datafusion/) - Query engine
+- [DataFusion](https://datafusion.apache.org/) - Query engine
 
 ## Support
 

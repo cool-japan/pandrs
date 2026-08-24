@@ -1,0 +1,168 @@
+# cargo-deny configuration for pandrs (COOLJAPAN policy enforcement)
+# Schema: cargo-deny 0.19.x
+# Run: cargo deny check bans licenses advisories sources
+
+[graph]
+# Audit the feature surface pandrs actually ships. `cuda` is excluded because it
+# requires an installed CUDA toolkit; `wasm` is covered by the wasm32 target row.
+all-features = false
+features = [
+    "all-safe",
+    "distributed",
+    "flight",
+    "jit",
+    "visualization",
+    "scirs2",
+]
+targets = [
+    "x86_64-unknown-linux-gnu",
+    "aarch64-apple-darwin",
+    "x86_64-pc-windows-msvc",
+    "wasm32-unknown-unknown",
+]
+
+[advisories]
+version = 2
+yanked = "deny"
+ignore = [
+    # paste 1.0.15 - unmaintained proc-macro, no RCE/DoS surface. Reached only as a
+    # transitive of datafusion-common and scirs2-core. Nothing to upgrade to; the
+    # crate is feature-complete. Re-evaluate when datafusion drops it.
+    { id = "RUSTSEC-2024-0436", reason = "paste is unmaintained but has no known vulnerability; transitive via datafusion/scirs2 with no available replacement" },
+
+    # ttf-parser 0.20.0 - unmaintained. Reached only via plotters (visualization
+    # feature) and criterion (dev-dependency). Font parsing is applied to bundled
+    # fonts only, never to untrusted input, in both paths.
+    { id = "RUSTSEC-2026-0192", reason = "ttf-parser unmaintained; only reachable through plotters/criterion on trusted bundled fonts" },
+
+    # NOTE: RUSTSEC-2026-0186 (memmap2 0.2.3 unsound, vendored by cranelift-jit) is
+    # deliberately NOT listed. cargo-deny does not surface it (the advisory is
+    # function-scoped via [affected.functions] and does not match), so an entry here
+    # only produces an "advisory was not encountered" warning. `cargo audit` does
+    # report it - track it there until cranelift-jit bumps memmap2 past 0.9.11.
+
+    # RUSTSEC-2026-0194 / RUSTSEC-2026-0195 (quick-xml < 0.41, severity 7.5 high)
+    # are REAL and reachable via object_store 0.13.2 under the `cloud-storage`
+    # feature. They are intentionally left UN-ignored so this check fails until
+    # object_store is upgraded to 0.14.1 (which uses quick-xml 0.41.0).
+    # Uncomment the two lines below ONLY as a deliberate, time-boxed exception.
+    # { id = "RUSTSEC-2026-0194", reason = "TEMPORARY: awaiting object_store 0.14.1 upgrade" },
+    # { id = "RUSTSEC-2026-0195", reason = "TEMPORARY: awaiting object_store 0.14.1 upgrade" },
+]
+
+[licenses]
+version = 2
+confidence-threshold = 0.8
+allow = [
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "MIT",
+    "MIT-0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "Unicode-3.0",
+    "CC0-1.0",
+    "MPL-2.0",
+    "BSL-1.0",
+    # webpki-root-certs 1.0.9 — Mozilla's trusted-root CA bundle, reached via
+    # rustls-platform-verifier on the wasm32 target after the object_store 0.14.1 /
+    # reqwest 0.13 upgrade. Community Data License Agreement — Permissive 2.0 is a
+    # permissive data license; the crate carries certificate data, no code.
+    "CDLA-Permissive-2.0",
+]
+# No code-license exceptions are required: ring 0.17.14 declares "Apache-2.0 AND ISC",
+# both already in the allow list above, so no OpenSSL clarification is needed.
+exceptions = []
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+allow-wildcard-paths = true
+deny = [
+    # === Category A: C/C++/Fortran FFI - hard Pure Rust violations ===
+    { name = "openblas-src", use-instead = "oxiblas" },
+    { name = "blas-src" },
+    { name = "lapack-src" },
+    { name = "openssl", use-instead = "rustls + oxitls" },
+    { name = "openssl-sys", use-instead = "rustls + oxitls" },
+    { name = "libz-sys", use-instead = "flate2 with the zlib-rs backend" },
+    { name = "liblzma-sys" },
+    { name = "xz2" },
+    { name = "bzip2-sys", use-instead = "oxiarc-bzip2" },
+    { name = "lz4-sys", use-instead = "oxiarc-lz4" },
+    { name = "z3-sys", use-instead = "oxiz" },
+    { name = "z3", use-instead = "oxiz" },
+    { name = "rusqlite", use-instead = "oxisql-sqlite-compat" },
+    { name = "libsqlite3-sys", use-instead = "oxisql-sqlite-compat" },
+
+    # zstd-sys compiles bundled C (libzstd) via `cc`. UNAVOIDABLE TODAY:
+    # datafusion 53.1.0 and datafusion-common 53.1.0 declare
+    # `parquet = { version = "58", default-features = true }`, and parquet's
+    # default feature set includes `zstd`. pandrs' own parquet dependency already
+    # sets default-features = false, but Cargo feature unification takes the union,
+    # so datafusion re-enables it. The wrapper allowance below scopes the exception
+    # to exactly that chain; delete it once datafusion sets default-features = false.
+    { name = "zstd-sys", use-instead = "oxiarc-zstd", wrappers = ["zstd-safe"] },
+    { name = "zstd-safe", use-instead = "oxiarc-zstd", wrappers = ["zstd"] },
+    { name = "zstd", use-instead = "oxiarc-zstd", wrappers = ["parquet"] },
+
+    # ring vendors C and per-architecture assembly and builds it with `cc`. It is the
+    # single accepted crypto exception (NOT aws-lc-sys). object_store is pinned at 0.14.1
+    # on its `*-base` features + `ring` + an explicit reqwest 0.13 (`rustls-no-provider`)
+    # + rustls 0.23 with its `ring` feature; the aws/gcp/azure/http shortcuts are avoided
+    # precisely because they hardcode `aws-lc-rs` (which vendors far MORE C via aws-lc-sys,
+    # denied outright below). ring therefore reaches the graph only through object_store
+    # (SigV4 signing), rustls (the TLS CryptoProvider) and rustls-webpki (webpki/ring), all
+    # under `cloud-storage` (and the all-safe/stable bundles). Drop this once a Pure Rust
+    # rustls CryptoProvider ships.
+    { name = "ring", use-instead = "oxicrypto, once a Pure Rust rustls CryptoProvider is available", wrappers = ["object_store", "rustls", "rustls-webpki"] },
+
+    # aws-lc-sys / aws-lc-rs vendor a very large C + assembly TLS stack. Denied
+    # outright so an object_store or reqwest upgrade cannot silently pull them in.
+    { name = "aws-lc-sys" },
+    { name = "aws-lc-rs" },
+
+    # === Category B: Pure Rust, but superseded by the COOLJAPAN OxiARC ecosystem ===
+    # These are NOT C dependencies. They are banned by ecosystem preference only.
+    # Every entry below is an upstream transitive of arrow/parquet/plotters that
+    # pandrs cannot redirect, so each is scoped with `wrappers`.
+    { name = "bincode", use-instead = "oxicode" },
+    { name = "rustfft", use-instead = "oxifft" },
+    { name = "zip", use-instead = "oxiarc-archive" },
+    { name = "tar", use-instead = "oxiarc-archive" },
+    { name = "bzip2", use-instead = "oxiarc-bzip2" },
+    { name = "lz4", use-instead = "oxiarc-lz4" },
+
+    # flate2: pulled by parquet (with the `zlib-rs` Pure Rust backend) and by png
+    # via plotters -> image (with the default miniz_oxide backend). Both backends
+    # are Pure Rust, so this is a naming-policy exception, not a C leak.
+    { name = "flate2", use-instead = "oxiarc-deflate", wrappers = ["parquet", "png"] },
+    { name = "miniz_oxide", use-instead = "oxiarc-deflate", wrappers = ["flate2", "png"] },
+    { name = "snap", use-instead = "oxiarc-snappy", wrappers = ["parquet"] },
+    { name = "brotli", use-instead = "oxiarc-brotli", wrappers = ["parquet"] },
+    { name = "brotli-decompressor", use-instead = "oxiarc-brotli", wrappers = ["brotli"] },
+    { name = "lz4_flex", use-instead = "oxiarc-lz4", wrappers = ["parquet", "arrow-ipc"] },
+
+    # pandrs already routes its own XML through oxixml (the Cargo.toml `quick-xml`
+    # key is an alias for the `oxixml-quickxml-compat` package, so this ban does not
+    # touch it). The only real quick-xml in the graph is object_store's, which is
+    # also the source of RUSTSEC-2026-0194/0195. Keeping the ban scoped here stops
+    # any new direct quick-xml dependency from creeping in.
+    { name = "quick-xml", use-instead = "oxixml-quickxml-compat", wrappers = ["object_store"] },
+]
+
+# skip-tree suppresses the multiple-versions check (not `deny`) for sprawling
+# upstream trees that legitimately vendor several generations of the same crate.
+skip-tree = [
+    { crate = "datafusion", depth = 4, reason = "datafusion 53 vendors its own arrow/parquet 58.x generation; duplicate versions are upstream-controlled" },
+    { crate = "cranelift-jit", depth = 3, reason = "cranelift-jit pins memmap2 0.2.x independently of pandrs' memmap2 0.9.x" },
+    { crate = "plotters", depth = 3, reason = "plotters 0.3 pins older image/ttf-parser generations" },
+    { crate = "windows-sys", reason = "windows-sys major generations are duplicated across the async ecosystem" },
+]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

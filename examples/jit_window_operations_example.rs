@@ -354,10 +354,10 @@ fn demonstrate_jit_statistics(jit_context: &JitWindowContext) -> Result<()> {
         "     Cache Hit Ratio: {:.2}%",
         stats.cache_hit_ratio * 100.0
     );
-    println!(
-        "     Average Speedup: {:.2}x",
-        stats.average_speedup_ratio()
-    );
+    match stats.average_speedup_ratio() {
+        Some(ratio) => println!("     Average Speedup: {ratio:.2}x"),
+        None => println!("     Average Speedup: n/a (no JIT executions measured)"),
+    }
     println!(
         "     Functions in Cache: {}",
         jit_context.compiled_functions_count().unwrap()

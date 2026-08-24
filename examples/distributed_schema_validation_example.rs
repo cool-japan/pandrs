@@ -58,7 +58,7 @@ fn main() -> Result<()> {
     println!("\nDataFrame registered in distributed context");
 
     // Verify registration
-    if let Some(registered_df) = context.get_dataset("test_data") {
+    if let Some(_registered_df) = context.get_dataset("test_data") {
         println!("Successfully retrieved registered dataset");
     }
 

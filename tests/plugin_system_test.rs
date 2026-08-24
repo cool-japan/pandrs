@@ -3,11 +3,10 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use pandrs::plugins::{
-    global_registry, register_builtin_plugins, with_global_registry, with_global_registry_mut,
-    CsvSinkPlugin, CsvSourcePlugin, DataSinkPlugin, DataSourcePlugin, FillNaPlugin,
-    FilterTransformPlugin, IssueSeverity, NormalizePlugin, PluginMetadata, PluginPipeline,
-    PluginRegistry, PluginType, SelectColumnsPlugin, TransformPlugin, ValidationIssue,
-    ValidatorPlugin,
+    global_registry, register_builtin_plugins, with_global_registry, CsvSinkPlugin,
+    CsvSourcePlugin, DataSinkPlugin, DataSourcePlugin, FillNaPlugin, FilterTransformPlugin,
+    NormalizePlugin, PluginPipeline, PluginRegistry, PluginType, SelectColumnsPlugin,
+    TransformPlugin,
 };
 use pandrs::{DataFrame, Series};
 

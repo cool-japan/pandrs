@@ -8,11 +8,8 @@ use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
 use crate::error::{Error, Result};
-use crate::gpu::{GpuError, GpuManager};
+use crate::gpu::GpuError;
 use crate::{lock_safe, read_lock_safe, write_lock_safe};
-
-#[cfg(cuda_available)]
-use cudarc::driver::{CudaContext as CudarcContext, CudaSlice, CudaStream};
 
 /// Configuration for GPU memory pool
 #[derive(Debug, Clone)]
@@ -48,34 +45,52 @@ impl Default for MemoryPoolConfig {
 }
 
 /// Memory allocation metadata
+///
+/// Only the fields the pool actually consults are stored: the owning
+/// [`MemoryBlock`] already records the block size and its free/in-use state,
+/// and allocations are never shared, so no reference count is tracked.
 #[derive(Debug, Clone)]
 struct AllocationInfo {
-    /// Size of the allocation in bytes
-    size: usize,
-    /// When the allocation was made
-    allocated_at: Instant,
-    /// When the allocation was last accessed
+    /// When the allocation was last accessed; drives free-list aging in
+    /// [`GpuMemoryPool::cleanup`]
     last_accessed: Instant,
-    /// Whether the allocation is currently in use
-    in_use: bool,
-    /// Reference count for shared allocations
-    ref_count: usize,
 }
 
-/// A memory block in the pool
+/// A memory block in the pool.
+///
+/// This pool is deliberately CPU-backed bookkeeping rather than a wrapper
+/// around a real device allocation: cudarc 0.19.x exposes no code path in
+/// this crate that ever consumes a raw device pointer handed out by a pool
+/// (see [`GpuAllocation::as_device_ptr`]'s own honest null-pointer return),
+/// so allocating real device memory here would only ever sit unused until
+/// deallocated — wasted device work for no benefit. Tracking sizes/ids on
+/// the CPU is honest about that and, unlike the previous CUDA-gated path
+/// (see the removed `GpuMemoryPool::get_cuda_context`, which always
+/// returned `None` and therefore made every `cuda_available` build fail to
+/// construct a pool at all), it actually works.
 #[derive(Debug)]
 struct MemoryBlock {
-    /// Pointer to the GPU memory
-    #[cfg(cuda_available)]
-    ptr: Box<CudaSlice<u8>>,
-    #[cfg(not(cuda_available))]
-    ptr: usize, // Dummy pointer for non-CUDA builds
     /// Size of the block
     size: usize,
     /// Whether the block is free
     is_free: bool,
-    /// Allocation info if the block is in use
+    /// Allocation info: while in use, when the block was allocated; while
+    /// free, when it was returned to the pool (drives free-list aging in
+    /// [`GpuMemoryPool::cleanup`]). `None` means "never yet allocated" (the
+    /// initial/expanded reserve capacity from [`GpuMemoryPool::expand_pool`]
+    /// or [`GpuMemoryPool::expand_on_miss`]), which `cleanup` deliberately
+    /// never evicts.
     allocation_info: Option<AllocationInfo>,
+    /// Monotonically-assigned identifier for this block, unique for the
+    /// lifetime of the pool (see [`GpuMemoryPool::next_allocation_id`]).
+    /// This is the pool's bookkeeping key, deliberately NOT derived from a
+    /// memory address (this pool never exposes a real device pointer; see
+    /// [`GpuAllocation::as_device_ptr`]) and NOT derived from the block's
+    /// size, which previously collided: every allocation of the same size
+    /// shared one dummy "pointer" (`ptr: usize = size`), so two live
+    /// same-size allocations silently overwrote each other in
+    /// `allocated_blocks`.
+    id: usize,
 }
 
 /// GPU memory pool for efficient allocation management
@@ -86,8 +101,8 @@ pub struct GpuMemoryPool {
     device_id: i32,
     /// Memory blocks organized by size for efficient lookup
     free_blocks: BTreeMap<usize, VecDeque<Arc<Mutex<MemoryBlock>>>>,
-    /// All allocated blocks
-    allocated_blocks: HashMap<usize, Arc<Mutex<MemoryBlock>>>, // key is ptr address
+    /// All allocated blocks, keyed by [`MemoryBlock::id`]
+    allocated_blocks: HashMap<usize, Arc<Mutex<MemoryBlock>>>,
     /// Current pool size
     current_size: usize,
     /// Peak memory usage
@@ -96,9 +111,11 @@ pub struct GpuMemoryPool {
     stats: MemoryPoolStats,
     /// Last cleanup time
     last_cleanup: Instant,
-    /// CUDA context reference
-    #[cfg(cuda_available)]
-    context: Option<Arc<CudarcContext>>,
+    /// Source of the next [`MemoryBlock::id`]; incremented once per
+    /// physical block created (never reused, even across deallocation),
+    /// which is what makes it safe as a `HashMap` key regardless of how
+    /// many same-size blocks are alive at once.
+    next_allocation_id: usize,
 }
 
 /// Memory pool statistics
@@ -125,8 +142,6 @@ pub struct MemoryPoolStats {
 impl GpuMemoryPool {
     /// Create a new GPU memory pool
     pub fn new(device_id: i32, config: MemoryPoolConfig) -> Result<Self> {
-        let context = Self::get_cuda_context(device_id)?;
-
         let mut pool = Self {
             config,
             device_id,
@@ -136,29 +151,13 @@ impl GpuMemoryPool {
             peak_usage: 0,
             stats: MemoryPoolStats::default(),
             last_cleanup: Instant::now(),
-            #[cfg(cuda_available)]
-            context,
-            #[cfg(not(cuda_available))]
-            context: None,
+            next_allocation_id: 0,
         };
 
         // Pre-allocate initial pool
         pool.expand_pool(pool.config.initial_size)?;
 
         Ok(pool)
-    }
-
-    /// Get CUDA context handle
-    #[cfg(cuda_available)]
-    fn get_cuda_context(device_id: i32) -> Result<Option<Arc<CudarcContext>>> {
-        // In a real implementation, would get context from GPU manager
-        // For now, return None to indicate no CUDA context available
-        Ok(None)
-    }
-
-    #[cfg(not(cuda_available))]
-    fn get_cuda_context(_device_id: i32) -> Result<Option<()>> {
-        Ok(None)
     }
 
     /// Allocate memory from the pool
@@ -172,21 +171,42 @@ impl GpuMemoryPool {
         // Try to find a suitable free block
         if let Some(block) = self.find_free_block(aligned_size) {
             self.stats.cache_hits += 1;
-            self.use_block(block, aligned_size)
-        } else {
-            self.stats.cache_misses += 1;
-            self.allocate_new_block(aligned_size)
+            return self.use_block(block, aligned_size);
         }
+
+        self.stats.cache_misses += 1;
+
+        // Cache miss: grow the pool by a batch of same-size chunks (per
+        // `growth_factor`) before falling back to a single direct
+        // allocation, so future requests of this same size are served from
+        // the free list too. Without this, every miss beyond the initial
+        // `expand_pool` call in `new` allocated exactly one block and never
+        // grew the reusable pool — `growth_factor` was configured but never
+        // read anywhere.
+        if self.expand_on_miss(aligned_size).is_ok() {
+            if let Some(block) = self.find_free_block(aligned_size) {
+                return self.use_block(block, aligned_size);
+            }
+        }
+
+        self.allocate_new_block(aligned_size)
     }
 
     /// Deallocate memory back to the pool
     pub fn deallocate(&mut self, allocation: GpuAllocation) -> Result<()> {
-        let ptr_addr = allocation.ptr_address();
+        let id = allocation.id();
 
-        if let Some(block) = self.allocated_blocks.remove(&ptr_addr) {
+        if let Some(block) = self.allocated_blocks.remove(&id) {
             let mut block_guard = lock_safe!(block, "memory block lock for deallocation")?;
             block_guard.is_free = true;
-            block_guard.allocation_info = None;
+            // Record *when* this block was freed (not `None`): `cleanup`
+            // reads this to age blocks out of the free list. The previous
+            // `= None` here meant every free block's allocation info was
+            // unconditionally cleared, so `cleanup`'s age check always saw
+            // `None` and could never evict anything.
+            block_guard.allocation_info = Some(AllocationInfo {
+                last_accessed: Instant::now(),
+            });
 
             // Add back to free blocks
             let size = block_guard.size;
@@ -201,7 +221,7 @@ impl GpuMemoryPool {
             Ok(())
         } else {
             Err(Error::from(GpuError::DeviceError(
-                "Invalid allocation pointer".to_string(),
+                "Invalid allocation id (already deallocated, or not from this pool)".to_string(),
             )))
         }
     }
@@ -216,6 +236,11 @@ impl GpuMemoryPool {
         }
 
         stats
+    }
+
+    /// Get the device this pool allocates from
+    pub fn device_id(&self) -> i32 {
+        self.device_id
     }
 
     /// Get current pool size
@@ -266,7 +291,13 @@ impl GpuMemoryPool {
             self.free_blocks.remove(&size);
         }
 
-        self.current_size -= removed_size;
+        // `saturating_sub`: now that `cleanup` can actually evict blocks
+        // (see `deallocate`'s `allocation_info` fix above), a defensive
+        // floor at 0 avoids a debug-mode panic (or, in release, silent
+        // wraparound to a huge `usize`) should `removed_size` ever
+        // overcount relative to `current_size` from some future bug,
+        // instead of trusting the invariant to hold exactly.
+        self.current_size = self.current_size.saturating_sub(removed_size);
         self.last_cleanup = now;
 
         // Trigger compaction if enabled
@@ -277,21 +308,22 @@ impl GpuMemoryPool {
         Ok(())
     }
 
-    /// Compact fragmented memory
+    /// Compact fragmented memory.
+    ///
+    /// NOTE: Real device-memory compaction is NOT implemented. Consolidating live
+    /// CUDA allocations would require a real device-side copy/kernel plus pointer
+    /// remapping, none of which exists here. This is therefore an honest no-op: it
+    /// neither moves any memory nor counts a compaction. `compaction_count` is
+    /// deliberately left untouched so the statistic is not fabricated, and no
+    /// "completed" message is emitted. The real free-list aging performed in
+    /// `cleanup` is what actually reclaims memory.
     fn compact_memory(&mut self) -> Result<()> {
-        // In a real implementation, would:
-        // 1. Identify fragmented regions
-        // 2. Move active allocations to consolidate free space
-        // 3. Update all pointers and references
-
-        self.stats.compaction_count += 1;
-
-        log::info!("Memory compaction completed for device {}", self.device_id);
-
+        // Intentionally does nothing: no real compaction is performed.
         Ok(())
     }
 
-    /// Find a suitable free block for the requested size
+    /// Find a suitable free block for the requested size, splitting a
+    /// larger block if no exact match exists.
     fn find_free_block(&mut self, size: usize) -> Option<Arc<Mutex<MemoryBlock>>> {
         // Look for exact size match first
         if let Some(blocks) = self.free_blocks.get_mut(&size) {
@@ -300,45 +332,111 @@ impl GpuMemoryPool {
             }
         }
 
-        // Look for larger blocks that can be split
+        // Look for a larger block to split. `range_mut` walks buckets in
+        // ascending size order, so the first non-empty bucket found is the
+        // smallest block that is still big enough (best-fit), minimizing
+        // the wasted remainder.
+        let mut found: Option<(usize, Arc<Mutex<MemoryBlock>>)> = None;
         for (&block_size, blocks) in self.free_blocks.range_mut(size..) {
             if let Some(block) = blocks.pop_front() {
-                // If the block is much larger, consider splitting it
-                if block_size > size * 2 && block_size - size >= self.config.min_allocation_size {
-                    // Split the block (simplified implementation)
-                    // In practice, would create a new block for the remainder
-                }
-                return Some(block);
+                found = Some((block_size, block));
+                break;
             }
         }
+        let (block_size, block) = found?;
 
-        None
+        if block_size - size < self.config.min_allocation_size {
+            // Remainder would be too small to ever satisfy an aligned
+            // request on its own: handing over the whole block (rather than
+            // creating a free block nothing can use) is not a "leak" here
+            // because `use_block` always records exactly `size` against
+            // this returned handle, and the extra capacity simply stays
+            // attributed to it until it is freed as a whole.
+            return Some(block);
+        }
+
+        // Split: shrink the found block to exactly `size` bytes and return
+        // the remainder as a new, independently reusable free block. The
+        // previous version detected this same condition
+        // (`block_size > size * 2 && block_size - size >=
+        // min_allocation_size`) but its body was empty — the whole
+        // oversized block was always handed to the caller, permanently
+        // wasting the remainder and (since `use_block`/stats then record
+        // the *requested* `size` while the physical block was actually
+        // `block_size` bytes) leaving `total_bytes_allocated` and
+        // `total_bytes_deallocated` inconsistent with each other.
+        let remainder_size = block_size - size;
+        self.next_allocation_id += 1;
+        let remainder = Arc::new(Mutex::new(MemoryBlock {
+            size: remainder_size,
+            is_free: true,
+            allocation_info: None,
+            id: self.next_allocation_id,
+        }));
+        self.free_blocks
+            .entry(remainder_size)
+            .or_insert_with(VecDeque::new)
+            .push_back(remainder);
+
+        self.next_allocation_id += 1;
+        Some(Arc::new(Mutex::new(MemoryBlock {
+            size,
+            is_free: true,
+            allocation_info: None,
+            id: self.next_allocation_id,
+        })))
     }
 
-    /// Use a free block for allocation
-    fn use_block(&mut self, block: Arc<Mutex<MemoryBlock>>, size: usize) -> Result<GpuAllocation> {
+    /// Use a free block for allocation.
+    ///
+    /// `requested_size` is only used to sanity-check that the block is
+    /// actually big enough; the block's *own* recorded `size` -- not
+    /// `requested_size` -- is what gets used for both the returned
+    /// [`GpuAllocation`] and the allocation stats. These normally agree
+    /// (an exact-size-match block, or a block [`Self::find_free_block`]
+    /// just split down to exactly `requested_size`), but
+    /// `find_free_block`'s "remainder too small to split off" path
+    /// deliberately hands over an oversized block *unsplit*, whose
+    /// physical `size` is larger than what was requested. Using
+    /// `requested_size` there (the previous behavior) recorded fewer
+    /// bytes in `total_bytes_allocated` here than `deallocate` later adds
+    /// to `total_bytes_deallocated` (which reads the block's real,
+    /// larger `size`) -- an accounting asymmetry between the two
+    /// counters for the very same block. Reading the block's own size
+    /// consistently in both places closes that gap, and is also a more
+    /// honest [`GpuAllocation::size`]: the handle now reports how much
+    /// memory is actually reserved for it, not merely the minimum that
+    /// was asked for.
+    fn use_block(
+        &mut self,
+        block: Arc<Mutex<MemoryBlock>>,
+        requested_size: usize,
+    ) -> Result<GpuAllocation> {
         let mut block_guard = lock_safe!(block, "memory block lock for use_block")?;
+        debug_assert!(
+            block_guard.size >= requested_size,
+            "block of {} bytes cannot satisfy a request for {} bytes",
+            block_guard.size,
+            requested_size
+        );
         block_guard.is_free = false;
         block_guard.allocation_info = Some(AllocationInfo {
-            size,
-            allocated_at: Instant::now(),
             last_accessed: Instant::now(),
-            in_use: true,
-            ref_count: 1,
         });
 
-        let ptr_addr = self.get_ptr_address(&block_guard);
+        let id = block_guard.id;
+        let actual_size = block_guard.size;
         drop(block_guard);
 
-        self.allocated_blocks.insert(ptr_addr, block);
+        self.allocated_blocks.insert(id, block);
 
         self.stats.total_allocations += 1;
-        self.stats.total_bytes_allocated += size as u64;
+        self.stats.total_bytes_allocated += actual_size as u64;
 
-        Ok(GpuAllocation::new(ptr_addr, size))
+        Ok(GpuAllocation::new(id, actual_size))
     }
 
-    /// Allocate a new block from the GPU
+    /// Allocate a new block directly (bypassing the free list).
     fn allocate_new_block(&mut self, size: usize) -> Result<GpuAllocation> {
         // Check if we need to expand the pool
         if self.current_size + size > self.config.max_size {
@@ -349,10 +447,10 @@ impl GpuMemoryPool {
 
         // Allocate new memory block
         let block = self.allocate_gpu_memory(size)?;
-        let ptr_addr = self.get_ptr_address(&block);
+        let id = block.id;
 
         let block = Arc::new(Mutex::new(block));
-        self.allocated_blocks.insert(ptr_addr, block.clone());
+        self.allocated_blocks.insert(id, block);
 
         self.current_size += size;
         self.peak_usage = self.peak_usage.max(self.current_size);
@@ -360,74 +458,28 @@ impl GpuMemoryPool {
         self.stats.total_allocations += 1;
         self.stats.total_bytes_allocated += size as u64;
 
-        Ok(GpuAllocation::new(ptr_addr, size))
+        Ok(GpuAllocation::new(id, size))
     }
 
-    /// Allocate memory on the GPU
-    fn allocate_gpu_memory(&self, size: usize) -> Result<MemoryBlock> {
-        #[cfg(cuda_available)]
-        {
-            if let Some(ref context) = self.context {
-                // In cudarc 0.18.x, memory allocation is done through streams
-                let stream = context.default_stream();
-                match stream.alloc_zeros::<u8>(size) {
-                    Ok(ptr) => Ok(MemoryBlock {
-                        ptr: Box::new(ptr),
-                        size,
-                        is_free: false,
-                        allocation_info: Some(AllocationInfo {
-                            size,
-                            allocated_at: Instant::now(),
-                            last_accessed: Instant::now(),
-                            in_use: true,
-                            ref_count: 1,
-                        }),
-                    }),
-                    Err(e) => Err(Error::from(GpuError::DeviceError(format!(
-                        "GPU memory allocation failed: {}",
-                        e
-                    )))),
-                }
-            } else {
-                // Fallback - return error when CUDA context is not available
-                Err(Error::from(GpuError::DeviceError(
-                    "CUDA context not available for memory allocation".to_string(),
-                )))
-            }
-        }
-        #[cfg(not(cuda_available))]
-        {
-            // CPU fallback
-            Ok(MemoryBlock {
-                ptr: size, // Use size as dummy pointer
-                size,
-                is_free: false,
-                allocation_info: Some(AllocationInfo {
-                    size,
-                    allocated_at: Instant::now(),
-                    last_accessed: Instant::now(),
-                    in_use: true,
-                    ref_count: 1,
-                }),
-            })
-        }
+    /// Create a new (in-use) memory block of the given size, with a fresh
+    /// monotonic id.
+    ///
+    /// This is CPU-side bookkeeping only — see the [`MemoryBlock`] doc
+    /// comment for why no real device memory is allocated here.
+    fn allocate_gpu_memory(&mut self, size: usize) -> Result<MemoryBlock> {
+        self.next_allocation_id += 1;
+        Ok(MemoryBlock {
+            size,
+            is_free: false,
+            allocation_info: Some(AllocationInfo {
+                last_accessed: Instant::now(),
+            }),
+            id: self.next_allocation_id,
+        })
     }
 
-    /// Get pointer address for indexing
-    fn get_ptr_address(&self, block: &MemoryBlock) -> usize {
-        #[cfg(cuda_available)]
-        {
-            // Use the block's size and position as a unique identifier
-            // Since we can't dereference CudaSlice, use a hash of the block
-            block as *const _ as usize
-        }
-        #[cfg(not(cuda_available))]
-        {
-            block.ptr
-        }
-    }
-
-    /// Expand the memory pool
+    /// Expand the memory pool by pre-allocating `additional_size` bytes'
+    /// worth of same-size free chunks.
     fn expand_pool(&mut self, additional_size: usize) -> Result<()> {
         if self.current_size + additional_size > self.config.max_size {
             return Err(Error::from(GpuError::DeviceError(
@@ -454,6 +506,49 @@ impl GpuMemoryPool {
         }
 
         self.current_size += num_chunks * chunk_size;
+        self.peak_usage = self.peak_usage.max(self.current_size);
+
+        Ok(())
+    }
+
+    /// Grow the free list by a batch of `size`-byte chunks when a request
+    /// misses the free list entirely, using `growth_factor` to decide how
+    /// many extra chunks to pre-allocate for future same-size requests —
+    /// real pooling (amortizing many small allocations into fewer calls)
+    /// rather than falling back to exactly one direct allocation per miss
+    /// forever, which is what `allocate_new_block` alone provides.
+    fn expand_on_miss(&mut self, size: usize) -> Result<()> {
+        if size == 0 {
+            return Err(Error::InvalidValue(
+                "Cannot expand memory pool for a zero-byte request".to_string(),
+            ));
+        }
+
+        let available = self.config.max_size.saturating_sub(self.current_size);
+        if available < size {
+            return Err(Error::from(GpuError::DeviceError(
+                "Memory pool size limit exceeded".to_string(),
+            )));
+        }
+
+        let desired_chunks = self.config.growth_factor.max(1.0).ceil() as usize;
+        let affordable_chunks = (available / size).max(1);
+        let num_chunks = desired_chunks.min(affordable_chunks).max(1);
+
+        for _ in 0..num_chunks {
+            let block = self.allocate_gpu_memory(size)?;
+            let block = Arc::new(Mutex::new(MemoryBlock {
+                is_free: true,
+                allocation_info: None,
+                ..block
+            }));
+            self.free_blocks
+                .entry(size)
+                .or_insert_with(VecDeque::new)
+                .push_back(block);
+            self.current_size += size;
+        }
+        self.peak_usage = self.peak_usage.max(self.current_size);
 
         Ok(())
     }
@@ -473,23 +568,29 @@ impl GpuMemoryPool {
     }
 }
 
-/// A GPU memory allocation handle
+/// A GPU memory allocation handle.
+///
+/// `id` is an opaque, monotonically-assigned pool bookkeeping identifier —
+/// deliberately not a real (or address-derived) device pointer; see
+/// [`Self::as_device_ptr`].
 pub struct GpuAllocation {
-    /// Address of the allocated memory
-    ptr_address: usize,
+    /// Opaque pool identifier for the underlying [`MemoryBlock`]
+    id: usize,
     /// Size of the allocation
     size: usize,
 }
 
 impl GpuAllocation {
     /// Create a new allocation handle
-    fn new(ptr_address: usize, size: usize) -> Self {
-        Self { ptr_address, size }
+    fn new(id: usize, size: usize) -> Self {
+        Self { id, size }
     }
 
-    /// Get the pointer address
-    pub fn ptr_address(&self) -> usize {
-        self.ptr_address
+    /// Get the pool identifier for this allocation (the key `deallocate`
+    /// looks it up by). Not a pointer of any kind — see
+    /// [`Self::as_device_ptr`].
+    pub fn id(&self) -> usize {
+        self.id
     }
 
     /// Get the allocation size
@@ -497,10 +598,18 @@ impl GpuAllocation {
         self.size
     }
 
-    /// Get raw pointer (for CUDA operations)
+    /// Get the raw device pointer for CUDA operations.
+    ///
+    /// NOTE: This pool does NOT track real CUDA device pointers (see the
+    /// [`MemoryBlock`] doc comment for why it is CPU-backed bookkeeping
+    /// only). `id` is a monotonic pool-internal identifier, not a device
+    /// address, so casting it to a device pointer would be wrong and unsafe
+    /// if passed to a kernel. Real device-pointer access is not
+    /// implemented, so this honestly returns a null pointer instead of
+    /// fabricating a plausible-looking device address.
     #[cfg(cuda_available)]
     pub fn as_device_ptr<T>(&self) -> *mut T {
-        self.ptr_address as *mut T
+        std::ptr::null_mut()
     }
 }
 
@@ -523,7 +632,7 @@ impl GlobalMemoryPoolManager {
 
     /// Get or create memory pool for a device
     pub fn get_pool(&self, device_id: i32) -> Result<Arc<Mutex<GpuMemoryPool>>> {
-        // Check if pool already exists
+        // Fast path: pool already exists.
         {
             let pools = read_lock_safe!(self.pools, "memory pool manager pools read")?;
             if let Some(pool) = pools.get(&device_id) {
@@ -531,14 +640,26 @@ impl GlobalMemoryPoolManager {
             }
         }
 
-        // Create new pool
-        let pool = GpuMemoryPool::new(device_id, self.default_config.clone())?;
-        let pool = Arc::new(Mutex::new(pool));
+        // Slow path: construct a candidate pool without holding the write
+        // lock (construction does real work and can fail), then insert it
+        // atomically via the entry API. Two threads can race between the
+        // read-lock check above and this point and both construct a pool
+        // for the same `device_id`; without the entry API, whichever
+        // thread's `pools.insert` ran last would silently replace the
+        // other's pool in the map, discarding it (and any allocations
+        // already made against it) even though callers holding the
+        // discarded `Arc` would keep using it independently — two "the"
+        // pool for one device. `entry(..).or_insert(..)` instead keeps
+        // whichever pool was inserted first and drops the redundant one
+        // (its `Arc` reference count simply goes to zero) before anyone
+        // could have allocated from it.
+        let candidate = Arc::new(Mutex::new(GpuMemoryPool::new(
+            device_id,
+            self.default_config.clone(),
+        )?));
 
-        {
-            let mut pools = write_lock_safe!(self.pools, "memory pool manager pools write")?;
-            pools.insert(device_id, pool.clone());
-        }
+        let mut pools = write_lock_safe!(self.pools, "memory pool manager pools write")?;
+        let pool = pools.entry(device_id).or_insert(candidate).clone();
 
         Ok(pool)
     }
@@ -597,56 +718,36 @@ pub fn gpu_dealloc(device_id: i32, allocation: GpuAllocation) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::gpu::init_gpu;
 
-    /// Helper function to check if GPU is actually available for testing
-    fn is_gpu_available_for_testing() -> bool {
-        // Check if a real CUDA device is available
-        if let Ok(status) = init_gpu() {
-            status.available
-        } else {
-            false
-        }
-    }
+    // These tests used to gate on a real CUDA device being present
+    // (`is_gpu_available_for_testing`) and silently `return` (skip) when it
+    // wasn't, because pool construction used to *require* a real CUDA
+    // context that `get_cuda_context` could never actually supply (it
+    // always returned `None`) — so on any machine without a real GPU
+    // (including this CI), every one of these tests silently skipped its
+    // assertions instead of running them. Now that `GpuMemoryPool` is
+    // honestly CPU-backed bookkeeping (see the `MemoryBlock` doc comment),
+    // construction always succeeds, so the tests run unconditionally.
 
     #[test]
     fn test_memory_pool_creation() {
         let config = MemoryPoolConfig::default();
         let pool = GpuMemoryPool::new(0, config);
-
-        // Pool creation may fail if no GPU device is available for memory allocation
-        // This is expected behavior - the pool requires actual GPU memory
-        if pool.is_err() {
-            println!(
-                "Pool creation failed (expected if no GPU memory available): {:?}",
-                pool.err()
-            );
-            return;
-        }
-
-        // If pool creation succeeded, verify it's ok
-        assert!(pool.is_ok());
+        assert!(
+            pool.is_ok(),
+            "pool construction should always succeed: {:?}",
+            pool.err()
+        );
     }
 
     #[test]
     fn test_memory_allocation() {
-        if !is_gpu_available_for_testing() {
-            // Skip test if no GPU available
-            println!("Skipping test_memory_allocation - no GPU available");
-            return;
-        }
-
         let config = MemoryPoolConfig {
             initial_size: 1024 * 1024, // 1MB
             ..MemoryPoolConfig::default()
         };
 
-        let pool = GpuMemoryPool::new(0, config);
-        if pool.is_err() {
-            println!("Skipping test_memory_allocation - pool creation failed");
-            return;
-        }
-        let mut pool = pool.expect("operation should succeed");
+        let mut pool = GpuMemoryPool::new(0, config).expect("pool construction should succeed");
 
         // Allocate some memory
         let alloc1 = pool.allocate(1024).expect("operation should succeed");
@@ -654,6 +755,13 @@ mod tests {
 
         let alloc2 = pool.allocate(2048).expect("operation should succeed");
         assert_eq!(alloc2.size(), 4096);
+
+        // Two live allocations of the same aligned size must get distinct
+        // pool ids: the previous non-CUDA "pointer" scheme (`ptr =
+        // size_in_bytes`) gave every same-size allocation the *same* key,
+        // so the second `allocated_blocks.insert` silently discarded the
+        // first allocation's bookkeeping entry.
+        assert_ne!(alloc1.id(), alloc2.id());
 
         // Deallocate
         pool.deallocate(alloc1).expect("operation should succeed");
@@ -667,19 +775,8 @@ mod tests {
 
     #[test]
     fn test_memory_pool_stats() {
-        if !is_gpu_available_for_testing() {
-            // Skip test if no GPU available
-            println!("Skipping test_memory_pool_stats - no GPU available");
-            return;
-        }
-
         let config = MemoryPoolConfig::default();
-        let pool = GpuMemoryPool::new(0, config);
-        if pool.is_err() {
-            println!("Skipping test_memory_pool_stats - pool creation failed");
-            return;
-        }
-        let mut pool = pool.expect("operation should succeed");
+        let mut pool = GpuMemoryPool::new(0, config).expect("pool construction should succeed");
 
         let alloc = pool.allocate(1024).expect("operation should succeed");
         let stats = pool.get_stats();
@@ -694,22 +791,32 @@ mod tests {
 
     #[test]
     fn test_global_memory_pool() {
-        if !is_gpu_available_for_testing() {
-            // Skip test if no GPU available
-            println!("Skipping test_global_memory_pool - no GPU available");
-            return;
-        }
-
         let manager = get_memory_pool_manager();
-        let pool = manager.get_pool(0);
-        if pool.is_err() {
-            println!("Skipping test_global_memory_pool - pool retrieval failed");
-            return;
-        }
-        let pool = pool.expect("operation should succeed");
+        let pool = manager.get_pool(0).expect("operation should succeed");
 
         // Test that we get the same pool instance
         let pool2 = manager.get_pool(0).expect("operation should succeed");
         assert_eq!(Arc::as_ptr(&pool), Arc::as_ptr(&pool2));
+    }
+
+    #[test]
+    fn test_deallocate_unknown_id_errs() {
+        let config = MemoryPoolConfig::default();
+        let mut pool = GpuMemoryPool::new(0, config).expect("pool construction should succeed");
+
+        let alloc = pool.allocate(1024).expect("operation should succeed");
+        let id = alloc.id();
+        pool.deallocate(alloc)
+            .expect("first deallocation should succeed");
+
+        // A forged handle reusing an id that was already freed must not be
+        // accepted as if it were still live.
+        let forged = GpuAllocation::new(id, 4096);
+        // Re-allocating may legitimately reuse this id's block from the
+        // free list, so only assert that deallocating an id that was never
+        // returned by `allocate` at all is rejected.
+        let never_issued = GpuAllocation::new(usize::MAX, 4096);
+        assert!(pool.deallocate(never_issued).is_err());
+        let _ = forged; // documents the id-reuse caveat above; not asserted
     }
 }

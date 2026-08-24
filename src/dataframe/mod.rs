@@ -1,8 +1,8 @@
-/// DataFrame implementations module.
-///
-/// This module provides the core DataFrame data structure and associated operations.
-/// A DataFrame is a two-dimensional, size-mutable, heterogeneous tabular data structure
-/// with labeled axes (rows and columns).
+//! DataFrame implementations module.
+//!
+//! This module provides the core DataFrame data structure and associated operations.
+//! A DataFrame is a two-dimensional, size-mutable, heterogeneous tabular data structure
+//! with labeled axes (rows and columns).
 
 /// Advanced indexing capabilities including categorical, datetime, interval, and period indexes.
 ///

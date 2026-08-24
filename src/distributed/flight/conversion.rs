@@ -32,7 +32,7 @@ pub fn dataframe_to_record_batch(df: &DataFrame) -> Result<RecordBatch> {
     let mut fields: Vec<Field> = Vec::with_capacity(column_names.len());
     let mut arrays: Vec<ArrayRef> = Vec::with_capacity(column_names.len());
 
-    for name in &column_names {
+    for name in column_names {
         let (field, array) = column_to_arrow(df, name)?;
         fields.push(field);
         arrays.push(array);
@@ -87,7 +87,7 @@ pub fn record_batches_to_dataframe(batches: &[RecordBatch]) -> Result<DataFrame>
 
 /// Convert an Apache Arrow [`RecordBatch`] to a PandRS [`DataFrame`].
 pub fn record_batch_to_dataframe(batch: &RecordBatch) -> Result<DataFrame> {
-    record_batches_to_dataframe(&[batch.clone()])
+    record_batches_to_dataframe(std::slice::from_ref(batch))
 }
 
 // ---------------------------------------------------------------------------

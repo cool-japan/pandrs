@@ -7,12 +7,12 @@
 //! - Token revocation
 
 use crate::error::{Error, Result};
-use crate::multitenancy::{Permission, TenantId};
+use crate::multitenancy::TenantId;
 use std::collections::HashMap;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 /// OAuth 2.0 configuration
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct OAuthConfig {
     /// OAuth provider URL
     pub provider_url: String,
@@ -34,6 +34,20 @@ pub struct OAuthConfig {
     pub revocation_endpoint: Option<String>,
     /// Token expiration
     pub token_expiry: Duration,
+}
+
+impl std::fmt::Debug for OAuthConfig {
+    /// Redacting `Debug`: the client secret must never appear in logs.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("OAuthConfig")
+            .field("provider_url", &self.provider_url)
+            .field("client_id", &self.client_id)
+            .field("client_secret", &"<redacted>")
+            .field("redirect_uri", &self.redirect_uri)
+            .field("scopes", &self.scopes)
+            .field("token_endpoint", &self.token_endpoint)
+            .finish_non_exhaustive()
+    }
 }
 
 impl OAuthConfig {
@@ -491,7 +505,16 @@ impl IntrospectionResponse {
     }
 }
 
-/// OAuth 2.0 client for local testing/simulation
+/// In-process OAuth 2.0 authorization-server simulator.
+///
+/// **This makes no network calls.** It is a self-contained simulator of the
+/// authorization-server side of OAuth 2.0 for local testing and examples: it
+/// registers clients, issues authorization codes and tokens, and validates
+/// PKCE / client secrets entirely in memory. It is intentionally *not* an
+/// OAuth client that talks to a real provider. (Renaming the public type to
+/// `OAuthSimulator` would be clearer, but the name is re-exported from the
+/// crate root in `src/lib.rs`, outside this change's ownership, so the honest
+/// documentation lives here instead.)
 #[derive(Debug)]
 pub struct OAuthClient {
     /// Configuration
@@ -502,6 +525,11 @@ pub struct OAuthClient {
     auth_codes: HashMap<String, AuthCode>,
     /// Active tokens
     tokens: HashMap<String, OAuthToken>,
+    /// Whether PKCE is mandatory for the authorization-code flow.
+    require_pkce: bool,
+    /// Server-side CSRF `state` store: state -> expiry. Registered when an
+    /// authorization request is initiated and consumed once on callback.
+    pending_states: HashMap<String, SystemTime>,
 }
 
 /// OAuth client registration info
@@ -509,7 +537,7 @@ pub struct OAuthClient {
 pub struct OAuthClientInfo {
     /// Client ID
     pub client_id: String,
-    /// Client secret hash
+    /// Client secret hash (salted PBKDF2; see [`OAuthClientInfo::new`])
     pub client_secret_hash: String,
     /// Allowed redirect URIs
     pub redirect_uris: Vec<String>,
@@ -521,9 +549,34 @@ pub struct OAuthClientInfo {
     pub tenant_id: TenantId,
 }
 
+impl OAuthClientInfo {
+    /// Register a client from a **plaintext** secret, salting and hashing it
+    /// with PBKDF2 for storage. This is the recommended constructor; the public
+    /// `client_secret_hash` field is retained for compatibility but should hold
+    /// output of `hash_client_secret`.
+    pub fn new(
+        client_id: impl Into<String>,
+        client_secret: &str,
+        redirect_uris: Vec<String>,
+        grant_types: Vec<OAuthGrantType>,
+        scopes: Vec<String>,
+        tenant_id: impl Into<String>,
+    ) -> Self {
+        OAuthClientInfo {
+            client_id: client_id.into(),
+            client_secret_hash: hash_client_secret(client_secret),
+            redirect_uris,
+            grant_types,
+            scopes,
+            tenant_id: tenant_id.into(),
+        }
+    }
+}
+
 /// Authorization code
 #[derive(Debug, Clone)]
 struct AuthCode {
+    #[allow(dead_code)] // reserved for future use
     code: String,
     client_id: String,
     redirect_uri: String,
@@ -537,7 +590,9 @@ struct AuthCode {
 /// OAuth token
 #[derive(Debug, Clone)]
 struct OAuthToken {
+    #[allow(dead_code)] // reserved for future use
     access_token: String,
+    #[allow(dead_code)] // reserved for future use
     refresh_token: Option<String>,
     client_id: String,
     user_id: Option<String>,
@@ -547,14 +602,49 @@ struct OAuthToken {
 }
 
 impl OAuthClient {
-    /// Create a new OAuth client
+    /// Create a new OAuth simulator
     pub fn new(config: OAuthConfig) -> Self {
         OAuthClient {
             config,
             clients: HashMap::new(),
             auth_codes: HashMap::new(),
             tokens: HashMap::new(),
+            require_pkce: false,
+            pending_states: HashMap::new(),
         }
+    }
+
+    /// Require PKCE for the authorization-code flow. When set, an authorization
+    /// code cannot be created or exchanged without a `code_challenge`.
+    pub fn with_required_pkce(mut self) -> Self {
+        self.require_pkce = true;
+        self
+    }
+
+    /// Register a CSRF `state` value (from an [`AuthorizationRequest`]) so it can
+    /// be validated exactly once on the authorization callback. Expired states
+    /// are pruned. Without this server-side store the `state` parameter is
+    /// generated but never checked, defeating its CSRF purpose.
+    pub fn register_state(&mut self, state: &str, ttl: Duration) {
+        self.prune_states();
+        self.pending_states
+            .insert(state.to_string(), SystemTime::now() + ttl);
+    }
+
+    /// Validate and consume a CSRF `state`. Returns `true` only if it was
+    /// previously registered and has not expired. The state is removed so it
+    /// cannot be replayed.
+    pub fn validate_state(&mut self, state: &str) -> bool {
+        match self.pending_states.remove(state) {
+            Some(expiry) => expiry > SystemTime::now(),
+            None => false,
+        }
+    }
+
+    /// Drop expired CSRF states.
+    fn prune_states(&mut self) {
+        let now = SystemTime::now();
+        self.pending_states.retain(|_, exp| *exp > now);
     }
 
     /// Register an OAuth client
@@ -573,8 +663,10 @@ impl OAuthClient {
             .get(client_id)
             .ok_or_else(|| Error::InvalidInput("Invalid client_id".to_string()))?;
 
-        let secret_hash = hash_client_secret(client_secret);
-        if client.client_secret_hash != secret_hash {
+        // Constant-time verification against the (salted) stored hash. Comparing
+        // freshly-hashed text with `!=` both leaked a timing signal and — with
+        // the old unsalted scheme — was rainbow-table friendly.
+        if !verify_client_secret(client_secret, &client.client_secret_hash) {
             return Err(Error::InvalidInput("Invalid client_secret".to_string()));
         }
 
@@ -606,6 +698,13 @@ impl OAuthClient {
             if !client.scopes.contains(scope) {
                 return Err(Error::InvalidInput(format!("Invalid scope: {}", scope)));
             }
+        }
+
+        // Enforce PKCE when required.
+        if self.require_pkce && code_challenge.is_none() {
+            return Err(Error::InvalidInput(
+                "PKCE code_challenge is required".to_string(),
+            ));
         }
 
         let code = generate_authorization_code();
@@ -657,15 +756,25 @@ impl OAuthClient {
             return Err(Error::InvalidInput("Redirect URI mismatch".to_string()));
         }
 
-        // Validate PKCE if present
+        // Validate PKCE if a challenge was registered, honoring the method that
+        // was recorded with the authorization request and comparing in
+        // constant time.
         if let Some(challenge) = &auth_code.code_challenge {
             let verifier = code_verifier
                 .ok_or_else(|| Error::InvalidInput("Missing code_verifier".to_string()))?;
 
-            let expected_challenge = compute_code_challenge(verifier);
-            if &expected_challenge != challenge {
+            let expected_challenge = compute_code_challenge_with_method(
+                verifier,
+                auth_code.code_challenge_method.as_deref(),
+            );
+            if !crate::auth::constant_time_eq(expected_challenge.as_bytes(), challenge.as_bytes()) {
                 return Err(Error::InvalidInput("Invalid code_verifier".to_string()));
             }
+        } else if self.require_pkce {
+            // A challenge is mandatory when PKCE is required.
+            return Err(Error::InvalidInput(
+                "PKCE code_challenge is required".to_string(),
+            ));
         }
 
         // Generate tokens
@@ -821,7 +930,7 @@ fn generate_pkce_pair() -> (String, String) {
     (verifier, challenge)
 }
 
-/// Compute PKCE code challenge from verifier
+/// Compute the PKCE code challenge from a verifier using the S256 method.
 fn compute_code_challenge(verifier: &str) -> String {
     use sha2::{Digest, Sha256};
 
@@ -851,6 +960,116 @@ fn compute_code_challenge(verifier: &str) -> String {
     }
 
     result
+}
+
+/// Compute the PKCE code challenge honoring the requested method.
+///
+/// Previously the exchange always hashed the verifier with SHA-256 regardless
+/// of the advertised `code_challenge_method`, so a `plain` challenge could
+/// never match and an attacker-substituted method was ignored. `plain` returns
+/// the verifier unchanged (RFC 7636); anything else is treated as `S256`.
+fn compute_code_challenge_with_method(verifier: &str, method: Option<&str>) -> String {
+    match method {
+        Some(m) if m.eq_ignore_ascii_case("plain") => verifier.to_string(),
+        _ => compute_code_challenge(verifier),
+    }
+}
+
+/// PBKDF2 iteration count for hashing OAuth client secrets.
+const CLIENT_SECRET_ITERATIONS: u32 = 100_000;
+
+/// Hash an OAuth client secret with a per-secret random salt using
+/// PBKDF2-HMAC-SHA256. Format: `v1${salt_hex}${hash_hex}`.
+///
+/// Replaces the previous unsalted single SHA-256, which is rainbow-table /
+/// brute-force friendly if the client store leaks.
+fn hash_client_secret(secret: &str) -> String {
+    use pbkdf2::pbkdf2_hmac;
+    use sha2::Sha256;
+
+    let salt = generate_state_bytes(16);
+    let mut hash = [0u8; 32];
+    pbkdf2_hmac::<Sha256>(
+        secret.as_bytes(),
+        &salt,
+        CLIENT_SECRET_ITERATIONS,
+        &mut hash,
+    );
+
+    format!(
+        "v1${}${}",
+        salt.iter()
+            .map(|b| format!("{:02x}", b))
+            .collect::<String>(),
+        hash.iter()
+            .map(|b| format!("{:02x}", b))
+            .collect::<String>()
+    )
+}
+
+/// Constant-time verification of a client secret against a stored hash.
+///
+/// Understands the salted `v1$salt$hash` format produced by
+/// `hash_client_secret`, and falls back to a legacy bare SHA-256 hex digest
+/// (64 hex chars) for compatibility with hashes minted by older callers.
+fn verify_client_secret(secret: &str, stored: &str) -> bool {
+    use pbkdf2::pbkdf2_hmac;
+    use sha2::{Digest, Sha256};
+
+    if let Some(rest) = stored.strip_prefix("v1$") {
+        let parts: Vec<&str> = rest.split('$').collect();
+        if parts.len() != 2 {
+            return false;
+        }
+        let salt = match hex_decode(parts[0]) {
+            Some(s) => s,
+            None => return false,
+        };
+        let expected = match hex_decode(parts[1]) {
+            Some(h) => h,
+            None => return false,
+        };
+        let mut computed = vec![0u8; expected.len()];
+        pbkdf2_hmac::<Sha256>(
+            secret.as_bytes(),
+            &salt,
+            CLIENT_SECRET_ITERATIONS,
+            &mut computed,
+        );
+        crate::auth::constant_time_eq(&computed, &expected)
+    } else {
+        // Legacy: bare SHA-256 hex digest.
+        let mut hasher = Sha256::new();
+        hasher.update(secret.as_bytes());
+        let digest = hasher.finalize();
+        let digest_hex: String = digest.iter().map(|b| format!("{:02x}", b)).collect();
+        crate::auth::constant_time_eq(digest_hex.as_bytes(), stored.as_bytes())
+    }
+}
+
+/// Decode a hex string into bytes (returns `None` on invalid input).
+fn hex_decode(s: &str) -> Option<Vec<u8>> {
+    if s.len() % 2 != 0 {
+        return None;
+    }
+    let mut bytes = Vec::with_capacity(s.len() / 2);
+    let raw = s.as_bytes();
+    let mut i = 0;
+    while i < raw.len() {
+        let hi = (raw[i] as char).to_digit(16)?;
+        let lo = (raw[i + 1] as char).to_digit(16)?;
+        bytes.push((hi * 16 + lo) as u8);
+        i += 2;
+    }
+    Some(bytes)
+}
+
+/// Generate `n` cryptographically random bytes.
+fn generate_state_bytes(n: usize) -> Vec<u8> {
+    use scirs2_core::random::Rng;
+    let mut bytes = vec![0u8; n];
+    scirs2_core::random::rng().fill_bytes(&mut bytes);
+    bytes
 }
 
 /// Generate authorization code
@@ -889,23 +1108,22 @@ fn generate_refresh_token() -> String {
     )
 }
 
-/// Hash client secret for storage
-fn hash_client_secret(secret: &str) -> String {
-    use sha2::{Digest, Sha256};
-    let mut hasher = Sha256::new();
-    hasher.update(secret.as_bytes());
-    let result = hasher.finalize();
-    result.iter().map(|b| format!("{:02x}", b)).collect()
-}
-
-/// URL encode a string
+/// Percent-encode a string per RFC 3986 (unreserved set left as-is).
+///
+/// Encodes the UTF-8 *bytes* of each character. The previous implementation
+/// wrote `%{c as u8}`, which truncates any non-ASCII `char` to its low byte and
+/// silently corrupts multi-byte input (e.g. non-Latin scopes/redirect URIs).
 fn url_encode(s: &str) -> String {
-    s.chars()
-        .map(|c| match c {
-            'A'..='Z' | 'a'..='z' | '0'..='9' | '-' | '_' | '.' | '~' => c.to_string(),
-            _ => format!("%{:02X}", c as u8),
-        })
-        .collect()
+    let mut out = String::with_capacity(s.len() * 3);
+    for &byte in s.as_bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(byte as char);
+            }
+            _ => out.push_str(&format!("%{:02X}", byte)),
+        }
+    }
+    out
 }
 
 #[cfg(test)]

@@ -98,11 +98,19 @@ fn test_series_ewm_operations() -> Result<()> {
     // First value should be 10.0
     assert!((ewm_mean.values()[0] - 10.0).abs() < 1e-10);
 
-    // Second value: 0.5 * 20 + 0.5 * 10 = 15.0
-    assert!((ewm_mean.values()[1] - 15.0).abs() < 1e-10);
+    // `adjust` defaults to `true` (pandas' own default), which weights the
+    // *adjusted* average over all prior observations rather than the plain
+    // recursive form `alpha * x_t + (1 - alpha) * y_{t-1}` -- this test
+    // previously asserted the recursive (`adjust=false`) numbers even
+    // though `adjust` defaults to `true`, because the implementation
+    // silently ignored `adjust` and always computed the recursive form.
+    // Corrected expected values, weights `w_i = (1 - alpha)^i`:
+    // Second value: (1*20 + 0.5*10) / (1 + 0.5) = 25 / 1.5 = 16.666...
+    assert!((ewm_mean.values()[1] - 16.666_666_666_666_668).abs() < 1e-9);
 
-    // Third value: 0.5 * 30 + 0.5 * 15 = 22.5
-    assert!((ewm_mean.values()[2] - 22.5).abs() < 1e-10);
+    // Third value: (1*30 + 0.5*20 + 0.25*10) / (1 + 0.5 + 0.25)
+    //            = 42.5 / 1.75 = 24.285714...
+    assert!((ewm_mean.values()[2] - 24.285_714_285_714_285).abs() < 1e-9);
 
     // Test EWM with span
     let ewm_span = series.ewm().span(3).mean()?;
@@ -130,10 +138,17 @@ fn test_rolling_custom_functions() -> Result<()> {
         max_val - min_val
     })?;
 
-    assert_eq!(rolling_range.len(), 3); // Should only have valid results
-    assert!((rolling_range.values()[0] - 2.0).abs() < 1e-10); // Range of [1,2,3] = 2
-    assert!((rolling_range.values()[1] - 2.0).abs() < 1e-10); // Range of [2,3,4] = 2
-    assert!((rolling_range.values()[2] - 2.0).abs() < 1e-10); // Range of [3,4,5] = 2
+    // `apply` is aligned with the input series (5 rows), not shortened to
+    // just the rows with enough observations: sub-`min_periods` rows come
+    // back as `None` rather than being dropped, which previously produced
+    // a 3-element series with no way to tell which original row a given
+    // result belonged to.
+    assert_eq!(rolling_range.len(), 5);
+    assert!(rolling_range.values()[0].is_none());
+    assert!(rolling_range.values()[1].is_none());
+    assert!((rolling_range.values()[2].unwrap() - 2.0).abs() < 1e-10); // Range of [1,2,3] = 2
+    assert!((rolling_range.values()[3].unwrap() - 2.0).abs() < 1e-10); // Range of [2,3,4] = 2
+    assert!((rolling_range.values()[4].unwrap() - 2.0).abs() < 1e-10); // Range of [3,4,5] = 2
 
     Ok(())
 }

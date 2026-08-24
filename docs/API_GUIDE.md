@@ -224,6 +224,7 @@ assert!(col_view.as_float64().is_none()); // If column is actually Int64
 match df.column("column_name") {
     Ok(col_view) => {
         if let Some(int_col) = col_view.as_int64() {
+            // Int64Column::get returns Result<Option<i64>> (an owned i64, not a reference).
             match int_col.get(index) {
                 Ok(Some(value)) => println!("Value: {}", value),
                 Ok(None) => println!("Null value"),
@@ -246,6 +247,13 @@ df.to_csv("output.csv", true)?;  // true = include header
 // Read CSV
 let loaded_df = pandrs::io::read_csv("input.csv", true)?;  // true = has header
 ```
+
+> **Type note:** `df.to_csv(...)` above is `OptimizedDataFrame::to_csv`, but
+> `pandrs::io::read_csv(...)` is a free function that returns the
+> *traditional* `DataFrame`, not `OptimizedDataFrame` — so `loaded_df` here
+> is a different type than `df`. If you want the round trip to stay on
+> `OptimizedDataFrame`, use `OptimizedDataFrame::from_csv(path, has_header)`
+> instead of the free function.
 
 ### Error Handling for I/O
 
@@ -333,7 +341,8 @@ fn safe_column_access(df: &OptimizedDataFrame, col_name: &str, index: usize) -> 
         Ok(col_view) => {
             if let Some(int_col) = col_view.as_int64() {
                 match int_col.get(index) {
-                    Ok(Some(value)) => Some(*value),
+                    // `get` already returns an owned `i64` — no `*` needed.
+                    Ok(Some(value)) => Some(value),
                     _ => None,
                 }
             } else {
@@ -408,29 +417,40 @@ match df.column("column_name") {
 let col = df.column("column_name").unwrap(); // Don't do this
 ```
 
-### 3. Use Type-Safe Access
+### 3. Prefer the Zero-Copy `ColumnView` Access Over `get_int_column`/`get_float_column`/`get_string_column`
 
 ```rust
-// Good: type-safe access
+// Good: type-safe, zero-copy access via ColumnView
 let col_view = df.column("numbers")?;
 if let Some(int_col) = col_view.as_int64() {
     let value = int_col.get(0)?;
 }
 
-// Avoid: assuming types
-let numbers = df.get_int_column("numbers")?; // May not exist in OptimizedDataFrame
+// Works, but allocates a fresh Vec<Option<i64>> copy of the whole column —
+// `get_int_column`/`get_float_column`/`get_string_column` DO exist on
+// OptimizedDataFrame, they're just less efficient than `column()` + `as_int64()`
+// for anything beyond a one-off convenience read:
+let numbers: Vec<Option<i64>> = df.get_int_column("numbers")?;
 ```
 
 ### 4. Validate Data Early
 
 ```rust
-// Check data consistency before processing
-if df.row_count() == 0 {
-    return Err("Empty DataFrame".into());
-}
+use pandrs::error::{Error, Result};
 
-if !df.contains_column("required_column") {
-    return Err("Required column missing".into());
+// `Err("...".into())` alone won't compile here — there's no `From<&str> for
+// Error`. Use a real Error variant instead (its field is a `String`, so
+// `.into()` on the message itself works fine):
+fn validate(df: &OptimizedDataFrame) -> Result<()> {
+    if df.row_count() == 0 {
+        return Err(Error::InvalidOperation("Empty DataFrame".into()));
+    }
+
+    if !df.contains_column("required_column") {
+        return Err(Error::ColumnNotFound("required_column".to_string()));
+    }
+
+    Ok(())
 }
 ```
 
@@ -500,11 +520,10 @@ mod tests {
 use pandrs::error::{Error, Result};
 
 fn process_sales_data(file_path: &str) -> Result<f64> {
+    // Note: `Error::IoError` wraps a `String`, not a `std::io::Error` —
+    // build the message directly rather than constructing a std::io::Error.
     let df = pandrs::io::read_csv(file_path, true)
-        .map_err(|e| Error::IoError(std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            format!("Failed to load sales data: {}", e)
-        )))?;
+        .map_err(|e| Error::IoError(format!("Failed to load sales data: {}", e)))?;
 
     if !df.contains_column("sales") {
         return Err(Error::ColumnNotFound("sales".to_string()));

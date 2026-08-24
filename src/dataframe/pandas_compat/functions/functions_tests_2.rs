@@ -4,15 +4,14 @@
 
 #[cfg(test)]
 mod tests {
-    use super::super::functions::select_rows_by_indices;
-    use crate::core::error::Result;
+    // `0.7071` in the expanding-std assertions is a rounded expected value
+    // (close to FRAC_1_SQRT_2), i.e. test-fixture data, not a use of the
+    // constant; silence `approx_constant` for the test module rather than
+    // rewriting the asserted value.
+    #![allow(clippy::approx_constant)]
     use crate::dataframe::base::DataFrame;
     use crate::dataframe::pandas_compat::trait_def::PandasCompatExt;
-    use crate::dataframe::pandas_compat::types::{
-        Axis, CorrelationMatrix, DescribeStats, RankMethod, SeriesValue,
-    };
     use crate::series::Series;
-    use std::collections::{HashMap, HashSet};
 
     fn create_test_df() -> DataFrame {
         let mut df = DataFrame::new();

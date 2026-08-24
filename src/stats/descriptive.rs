@@ -4,12 +4,9 @@
 //! of central tendency, dispersion, shape, and advanced statistical summaries.
 
 use crate::core::error::{Error, Result};
-use crate::dataframe::DataFrame;
-use crate::series::Series;
-use crate::stats::distributions::{Distribution, Normal, TDistribution};
+use crate::stats::distributions::{Distribution, TDistribution};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::f64::consts::PI;
 
 /// Comprehensive statistical summary for a dataset
 #[derive(Debug, Clone, Serialize, Deserialize)]

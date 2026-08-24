@@ -5,11 +5,10 @@
 //! algebraic simplification, and vectorization.
 
 use crate::core::error::{Error, Result};
-use crate::optimized::jit::types::{JitNumeric, NumericValue, TypedVector};
-use std::collections::{HashMap, HashSet};
+use crate::optimized::jit::types::NumericValue;
+use std::collections::HashMap;
 use std::fmt;
 use std::hash::{Hash, Hasher};
-use std::sync::Arc;
 
 /// Expression tree node representing a computation
 #[derive(Debug, Clone, PartialEq)]

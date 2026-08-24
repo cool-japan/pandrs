@@ -7,8 +7,8 @@ use crate::core::error::{Error, Result};
 use crate::ml::serving::monitoring::{AlertEvent, MetricsSummary, PerformanceMetrics};
 use crate::ml::serving::registry::{ModelRegistry, ModelRegistryEntry};
 use crate::ml::serving::{
-    BatchPredictionRequest, BatchPredictionResponse, DeploymentMetrics, HealthStatus, ModelInfo,
-    ModelMetadata, ModelServer, ModelServing, PredictionRequest, PredictionResponse,
+    BatchPredictionRequest, BatchPredictionResponse, BatchProcessingSummary, HealthStatus,
+    ModelInfo, ModelMetadata, ModelServer, ModelServing, PredictionRequest, PredictionResponse,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -25,6 +25,12 @@ pub struct ApiResponse<T> {
     pub success: bool,
     /// Error message (if any)
     pub error: Option<String>,
+    /// Suggested HTTP status code for this error, when classifiable (`None` on success).
+    /// Populated via [`Error`] variant (e.g. `KeyNotFound` -> 404, `InvalidInput` -> 400,
+    /// `NotImplemented` -> 501), so a transport layer (see [`HttpResponse::from_status`](crate::ml::serving::server::HttpResponse::from_status))
+    /// can return the right status instead of collapsing every failure to 500.
+    #[serde(default)]
+    pub error_code: Option<u16>,
     /// Response timestamp
     pub timestamp: chrono::DateTime<chrono::Utc>,
     /// Request ID for tracing
@@ -38,6 +44,7 @@ impl<T> ApiResponse<T> {
             data: Some(data),
             success: true,
             error: None,
+            error_code: None,
             timestamp: chrono::Utc::now(),
             request_id: None,
         }
@@ -49,70 +56,140 @@ impl<T> ApiResponse<T> {
             data: Some(data),
             success: true,
             error: None,
+            error_code: None,
             timestamp: chrono::Utc::now(),
             request_id: Some(request_id),
         }
     }
 
-    /// Create an error response
+    /// Create an error response (no classified status code; treated as 500 by transports).
     pub fn error(error_message: String) -> Self {
         Self {
             data: None,
             success: false,
             error: Some(error_message),
+            error_code: None,
             timestamp: chrono::Utc::now(),
             request_id: None,
         }
     }
 
-    /// Create an error response with request ID
+    /// Create an error response with request ID (no classified status code).
     pub fn error_with_id(error_message: String, request_id: String) -> Self {
         Self {
             data: None,
             success: false,
             error: Some(error_message),
+            error_code: None,
+            timestamp: chrono::Utc::now(),
+            request_id: Some(request_id),
+        }
+    }
+
+    /// Create an error response classified with a specific suggested HTTP status code.
+    pub fn error_with_status(error_message: String, status_code: u16, request_id: String) -> Self {
+        Self {
+            data: None,
+            success: false,
+            error: Some(error_message),
+            error_code: Some(status_code),
             timestamp: chrono::Utc::now(),
             request_id: Some(request_id),
         }
     }
 }
 
+/// Classify an [`Error`] into a suggested HTTP status code.
+///
+/// Previously every endpoint failure (missing model, invalid input, an actual internal error)
+/// collapsed into a single generic error message with no way for a transport layer to tell them
+/// apart, so every response ended up mapped to 500 regardless of cause.
+pub fn classify_error(error: &Error) -> u16 {
+    match error {
+        Error::KeyNotFound(_) => 404,
+        Error::InvalidInput(_) | Error::DimensionMismatch(_) => 400,
+        Error::NotImplemented(_) => 501,
+        _ => 500,
+    }
+}
+
+/// Build a classified error `ApiResponse`, with or without a request ID.
+fn error_response<T>(message: String, status: u16, request_id: Option<String>) -> ApiResponse<T> {
+    match request_id {
+        Some(id) => ApiResponse::error_with_status(message, status, id),
+        None => {
+            let mut response = ApiResponse::error(message);
+            response.error_code = Some(status);
+            response
+        }
+    }
+}
+
+/// If the request pins a specific `model_version` (anything other than the `"latest"`/
+/// `"default"` sentinels), reject when it doesn't match the resolved model's actual version,
+/// instead of silently serving whatever version happened to be resolved.
+fn check_model_version(model: &dyn ModelServing, requested: &Option<String>) -> Result<()> {
+    if let Some(requested_version) = requested {
+        if requested_version != "latest" && requested_version != "default" {
+            let actual_version = &model.get_metadata().version;
+            if requested_version != actual_version {
+                return Err(Error::InvalidInput(format!(
+                    "Requested model_version '{}' does not match the resolved model's version \
+                     '{}'",
+                    requested_version, actual_version
+                )));
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Prediction endpoint handler
 pub struct PredictionEndpoint;
 
 impl PredictionEndpoint {
-    /// Handle single prediction request
+    /// Handle single prediction request.
+    ///
+    /// Runs [`Self::validate_request`] before calling into the model (previously only the batch
+    /// path validated; a single `predict` call skipped straight to the model, relying on
+    /// whatever ad-hoc checks that model's own inference happened to perform), and honors a
+    /// pinned `model_version` rather than silently ignoring it.
     pub fn predict(
         server: &ModelServer,
         model_name: &str,
         request: PredictionRequest,
         request_id: Option<String>,
     ) -> ApiResponse<PredictionResponse> {
-        match server.get_model(model_name) {
-            Ok(model) => match model.predict(&request) {
-                Ok(response) => {
-                    if let Some(id) = request_id {
-                        ApiResponse::success_with_id(response, id)
-                    } else {
-                        ApiResponse::success(response)
-                    }
-                }
-                Err(e) => {
-                    let error_msg = format!("Prediction failed: {}", e);
-                    if let Some(id) = request_id {
-                        ApiResponse::error_with_id(error_msg, id)
-                    } else {
-                        ApiResponse::error(error_msg)
-                    }
-                }
+        let model = match server.get_model(model_name) {
+            Ok(model) => model,
+            Err(e) => {
+                let status = classify_error(&e);
+                let error_msg = format!("Model not found: {}", e);
+                return error_response(error_msg, status, request_id);
+            }
+        };
+
+        if let Err(e) = check_model_version(model.as_ref(), &request.model_version) {
+            let status = classify_error(&e);
+            let error_msg = format!("Model version mismatch: {}", e);
+            return error_response(error_msg, status, request_id);
+        }
+
+        if let Err(e) = Self::validate_request(&request, model.as_ref()) {
+            let status = classify_error(&e);
+            let error_msg = format!("Validation failed: {}", e);
+            return error_response(error_msg, status, request_id);
+        }
+
+        match model.predict(&request) {
+            Ok(response) => match request_id {
+                Some(id) => ApiResponse::success_with_id(response, id),
+                None => ApiResponse::success(response),
             },
             Err(e) => {
-                let error_msg = format!("Model not found: {}", e);
-                if let Some(id) = request_id {
-                    ApiResponse::error_with_id(error_msg, id)
-                } else {
-                    ApiResponse::error(error_msg)
-                }
+                let status = classify_error(&e);
+                let error_msg = format!("Prediction failed: {}", e);
+                error_response(error_msg, status, request_id)
             }
         }
     }
@@ -168,7 +245,15 @@ impl PredictionEndpoint {
 pub struct BatchPredictionEndpoint;
 
 impl BatchPredictionEndpoint {
-    /// Handle batch prediction request
+    /// Handle batch prediction request.
+    ///
+    /// A row that fails [`PredictionEndpoint::validate_request`] is recorded as a real per-item
+    /// failure at its original index -- exactly like a row that fails during actual model
+    /// inference -- rather than rejecting the *entire* batch with a single generic error.
+    /// Previously, one malformed row anywhere in the batch (e.g. a typo'd feature name on row
+    /// 999 of 1000) discarded every other row's successful prediction, defeating the point of
+    /// `BatchProcessingSummary::failed_items` existing at all: real per-row indexing is only
+    /// useful if a bad row can't take the rest of the batch down with it.
     pub fn predict_batch(
         server: &ModelServer,
         model_name: &str,
@@ -177,69 +262,119 @@ impl BatchPredictionEndpoint {
     ) -> ApiResponse<BatchPredictionResponse> {
         // Validate batch size
         if request.data.is_empty() {
-            let error_msg = "Batch request cannot be empty".to_string();
-            return if let Some(id) = request_id {
-                ApiResponse::error_with_id(error_msg, id)
-            } else {
-                ApiResponse::error(error_msg)
-            };
+            return error_response("Batch request cannot be empty".to_string(), 400, request_id);
         }
 
         if request.data.len() > 1000 {
-            let error_msg = "Batch size too large (max 1000)".to_string();
-            return if let Some(id) = request_id {
-                ApiResponse::error_with_id(error_msg, id)
-            } else {
-                ApiResponse::error(error_msg)
-            };
+            return error_response(
+                "Batch size too large (max 1000)".to_string(),
+                400,
+                request_id,
+            );
         }
 
-        match server.get_model(model_name) {
-            Ok(model) => {
-                // Validate each request in the batch
-                for (i, data) in request.data.iter().enumerate() {
-                    let individual_request = PredictionRequest {
-                        data: data.clone(),
-                        model_version: request.model_version.clone(),
-                        options: request.options.clone(),
-                    };
+        let model = match server.get_model(model_name) {
+            Ok(model) => model,
+            Err(e) => {
+                let status = classify_error(&e);
+                let error_msg = format!("Model not found: {}", e);
+                return error_response(error_msg, status, request_id);
+            }
+        };
 
-                    if let Err(e) = PredictionEndpoint::validate_request(&individual_request, model)
-                    {
-                        let error_msg = format!("Validation failed for item {}: {}", i, e);
-                        return if let Some(id) = request_id {
-                            ApiResponse::error_with_id(error_msg, id)
-                        } else {
-                            ApiResponse::error(error_msg)
-                        };
-                    }
+        if let Err(e) = check_model_version(model.as_ref(), &request.model_version) {
+            let status = classify_error(&e);
+            let error_msg = format!("Model version mismatch: {}", e);
+            return error_response(error_msg, status, request_id);
+        }
+
+        // Partition the batch into rows that pass validation (sent to the model, keeping their
+        // original index) and rows that don't (recorded as real per-item failures directly,
+        // original index preserved).
+        let mut valid_original_indices: Vec<usize> = Vec::with_capacity(request.data.len());
+        let mut valid_rows: Vec<HashMap<String, serde_json::Value>> =
+            Vec::with_capacity(request.data.len());
+        let mut pre_validation_failures: Vec<(usize, String)> = Vec::new();
+
+        for (i, data) in request.data.iter().enumerate() {
+            let individual_request = PredictionRequest {
+                data: data.clone(),
+                model_version: request.model_version.clone(),
+                options: request.options.clone(),
+            };
+
+            match PredictionEndpoint::validate_request(&individual_request, model.as_ref()) {
+                Ok(()) => {
+                    valid_original_indices.push(i);
+                    valid_rows.push(data.clone());
                 }
+                Err(e) => pre_validation_failures.push((i, format!("Validation failed: {}", e))),
+            }
+        }
 
-                match model.predict_batch(&request) {
-                    Ok(response) => {
-                        if let Some(id) = request_id {
-                            ApiResponse::success_with_id(response, id)
-                        } else {
-                            ApiResponse::success(response)
-                        }
-                    }
-                    Err(e) => {
-                        let error_msg = format!("Batch prediction failed: {}", e);
-                        if let Some(id) = request_id {
-                            ApiResponse::error_with_id(error_msg, id)
-                        } else {
-                            ApiResponse::error(error_msg)
-                        }
-                    }
+        // Every row was structurally invalid: there is nothing left for the model to predict,
+        // so this really is a whole-batch failure rather than a set of per-item ones.
+        if valid_rows.is_empty() {
+            let error_msg = format!(
+                "All {} item(s) in batch failed validation; first: {}",
+                pre_validation_failures.len(),
+                pre_validation_failures
+                    .first()
+                    .map(|(_, msg)| msg.as_str())
+                    .unwrap_or("unknown")
+            );
+            return error_response(error_msg, 400, request_id);
+        }
+
+        let filtered_request = BatchPredictionRequest {
+            data: valid_rows,
+            model_version: request.model_version.clone(),
+            options: request.options.clone(),
+        };
+
+        match model.predict_batch(&filtered_request) {
+            Ok(filtered_response) => {
+                // Remap the model's filtered-batch-space failure indices back to their original
+                // position in the caller's request, then merge with the pre-validation failures
+                // (both already at original indices) and sort for a deterministic, readable
+                // ordering. `predictions` needs no remapping: it's already in original relative
+                // order, since `valid_rows` is a strict order-preserving subsequence of
+                // `request.data` and the model itself preserves row order.
+                let mut failed_items = pre_validation_failures;
+                failed_items.extend(filtered_response.summary.failed_items.iter().map(
+                    |(filtered_idx, message)| {
+                        let original_idx = valid_original_indices
+                            .get(*filtered_idx)
+                            .copied()
+                            .unwrap_or(*filtered_idx);
+                        (original_idx, message.clone())
+                    },
+                ));
+                failed_items.sort_by_key(|(idx, _)| *idx);
+
+                let response = BatchPredictionResponse {
+                    predictions: filtered_response.predictions,
+                    summary: BatchProcessingSummary {
+                        total_predictions: request.data.len(),
+                        successful_predictions: filtered_response.summary.successful_predictions,
+                        failed_predictions: failed_items.len(),
+                        total_processing_time_ms: filtered_response
+                            .summary
+                            .total_processing_time_ms,
+                        avg_processing_time_ms: filtered_response.summary.avg_processing_time_ms,
+                        failed_items,
+                    },
+                };
+
+                match request_id {
+                    Some(id) => ApiResponse::success_with_id(response, id),
+                    None => ApiResponse::success(response),
                 }
             }
             Err(e) => {
-                let error_msg = format!("Model not found: {}", e);
-                if let Some(id) = request_id {
-                    ApiResponse::error_with_id(error_msg, id)
-                } else {
-                    ApiResponse::error(error_msg)
-                }
+                let status = classify_error(&e);
+                let error_msg = format!("Batch prediction failed: {}", e);
+                error_response(error_msg, status, request_id)
             }
         }
     }
@@ -597,14 +732,23 @@ impl RequestValidator {
         Uuid::new_v4().to_string()
     }
 
-    /// Generate request ID (fallback when serving feature is disabled)
+    /// Generate request ID (fallback when the `serving` feature -- and therefore `uuid` -- is
+    /// unavailable).
+    ///
+    /// Combines a millisecond timestamp (for human-readable, roughly chronological ordering)
+    /// with a process-lifetime atomic counter, so IDs are always unique within this process
+    /// even when multiple requests land in the same millisecond -- a real possibility under any
+    /// meaningful load, and one the previous timestamp-only scheme did not protect against.
     #[cfg(not(feature = "serving"))]
     pub fn generate_request_id() -> String {
+        static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let sequence = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
         let millis = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_millis())
             .unwrap_or(0);
-        format!("req_{}", millis)
+        format!("req_{}_{}", millis, sequence)
     }
 
     /// Validate API key (if authentication is enabled)
@@ -811,5 +955,71 @@ mod tests {
 
         assert_eq!(predict_route.method, "POST");
         assert!(predict_route.body_required);
+    }
+
+    #[test]
+    fn test_generate_request_id_never_collides_in_a_tight_loop() {
+        // Regression for the pre-fix fallback (millisecond timestamp only), which could produce
+        // duplicate IDs for requests landing in the same millisecond under any real load.
+        let mut ids = std::collections::HashSet::new();
+        for _ in 0..500 {
+            assert!(
+                ids.insert(RequestValidator::generate_request_id()),
+                "generate_request_id produced a duplicate"
+            );
+        }
+    }
+
+    #[test]
+    fn test_classify_error_maps_variants_to_expected_status_codes() {
+        assert_eq!(classify_error(&Error::KeyNotFound("x".into())), 404);
+        assert_eq!(classify_error(&Error::InvalidInput("x".into())), 400);
+        assert_eq!(classify_error(&Error::DimensionMismatch("x".into())), 400);
+        assert_eq!(classify_error(&Error::NotImplemented("x".into())), 501);
+        assert_eq!(classify_error(&Error::Computation("x".into())), 500);
+    }
+
+    #[test]
+    fn test_error_with_status_carries_the_code() {
+        let response: ApiResponse<()> =
+            ApiResponse::error_with_status("not found".to_string(), 404, "req-1".to_string());
+        assert!(!response.success);
+        assert_eq!(response.error_code, Some(404));
+        assert_eq!(response.request_id, Some("req-1".to_string()));
+    }
+
+    #[test]
+    fn test_check_model_version_rejects_mismatch_but_allows_sentinels() {
+        use crate::ml::serving::serialization::{GenericServingModel, SerializableModel};
+        use crate::ml::serving::ModelMetadata;
+
+        let metadata = ModelMetadata {
+            name: "m".to_string(),
+            version: "1.2.0".to_string(),
+            model_type: "linear_regression".to_string(),
+            feature_names: vec!["x".to_string()],
+            target_name: None,
+            description: String::new(),
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            metrics: HashMap::new(),
+            metadata: HashMap::new(),
+        };
+        let mut parameters = HashMap::new();
+        parameters.insert("coefficients".to_string(), serde_json::json!([1.0]));
+        let serializable = SerializableModel {
+            schema_version: crate::ml::serving::serialization::CURRENT_SCHEMA_VERSION,
+            metadata,
+            parameters,
+            model_data: serde_json::json!({}),
+            preprocessing: None,
+            config: HashMap::new(),
+        };
+        let model = GenericServingModel::from_serializable(serializable).expect("model builds");
+
+        assert!(check_model_version(&model, &None).is_ok());
+        assert!(check_model_version(&model, &Some("latest".to_string())).is_ok());
+        assert!(check_model_version(&model, &Some("1.2.0".to_string())).is_ok());
+        assert!(check_model_version(&model, &Some("9.9.9".to_string())).is_err());
     }
 }

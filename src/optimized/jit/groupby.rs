@@ -4,10 +4,7 @@
 
 use super::config::ParallelConfig;
 use super::core::{JitCompilable, JitFunction};
-use super::parallel::{
-    parallel_max_f64, parallel_mean_f64_value, parallel_min_f64, parallel_std_f64_value,
-    parallel_sum_f64,
-};
+use super::parallel::{parallel_mean_f64_value, parallel_std_f64_value, parallel_sum_f64};
 use crate::error::Result;
 use crate::optimized::split_dataframe::core::OptimizedDataFrame;
 use crate::optimized::split_dataframe::group::{AggregateOp, CustomAggregation, GroupBy};
@@ -312,7 +309,7 @@ where
     }
 
     /// Create a new JIT aggregation with parallel execution
-    pub fn parallel(name: impl Into<String>, func: F, config: Option<ParallelConfig>) -> Self {
+    pub fn parallel(name: impl Into<String>, func: F, _config: Option<ParallelConfig>) -> Self {
         let name_str = name.into();
         let jit_func = super::core::jit_f64(name_str.clone(), func).without_jit(); // Disable JIT for custom aggregations
         Self {
@@ -449,7 +446,6 @@ pub mod aggregations {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::optimized::split_dataframe::core::OptimizedDataFrame;
 
     #[test]
     fn test_jit_aggregation() {

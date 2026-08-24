@@ -4,6 +4,7 @@
 //! previous organization of the schema_validator.rs file.
 
 // Re-export all types from the new modules
+#[allow(unused_imports)] // backward-compat re-export
 pub use crate::distributed::schema_validator::{are_join_compatible, SchemaValidator};
 
 // The following is just to ensure documentation clarity in case someone is using
@@ -12,4 +13,5 @@ pub use crate::distributed::schema_validator::{are_join_compatible, SchemaValida
     since = "0.1.0",
     note = "Use the specific modules instead: schema_validator::core, schema_validator::validation, etc."
 )]
+#[allow(dead_code)] // backward-compat alias
 pub type Deprecated = ();

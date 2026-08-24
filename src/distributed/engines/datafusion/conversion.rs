@@ -1,22 +1,41 @@
 //! # Conversion Utilities for DataFusion
 //!
 //! This module provides utilities for converting between PandRS and DataFusion data types.
+//!
+//! ## Column representation note
+//!
+//! `crate::dataframe::DataFrame` stores every column as a boxed `Series<T>`.
+//! `Series<T>` is a plain `Vec<T>` and has **no null slot**, and the base
+//! DataFrame has no typed *and* nullable column type its own machinery reads
+//! back. Therefore [`record_batches_to_dataframe`] materialises:
+//!
+//! * **null-free** Arrow columns as a fully typed `Series<T>` (e.g. `Int64`
+//!   becomes `Series<i64>`, `Float64` becomes `Series<f64>`, `Boolean` becomes
+//!   `Series<bool>`), preserving the exact value with no `f64` round-trip; and
+//! * **null-containing** columns as a `Series<String>` where a null is the
+//!   empty string `""` — the representation that the reverse conversion
+//!   (`determine_arrow_type`/`build_array_from_dataframe`) and the sibling
+//!   Flight conversion both treat as null. This preserves NA/null semantics
+//!   losslessly even though the element type is rendered textually.
+//!
+//! Real string / temporal columns are always materialised as `Series<String>`
+//! (their natural textual form) with `""` for null.
 
 #[cfg(feature = "distributed")]
 use crate::dataframe::DataFrame;
 #[cfg(feature = "distributed")]
 use crate::error::{Error, Result};
 #[cfg(feature = "distributed")]
-use crate::na::NA;
-#[cfg(feature = "distributed")]
 use crate::series::Series;
 #[cfg(feature = "distributed")]
 use arrow::array::{
-    Array, ArrayRef, BooleanArray, Float64Array, Int64Array, NullArray, StringArray,
-    TimestampNanosecondArray,
+    Array, ArrayRef, BooleanArray, Date32Array, Date64Array, Float32Array, Float64Array,
+    Int16Array, Int32Array, Int64Array, Int8Array, LargeStringArray, StringArray, StringViewArray,
+    TimestampMicrosecondArray, TimestampMillisecondArray, TimestampNanosecondArray,
+    TimestampSecondArray, UInt16Array, UInt32Array, UInt64Array, UInt8Array,
 };
 #[cfg(feature = "distributed")]
-use arrow::datatypes::{DataType, Field, Schema, TimeUnit};
+use arrow::datatypes::{DataType, Field, TimeUnit};
 #[cfg(feature = "distributed")]
 use std::sync::Arc;
 
@@ -38,7 +57,7 @@ pub fn dataframe_to_record_batches(
     let mut fields = Vec::new();
     let column_names = df.column_names();
 
-    for column_name in &column_names {
+    for column_name in column_names {
         // Determine field type by examining column data
         let field_type = determine_arrow_type(df, column_name)?;
         let field = Field::new(column_name, field_type, true); // Allow nulls
@@ -50,7 +69,8 @@ pub fn dataframe_to_record_batches(
 
     // Split data into batches
     let total_rows = df.nrows();
-    let num_batches = (total_rows + batch_size - 1) / batch_size;
+    let batch_size = std::cmp::max(1, batch_size);
+    let num_batches = total_rows.div_ceil(batch_size);
 
     for batch_idx in 0..num_batches {
         let start_row = batch_idx * batch_size;
@@ -60,7 +80,7 @@ pub fn dataframe_to_record_batches(
         // Build arrays for this batch
         let mut arrays: Vec<ArrayRef> = Vec::new();
 
-        for column_name in &column_names {
+        for column_name in column_names {
             let array = build_array_from_dataframe(df, column_name, start_row, batch_row_count)?;
             arrays.push(array);
         }
@@ -73,7 +93,11 @@ pub fn dataframe_to_record_batches(
     Ok(batches)
 }
 
-/// Converts Arrow record batches to a PandRS DataFrame
+/// Converts Arrow record batches to a PandRS DataFrame.
+///
+/// Each column is materialised as a typed `Series<T>` when it contains no
+/// nulls, or as a null-preserving `Series<String>` (empty string = null) when
+/// it does. See the module-level documentation for the rationale.
 #[cfg(feature = "distributed")]
 pub fn record_batches_to_dataframe(
     batches: &[arrow::record_batch::RecordBatch],
@@ -85,290 +109,308 @@ pub fn record_batches_to_dataframe(
     let schema = batches[0].schema();
     let mut df = DataFrame::new();
 
-    // Process each column
     for (col_idx, field) in schema.fields().iter().enumerate() {
         let name = field.name();
-        let data_type = field.data_type();
-
-        match data_type {
-            DataType::Boolean => {
-                let values = extract_boolean_values(batches, col_idx)?;
-                let series = Series::new(
-                    values.into_iter().map(|v| format!("{:?}", v)).collect(),
-                    Some(name.clone()),
-                )?;
-                df.add_column(name.clone(), series)?;
-            }
-            DataType::Int64 => {
-                let values = extract_int64_values(batches, col_idx)?;
-                let series = Series::new(
-                    values.into_iter().map(|v| format!("{:?}", v)).collect(),
-                    Some(name.clone()),
-                )?;
-                df.add_column(name.clone(), series)?;
-            }
-            DataType::Float64 => {
-                let values = extract_float64_values(batches, col_idx)?;
-                let series = Series::new(
-                    values.into_iter().map(|v| format!("{:?}", v)).collect(),
-                    Some(name.clone()),
-                )?;
-                df.add_column(name.clone(), series)?;
-            }
-            DataType::Utf8 => {
-                let values = extract_string_values(batches, col_idx)?;
-                let series = Series::new(
-                    values.into_iter().map(|v| format!("{:?}", v)).collect(),
-                    Some(name.clone()),
-                )?;
-                df.add_column(name.clone(), series)?;
-            }
-            DataType::Timestamp(TimeUnit::Nanosecond, _) => {
-                let values = extract_timestamp_values(batches, col_idx)?;
-                let series = Series::new(
-                    values.into_iter().map(|v| format!("{:?}", v)).collect(),
-                    Some(name.clone()),
-                )?;
-                df.add_column(name.clone(), series)?;
-            }
-            _ => {
-                return Err(Error::InvalidInput(format!(
-                    "Unsupported Arrow data type: {}",
-                    data_type
-                )));
-            }
-        }
+        add_column_from_batches(&mut df, batches, col_idx, name, field.data_type())?;
     }
 
     Ok(df)
 }
 
-/// Extracts boolean values from record batches
+/// Returns `true` if the column at `col_idx` contains at least one null across
+/// all batches.
 #[cfg(feature = "distributed")]
-fn extract_boolean_values(
-    batches: &[arrow::record_batch::RecordBatch],
-    col_idx: usize,
-) -> Result<Vec<NA<f64>>> {
-    let mut values = Vec::new();
-
-    for batch in batches {
-        let array = batch.column(col_idx);
-        if let Some(boolean_array) = array.as_any().downcast_ref::<BooleanArray>() {
-            for i in 0..boolean_array.len() {
-                if boolean_array.is_null(i) {
-                    values.push(NA::NA);
-                } else {
-                    let val = if boolean_array.value(i) { 1.0 } else { 0.0 };
-                    values.push(NA::Value(val));
-                }
-            }
-        } else {
-            return Err(Error::InvalidInput(
-                "Column is not a boolean array".to_string(),
-            ));
-        }
-    }
-
-    Ok(values)
+fn column_has_nulls(batches: &[arrow::record_batch::RecordBatch], col_idx: usize) -> bool {
+    batches.iter().any(|b| b.column(col_idx).null_count() > 0)
 }
 
-/// Extracts int64 values from record batches
+/// Extracts one typed primitive column and appends it to `df`, choosing a typed
+/// `Series<T>` (null-free) or a `Series<String>` fallback (has nulls).
 #[cfg(feature = "distributed")]
-fn extract_int64_values(
-    batches: &[arrow::record_batch::RecordBatch],
-    col_idx: usize,
-) -> Result<Vec<NA<f64>>> {
-    let mut values = Vec::new();
-
-    for batch in batches {
-        let array = batch.column(col_idx);
-        if let Some(int_array) = array.as_any().downcast_ref::<Int64Array>() {
-            for i in 0..int_array.len() {
-                if int_array.is_null(i) {
-                    values.push(NA::NA);
-                } else {
-                    values.push(NA::Value(int_array.value(i) as f64));
-                }
-            }
-        } else {
-            return Err(Error::InvalidInput(
-                "Column is not an int64 array".to_string(),
-            ));
-        }
-    }
-
-    Ok(values)
-}
-
-/// Extracts float64 values from record batches  
-#[cfg(feature = "distributed")]
-fn extract_float64_values(
-    batches: &[arrow::record_batch::RecordBatch],
-    col_idx: usize,
-) -> Result<Vec<NA<f64>>> {
-    let mut values = Vec::new();
-
-    for batch in batches {
-        let array = batch.column(col_idx);
-        if let Some(float_array) = array.as_any().downcast_ref::<Float64Array>() {
-            for i in 0..float_array.len() {
-                if float_array.is_null(i) {
-                    values.push(NA::NA);
-                } else {
-                    values.push(NA::Value(float_array.value(i)));
-                }
-            }
-        } else {
-            return Err(Error::InvalidInput(
-                "Column is not a float64 array".to_string(),
-            ));
-        }
-    }
-
-    Ok(values)
-}
-
-/// Extracts string values from record batches
-#[cfg(feature = "distributed")]
-fn extract_string_values(
-    batches: &[arrow::record_batch::RecordBatch],
-    col_idx: usize,
-) -> Result<Vec<NA<f64>>> {
-    let mut values = Vec::new();
-
-    for batch in batches {
-        let array = batch.column(col_idx);
-        if let Some(string_array) = array.as_any().downcast_ref::<StringArray>() {
-            for i in 0..string_array.len() {
-                if string_array.is_null(i) {
-                    values.push(NA::NA);
-                } else {
-                    // Convert string to f64 if possible, otherwise use hash
-                    let string_val = string_array.value(i);
-                    if let Ok(num_val) = string_val.parse::<f64>() {
-                        values.push(NA::Value(num_val));
+macro_rules! add_primitive_column {
+    ($df:expr, $batches:expr, $col_idx:expr, $name:expr, $arr_ty:ty, $rust_ty:ty) => {{
+        if column_has_nulls($batches, $col_idx) {
+            let mut values: Vec<String> = Vec::new();
+            for batch in $batches {
+                let array = downcast::<$arr_ty>(batch.column($col_idx), $name)?;
+                for i in 0..array.len() {
+                    if array.is_null(i) {
+                        values.push(String::new());
                     } else {
-                        // Use string hash as numeric value
-                        use std::collections::hash_map::DefaultHasher;
-                        use std::hash::{Hash, Hasher};
-                        let mut hasher = DefaultHasher::new();
-                        string_val.hash(&mut hasher);
-                        values.push(NA::Value(hasher.finish() as f64));
+                        values.push(array.value(i).to_string());
                     }
                 }
             }
+            $df.add_column(
+                $name.to_string(),
+                Series::new(values, Some($name.to_string()))?,
+            )?;
         } else {
-            return Err(Error::InvalidInput(
-                "Column is not a string array".to_string(),
-            ));
-        }
-    }
-
-    Ok(values)
-}
-
-/// Extracts timestamp values from record batches
-#[cfg(feature = "distributed")]
-fn extract_timestamp_values(
-    batches: &[arrow::record_batch::RecordBatch],
-    col_idx: usize,
-) -> Result<Vec<NA<f64>>> {
-    let mut values = Vec::new();
-
-    for batch in batches {
-        let array = batch.column(col_idx);
-        if let Some(timestamp_array) = array.as_any().downcast_ref::<TimestampNanosecondArray>() {
-            for i in 0..timestamp_array.len() {
-                if timestamp_array.is_null(i) {
-                    values.push(NA::NA);
-                } else {
-                    values.push(NA::Value(timestamp_array.value(i) as f64));
+            let mut values: Vec<$rust_ty> = Vec::new();
+            for batch in $batches {
+                let array = downcast::<$arr_ty>(batch.column($col_idx), $name)?;
+                for i in 0..array.len() {
+                    values.push(array.value(i));
                 }
             }
-        } else {
-            return Err(Error::InvalidInput(
-                "Column is not a timestamp array".to_string(),
-            ));
+            $df.add_column(
+                $name.to_string(),
+                Series::new(values, Some($name.to_string()))?,
+            )?;
+        }
+    }};
+}
+
+/// Downcasts an Arrow array to a concrete array type, returning a typed error.
+#[cfg(feature = "distributed")]
+fn downcast<'a, A: 'static>(array: &'a ArrayRef, name: &str) -> Result<&'a A> {
+    array.as_any().downcast_ref::<A>().ok_or_else(|| {
+        Error::InvalidInput(format!(
+            "Column '{}' did not have the expected Arrow array layout for {}",
+            name,
+            std::any::type_name::<A>()
+        ))
+    })
+}
+
+/// Dispatches on the Arrow data type and appends the corresponding typed column.
+#[cfg(feature = "distributed")]
+fn add_column_from_batches(
+    df: &mut DataFrame,
+    batches: &[arrow::record_batch::RecordBatch],
+    col_idx: usize,
+    name: &str,
+    data_type: &DataType,
+) -> Result<()> {
+    match data_type {
+        DataType::Boolean => add_primitive_column!(df, batches, col_idx, name, BooleanArray, bool),
+        DataType::Int8 => add_primitive_column!(df, batches, col_idx, name, Int8Array, i8),
+        DataType::Int16 => add_primitive_column!(df, batches, col_idx, name, Int16Array, i16),
+        DataType::Int32 => add_primitive_column!(df, batches, col_idx, name, Int32Array, i32),
+        DataType::Int64 => add_primitive_column!(df, batches, col_idx, name, Int64Array, i64),
+        DataType::UInt8 => add_primitive_column!(df, batches, col_idx, name, UInt8Array, u8),
+        DataType::UInt16 => add_primitive_column!(df, batches, col_idx, name, UInt16Array, u16),
+        DataType::UInt32 => add_primitive_column!(df, batches, col_idx, name, UInt32Array, u32),
+        DataType::UInt64 => add_primitive_column!(df, batches, col_idx, name, UInt64Array, u64),
+        DataType::Float32 => add_primitive_column!(df, batches, col_idx, name, Float32Array, f32),
+        DataType::Float64 => add_primitive_column!(df, batches, col_idx, name, Float64Array, f64),
+        DataType::Utf8 => add_string_column::<StringArray>(df, batches, col_idx, name)?,
+        DataType::LargeUtf8 => add_string_column::<LargeStringArray>(df, batches, col_idx, name)?,
+        DataType::Utf8View => add_string_column::<StringViewArray>(df, batches, col_idx, name)?,
+        DataType::Date32 => {
+            let mut values: Vec<String> = Vec::new();
+            for batch in batches {
+                let array = downcast::<Date32Array>(batch.column(col_idx), name)?;
+                for i in 0..array.len() {
+                    if array.is_null(i) {
+                        values.push(String::new());
+                    } else {
+                        values.push(
+                            array
+                                .value_as_date(i)
+                                .map(|d| d.format("%Y-%m-%d").to_string())
+                                .unwrap_or_default(),
+                        );
+                    }
+                }
+            }
+            df.add_column(
+                name.to_string(),
+                Series::new(values, Some(name.to_string()))?,
+            )?;
+        }
+        DataType::Date64 => {
+            let mut values: Vec<String> = Vec::new();
+            for batch in batches {
+                let array = downcast::<Date64Array>(batch.column(col_idx), name)?;
+                for i in 0..array.len() {
+                    if array.is_null(i) {
+                        values.push(String::new());
+                    } else {
+                        values.push(
+                            array
+                                .value_as_date(i)
+                                .map(|d| d.format("%Y-%m-%d").to_string())
+                                .unwrap_or_default(),
+                        );
+                    }
+                }
+            }
+            df.add_column(
+                name.to_string(),
+                Series::new(values, Some(name.to_string()))?,
+            )?;
+        }
+        DataType::Timestamp(unit, _tz) => {
+            let rendered = render_timestamps(batches, col_idx, name, *unit)?;
+            df.add_column(
+                name.to_string(),
+                Series::new(rendered, Some(name.to_string()))?,
+            )?;
+        }
+        other => {
+            return Err(Error::NotImplemented(format!(
+                "Conversion of Arrow data type {} to a PandRS column is not implemented",
+                other
+            )));
         }
     }
+    Ok(())
+}
 
+/// Appends a string-like Arrow column as a `Series<String>`, preserving the real
+/// string value and mapping null to the empty string.
+#[cfg(feature = "distributed")]
+fn add_string_column<A>(
+    df: &mut DataFrame,
+    batches: &[arrow::record_batch::RecordBatch],
+    col_idx: usize,
+    name: &str,
+) -> Result<()>
+where
+    A: Array + 'static,
+    for<'a> &'a A: IntoIterator<Item = Option<&'a str>>,
+{
+    let mut values: Vec<String> = Vec::new();
+    for batch in batches {
+        let array = downcast::<A>(batch.column(col_idx), name)?;
+        for item in array.into_iter() {
+            match item {
+                Some(s) => values.push(s.to_string()),
+                None => values.push(String::new()),
+            }
+        }
+    }
+    df.add_column(
+        name.to_string(),
+        Series::new(values, Some(name.to_string()))?,
+    )?;
+    Ok(())
+}
+
+/// Renders a timestamp column to `YYYY-MM-DD HH:MM:SS%.f` strings (`""` for null).
+///
+/// The column layout is downcast once per batch (by unit); a null or an
+/// out-of-range value becomes the empty string.
+#[cfg(feature = "distributed")]
+fn render_timestamps(
+    batches: &[arrow::record_batch::RecordBatch],
+    col_idx: usize,
+    name: &str,
+    unit: TimeUnit,
+) -> Result<Vec<String>> {
+    let mut values: Vec<String> = Vec::new();
+    for batch in batches {
+        let col = batch.column(col_idx);
+        let len = col.len();
+        for i in 0..len {
+            let dt = match unit {
+                TimeUnit::Second => {
+                    downcast::<TimestampSecondArray>(col, name)?.value_as_datetime(i)
+                }
+                TimeUnit::Millisecond => {
+                    downcast::<TimestampMillisecondArray>(col, name)?.value_as_datetime(i)
+                }
+                TimeUnit::Microsecond => {
+                    downcast::<TimestampMicrosecondArray>(col, name)?.value_as_datetime(i)
+                }
+                TimeUnit::Nanosecond => {
+                    downcast::<TimestampNanosecondArray>(col, name)?.value_as_datetime(i)
+                }
+            };
+            if col.is_null(i) {
+                values.push(String::new());
+            } else {
+                match dt {
+                    Some(ndt) => values.push(ndt.format("%Y-%m-%d %H:%M:%S%.f").to_string()),
+                    None => values.push(String::new()),
+                }
+            }
+        }
+    }
     Ok(values)
 }
 
-/// Determines the Arrow data type for a DataFrame column
+/// Determines the Arrow data type for a DataFrame column.
+///
+/// The type is **derived from the declared pandrs `Series<T>` element type**
+/// whenever the column is a typed series (`Series<i64>`, `Series<f64>`,
+/// `Series<bool>`, …). Only genuinely textual `Series<String>` columns fall
+/// back to value probing, and that probe requires *every* non-empty sample to
+/// conform (rather than a majority vote) so that a single stray value cannot
+/// silently retype — and thereby null out — the rest of the column.
 #[cfg(feature = "distributed")]
 fn determine_arrow_type(df: &DataFrame, column_name: &str) -> Result<DataType> {
-    // Get a sample of values to determine type
-    let sample_size = std::cmp::min(100, df.nrows());
-
-    if sample_size == 0 {
-        return Ok(DataType::Utf8); // Default to string for empty columns
+    // 1. Derive directly from the declared Series<T> type when possible.
+    if df.get_column::<bool>(column_name).is_ok() {
+        return Ok(DataType::Boolean);
+    }
+    if df.get_column::<i64>(column_name).is_ok()
+        || df.get_column::<i32>(column_name).is_ok()
+        || df.get_column::<i16>(column_name).is_ok()
+        || df.get_column::<i8>(column_name).is_ok()
+        || df.get_column::<isize>(column_name).is_ok()
+        || df.get_column::<u64>(column_name).is_ok()
+        || df.get_column::<u32>(column_name).is_ok()
+        || df.get_column::<u16>(column_name).is_ok()
+        || df.get_column::<u8>(column_name).is_ok()
+        || df.get_column::<usize>(column_name).is_ok()
+    {
+        return Ok(DataType::Int64);
+    }
+    if df.get_column::<f64>(column_name).is_ok() || df.get_column::<f32>(column_name).is_ok() {
+        return Ok(DataType::Float64);
     }
 
-    // Try to get column values as strings first to analyze them
+    // 2. Textual column: probe the string values. Require all non-empty values
+    //    to conform to a candidate type.
     let string_values = df.get_column_string_values(column_name)?;
 
-    // Analyze the sample to determine type
-    let mut has_ints = 0;
-    let mut has_floats = 0;
-    let mut has_bools = 0;
-    let mut has_dates = 0;
-    let mut total_non_empty = 0;
+    let mut total_non_empty = 0usize;
+    let mut all_bool = true;
+    let mut all_int = true;
+    let mut all_float = true;
+    let mut all_date = true;
 
-    for value in string_values.iter().take(sample_size) {
+    for value in string_values.iter() {
         if value.is_empty() {
-            continue;
+            continue; // treated as null; does not constrain the type
         }
         total_non_empty += 1;
 
-        // Check for boolean
         let lower_val = value.to_lowercase();
-        if lower_val == "true" || lower_val == "false" || lower_val == "t" || lower_val == "f" {
-            has_bools += 1;
-            continue;
+        if !(lower_val == "true" || lower_val == "false" || lower_val == "t" || lower_val == "f") {
+            all_bool = false;
         }
-
-        // Check for integer
-        if value.parse::<i64>().is_ok() {
-            has_ints += 1;
-            continue;
+        if value.parse::<i64>().is_err() {
+            all_int = false;
         }
-
-        // Check for float
-        if value.parse::<f64>().is_ok() {
-            has_floats += 1;
-            continue;
+        if value.parse::<f64>().is_err() {
+            all_float = false;
         }
-
-        // Check for date/timestamp (basic patterns)
-        if value.contains('-') && (value.contains(':') || value.len() == 10) {
-            if chrono::DateTime::parse_from_rfc3339(value).is_ok()
-                || chrono::NaiveDateTime::parse_from_str(value, "%Y-%m-%d %H:%M:%S").is_ok()
-                || chrono::NaiveDate::parse_from_str(value, "%Y-%m-%d").is_ok()
-            {
-                has_dates += 1;
-                continue;
-            }
+        let is_date = chrono::DateTime::parse_from_rfc3339(value).is_ok()
+            || chrono::NaiveDateTime::parse_from_str(value, "%Y-%m-%d %H:%M:%S").is_ok()
+            || chrono::NaiveDateTime::parse_from_str(value, "%Y-%m-%d %H:%M:%S%.f").is_ok()
+            || chrono::NaiveDate::parse_from_str(value, "%Y-%m-%d").is_ok();
+        if !is_date {
+            all_date = false;
         }
     }
 
     if total_non_empty == 0 {
-        return Ok(DataType::Utf8); // Default to string for empty data
+        return Ok(DataType::Utf8); // Default to string for empty/all-null data
     }
 
-    // Determine type based on majority
-    let threshold = total_non_empty / 2; // At least 50% must match
-
-    if has_bools > threshold {
+    if all_bool {
         Ok(DataType::Boolean)
-    } else if has_dates > threshold {
-        Ok(DataType::Timestamp(TimeUnit::Nanosecond, None))
-    } else if has_ints > threshold {
+    } else if all_int {
         Ok(DataType::Int64)
-    } else if has_floats > threshold {
+    } else if all_float {
         Ok(DataType::Float64)
+    } else if all_date {
+        Ok(DataType::Timestamp(TimeUnit::Nanosecond, None))
     } else {
-        Ok(DataType::Utf8) // Default to string
+        Ok(DataType::Utf8)
     }
 }
 
@@ -433,25 +475,30 @@ fn build_array_from_dataframe(
                 if value.is_empty() {
                     builder.append_null();
                 } else {
-                    // Try to parse various timestamp formats
-                    let timestamp_nanos = if let Ok(dt) =
-                        chrono::DateTime::parse_from_rfc3339(value)
+                    // Parse various timestamp formats. A value that fails every
+                    // parse is a genuine null — never epoch 0 — so that an
+                    // unparseable timestamp is not silently materialised as
+                    // 1970-01-01.
+                    let parsed = if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(value) {
+                        dt.timestamp_nanos_opt()
+                    } else if let Ok(ndt) =
+                        chrono::NaiveDateTime::parse_from_str(value, "%Y-%m-%d %H:%M:%S%.f")
                     {
-                        dt.timestamp_nanos_opt().unwrap_or(0)
+                        ndt.and_utc().timestamp_nanos_opt()
                     } else if let Ok(ndt) =
                         chrono::NaiveDateTime::parse_from_str(value, "%Y-%m-%d %H:%M:%S")
                     {
-                        ndt.and_utc().timestamp_nanos_opt().unwrap_or(0)
+                        ndt.and_utc().timestamp_nanos_opt()
                     } else if let Ok(nd) = chrono::NaiveDate::parse_from_str(value, "%Y-%m-%d") {
                         nd.and_hms_opt(0, 0, 0)
-                            .unwrap_or_default()
-                            .and_utc()
-                            .timestamp_nanos_opt()
-                            .unwrap_or(0)
+                            .and_then(|dt| dt.and_utc().timestamp_nanos_opt())
                     } else {
-                        0 // Default timestamp
+                        None
                     };
-                    builder.append_value(timestamp_nanos);
+                    match parsed {
+                        Some(nanos) => builder.append_value(nanos),
+                        None => builder.append_null(),
+                    }
                 }
             }
             Ok(Arc::new(builder.finish()))

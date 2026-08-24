@@ -2,7 +2,7 @@
 #[cfg(feature = "visualization")]
 use plotters::prelude::*;
 #[cfg(feature = "visualization")]
-use scirs2_core::random::{rng, Rng, RngExt};
+use scirs2_core::random::{rng, RngExt};
 
 // Translated Japanese comments and strings into English
 #[cfg(feature = "visualization")]

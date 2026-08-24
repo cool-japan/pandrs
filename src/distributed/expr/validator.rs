@@ -5,7 +5,7 @@
 
 use super::core::{BinaryOperator, Expr, Literal, UnaryOperator};
 use super::projection::ColumnProjection;
-use super::schema::{ColumnMeta, ExprSchema};
+use super::schema::ExprSchema;
 use super::ExprDataType;
 use crate::error::{Error, Result};
 use std::collections::HashMap;

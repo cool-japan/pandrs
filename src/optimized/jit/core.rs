@@ -2,7 +2,7 @@
 //!
 //! This module provides the core JIT compilation functionality for DataFrame operations.
 
-use super::{JitError, JitResult};
+use super::JitResult;
 
 /// A trait for types that can be JIT compiled
 pub trait JitCompilable<T> {

@@ -7,14 +7,66 @@
 //! - AdaBoost
 
 use crate::dataframe::DataFrame;
+use crate::dataframe::PandasCompatExt;
 use crate::error::{Error, Result};
 use crate::ml::models::tree::{
-    DecisionTreeClassifier, DecisionTreeConfig, DecisionTreeConfigBuilder, DecisionTreeRegressor,
-    SplitCriterion,
+    median_of, DecisionTreeClassifier, DecisionTreeConfig, DecisionTreeConfigBuilder,
+    DecisionTreeRegressor, SplitCriterion,
 };
 use crate::ml::models::{ModelEvaluator, ModelMetrics, SupervisedModel};
+use rayon::prelude::*;
+use scirs2_core::random::rngs::StdRng;
+use scirs2_core::random::RngExt;
+use scirs2_core::random::SeedableRng;
+use scirs2_core::random::SliceRandom;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+
+/// Build a thread count from a `RandomForestConfig::n_jobs` value (`0` means
+/// "use all available cores", matching the field's documented convention).
+fn resolve_n_jobs(n_jobs: usize) -> usize {
+    if n_jobs == 0 {
+        num_cpus::get().max(1)
+    } else {
+        n_jobs
+    }
+}
+
+/// Run `build_one(tree_idx)` for every `0..n_estimators`, honoring
+/// `n_jobs`: sequentially when `n_jobs == 1` (the default — identical to the
+/// pre-parallel behavior, so single-threaded callers see no change), or via
+/// a dedicated rayon thread pool sized to `resolve_n_jobs(n_jobs)` when
+/// `n_jobs != 1`. Each tree's bootstrap sample and split search already draw
+/// from a seed derived independently per `tree_idx`
+/// (`config.random_seed.unwrap_or(42).wrapping_add(tree_idx)`), so fitting
+/// them concurrently changes only wall-clock time, never which trees get
+/// built. Previously `n_jobs` was accepted into the config and never read
+/// anywhere.
+fn build_trees_honoring_n_jobs<T, F>(
+    n_estimators: usize,
+    n_jobs: usize,
+    build_one: F,
+) -> Result<Vec<T>>
+where
+    T: Send,
+    F: Fn(usize) -> Result<T> + Sync + Send,
+{
+    if n_jobs == 1 {
+        return (0..n_estimators).map(build_one).collect();
+    }
+
+    let threads = resolve_n_jobs(n_jobs);
+    let pool = rayon::ThreadPoolBuilder::new()
+        .num_threads(threads)
+        .build()
+        .map_err(|e| {
+            Error::InvalidOperation(format!(
+                "Failed to build a {}-thread pool for n_jobs={}: {}",
+                threads, n_jobs, e
+            ))
+        })?;
+    pool.install(|| (0..n_estimators).into_par_iter().map(build_one).collect())
+}
 
 /// Configuration for Random Forest
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -115,6 +167,13 @@ impl RandomForestConfigBuilder {
         self
     }
 
+    /// Number of parallel jobs to use when fitting trees (`0` = use all
+    /// available cores, matching scikit-learn's `n_jobs` convention).
+    pub fn n_jobs(mut self, n_jobs: usize) -> Self {
+        self.config.n_jobs = n_jobs;
+        self
+    }
+
     pub fn build(self) -> RandomForestConfig {
         self.config
     }
@@ -127,7 +186,7 @@ impl Default for RandomForestConfigBuilder {
 }
 
 /// Random Forest Classifier
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct RandomForestClassifier {
     config: RandomForestConfig,
     trees: Vec<DecisionTreeClassifier>,
@@ -169,17 +228,91 @@ impl RandomForestClassifier {
         self.oob_score_
     }
 
-    /// Bootstrap sample indices
+    /// Bootstrap sample indices: `max_samples` (default: `n_samples`) i.i.d.
+    /// draws *with replacement* from `0..n_samples`, seeded deterministically
+    /// per tree so the whole forest is reproducible from `config.random_seed`
+    /// (default base seed `42`, matching the per-tree `DecisionTreeConfig`
+    /// seeding already used in `fit`). This is a real bootstrap: each row has
+    /// an independent `1/n` chance per draw, so about `1 - (1-1/n)^n ≈ 0.632`
+    /// of the distinct rows are expected to appear at least once. Previously
+    /// this was an arithmetic progression (`seed*1103515245 + i*12345) % n`)
+    /// that produced the same handful of rows for every `i`, and even
+    /// overflowed `usize` multiplication for large seeds — there was no
+    /// data-level variance between trees at all.
     fn bootstrap_indices(&self, n_samples: usize, tree_idx: usize) -> Vec<usize> {
-        let seed = self.config.random_seed.unwrap_or(42) + tree_idx as u64;
-        let max_samples = self.config.max_samples.unwrap_or(n_samples);
-
-        let mut indices = Vec::with_capacity(max_samples);
-        for i in 0..max_samples {
-            let idx = ((seed as usize * 1103515245 + i * 12345) % n_samples) as usize;
-            indices.push(idx);
+        if n_samples == 0 {
+            return Vec::new();
         }
-        indices
+        let seed = self
+            .config
+            .random_seed
+            .unwrap_or(42)
+            .wrapping_add(tree_idx as u64);
+        let mut rng = StdRng::seed_from_u64(seed);
+        let max_samples = self.config.max_samples.unwrap_or(n_samples);
+        (0..max_samples)
+            .map(|_| rng.random_range(0..n_samples))
+            .collect()
+    }
+
+    /// Estimate accuracy from out-of-bag predictions: for each training row,
+    /// average the class-probability vectors of only the trees whose
+    /// bootstrap sample (see [`bootstrap_indices`](Self::bootstrap_indices))
+    /// did *not* include that row, then compare the resulting argmax to the
+    /// true label. Rows that happened to be in-bag for every tree contribute
+    /// no estimate and are excluded from the denominator (matching
+    /// scikit-learn's handling of the same situation), rather than being
+    /// silently counted as correct or incorrect.
+    fn compute_oob_accuracy(&self, train_data: &DataFrame, y: &[f64]) -> Result<f64> {
+        let n_samples = y.len();
+        let mut in_bag: Vec<HashSet<usize>> = Vec::with_capacity(self.trees.len());
+        let mut tree_probs: Vec<Vec<Vec<f64>>> = Vec::with_capacity(self.trees.len());
+        for (tree_idx, tree) in self.trees.iter().enumerate() {
+            in_bag.push(
+                self.bootstrap_indices(n_samples, tree_idx)
+                    .into_iter()
+                    .collect(),
+            );
+            tree_probs.push(tree.predict_proba(train_data)?);
+        }
+
+        let mut correct = 0usize;
+        let mut scored = 0usize;
+        for i in 0..n_samples {
+            let mut avg_prob = vec![0.0f64; self.n_classes];
+            let mut n_oob_trees = 0usize;
+            for (tree_idx, probs) in tree_probs.iter().enumerate() {
+                if !in_bag[tree_idx].contains(&i) {
+                    for (acc, &p) in avg_prob.iter_mut().zip(&probs[i]) {
+                        *acc += p;
+                    }
+                    n_oob_trees += 1;
+                }
+            }
+            if n_oob_trees == 0 {
+                continue;
+            }
+            scored += 1;
+            let predicted_idx = avg_prob
+                .iter()
+                .enumerate()
+                .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+                .map(|(idx, _)| idx)
+                .unwrap_or(0);
+            let predicted = self.classes.get(predicted_idx).cloned().unwrap_or(0.0);
+            if (predicted - y[i]).abs() < 1e-10 {
+                correct += 1;
+            }
+        }
+
+        if scored == 0 {
+            return Err(Error::InvalidOperation(
+                "oob_score requested but every training row was in-bag for all trees; \
+                 increase n_estimators or decrease max_samples"
+                    .to_string(),
+            ));
+        }
+        Ok(correct as f64 / scored as f64)
     }
 
     /// Predict class probabilities
@@ -245,8 +378,9 @@ impl SupervisedModel for RandomForestClassifier {
     fn fit(&mut self, train_data: &DataFrame, target_column: &str) -> Result<()> {
         self.feature_names = train_data
             .column_names()
-            .into_iter()
-            .filter(|c| c != target_column)
+            .iter()
+            .filter(|c| c.as_str() != target_column)
+            .cloned()
             .collect();
 
         if self.feature_names.is_empty() {
@@ -264,6 +398,14 @@ impl SupervisedModel for RandomForestClassifier {
         self.classes = classes;
         self.n_classes = self.classes.len();
 
+        if self.config.oob_score && !self.config.bootstrap {
+            return Err(Error::InvalidInput(
+                "oob_score=true requires bootstrap=true (out-of-bag rows only exist when \
+                 trees are fit on bootstrap resamples)"
+                    .to_string(),
+            ));
+        }
+
         let n_samples = train_data.row_count();
         let n_features = self.feature_names.len();
 
@@ -273,37 +415,47 @@ impl SupervisedModel for RandomForestClassifier {
             .max_features
             .unwrap_or((n_features as f64).sqrt().ceil() as usize);
 
-        // Build trees
-        self.trees.clear();
-        for tree_idx in 0..self.config.n_estimators {
-            // Create tree config
+        // Build trees, honoring `n_jobs` (sequential when 1, a scoped rayon
+        // pool otherwise). Each tree's bootstrap draw and split search are
+        // seeded solely from `tree_idx`, so building them out of order or
+        // concurrently does not change the forest that results.
+        let bootstrap = self.config.bootstrap;
+        let random_seed_base = self.config.random_seed.unwrap_or(42);
+        let max_depth = self.config.max_depth.unwrap_or(usize::MAX);
+        let min_samples_split = self.config.min_samples_split;
+        let min_samples_leaf = self.config.min_samples_leaf;
+        let n_estimators = self.config.n_estimators;
+        let n_jobs = self.config.n_jobs;
+        self.trees = build_trees_honoring_n_jobs(n_estimators, n_jobs, |tree_idx| {
             let tree_config = DecisionTreeConfigBuilder::new()
-                .max_depth(self.config.max_depth.unwrap_or(usize::MAX))
-                .min_samples_split(self.config.min_samples_split)
-                .min_samples_leaf(self.config.min_samples_leaf)
+                .max_depth(max_depth)
+                .min_samples_split(min_samples_split)
+                .min_samples_leaf(min_samples_leaf)
                 .max_features(max_features)
-                .random_seed(self.config.random_seed.unwrap_or(42) + tree_idx as u64)
+                .random_seed(random_seed_base.wrapping_add(tree_idx as u64))
                 .build();
 
             let mut tree = DecisionTreeClassifier::new(tree_config);
 
-            // Bootstrap sample
-            let indices = if self.config.bootstrap {
+            let indices = if bootstrap {
                 self.bootstrap_indices(n_samples, tree_idx)
             } else {
                 (0..n_samples).collect()
             };
 
-            // Create bootstrap DataFrame
             let bootstrap_data = train_data.sample(&indices)?;
-
-            // Fit tree
             tree.fit(&bootstrap_data, target_column)?;
-            self.trees.push(tree);
-        }
+            Ok(tree)
+        })?;
 
         self.calculate_feature_importances();
         self.is_fitted = true;
+
+        self.oob_score_ = if self.config.oob_score {
+            Some(self.compute_oob_accuracy(train_data, &y)?)
+        } else {
+            None
+        };
 
         Ok(())
     }
@@ -354,11 +506,11 @@ impl ModelEvaluator for RandomForestClassifier {
 
     fn cross_validate(
         &self,
-        _data: &DataFrame,
-        _target: &str,
-        _folds: usize,
+        data: &DataFrame,
+        target: &str,
+        folds: usize,
     ) -> Result<Vec<ModelMetrics>> {
-        Ok(vec![])
+        crate::ml::models::contiguous_kfold_cross_validate(self, data, target, folds)
     }
 }
 
@@ -391,17 +543,98 @@ impl RandomForestRegressor {
         Self::new(RandomForestConfig::default())
     }
 
-    /// Bootstrap sample indices
-    fn bootstrap_indices(&self, n_samples: usize, tree_idx: usize) -> Vec<usize> {
-        let seed = self.config.random_seed.unwrap_or(42) + tree_idx as u64;
-        let max_samples = self.config.max_samples.unwrap_or(n_samples);
+    /// Get OOB score (R²), if `config.oob_score` was set before fitting.
+    pub fn oob_score(&self) -> Option<f64> {
+        self.oob_score_
+    }
 
-        let mut indices = Vec::with_capacity(max_samples);
-        for i in 0..max_samples {
-            let idx = ((seed as usize * 1103515245 + i * 12345) % n_samples) as usize;
-            indices.push(idx);
+    /// Bootstrap sample indices: see
+    /// [`RandomForestClassifier::bootstrap_indices`] for the rationale — real
+    /// i.i.d. draws with replacement, seeded per tree from `config.random_seed`.
+    fn bootstrap_indices(&self, n_samples: usize, tree_idx: usize) -> Vec<usize> {
+        if n_samples == 0 {
+            return Vec::new();
         }
-        indices
+        let seed = self
+            .config
+            .random_seed
+            .unwrap_or(42)
+            .wrapping_add(tree_idx as u64);
+        let mut rng = StdRng::seed_from_u64(seed);
+        let max_samples = self.config.max_samples.unwrap_or(n_samples);
+        (0..max_samples)
+            .map(|_| rng.random_range(0..n_samples))
+            .collect()
+    }
+
+    /// Calculate feature importances by averaging across trees (mirrors
+    /// [`RandomForestClassifier::calculate_feature_importances`]; the
+    /// regressor previously never populated this field at all, so
+    /// `feature_importances()` always returned `None` regardless of fit).
+    fn calculate_feature_importances(&mut self) {
+        let mut importances: HashMap<String, f64> = HashMap::new();
+
+        for tree in &self.trees {
+            if let Some(tree_importances) = tree.feature_importances() {
+                for (feature, importance) in tree_importances {
+                    *importances.entry(feature).or_insert(0.0) += importance;
+                }
+            }
+        }
+
+        let n_trees = self.trees.len() as f64;
+        for importance in importances.values_mut() {
+            *importance /= n_trees;
+        }
+
+        self.feature_importances_ = Some(importances);
+    }
+
+    /// Estimate R² from out-of-bag predictions, analogous to
+    /// [`RandomForestClassifier::compute_oob_accuracy`]: for each training
+    /// row, average the predictions of only the trees that did not see that
+    /// row in their bootstrap sample, then score the resulting predictions
+    /// against the true targets. Rows in-bag for every tree are excluded.
+    fn compute_oob_r2(&self, train_data: &DataFrame, y: &[f64]) -> Result<f64> {
+        let n_samples = y.len();
+        let mut in_bag: Vec<HashSet<usize>> = Vec::with_capacity(self.trees.len());
+        let mut tree_preds: Vec<Vec<f64>> = Vec::with_capacity(self.trees.len());
+        for (tree_idx, tree) in self.trees.iter().enumerate() {
+            in_bag.push(
+                self.bootstrap_indices(n_samples, tree_idx)
+                    .into_iter()
+                    .collect(),
+            );
+            tree_preds.push(tree.predict(train_data)?);
+        }
+
+        let mut oob_pred: Vec<f64> = Vec::new();
+        let mut oob_true: Vec<f64> = Vec::new();
+        for i in 0..n_samples {
+            let mut sum = 0.0f64;
+            let mut n_oob_trees = 0usize;
+            for (tree_idx, preds) in tree_preds.iter().enumerate() {
+                if !in_bag[tree_idx].contains(&i) {
+                    sum += preds[i];
+                    n_oob_trees += 1;
+                }
+            }
+            if n_oob_trees == 0 {
+                continue;
+            }
+            oob_pred.push(sum / n_oob_trees as f64);
+            oob_true.push(y[i]);
+        }
+
+        if oob_true.is_empty() {
+            return Err(Error::InvalidOperation(
+                "oob_score requested but every training row was in-bag for all trees; \
+                 increase n_estimators or decrease max_samples"
+                    .to_string(),
+            ));
+        }
+
+        Ok(crate::ml::models::r2_score_guarded(&oob_pred, &oob_true))
     }
 }
 
@@ -409,9 +642,22 @@ impl SupervisedModel for RandomForestRegressor {
     fn fit(&mut self, train_data: &DataFrame, target_column: &str) -> Result<()> {
         self.feature_names = train_data
             .column_names()
-            .into_iter()
-            .filter(|c| c != target_column)
+            .iter()
+            .filter(|c| c.as_str() != target_column)
+            .cloned()
             .collect();
+
+        if self.config.oob_score && !self.config.bootstrap {
+            return Err(Error::InvalidInput(
+                "oob_score=true requires bootstrap=true (out-of-bag rows only exist when \
+                 trees are fit on bootstrap resamples)"
+                    .to_string(),
+            ));
+        }
+
+        let y: Vec<f64> = train_data
+            .get_column_numeric_values(target_column)
+            .map_err(|_| Error::Column(format!("Target column '{}' not found", target_column)))?;
 
         let n_samples = train_data.row_count();
         let n_features = self.feature_names.len();
@@ -422,20 +668,26 @@ impl SupervisedModel for RandomForestRegressor {
             .max_features
             .unwrap_or((n_features as f64 / 3.0).ceil() as usize);
 
-        self.trees.clear();
-        for tree_idx in 0..self.config.n_estimators {
+        let bootstrap = self.config.bootstrap;
+        let random_seed_base = self.config.random_seed.unwrap_or(42);
+        let max_depth = self.config.max_depth;
+        let min_samples_split = self.config.min_samples_split;
+        let min_samples_leaf = self.config.min_samples_leaf;
+        let n_estimators = self.config.n_estimators;
+        let n_jobs = self.config.n_jobs;
+        self.trees = build_trees_honoring_n_jobs(n_estimators, n_jobs, |tree_idx| {
             let tree_config = DecisionTreeConfig {
-                max_depth: self.config.max_depth,
-                min_samples_split: self.config.min_samples_split,
-                min_samples_leaf: self.config.min_samples_leaf,
+                max_depth,
+                min_samples_split,
+                min_samples_leaf,
                 max_features: Some(max_features),
                 criterion: SplitCriterion::MSE,
-                random_seed: Some(self.config.random_seed.unwrap_or(42) + tree_idx as u64),
+                random_seed: Some(random_seed_base.wrapping_add(tree_idx as u64)),
             };
 
             let mut tree = DecisionTreeRegressor::new(tree_config);
 
-            let indices = if self.config.bootstrap {
+            let indices = if bootstrap {
                 self.bootstrap_indices(n_samples, tree_idx)
             } else {
                 (0..n_samples).collect()
@@ -443,10 +695,18 @@ impl SupervisedModel for RandomForestRegressor {
 
             let bootstrap_data = train_data.sample(&indices)?;
             tree.fit(&bootstrap_data, target_column)?;
-            self.trees.push(tree);
-        }
+            Ok(tree)
+        })?;
 
+        self.calculate_feature_importances();
         self.is_fitted = true;
+
+        self.oob_score_ = if self.config.oob_score {
+            Some(self.compute_oob_r2(train_data, &y)?)
+        } else {
+            None
+        };
+
         Ok(())
     }
 
@@ -503,14 +763,7 @@ impl ModelEvaluator for RandomForestRegressor {
         metrics.add_metric("mse", mse);
         metrics.add_metric("rmse", mse.sqrt());
 
-        let y_mean = actual.iter().sum::<f64>() / actual.len() as f64;
-        let ss_tot: f64 = actual.iter().map(|a| (a - y_mean).powi(2)).sum();
-        let ss_res: f64 = predictions
-            .iter()
-            .zip(&actual)
-            .map(|(p, a)| (a - p).powi(2))
-            .sum();
-        let r2 = 1.0 - ss_res / ss_tot;
+        let r2 = crate::ml::models::r2_score_guarded(&predictions, &actual);
         metrics.add_metric("r2", r2);
 
         Ok(metrics)
@@ -518,11 +771,11 @@ impl ModelEvaluator for RandomForestRegressor {
 
     fn cross_validate(
         &self,
-        _data: &DataFrame,
-        _target: &str,
-        _folds: usize,
+        data: &DataFrame,
+        target: &str,
+        folds: usize,
     ) -> Result<Vec<ModelMetrics>> {
-        Ok(vec![])
+        crate::ml::models::contiguous_kfold_cross_validate(self, data, target, folds)
     }
 }
 
@@ -670,20 +923,31 @@ impl GradientBoostingRegressor {
         &self.train_scores_
     }
 
-    /// Subsample indices
+    /// Subsample indices: a real random subset *without* replacement of
+    /// `ceil(n_samples * subsample)` rows (stochastic gradient boosting, as
+    /// in Friedman 1999 and scikit-learn's `subsample` parameter — unlike a
+    /// bootstrap, each boosting iteration should see each row at most once),
+    /// reseeded per iteration from `config.random_seed`. Previously this was
+    /// the same broken arithmetic-progression generator as the Random Forest
+    /// bootstrap (see `RandomForestClassifier::bootstrap_indices`): no real
+    /// row-level variance between boosting iterations.
     fn subsample_indices(&self, n_samples: usize, iteration: usize) -> Vec<usize> {
-        if self.config.subsample >= 1.0 {
+        if self.config.subsample >= 1.0 || n_samples == 0 {
             return (0..n_samples).collect();
         }
 
-        let n_subsample = (n_samples as f64 * self.config.subsample).ceil() as usize;
-        let seed = self.config.random_seed.unwrap_or(42) + iteration as u64;
+        let n_subsample =
+            ((n_samples as f64 * self.config.subsample).ceil() as usize).clamp(1, n_samples);
+        let seed = self
+            .config
+            .random_seed
+            .unwrap_or(42)
+            .wrapping_add(iteration as u64);
+        let mut rng = StdRng::seed_from_u64(seed);
 
-        let mut indices = Vec::with_capacity(n_subsample);
-        for i in 0..n_subsample {
-            let idx = ((seed as usize * 1103515245 + i * 12345) % n_samples) as usize;
-            indices.push(idx);
-        }
+        let mut indices: Vec<usize> = (0..n_samples).collect();
+        indices.shuffle(&mut rng);
+        indices.truncate(n_subsample);
         indices
     }
 
@@ -741,8 +1005,9 @@ impl SupervisedModel for GradientBoostingRegressor {
     fn fit(&mut self, train_data: &DataFrame, target_column: &str) -> Result<()> {
         self.feature_names = train_data
             .column_names()
-            .into_iter()
-            .filter(|c| c != target_column)
+            .iter()
+            .filter(|c| c.as_str() != target_column)
+            .cloned()
             .collect();
 
         let y: Vec<f64> = train_data
@@ -751,43 +1016,92 @@ impl SupervisedModel for GradientBoostingRegressor {
 
         let n_samples = y.len();
 
-        // Initialize with mean
-        self.initial_prediction = y.iter().sum::<f64>() / n_samples as f64;
+        // Initialize with the constant that minimizes the configured loss:
+        // the mean minimizes squared error, but for LAD/absolute-error the
+        // minimizer is the median. Using the mean unconditionally for
+        // absolute-error was inconsistent with the loss the model claims to
+        // optimize (and with the per-leaf medians computed below).
+        self.initial_prediction = match self.config.loss {
+            GBLoss::AbsoluteError => median_of(&y),
+            _ => y.iter().sum::<f64>() / n_samples as f64,
+        };
         let mut predictions = vec![self.initial_prediction; n_samples];
 
         self.trees.clear();
         self.train_scores_.clear();
 
+        let subsampling = self.config.subsample < 1.0;
+
         for iteration in 0..self.config.n_estimators {
             // Calculate negative gradient (residuals)
             let residuals = self.negative_gradient(&y, &predictions);
 
-            // Create DataFrame with residuals as target
-            let mut residual_data = train_data.clone();
+            // Create DataFrame with residuals as target. The original target
+            // column is dropped first: previously it stayed in `residual_data`
+            // and, since `DecisionTreeRegressor::fit` treats every non-target
+            // column as a feature, `target_column` itself became a (perfectly
+            // predictive) splitting feature for the residual tree — a direct
+            // target leak that also made `predict` on unlabeled data fail
+            // with a "column not found" error.
+            let mut residual_data = train_data.drop_columns(&[target_column])?;
             let residual_series =
                 crate::series::Series::new(residuals.clone(), Some("_residual".to_string()))?;
             residual_data.add_column("_residual".to_string(), residual_series)?;
 
-            // Subsample if needed
+            // Subsample if needed. The fast path is gated on the *config*
+            // flag rather than on `indices.len() < n_samples`: `subsample`
+            // rounds up (`ceil`), so a subsample fraction just under 1.0 can
+            // still produce a full-length (but shuffled) index list, and
+            // comparing lengths would then wrongly take the "no subsampling"
+            // branch and silently discard the shuffle, desynchronizing
+            // `indices` from `subsample_data`'s actual row order.
             let indices = self.subsample_indices(n_samples, iteration);
-            let subsample_data = if indices.len() < n_samples {
+            let subsample_data = if subsampling {
                 residual_data.sample(&indices)?
             } else {
                 residual_data
             };
 
-            // Fit tree to residuals
+            // Fit tree to residuals. For the LAD/absolute-error loss the
+            // target used here (`sign(y - F)`) only determines the split
+            // *structure*; the leaf values CART fits from it (means of ±1/0)
+            // are meaningless as prediction updates and are overwritten
+            // below with the true per-leaf median residual.
             let tree_config = DecisionTreeConfig {
                 max_depth: Some(self.config.max_depth),
                 min_samples_split: self.config.min_samples_split,
                 min_samples_leaf: self.config.min_samples_leaf,
                 max_features: None,
                 criterion: SplitCriterion::MSE,
-                random_seed: self.config.random_seed.map(|s| s + iteration as u64),
+                random_seed: self
+                    .config
+                    .random_seed
+                    .map(|s| s.wrapping_add(iteration as u64)),
             };
 
             let mut tree = DecisionTreeRegressor::new(tree_config);
             tree.fit(&subsample_data, "_residual")?;
+
+            if self.config.loss == GBLoss::AbsoluteError {
+                // Terminal-region update: the constant that minimizes
+                // absolute-error loss within a leaf is the *median* of the
+                // true residuals `y - F_{m-1}` routed to it, not the mean of
+                // the sign-valued pseudo-residuals the split search used.
+                // `predictions` still holds `F_{m-1}` here (the update loop
+                // below runs after this block), and `indices[k]` names the
+                // original row that `subsample_data` row `k` came from.
+                let leaf_idx_per_row = tree.leaf_indices(&subsample_data)?;
+                let mut leaf_residuals: HashMap<usize, Vec<f64>> = HashMap::new();
+                for (&row_idx, &leaf_idx) in indices.iter().zip(&leaf_idx_per_row) {
+                    leaf_residuals
+                        .entry(leaf_idx)
+                        .or_default()
+                        .push(y[row_idx] - predictions[row_idx]);
+                }
+                for (leaf_idx, leaf_values) in leaf_residuals {
+                    tree.set_leaf_prediction(leaf_idx, median_of(&leaf_values))?;
+                }
+            }
 
             // Update predictions
             let tree_predictions = tree.predict(train_data)?;
@@ -847,14 +1161,7 @@ impl ModelEvaluator for GradientBoostingRegressor {
         metrics.add_metric("mse", mse);
         metrics.add_metric("rmse", mse.sqrt());
 
-        let y_mean = actual.iter().sum::<f64>() / actual.len() as f64;
-        let ss_tot: f64 = actual.iter().map(|a| (a - y_mean).powi(2)).sum();
-        let ss_res: f64 = predictions
-            .iter()
-            .zip(&actual)
-            .map(|(p, a)| (a - p).powi(2))
-            .sum();
-        let r2 = 1.0 - ss_res / ss_tot;
+        let r2 = crate::ml::models::r2_score_guarded(&predictions, &actual);
         metrics.add_metric("r2", r2);
 
         Ok(metrics)
@@ -862,16 +1169,16 @@ impl ModelEvaluator for GradientBoostingRegressor {
 
     fn cross_validate(
         &self,
-        _data: &DataFrame,
-        _target: &str,
-        _folds: usize,
+        data: &DataFrame,
+        target: &str,
+        folds: usize,
     ) -> Result<Vec<ModelMetrics>> {
-        Ok(vec![])
+        crate::ml::models::contiguous_kfold_cross_validate(self, data, target, folds)
     }
 }
 
 /// Gradient Boosting Classifier
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct GradientBoostingClassifier {
     config: GradientBoostingConfig,
     trees: Vec<Vec<DecisionTreeRegressor>>,
@@ -944,8 +1251,9 @@ impl SupervisedModel for GradientBoostingClassifier {
     fn fit(&mut self, train_data: &DataFrame, target_column: &str) -> Result<()> {
         self.feature_names = train_data
             .column_names()
-            .into_iter()
-            .filter(|c| c != target_column)
+            .iter()
+            .filter(|c| c.as_str() != target_column)
+            .cloned()
             .collect();
 
         let y: Vec<f64> = train_data
@@ -994,8 +1302,12 @@ impl SupervisedModel for GradientBoostingClassifier {
                     .map(|(p, y)| y[class_idx] - p[class_idx])
                     .collect();
 
-                // Create DataFrame with residuals
-                let mut residual_data = train_data.clone();
+                // Create DataFrame with residuals. `target_column` is dropped
+                // first -- see the identical fix (and rationale) in
+                // `GradientBoostingRegressor::fit` -- otherwise it stays
+                // present as an (perfectly predictive) feature column and
+                // leaks the label into every per-class residual tree.
+                let mut residual_data = train_data.drop_columns(&[target_column])?;
                 let residual_series =
                     crate::series::Series::new(residuals.clone(), Some("_residual".to_string()))?;
                 residual_data.add_column("_residual".to_string(), residual_series)?;
@@ -1073,11 +1385,11 @@ impl ModelEvaluator for GradientBoostingClassifier {
 
     fn cross_validate(
         &self,
-        _data: &DataFrame,
-        _target: &str,
-        _folds: usize,
+        data: &DataFrame,
+        target: &str,
+        folds: usize,
     ) -> Result<Vec<ModelMetrics>> {
-        Ok(vec![])
+        crate::ml::models::contiguous_kfold_cross_validate(self, data, target, folds)
     }
 }
 
@@ -1256,5 +1568,110 @@ mod tests {
             scores.last().expect("operation should succeed")
                 < scores.first().expect("operation should succeed")
         );
+    }
+
+    // -- Wave-2 regression tests for `bootstrap_indices` -------------------
+    //
+    // These check a private method directly (white-box), rather than from
+    // `tests/ml_ensemble_trees_w2_regression_test.rs`, because the
+    // distinct-row-fraction invariant they verify isn't observable through
+    // any public API: it's a property of exactly which row indices a single
+    // tree's bootstrap draw contains, and `RandomForestClassifier`/
+    // `RandomForestRegressor` never expose that. This mirrors the existing
+    // precedent of testing `model_selection::compute_cv_fold` directly for
+    // the same reason (see `tests/ml_selection_compat_w2_regression_test.rs`).
+
+    /// A real i.i.d.-with-replacement bootstrap of `n` draws from `n` items
+    /// is expected to include about `1 - (1-1/n)^n -> 1 - 1/e ≈ 63.2%` of the
+    /// distinct rows at least once. The previous "bootstrap" was an
+    /// arithmetic progression (`(seed*1103515245 + i*12345) % n`), which had
+    /// no such statistical property at all (e.g. the audited case `n=10`
+    /// only ever produced rows `{0, 5}`, an ~20% distinct fraction that does
+    /// not budge no matter how many draws `i` are taken).
+    #[test]
+    fn test_classifier_bootstrap_indices_distinct_fraction_matches_theory() {
+        let n = 500usize;
+        let rf = RandomForestClassifier::new(RandomForestConfig {
+            random_seed: Some(7),
+            ..RandomForestConfig::default()
+        });
+
+        let trials = 60;
+        let mut total_fraction = 0.0;
+        for tree_idx in 0..trials {
+            let idx = rf.bootstrap_indices(n, tree_idx);
+            assert_eq!(idx.len(), n, "default max_samples should draw n samples");
+            assert!(
+                idx.iter().all(|&i| i < n),
+                "every drawn index must be a valid row index"
+            );
+            let distinct: HashSet<usize> = idx.into_iter().collect();
+            total_fraction += distinct.len() as f64 / n as f64;
+        }
+        let avg_fraction = total_fraction / trials as f64;
+        let theoretical = 1.0 - std::f64::consts::E.recip();
+
+        assert!(
+            (avg_fraction - theoretical).abs() < 0.02,
+            "expected ~{:.4} (1 - 1/e) distinct rows from a real bootstrap, got {:.4} \
+             averaged over {trials} independent tree_idx draws",
+            theoretical,
+            avg_fraction
+        );
+    }
+
+    /// Same statistical property, for `RandomForestRegressor`'s independent
+    /// `bootstrap_indices` implementation (the audit flagged this as a
+    /// separate fake-bootstrap site from the classifier's).
+    #[test]
+    fn test_regressor_bootstrap_indices_distinct_fraction_matches_theory() {
+        let n = 500usize;
+        let rf = RandomForestRegressor::new(RandomForestConfig {
+            random_seed: Some(11),
+            ..RandomForestConfig::default()
+        });
+
+        let trials = 60;
+        let mut total_fraction = 0.0;
+        for tree_idx in 0..trials {
+            let idx = rf.bootstrap_indices(n, tree_idx);
+            assert_eq!(idx.len(), n);
+            let distinct: HashSet<usize> = idx.into_iter().collect();
+            total_fraction += distinct.len() as f64 / n as f64;
+        }
+        let avg_fraction = total_fraction / trials as f64;
+        let theoretical = 1.0 - std::f64::consts::E.recip();
+
+        assert!(
+            (avg_fraction - theoretical).abs() < 0.02,
+            "expected ~{:.4} distinct rows, got {:.4}",
+            theoretical,
+            avg_fraction
+        );
+    }
+
+    /// Different `tree_idx` values must draw genuinely different bootstrap
+    /// samples (the concrete "forest trees differ" property at the sampling
+    /// level): under the old arithmetic-progression generator, per-tree
+    /// index sets were a fixed, low-diversity function of `tree_idx` with no
+    /// real independence between trees.
+    #[test]
+    fn test_bootstrap_indices_vary_across_trees() {
+        let n = 200usize;
+        let rf = RandomForestClassifier::new(RandomForestConfig {
+            random_seed: Some(3),
+            ..RandomForestConfig::default()
+        });
+
+        let sample_0 = rf.bootstrap_indices(n, 0);
+        let sample_1 = rf.bootstrap_indices(n, 1);
+        let sample_2 = rf.bootstrap_indices(n, 2);
+
+        assert_ne!(
+            sample_0, sample_1,
+            "consecutive tree_idx values must not draw identical bootstrap samples"
+        );
+        assert_ne!(sample_1, sample_2);
+        assert_ne!(sample_0, sample_2);
     }
 }

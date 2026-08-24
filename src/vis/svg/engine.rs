@@ -118,6 +118,18 @@ fn escape_text(s: &str) -> String {
         .replace('>', "&gt;")
 }
 
+/// Build an SVG `points` attribute value from a coordinate list, skipping
+/// any point whose x or y is not finite (NaN/±inf). See
+/// [`SvgCanvas::polyline`] for why this matters.
+fn finite_points_attr(points: &[(f64, f64)]) -> String {
+    points
+        .iter()
+        .filter(|(x, y)| x.is_finite() && y.is_finite())
+        .map(|(x, y)| format!("{:.2},{:.2}", x, y))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 /// Transform specification for SVG elements
 #[derive(Debug, Clone, Default)]
 pub struct Transform {
@@ -219,23 +231,32 @@ impl DrawStyle {
     }
 
     fn apply_to_attrs(&self, mut elem: SvgElement) -> SvgElement {
+        // `Color` carries its own alpha channel (`Color::rgba`), but
+        // `to_hex()` only ever emits the RGB channels, so a translucent
+        // fill/stroke color rendered nothing but opaque before this
+        // combined with `fill_opacity`/`stroke_opacity` (the separate,
+        // always-1.0-by-default style-level opacity). Multiply the two
+        // together so either source of transparency — the color's own
+        // alpha or an explicit style opacity — is actually honored.
         let fill_str = match &self.fill {
             Some(c) => c.to_hex(),
             None => "none".to_string(),
         };
         elem = elem.attr("fill", &fill_str);
-        if self.fill_opacity < 1.0 - f64::EPSILON {
-            elem = elem.attr("fill-opacity", format!("{:.3}", self.fill_opacity));
+        let fill_opacity = self.fill_opacity * self.fill.map_or(1.0, |c| c.opacity());
+        if fill_opacity < 1.0 - f64::EPSILON {
+            elem = elem.attr("fill-opacity", format!("{:.3}", fill_opacity.max(0.0)));
         }
         let stroke_str = match &self.stroke {
             Some(c) => c.to_hex(),
             None => "none".to_string(),
         };
         elem = elem.attr("stroke", &stroke_str);
-        if self.stroke.is_some() {
+        if let Some(stroke_color) = self.stroke {
             elem = elem.attr("stroke-width", format!("{:.2}", self.stroke_width));
-            if self.stroke_opacity < 1.0 - f64::EPSILON {
-                elem = elem.attr("stroke-opacity", format!("{:.3}", self.stroke_opacity));
+            let stroke_opacity = self.stroke_opacity * stroke_color.opacity();
+            if stroke_opacity < 1.0 - f64::EPSILON {
+                elem = elem.attr("stroke-opacity", format!("{:.3}", stroke_opacity.max(0.0)));
             }
         }
         if let Some(ref dash) = self.stroke_dasharray {
@@ -456,7 +477,18 @@ impl SvgCanvas {
     }
 
     /// Draw a line
+    ///
+    /// A no-op when any endpoint coordinate is non-finite (NaN/±inf): an
+    /// unfiltered NaN would print as the literal text "NaN" into the
+    /// `x1`/`y1`/`x2`/`y2` attributes, which is invalid SVG. Callers such
+    /// as `ScatterPlot` draw one marker per data point without the
+    /// gap-splitting logic `LineChart` uses for its polylines, so this
+    /// guard is the backstop that keeps a single bad sample from leaking
+    /// "NaN" into the document instead of just being skipped.
     pub fn line(&mut self, x1: f64, y1: f64, x2: f64, y2: f64, style: &DrawStyle) {
+        if !x1.is_finite() || !y1.is_finite() || !x2.is_finite() || !y2.is_finite() {
+            return;
+        }
         let mut elem = SvgElement::new("line")
             .attr("x1", format!("{:.2}", x1))
             .attr("y1", format!("{:.2}", y1))
@@ -467,7 +499,14 @@ impl SvgCanvas {
     }
 
     /// Draw a circle
+    ///
+    /// See [`SvgCanvas::line`] for why a non-finite `cx`/`cy`/`r` makes
+    /// this a no-op rather than emitting a `<circle>` with a literal
+    /// "NaN" coordinate.
     pub fn circle(&mut self, cx: f64, cy: f64, r: f64, style: &DrawStyle) {
+        if !cx.is_finite() || !cy.is_finite() || !r.is_finite() {
+            return;
+        }
         let mut elem = SvgElement::new("circle")
             .attr("cx", format!("{:.2}", cx))
             .attr("cy", format!("{:.2}", cy))
@@ -488,29 +527,31 @@ impl SvgCanvas {
     }
 
     /// Draw a polyline (open path)
+    ///
+    /// Non-finite coordinates (NaN/±inf) are dropped before serializing:
+    /// an unfiltered NaN prints as the literal text "NaN" inside the
+    /// `points` attribute, which is invalid SVG, and browsers respond by
+    /// discarding the *entire* element rather than just the bad vertex.
     pub fn polyline(&mut self, points: &[(f64, f64)], style: &DrawStyle) {
-        if points.is_empty() {
+        let pts = finite_points_attr(points);
+        if pts.is_empty() {
             return;
         }
-        let pts: Vec<String> = points
-            .iter()
-            .map(|(x, y)| format!("{:.2},{:.2}", x, y))
-            .collect();
-        let mut elem = SvgElement::new("polyline").attr("points", pts.join(" "));
+        let mut elem = SvgElement::new("polyline").attr("points", pts);
         elem = style.apply_to_attrs(elem);
         self.nodes.push(SvgNode::Element(elem));
     }
 
     /// Draw a polygon (closed path)
+    ///
+    /// See [`SvgCanvas::polyline`] for why non-finite coordinates are
+    /// filtered out before the `points` attribute is built.
     pub fn polygon(&mut self, points: &[(f64, f64)], style: &DrawStyle) {
-        if points.is_empty() {
+        let pts = finite_points_attr(points);
+        if pts.is_empty() {
             return;
         }
-        let pts: Vec<String> = points
-            .iter()
-            .map(|(x, y)| format!("{:.2},{:.2}", x, y))
-            .collect();
-        let mut elem = SvgElement::new("polygon").attr("points", pts.join(" "));
+        let mut elem = SvgElement::new("polygon").attr("points", pts);
         elem = style.apply_to_attrs(elem);
         self.nodes.push(SvgNode::Element(elem));
     }

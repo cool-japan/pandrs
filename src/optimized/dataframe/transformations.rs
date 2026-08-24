@@ -8,14 +8,61 @@
 
 use std::collections::HashMap;
 
-use crate::column::{BooleanColumn, Column, ColumnType, Float64Column, Int64Column, StringColumn};
+use crate::column::{BooleanColumn, Column, Float64Column, Int64Column, StringColumn};
 use crate::error::{Error, Result};
+use crate::optimized::split_dataframe::core::OptimizedDataFrame as SplitDataFrame;
 
 use super::core::{ColumnView, OptimizedDataFrame};
 
 impl OptimizedDataFrame {
+    /// Convert this frame into the split implementation, which carries the
+    /// actual algorithms.
+    ///
+    /// Both index flavours (simple and multi) are carried over - dropping the
+    /// multi-index here used to silently turn hierarchical frames into
+    /// index-less ones on head/tail/filter/sample.
+    fn to_split_frame(&self) -> Result<SplitDataFrame> {
+        let mut split_df = SplitDataFrame::new();
+
+        for name in &self.column_names {
+            let column_view = self.column(name)?;
+            split_df.add_column(name.clone(), column_view.column.clone())?;
+        }
+
+        match self.index {
+            Some(crate::index::DataFrameIndex::Simple(ref simple_index)) => {
+                split_df.set_index_from_simple_index(simple_index.clone())?;
+            }
+            Some(crate::index::DataFrameIndex::Multi(ref multi_index)) => {
+                split_df.set_index_from_multi_index(multi_index.clone())?;
+            }
+            None => {}
+        }
+
+        Ok(split_df)
+    }
+
+    /// Convert a frame of the split implementation back into this type.
+    fn from_split_frame(split_df: &SplitDataFrame) -> Result<Self> {
+        let mut result = Self::new();
+
+        for name in split_df.column_names() {
+            let column_view = split_df.column(name)?;
+            result.add_column(name.to_string(), column_view.column.clone())?;
+        }
+
+        if let Some(index) = split_df.get_index() {
+            result.index = Some(index.clone());
+        }
+
+        Ok(result)
+    }
+
     /// Append another DataFrame vertically
     /// Concatenate two DataFrames with compatible columns and create a new DataFrame
+    ///
+    /// Columns missing from one of the frames are filled with NULL for the rows
+    /// of the other frame.
     pub fn append(&self, other: &OptimizedDataFrame) -> Result<Self> {
         if self.columns.is_empty() {
             return Ok(other.clone());
@@ -26,213 +73,38 @@ impl OptimizedDataFrame {
         }
 
         // Using implementation from split_dataframe/data_ops.rs
-        use crate::optimized::split_dataframe::core::OptimizedDataFrame as SplitDataFrame;
+        let self_split_df = self.to_split_frame()?;
+        let other_split_df = other.to_split_frame()?;
 
-        // Convert self to SplitDataFrame
-        let mut self_split_df = SplitDataFrame::new();
-
-        // Copy column data
-        for name in &self.column_names {
-            if let Ok(column_view) = self.column(name) {
-                let column = column_view.column;
-                self_split_df.add_column(name.clone(), column.clone())?;
-            }
-        }
-
-        // Set index if available
-        if let Some(ref index) = self.index {
-            // Extract Index<String> from DataFrameIndex
-            if let crate::index::DataFrameIndex::Simple(simple_index) = index {
-                self_split_df.set_index_from_simple_index(simple_index.clone())?;
-            }
-            if let crate::index::DataFrameIndex::Multi(multi_index) = index {
-                self_split_df.set_index_from_multi_index(multi_index.clone())?;
-            }
-        }
-
-        // Convert other to SplitDataFrame
-        let mut other_split_df = SplitDataFrame::new();
-
-        // Copy column data
-        for name in &other.column_names {
-            if let Ok(column_view) = other.column(name) {
-                let column = column_view.column;
-                other_split_df.add_column(name.clone(), column.clone())?;
-            }
-        }
-
-        // Set index if available
-        if let Some(ref index) = other.index {
-            // Extract Index<String> from DataFrameIndex
-            if let crate::index::DataFrameIndex::Simple(simple_index) = index {
-                other_split_df.set_index_from_simple_index(simple_index.clone())?;
-            }
-            if let crate::index::DataFrameIndex::Multi(multi_index) = index {
-                other_split_df.set_index_from_multi_index(multi_index.clone())?;
-            }
-        }
-
-        // Call append from SplitDataFrame
         let split_result = self_split_df.append(&other_split_df)?;
 
-        // Convert result to OptimizedDataFrame
-        let mut result = Self::new();
-
-        // Copy column data
-        for name in split_result.column_names() {
-            if let Ok(column_view) = split_result.column(name) {
-                let column = column_view.column;
-                result.add_column(name.to_string(), column.clone())?;
-            }
-        }
-
-        // Set index if available
-        if let Some(index) = split_result.get_index() {
-            result.index = Some(index.clone());
-        }
-
-        Ok(result)
+        Self::from_split_frame(&split_result)
     }
 
     /// Get the first n rows
     pub fn head(&self, n: usize) -> Result<Self> {
         // Using implementation from split_dataframe/row_ops.rs
-        use crate::optimized::split_dataframe::core::OptimizedDataFrame as SplitDataFrame;
-
-        // Convert to SplitDataFrame
-        let mut split_df = SplitDataFrame::new();
-
-        // Copy column data
-        for name in &self.column_names {
-            if let Ok(column_view) = self.column(name) {
-                let column = column_view.column;
-                split_df.add_column(name.clone(), column.clone())?;
-            }
-        }
-
-        // Set index if available
-        if let Some(ref index) = self.index {
-            // Extract Index<String> from DataFrameIndex
-            if let crate::index::DataFrameIndex::Simple(simple_index) = index {
-                split_df.set_index_from_simple_index(simple_index.clone())?;
-            }
-        }
-
-        // Call head from SplitDataFrame
-        let split_result = split_df.head_rows(n)?;
-
-        // Convert result to OptimizedDataFrame
-        let mut result = Self::new();
-
-        // Copy column data
-        for name in split_result.column_names() {
-            if let Ok(column_view) = split_result.column(name) {
-                let column = column_view.column;
-                result.add_column(name.to_string(), column.clone())?;
-            }
-        }
-
-        // Set index
-        if let Some(index) = split_result.get_index() {
-            result.index = Some(index.clone());
-        }
-
-        Ok(result)
+        let split_result = self.to_split_frame()?.head_rows(n)?;
+        Self::from_split_frame(&split_result)
     }
 
     /// Get the last n rows
     pub fn tail(&self, n: usize) -> Result<Self> {
         // Using implementation from split_dataframe/row_ops.rs
-        use crate::optimized::split_dataframe::core::OptimizedDataFrame as SplitDataFrame;
-
-        // Convert to SplitDataFrame
-        let mut split_df = SplitDataFrame::new();
-
-        // Copy column data
-        for name in &self.column_names {
-            if let Ok(column_view) = self.column(name) {
-                let column = column_view.column;
-                split_df.add_column(name.clone(), column.clone())?;
-            }
-        }
-
-        // Set index if available
-        if let Some(ref index) = self.index {
-            // Extract Index<String> from DataFrameIndex
-            if let crate::index::DataFrameIndex::Simple(simple_index) = index {
-                split_df.set_index_from_simple_index(simple_index.clone())?;
-            }
-        }
-
-        // Call tail from SplitDataFrame
-        let split_result = split_df.tail_rows(n)?;
-
-        // Convert result to OptimizedDataFrame
-        let mut result = Self::new();
-
-        // Copy column data
-        for name in split_result.column_names() {
-            if let Ok(column_view) = split_result.column(name) {
-                let column = column_view.column;
-                result.add_column(name.to_string(), column.clone())?;
-            }
-        }
-
-        // Set index
-        if let Some(index) = split_result.get_index() {
-            result.index = Some(index.clone());
-        }
-
-        Ok(result)
+        let split_result = self.to_split_frame()?.tail_rows(n)?;
+        Self::from_split_frame(&split_result)
     }
 
     /// Sample rows
     pub fn sample(&self, n: usize, replace: bool, seed: Option<u64>) -> Result<Self> {
         // Using implementation from split_dataframe/row_ops.rs
-        use crate::optimized::split_dataframe::core::OptimizedDataFrame as SplitDataFrame;
-
-        // Convert to SplitDataFrame
-        let mut split_df = SplitDataFrame::new();
-
-        // Copy column data
-        for name in &self.column_names {
-            if let Ok(column_view) = self.column(name) {
-                let column = column_view.column;
-                split_df.add_column(name.clone(), column.clone())?;
-            }
-        }
-
-        // Set index if available
-        if let Some(ref index) = self.index {
-            // Extract Index<String> from DataFrameIndex
-            if let crate::index::DataFrameIndex::Simple(simple_index) = index {
-                split_df.set_index_from_simple_index(simple_index.clone())?;
-            }
-        }
-
-        // Call sample from SplitDataFrame
-        let split_result = split_df.sample_rows(n, replace, seed)?;
-
-        // Convert result to OptimizedDataFrame
-        let mut result = Self::new();
-
-        // Copy column data
-        for name in split_result.column_names() {
-            if let Ok(column_view) = split_result.column(name) {
-                let column = column_view.column;
-                result.add_column(name.to_string(), column.clone())?;
-            }
-        }
-
-        // Set index
-        if let Some(index) = split_result.get_index() {
-            result.index = Some(index.clone());
-        }
-
-        Ok(result)
+        let split_result = self.to_split_frame()?.sample_rows(n, replace, seed)?;
+        Self::from_split_frame(&split_result)
     }
 
     /// Get a row using integer index (as a new DataFrame)
+    ///
+    /// Missing values of the selected row stay missing.
     pub fn get_row(&self, row_idx: usize) -> Result<Self> {
         if row_idx >= self.row_count {
             return Err(Error::IndexOutOfBounds {
@@ -241,34 +113,8 @@ impl OptimizedDataFrame {
             });
         }
 
-        let mut result = Self::new();
-
-        for (i, name) in self.column_names.iter().enumerate() {
-            let column = &self.columns[i];
-
-            let new_column = match column {
-                Column::Int64(col) => {
-                    let value = col.get(row_idx)?.unwrap_or_default();
-                    Column::Int64(Int64Column::new(vec![value]))
-                }
-                Column::Float64(col) => {
-                    let value = col.get(row_idx)?.unwrap_or_default();
-                    Column::Float64(crate::column::Float64Column::new(vec![value]))
-                }
-                Column::String(col) => {
-                    let value = col.get(row_idx)?.unwrap_or_default().to_string();
-                    Column::String(crate::column::StringColumn::new(vec![value]))
-                }
-                Column::Boolean(col) => {
-                    let value = col.get(row_idx)?.unwrap_or_default();
-                    Column::Boolean(crate::column::BooleanColumn::new(vec![value]))
-                }
-            };
-
-            result.add_column(name.clone(), new_column)?;
-        }
-
-        Ok(result)
+        let split_result = self.to_split_frame()?.filter_rows_by_indices(&[row_idx])?;
+        Self::from_split_frame(&split_result)
     }
 
     /// Get a row by index
@@ -370,49 +216,13 @@ impl OptimizedDataFrame {
     }
 
     /// Filter (as a new DataFrame)
+    ///
+    /// Values of the surviving rows keep their NULL status, and the index
+    /// labels of those rows are carried over.
     pub fn filter(&self, condition_column: &str) -> Result<Self> {
         // Using implementation from split_dataframe/row_ops.rs
-        use crate::optimized::split_dataframe::core::OptimizedDataFrame as SplitDataFrame;
-
-        // Convert to SplitDataFrame
-        let mut split_df = SplitDataFrame::new();
-
-        // Copy column data
-        for name in &self.column_names {
-            if let Ok(column_view) = self.column(name) {
-                let column = column_view.column;
-                split_df.add_column(name.clone(), column.clone())?;
-            }
-        }
-
-        // Set index if available
-        if let Some(ref index) = self.index {
-            // Extract Index<String> from DataFrameIndex
-            if let crate::index::DataFrameIndex::Simple(simple_index) = index {
-                split_df.set_index_from_simple_index(simple_index.clone())?;
-            }
-        }
-
-        // Call filter from SplitDataFrame
-        let split_result = split_df.filter_rows(condition_column)?;
-
-        // Convert result to OptimizedDataFrame
-        let mut result = Self::new();
-
-        // Copy column data
-        for name in split_result.column_names() {
-            if let Ok(column_view) = split_result.column(name) {
-                let column = column_view.column;
-                result.add_column(name.to_string(), column.clone())?;
-            }
-        }
-
-        // Set index
-        if let Some(index) = split_result.get_index() {
-            result.index = Some(index.clone());
-        }
-
-        Ok(result)
+        let split_result = self.to_split_frame()?.filter_rows(condition_column)?;
+        Self::from_split_frame(&split_result)
     }
 
     /// Apply mapping function (with parallel processing support)
@@ -571,54 +381,6 @@ impl OptimizedDataFrame {
             }
 
             result.insert(key, group_df);
-        }
-
-        Ok(result)
-    }
-
-    /// Filter by specified row indices (internal helper)
-    fn filter_by_indices(&self, indices: &[usize]) -> Result<Self> {
-        // Using implementation from split_dataframe/select.rs
-        use crate::optimized::split_dataframe::core::OptimizedDataFrame as SplitDataFrame;
-
-        // Convert to SplitDataFrame
-        let mut split_df = SplitDataFrame::new();
-
-        // Copy column data
-        for name in &self.column_names {
-            if let Ok(column_view) = self.column(name) {
-                let column = column_view.column;
-                split_df.add_column(name.clone(), column.clone())?;
-            }
-        }
-
-        // Set index if available
-        if let Some(ref index) = self.index {
-            // Extract Index<String> from DataFrameIndex
-            if let crate::index::DataFrameIndex::Simple(simple_index) = index {
-                split_df.set_index_from_simple_index(simple_index.clone())?;
-            }
-        }
-
-        // Call select_rows_columns from SplitDataFrame
-        // Pass an empty array to select all columns
-        let empty_cols: [&str; 0] = [];
-        let split_result = split_df.select_rows_columns(indices, &empty_cols)?;
-
-        // Convert result to OptimizedDataFrame
-        let mut result = Self::new();
-
-        // Copy column data
-        for name in split_result.column_names() {
-            if let Ok(column_view) = split_result.column(name) {
-                let column = column_view.column;
-                result.add_column(name.to_string(), column.clone())?;
-            }
-        }
-
-        // Set index
-        if let Some(index) = split_result.get_index() {
-            result.index = Some(index.clone());
         }
 
         Ok(result)
@@ -1283,47 +1045,20 @@ impl OptimizedDataFrame {
             let col1 = self.column(column_name)?;
             let col2 = other.column(column_name)?;
 
-            // Create a new column by concatenating the values
-            // For now, we'll create a simple stub column instead of trying to concatenate
-            // In a real implementation, this would properly concatenate the columns
-            let new_column = match (col1.column(), col2.column()) {
-                (Column::Int64(_), Column::Int64(_)) => Column::Int64(Int64Column::new(vec![
-                        0;
-                        self.row_count() + other.row_count()
-                    ])),
-                (Column::Float64(_), Column::Float64(_)) => {
-                    Column::Float64(Float64Column::new(vec![
-                        0.0;
-                        self.row_count() + other.row_count()
-                    ]))
-                }
-                (Column::String(_), Column::String(_)) => {
-                    let empty_string = String::new();
-                    Column::String(StringColumn::new(vec![
-                        empty_string;
-                        self.row_count() + other.row_count()
-                    ]))
-                }
-                (Column::Boolean(_), Column::Boolean(_)) => {
-                    Column::Boolean(BooleanColumn::new(vec![
-                        false;
-                        self.row_count() + other.row_count()
-                    ]))
-                }
-                _ => {
-                    return Err(Error::InvalidValue(format!(
-                        "Column types don't match for column {}",
-                        column_name
-                    )))
-                }
-            };
+            let new_column = concat_two_columns(
+                col1.column(),
+                self.row_count(),
+                col2.column(),
+                other.row_count(),
+                column_name,
+            )?;
 
             // Add the concatenated column to the result
             result.add_column(column_name.clone(), new_column)?;
         }
 
-        // Set index for the result
-        // For now, create a default index
+        // Set index for the result: the labels of the two operands cannot be
+        // merged without risking duplicates, so a positional index is used.
         result.set_default_index()?;
 
         Ok(result)
@@ -1331,37 +1066,110 @@ impl OptimizedDataFrame {
 
     /// Sample rows by index
     ///
+    /// Rows are materialized with their real values; missing values stay
+    /// missing and the index labels of the selected rows are carried over.
+    ///
     /// # Arguments
     /// * `indices` - Vector of row indices to include in the new DataFrame
     ///
     /// # Returns
     /// A new DataFrame containing only the selected rows
     pub fn sample_rows(&self, indices: &[usize]) -> Result<Self> {
-        // Create a new OptimizedDataFrame to hold the result
-        let mut result = Self::new();
+        let split_result = self.to_split_frame()?.filter_rows_by_indices(indices)?;
+        Self::from_split_frame(&split_result)
+    }
+}
 
-        // Set up the basic properties
-        result.row_count = indices.len();
+/// Concatenate two columns of the same type row-wise, preserving NULLs.
+fn concat_two_columns(
+    left: &Column,
+    left_rows: usize,
+    right: &Column,
+    right_rows: usize,
+    column_name: &str,
+) -> Result<Column> {
+    let total = left_rows + right_rows;
 
-        // Copy columns with only the selected indices
-        for name in &self.column_names {
-            if let Ok(column_view) = self.column(name) {
-                // For now, we'll just create placeholder columns
-                // In a real implementation, we would extract only the specified indices
-                let column_type = match column_view.column_type() {
-                    ColumnType::Int64 => Column::Int64(Int64Column::new(vec![0; indices.len()])),
-                    ColumnType::Float64 => {
-                        Column::Float64(Float64Column::new(vec![0.0; indices.len()]))
+    match (left, right) {
+        (Column::Int64(left_col), Column::Int64(right_col)) => {
+            let mut values = Vec::with_capacity(total);
+            let mut nulls = Vec::with_capacity(total);
+            for (col, rows) in [(left_col, left_rows), (right_col, right_rows)] {
+                for row in 0..rows {
+                    match col.get(row).ok().flatten() {
+                        Some(value) => {
+                            values.push(value);
+                            nulls.push(false);
+                        }
+                        None => {
+                            values.push(0);
+                            nulls.push(true);
+                        }
                     }
-                    ColumnType::Boolean => {
-                        Column::Boolean(BooleanColumn::new(vec![false; indices.len()]))
-                    }
-                    _ => Column::String(StringColumn::new(vec![String::new(); indices.len()])),
-                };
-                result.add_column(name.clone(), column_type)?;
+                }
             }
+            Ok(Column::Int64(Int64Column::with_nulls(values, nulls)))
         }
-
-        Ok(result)
+        (Column::Float64(left_col), Column::Float64(right_col)) => {
+            let mut values = Vec::with_capacity(total);
+            let mut nulls = Vec::with_capacity(total);
+            for (col, rows) in [(left_col, left_rows), (right_col, right_rows)] {
+                for row in 0..rows {
+                    match col.get(row).ok().flatten() {
+                        Some(value) => {
+                            values.push(value);
+                            nulls.push(false);
+                        }
+                        None => {
+                            values.push(0.0);
+                            nulls.push(true);
+                        }
+                    }
+                }
+            }
+            Ok(Column::Float64(Float64Column::with_nulls(values, nulls)))
+        }
+        (Column::String(left_col), Column::String(right_col)) => {
+            let mut values = Vec::with_capacity(total);
+            let mut nulls = Vec::with_capacity(total);
+            for (col, rows) in [(left_col, left_rows), (right_col, right_rows)] {
+                for row in 0..rows {
+                    match col.get(row).ok().flatten() {
+                        Some(value) => {
+                            values.push(value.to_string());
+                            nulls.push(false);
+                        }
+                        None => {
+                            values.push(String::new());
+                            nulls.push(true);
+                        }
+                    }
+                }
+            }
+            Ok(Column::String(StringColumn::with_nulls(values, nulls)))
+        }
+        (Column::Boolean(left_col), Column::Boolean(right_col)) => {
+            let mut values = Vec::with_capacity(total);
+            let mut nulls = Vec::with_capacity(total);
+            for (col, rows) in [(left_col, left_rows), (right_col, right_rows)] {
+                for row in 0..rows {
+                    match col.get(row).ok().flatten() {
+                        Some(value) => {
+                            values.push(value);
+                            nulls.push(false);
+                        }
+                        None => {
+                            values.push(false);
+                            nulls.push(true);
+                        }
+                    }
+                }
+            }
+            Ok(Column::Boolean(BooleanColumn::with_nulls(values, nulls)))
+        }
+        _ => Err(Error::InvalidValue(format!(
+            "Column types don't match for column {}",
+            column_name
+        ))),
     }
 }
