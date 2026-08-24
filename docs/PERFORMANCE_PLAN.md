@@ -32,7 +32,7 @@ let mut df = DataFrame::new();
 
 ```toml
 [dependencies]
-pandrs = { version = "0.4.1", features = ["cuda", "distributed", "jit"] }
+pandrs = { version = "0.4.2", features = ["cuda", "distributed", "jit"] }
 ```
 
 ### Batch Operations
@@ -153,7 +153,7 @@ don't `use` it.)*
 
 ```toml
 [dependencies]
-pandrs = { version = "0.4.1", features = ["cuda"] }
+pandrs = { version = "0.4.2", features = ["cuda"] }
 ```
 
 Building with `cuda` requires the CUDA toolkit to be installed; this can't

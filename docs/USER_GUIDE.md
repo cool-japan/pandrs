@@ -10,7 +10,7 @@ the full API surface, use `cargo doc --open` or browse `src/`.
 
 ```toml
 [dependencies]
-pandrs = { version = "0.4.1", features = ["all-safe"] } # or pick individual features
+pandrs = { version = "0.4.2", features = ["all-safe"] } # or pick individual features
 ```
 
 `all-safe` bundles everything except CUDA/WASM/distributed (which need

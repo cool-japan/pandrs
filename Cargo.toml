@@ -3,7 +3,7 @@ members = ["py_bindings"]
 resolver = "2"
 
 [workspace.package]
-version = "0.4.1"
+version = "0.4.2"
 edition = "2021"
 # MSRV — honest floor for the DEFAULT feature set (`default = []`), DERIVED by sweeping
 # `rust_version` across the full resolved graph (cargo metadata + cargo tree), not guessed.

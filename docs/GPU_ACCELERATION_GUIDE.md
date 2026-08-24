@@ -12,7 +12,7 @@ unverifiable claims it's trying to fix.
 
 ```toml
 [dependencies]
-pandrs = { version = "0.4.1", features = ["cuda"] }
+pandrs = { version = "0.4.2", features = ["cuda"] }
 ```
 
 Building with `cuda` links against `cudarc`, which needs the **CUDA

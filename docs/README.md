@@ -75,13 +75,13 @@ PandRS offers multiple performance optimization layers. Choose the features that
 ```toml
 [dependencies]
 # Basic usage
-pandrs = "0.4.1"
+pandrs = "0.4.2"
 
 # With performance features
-pandrs = { version = "0.4.1", features = ["cuda", "distributed", "jit"] }
+pandrs = { version = "0.4.2", features = ["cuda", "distributed", "jit"] }
 
 # Most features except CUDA/WASM/distributed (recommended for local dev)
-pandrs = { version = "0.4.1", features = ["all-safe"] }
+pandrs = { version = "0.4.2", features = ["all-safe"] }
 ```
 
 #### Feature Flags

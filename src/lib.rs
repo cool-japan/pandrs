@@ -75,7 +75,7 @@
 //!
 //! ## Version
 //!
-//! Current version: 0.4.1
+//! Current version: 0.4.2
 
 // Clippy policy (mirrored in CONTRIBUTING.md):
 // The high-volume, purely-stylistic `style` and `complexity` lint groups are

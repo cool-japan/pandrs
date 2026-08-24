@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "pandrs"
-version = "0.4.1"
+version = "0.4.2"
 description = "Rust-powered DataFrame library for Python with pandas-like API"
 readme = "README.md"
 license = "Apache-2.0"

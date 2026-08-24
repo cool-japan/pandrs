@@ -230,7 +230,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-pandrs = "0.4.1"
+pandrs = "0.4.2"
 ```
 
 ### Feature Flags
@@ -239,7 +239,7 @@ Enable additional functionality with feature flags:
 
 ```toml
 [dependencies]
-pandrs = { version = "0.4.1", features = ["optimized"] }
+pandrs = { version = "0.4.2", features = ["optimized"] }
 ```
 
 Available features:

@@ -2,8 +2,8 @@
 
 ## Current Release
 
-**Version:** 0.4.1
-**Status:** Release-ready — `0.4.1` is the current release target on this branch; all quality gates pass (see Testing & Quality below).
+**Version:** 0.4.2
+**Status:** In development — `0.4.2` is the current branch, freshly cut from the completed `0.4.1` release (2026-08-24) with no changes yet. All quality gates (tests, clippy, docs, dry-run publish) were last verified against 0.4.1's shipped state — see Testing & Quality below.
 **Last updated:** 2026-08-24
 **Test Coverage:** 2817 tests passing (`cargo nextest run --features all-safe`), 110 doc tests passing + 19 ignored (`cargo test --doc --features all-safe`). `cargo clippy --features all-safe -- -D warnings` clean (`clippy::correctness`/`suspicious`/`perf` enforced; `style`/`complexity` allowed — see CONTRIBUTING.md).
 
