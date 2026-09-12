@@ -47,8 +47,8 @@ crossbeam-channel = "0.5.15"  # For concurrent message passing
 memmap2 = "0.9.11"  # For memory-mapped files
 log = "0.4.33"  # Logging interface
 tempfile = "3.27.0"  # Create temporary files and directories
-oxiarc-lz4 = "0.4.1"  # Pure Rust LZ4 (COOLJAPAN OxiARC ecosystem)
-oxiarc-zstd = "0.4.1"  # Pure Rust Zstandard (COOLJAPAN OxiARC ecosystem)
+oxiarc-lz4 = "0.4.2"  # Pure Rust LZ4 (COOLJAPAN OxiARC ecosystem)
+oxiarc-zstd = "0.4.2"  # Pure Rust Zstandard (COOLJAPAN OxiARC ecosystem)
 # Pure Rust FFT (COOLJAPAN OxiFFT ecosystem). Used by the time-series frequency
 # feature extractor for the real periodogram; `default-features = false` drops
 # the optional rayon threading layer (pandrs schedules its own parallelism).
@@ -86,7 +86,7 @@ arrow = { version = "58.1.0", default-features = false, features = [
 ] }  # For Arrow format support (arrow 58.x, aligned with datafusion 53.1.0)
 
 # Excel support (Pure Rust - COOLJAPAN Policy)
-oxiarc-archive = "0.4.1"  # Pure Rust ZIP for xlsx
+oxiarc-archive = "0.4.2"  # Pure Rust ZIP for xlsx
 quick-xml = { package = "oxixml-quickxml-compat", version = "0.1.2" }  # XML parsing for xlsx
 
 # WebAssembly support
